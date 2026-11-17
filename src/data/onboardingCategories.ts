@@ -320,7 +320,6 @@ export const ALL_ROLES: string[] = ONBOARDING_CATEGORIES.flatMap((c) =>
 );
 
 export const LOCATION_OPTIONS = [
-  "Anywhere in India",
   "Bengaluru, Karnataka",
   "Mumbai, Maharashtra",
   "Delhi NCR (Delhi, Gurugram, Noida)",
@@ -330,6 +329,12 @@ export const LOCATION_OPTIONS = [
   "Kolkata, West Bengal",
   "Ahmedabad, Gujarat",
   "Worldwide / Remote",
+];
+
+export const WORK_AUTH_OPTIONS = [
+  { id: "authorized", label: "Authorized to work (No sponsorship required)" },
+  { id: "requires_sponsorship", label: "Requires visa sponsorship (e.g. H1B)" },
+  { id: "other", label: "Other / Work Permit" },
 ];
 
 export const JOB_TYPE_OPTIONS = [

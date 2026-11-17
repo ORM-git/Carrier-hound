@@ -7,7 +7,7 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
-import { getCountryFilterClause } from "@/lib/countries";
+import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -141,26 +141,10 @@ export async function GET(req: Request) {
               categories: Array.isArray(prefs.categories) ? prefs.categories : [],
               minSalary: prefs.min_salary != null ? Number(prefs.min_salary) : null,
               salaryCurrency: prefs.salary_currency || null,
+              country: (prefs as any).country || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).names[0] : null) || null,
+              countryCode: (prefs as any).country_code || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).codes[0] : null) || null,
             };
           }
-
-          // Fetch profile enrichment (skills, linkedin_url) from candidate_profiles
-          try {
-            const { data: cand } = await supabaseAdmin
-              .from("candidate_profiles")
-              .select("skills, linkedin_url")
-              .eq("user_id", user.id)
-              .maybeSingle();
-
-            if (cand) {
-              if (Array.isArray(cand.skills) && cand.skills.length > 0) {
-                dbAnswers.skills = cand.skills;
-              }
-              if (cand.linkedin_url) {
-                dbAnswers.linkedinUrl = cand.linkedin_url;
-              }
-            }
-          } catch {}
         }
       } catch (authErr) {
         log.warn("Auth check failed in /api/jobs/recommended", { error: authErr });
@@ -177,7 +161,6 @@ export async function GET(req: Request) {
     const querySalaryCurrency = searchParams.get("salaryCurrency") || searchParams.get("salary_currency") || "";
     const queryCountry = searchParams.get("country") || "";
     const queryCountryCode = searchParams.get("countryCode") || searchParams.get("country_code") || "";
-    const querySkills = searchParams.get("skills") || "";
 
     const answers: OnboardingAnswers = {
       roles: queryRoles ? queryRoles.split(",").map((s) => s.trim()).filter(Boolean) : (dbAnswers.roles || []),
@@ -190,8 +173,6 @@ export async function GET(req: Request) {
       salaryCurrency: querySalaryCurrency || dbAnswers.salaryCurrency || "USD",
       country: queryCountry || dbAnswers.country || null,
       countryCode: queryCountryCode || dbAnswers.countryCode || null,
-      skills: querySkills ? querySkills.split(",").map((s) => s.trim()).filter(Boolean) : (dbAnswers.skills || []),
-      linkedinUrl: dbAnswers.linkedinUrl || null,
     };
 
     const isPersonalized = hasOnboardingAnswers(answers);

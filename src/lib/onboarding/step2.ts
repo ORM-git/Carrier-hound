@@ -1,103 +1,65 @@
 /**
  * src/lib/onboarding/step2.ts
  *
- * Core validation and normalization for Onboarding Step 2:
- * 1. LinkedIn URL validation and canonical normalization (linkedin.com/in/...)
- * 2. Re-exports for resume processing helpers
+ * LinkedIn profile URL validation and normalization for onboarding step 2.
+ * Validation only: nothing here (or anywhere in onboarding) fetches or scrapes LinkedIn.
  */
-
-export const MAX_RESUME_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export interface LinkedInValidationResult {
   valid: boolean;
   normalizedUrl?: string;
-  slug?: string;
+  handle?: string;
   error?: string;
 }
 
+const ALLOWED_HOSTS = new Set(["linkedin.com", "www.linkedin.com"]);
+// LinkedIn public handles: letters, digits and hyphens (3-100 chars).
+const HANDLE_RE = /^[A-Za-z0-9-]{3,100}$/;
+
 /**
- * Validates and normalizes a LinkedIn profile URL format.
- * Format requirement: must be a profile URL (linkedin.com/in/...).
- * Rejects non-profile pages (/company/, /feed/, /jobs/, etc.) and malicious or non-LinkedIn domains.
+ * Accepts only https://linkedin.com/in/<handle> or https://www.linkedin.com/in/<handle>
+ * (optional trailing slash; query and fragment are dropped). A bare "linkedin.com/in/x"
+ * is treated as https. Returns the canonical https://www.linkedin.com/in/<handle>.
  */
-export function validateAndNormalizeLinkedInUrl(rawUrl: string): LinkedInValidationResult {
-  if (!rawUrl || typeof rawUrl !== "string") {
-    return { valid: false, error: "Please enter a LinkedIn profile URL." };
+export function validateAndNormalizeLinkedInUrl(rawUrl: unknown): LinkedInValidationResult {
+  if (typeof rawUrl !== "string" || rawUrl.trim().length === 0) {
+    return { valid: false, error: "Please enter your LinkedIn profile URL." };
   }
-
   const trimmed = rawUrl.trim();
-  if (trimmed.length === 0) {
-    return { valid: false, error: "LinkedIn URL cannot be empty." };
-  }
-
   if (trimmed.length > 300) {
-    return { valid: false, error: "LinkedIn URL exceeds maximum length (300 characters)." };
+    return { valid: false, error: "That URL is too long." };
   }
 
-  let candidateUrl = trimmed;
-  if (!/^https?:\/\//i.test(candidateUrl)) {
-    candidateUrl = `https://${candidateUrl}`;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+  if (hasScheme && !/^https:\/\//i.test(trimmed)) {
+    return { valid: false, error: "LinkedIn URL must start with https://" };
   }
 
   let parsed: URL;
   try {
-    parsed = new URL(candidateUrl);
+    parsed = new URL(hasScheme ? trimmed : `https://${trimmed}`);
   } catch {
-    return { valid: false, error: "Invalid URL format. Please enter a valid URL." };
+    return { valid: false, error: "That doesn't look like a valid URL." };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
-  const isLinkedInHost =
-    hostname === "linkedin.com" ||
-    hostname === "www.linkedin.com" ||
-    /^[a-z]{2,3}\.linkedin\.com$/.test(hostname);
+  if (parsed.username || parsed.password || parsed.port) {
+    return { valid: false, error: "Please paste your plain LinkedIn profile URL." };
+  }
+  if (!ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) {
+    return { valid: false, error: "URL must be on linkedin.com (e.g. https://www.linkedin.com/in/yourname)." };
+  }
 
-  if (!isLinkedInHost) {
+  const match = parsed.pathname.match(/^\/in\/([^/]+)\/?$/);
+  if (!match) {
     return {
       valid: false,
-      error: "URL must be on linkedin.com (e.g. https://www.linkedin.com/in/username).",
+      error: "URL must be a personal profile like linkedin.com/in/yourname (not a company, job or post).",
     };
   }
-
-  const pathname = parsed.pathname.replace(/\/+/g, "/");
-  const inPrefixMatch = pathname.match(/^\/in\/([^/]+)/i);
-
-  if (!inPrefixMatch) {
-    return {
-      valid: false,
-      error: "URL must point to a personal profile (e.g. linkedin.com/in/yourname), not a company, job, or feed.",
-    };
+  const handle = match[1];
+  if (!HANDLE_RE.test(handle)) {
+    return { valid: false, error: "The profile name in that URL isn't valid." };
   }
 
-  const rawSlug = inPrefixMatch[1].trim();
-
-  if (!/^[a-zA-Z0-9_\-%\u0080-\uFFFF]+$/.test(rawSlug)) {
-    return {
-      valid: false,
-      error: "Profile identifier contains invalid characters.",
-    };
-  }
-
-  if (rawSlug.length < 3) {
-    return {
-      valid: false,
-      error: "Profile identifier is too short (minimum 3 characters).",
-    };
-  }
-
-  if (rawSlug.length > 100) {
-    return {
-      valid: false,
-      error: "Profile identifier is too long (maximum 100 characters).",
-    };
-  }
-
-  const normalizedUrl = `https://www.linkedin.com/in/${rawSlug}`;
-
-  return {
-    valid: true,
-    normalizedUrl,
-    slug: rawSlug,
-  };
+  return { valid: true, handle, normalizedUrl: `https://www.linkedin.com/in/${handle}` };
 }
-

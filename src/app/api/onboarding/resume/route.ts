@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient, getClientIpFromRequest } from "@/lib/ai/serviceHandler";
-import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
+import { checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 import {
-  validateResumeBuffer,
-  extractTextFromResumeBuffer,
-  extractSkillsFromText,
+  BodyTooLargeError,
+  MAX_MULTIPART_OVERHEAD_BYTES,
+  MAX_RESUME_SIZE_BYTES,
+  RESUME_BUCKET,
+  RESUME_MIME,
+  buildResumeStoragePath,
+  readBodyWithLimit,
+  sanitizeResumeFileName,
+  validateResumeFile,
 } from "@/lib/onboarding/step2Resume";
 import { isOnboardingStep2Active } from "@/config/onboarding";
 import { getRequestContext } from "@cloudflare/next-on-pages";
@@ -12,177 +18,175 @@ import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { route: "/api/onboarding/resume" } });
 
-// Edge runtime with streaming form-data or nodejs runtime
-export const runtime = "nodejs";
+export const runtime = "edge";
 
+const NO_STORE = "private, no-cache, no-store, must-revalidate";
+const ORPHAN_SWEEP_LIMIT = 20;
+
+function json(data: unknown, status = 200): NextResponse {
+  return NextResponse.json(data, { status, headers: { "Cache-Control": NO_STORE } });
+}
+
+/** Best-effort removal of onboarding objects that have no pointer row (crash leftovers, replaced files). */
+async function sweepOrphans(supabaseAdmin: any): Promise<void> {
+  const { data, error } = await supabaseAdmin.rpc("list_onboarding_resume_orphans", {
+    p_older_than: "1 hour",
+    p_limit: ORPHAN_SWEEP_LIMIT,
+  });
+  if (error) {
+    log.warn("Orphan listing failed", { error: error.message });
+    return;
+  }
+  const names = (Array.isArray(data) ? data : []).map((r: any) => r?.object_name).filter(Boolean);
+  if (names.length === 0) return;
+  const { error: removeError } = await supabaseAdmin.storage.from(RESUME_BUCKET).remove(names);
+  if (removeError) {
+    log.warn("Orphan removal failed", { count: names.length, error: removeError.message });
+  }
+}
+
+/**
+ * Stores an onboarding resume (PDF/DOCX, <= 5 MB) privately under <uid>/onboarding/.
+ * Store only: no parsing or text extraction happens here.
+ */
 export async function POST(req: Request) {
-  // Check feature flag: fail-closed with 503 if disabled
   if (!isOnboardingStep2Active()) {
-    return NextResponse.json(
-      { error: "Feature is coming soon", code: "FEATURE_COMING_SOON" },
-      { status: 503 }
-    );
+    return json({ error: "Feature is coming soon", code: "FEATURE_COMING_SOON" }, 503);
   }
 
   let cfEnv: Record<string, any> | undefined;
+  let waitUntil: ((p: Promise<unknown>) => void) | undefined;
   try {
     const ctx = getRequestContext();
     if (ctx?.env) cfEnv = ctx.env as Record<string, any>;
+    if (ctx?.ctx?.waitUntil) waitUntil = ctx.ctx.waitUntil.bind(ctx.ctx);
   } catch {}
 
-  // 1. Authenticate user
-  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized: Missing authentication token" }, { status: 401 });
+  const authHeader = req.headers.get("authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return json({ error: "Unauthorized: Missing authentication token" }, 401);
   }
 
-  const token = authHeader.replace("Bearer ", "").trim();
-  const supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+  let supabaseAdmin: any;
+  try {
+    supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+  } catch (err: any) {
+    log.error("Database service unavailable", { error: err?.message });
+    return json({ error: "Service unavailable" }, 503);
+  }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabaseAdmin.auth.getUser(token);
-
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(authHeader.slice(7).trim());
+  const user = authData?.user;
   if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized: Invalid session" }, { status: 401 });
+    return json({ error: "Unauthorized: Invalid session" }, 401);
   }
 
-  // 2. Rate limit: max 10 resume uploads per hour per user / IP
-  const clientIp = getClientIpFromRequest(req);
-  const rateLimitKey = `rate:onboarding:resume:${user.id}:${clientIp}`;
-  const rateCheck = await checkSharedRateLimit(rateLimitKey, 10, 3600);
-  if (!rateCheck.allowed) {
-    return NextResponse.json(
-      { error: "Too many upload attempts. Please wait before uploading another resume." },
-      { status: 429 }
-    );
+  // Rate limit before reading the body: per user and per IP, fail closed if the store is down.
+  const ip = getClientIpFromRequest(req);
+  const [userLimit, ipLimit] = await Promise.all([
+    checkSharedRateLimitStrict(`onboarding_resume:user:${user.id}`, 10, 3600, { env: cfEnv }),
+    checkSharedRateLimitStrict(`onboarding_resume:ip:${ip}`, 30, 3600, { env: cfEnv }),
+  ]);
+  if (!userLimit.allowed || !ipLimit.allowed) {
+    const res = json({ error: "Too many uploads. Please try again later." }, 429);
+    res.headers.set("Retry-After", String(Math.max(userLimit.retryAfter, ipLimit.retryAfter, 1)));
+    return res;
   }
 
-  // 3. Parse multipart form data
-  let formData: FormData;
+  const contentType = req.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
+    return json({ error: "Upload must be multipart/form-data." }, 415);
+  }
+
+  // Size cap before buffering: the stream is cut off past 5 MB + multipart framing.
+  let raw: Uint8Array;
   try {
-    formData = await req.formData();
+    raw = await readBodyWithLimit(req, MAX_RESUME_SIZE_BYTES + MAX_MULTIPART_OVERHEAD_BYTES);
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) {
+      return json({ error: "Resume must be 5 MB or smaller." }, 413);
+    }
+    return json({ error: "Couldn't read the upload. Please try again." }, 400);
+  }
+
+  let file: FormDataEntryValue | null;
+  try {
+    const form = await new Response(raw as unknown as BodyInit, { headers: { "content-type": contentType } }).formData();
+    file = form.get("file");
   } catch {
-    return NextResponse.json(
-      { error: "Invalid form data. Please upload a valid multipart document." },
-      { status: 400 }
-    );
+    return json({ error: "Invalid upload. Please choose a PDF or DOCX file." }, 400);
+  }
+  if (!file || typeof file === "string") {
+    return json({ error: "Please choose a PDF or DOCX file." }, 400);
   }
 
-  const file = formData.get("file");
-  if (!file || !(file instanceof Blob)) {
-    return NextResponse.json(
-      { error: "No resume file provided. Please select a PDF or DOCX document." },
-      { status: 400 }
-    );
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const fileName = sanitizeResumeFileName(file.name || "resume");
+  const check = validateResumeFile(bytes, file.type, fileName);
+  if (!check.ok || !check.kind) {
+    return json({ error: check.error || "Please upload a PDF or DOCX file." }, 400);
+  }
+  const kind = check.kind;
+
+  // Read the current pointer first so we know which object to retire on success.
+  const { data: previous, error: readError } = await supabaseAdmin
+    .from("onboarding_resume_uploads")
+    .select("storage_path")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (readError) {
+    log.error("Failed to read onboarding_resume_uploads", { userId: user.id, error: readError.message });
+    return json({ error: "Couldn't save your resume. Please try again." }, 500);
   }
 
-  const rawFilename = (file as any).name || "resume.pdf";
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  // 4. Validate file size and real file type via magic bytes
-  const validation = validateResumeBuffer(buffer, rawFilename, file.size);
-  if (!validation.valid || !validation.type) {
-    return NextResponse.json(
-      { error: validation.error || "Invalid file format or corrupted document." },
-      { status: 400 }
-    );
+  const storagePath = buildResumeStoragePath(user.id, kind);
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(RESUME_BUCKET)
+    .upload(storagePath, new Blob([bytes], { type: RESUME_MIME[kind] }), {
+      contentType: RESUME_MIME[kind],
+      upsert: false,
+    });
+  if (uploadError) {
+    log.error("Resume storage upload failed", { userId: user.id, error: uploadError.message });
+    return json({ error: "Couldn't save your resume. Please try again." }, 500);
   }
 
-  const sanitizedFilename = validation.sanitizedFilename;
-  const fileType = validation.type;
-
-  // 5. Store file in private Supabase storage bucket (resumes) tied to user (no public URL)
-  const storagePath = `${user.id}/${Date.now()}-${sanitizedFilename}`;
-  const mimeType =
-    fileType === "pdf"
-      ? "application/pdf"
-      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-  try {
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from("resumes")
-      .upload(storagePath, buffer, {
-        contentType: mimeType,
-        upsert: true,
-      });
-
-    if (uploadError) {
-      log.warn("Private resume storage upload failed (will continue with parsed profile)", {
+  const { error: upsertError } = await supabaseAdmin.from("onboarding_resume_uploads").upsert(
+    {
+      user_id: user.id,
+      storage_path: storagePath,
+      file_name: fileName,
+      mime_type: RESUME_MIME[kind],
+      size_bytes: bytes.byteLength,
+      uploaded_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
+  if (upsertError) {
+    log.error("Resume pointer upsert failed; removing new object", { userId: user.id, error: upsertError.message });
+    const { error: cleanupError } = await supabaseAdmin.storage.from(RESUME_BUCKET).remove([storagePath]);
+    if (cleanupError) {
+      log.error("Cleanup of unreferenced resume failed (orphan sweep will retry)", {
         userId: user.id,
-        error: uploadError.message,
+        error: cleanupError.message,
       });
     }
-  } catch (err: any) {
-    log.warn("Storage upload exception", { userId: user.id, error: err?.message });
+    return json({ error: "Couldn't save your resume. Please try again." }, 500);
   }
 
-  // 6. Extract text on the server (never log extracted text!)
-  let extractedText = "";
-  try {
-    extractedText = await extractTextFromResumeBuffer(buffer, fileType);
-  } catch (extractErr: any) {
-    return NextResponse.json(
-      { error: extractErr?.message || "Failed to parse document text. Please ensure the file is not corrupted." },
-      { status: 422 }
-    );
+  if (previous?.storage_path && previous.storage_path !== storagePath) {
+    const { error: removeOldError } = await supabaseAdmin.storage.from(RESUME_BUCKET).remove([previous.storage_path]);
+    if (removeOldError) {
+      log.warn("Removing replaced resume failed (orphan sweep will retry)", {
+        userId: user.id,
+        error: removeOldError.message,
+      });
+    }
   }
 
-  // 7. Extract skills deterministically using taxonomy
-  const detectedSkills = extractSkillsFromText(extractedText);
+  const sweep = sweepOrphans(supabaseAdmin).catch((err) => log.warn("Orphan sweep threw", { error: err?.message }));
+  if (waitUntil) waitUntil(sweep);
+  else await sweep;
 
-  // 8. Save extracted text, filename, and skills on the profile
-  try {
-    const now = new Date().toISOString();
-
-    // Upsert into candidate_profiles
-    await supabaseAdmin
-      .from("candidate_profiles")
-      .upsert(
-        {
-          user_id: user.id,
-          raw_resume_text: extractedText,
-          resume_filename: sanitizedFilename,
-          skills: detectedSkills,
-          confirmed_at: now,
-          updated_at: now,
-        },
-        { onConflict: "user_id" }
-      );
-
-    // Also update public.profiles
-    await supabaseAdmin
-      .from("profiles")
-      .update({
-        resume_filename: sanitizedFilename,
-      })
-      .eq("user_id", user.id);
-
-    // Strictly metadata logging - NEVER log resume text
-    log.info("Resume uploaded and processed successfully", {
-      userId: user.id,
-      filename: sanitizedFilename,
-      sizeBytes: buffer.length,
-      fileType,
-      skillsCount: detectedSkills.length,
-    });
-
-    return NextResponse.json({
-      ok: true,
-      filename: sanitizedFilename,
-      skillsCount: detectedSkills.length,
-      skills: detectedSkills.slice(0, 15),
-    });
-  } catch (err: any) {
-    log.error("Failed to persist parsed resume to candidate profile", {
-      userId: user.id,
-      error: err?.message,
-    });
-    return NextResponse.json(
-      { error: "Failed to save profile. Please try again." },
-      { status: 500 }
-    );
-  }
+  return json({ ok: true, fileName, sizeBytes: bytes.byteLength, kind });
 }

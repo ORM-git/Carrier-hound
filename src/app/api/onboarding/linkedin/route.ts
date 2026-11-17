@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient, getClientIpFromRequest } from "@/lib/ai/serviceHandler";
-import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
+import { checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 import { validateAndNormalizeLinkedInUrl } from "@/lib/onboarding/step2";
 import { isOnboardingStep2Active } from "@/config/onboarding";
 import { getRequestContext } from "@cloudflare/next-on-pages";
@@ -10,13 +10,16 @@ const log = createLogger({ context: { route: "/api/onboarding/linkedin" } });
 
 export const runtime = "edge";
 
+const NO_STORE = "private, no-cache, no-store, must-revalidate";
+
+function json(data: unknown, status = 200): NextResponse {
+  return NextResponse.json(data, { status, headers: { "Cache-Control": NO_STORE } });
+}
+
+/** Validates + normalizes a LinkedIn profile URL and saves it to auth user_metadata. No scraping. */
 export async function POST(req: Request) {
-  // Check feature flag: fail-closed with 503 if disabled
   if (!isOnboardingStep2Active()) {
-    return NextResponse.json(
-      { error: "Feature is coming soon", code: "FEATURE_COMING_SOON" },
-      { status: 503 }
-    );
+    return json({ error: "Feature is coming soon", code: "FEATURE_COMING_SOON" }, 503);
   }
 
   let cfEnv: Record<string, any> | undefined;
@@ -25,83 +28,57 @@ export async function POST(req: Request) {
     if (ctx?.env) cfEnv = ctx.env as Record<string, any>;
   } catch {}
 
-  // 1. Authenticate user
-  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized: Missing authentication token" }, { status: 401 });
+  const authHeader = req.headers.get("authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return json({ error: "Unauthorized: Missing authentication token" }, 401);
   }
 
-  const token = authHeader.replace("Bearer ", "").trim();
-  const supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+  let supabaseAdmin: any;
+  try {
+    supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+  } catch (err: any) {
+    log.error("Database service unavailable", { error: err?.message });
+    return json({ error: "Service unavailable" }, 503);
+  }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabaseAdmin.auth.getUser(token);
-
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(authHeader.slice(7).trim());
+  const user = authData?.user;
   if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized: Invalid session" }, { status: 401 });
+    return json({ error: "Unauthorized: Invalid session" }, 401);
   }
 
-  // 2. Rate limit: 30 requests per hour per user / IP
-  const clientIp = getClientIpFromRequest(req);
-  const rateLimitKey = `rate:onboarding:linkedin:${user.id}:${clientIp}`;
-  const rateCheck = await checkSharedRateLimit(rateLimitKey, 30, 3600);
-  if (!rateCheck.allowed) {
-    return NextResponse.json(
-      { error: "Too many updates. Please wait a few moments before trying again." },
-      { status: 429 }
-    );
+  const ip = getClientIpFromRequest(req);
+  const [userLimit, ipLimit] = await Promise.all([
+    checkSharedRateLimitStrict(`onboarding_linkedin:user:${user.id}`, 20, 3600, { env: cfEnv }),
+    checkSharedRateLimitStrict(`onboarding_linkedin:ip:${ip}`, 60, 3600, { env: cfEnv }),
+  ]);
+  if (!userLimit.allowed || !ipLimit.allowed) {
+    const retryAfter = Math.max(userLimit.retryAfter, ipLimit.retryAfter, 1);
+    const res = json({ error: "Too many attempts. Please try again later." }, 429);
+    res.headers.set("Retry-After", String(retryAfter));
+    return res;
   }
 
-  // 3. Parse and validate JSON request
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+    return json({ error: "Invalid JSON request body" }, 400);
   }
 
-  const validation = validateAndNormalizeLinkedInUrl(body?.linkedinUrl);
-  if (!validation.valid || !validation.normalizedUrl) {
-    return NextResponse.json({ error: validation.error || "Invalid LinkedIn URL format" }, { status: 400 });
+  const result = validateAndNormalizeLinkedInUrl(body?.linkedinUrl);
+  if (!result.valid || !result.normalizedUrl) {
+    return json({ error: result.error || "Invalid LinkedIn URL" }, 400);
   }
 
-  const normalizedUrl = validation.normalizedUrl;
-
-  // 4. Save normalized URL to candidate_profiles and profiles
-  try {
-    const now = new Date().toISOString();
-
-    // Upsert into candidate_profiles defensively
-    await supabaseAdmin
-      .from("candidate_profiles")
-      .upsert(
-        {
-          user_id: user.id,
-          linkedin_url: normalizedUrl,
-          updated_at: now,
-        },
-        { onConflict: "user_id" }
-      );
-
-    // Also update public.profiles if present
-    await supabaseAdmin
-      .from("profiles")
-      .update({ linkedin_url: normalizedUrl })
-      .eq("user_id", user.id);
-
-    log.info("Saved LinkedIn profile URL", { userId: user.id, domain: "linkedin.com" });
-
-    return NextResponse.json({
-      ok: true,
-      linkedinUrl: normalizedUrl,
-    });
-  } catch (err: any) {
-    log.error("Failed to persist LinkedIn URL", { userId: user.id, error: err?.message });
-    return NextResponse.json(
-      { error: "Failed to save LinkedIn profile. Please try again." },
-      { status: 500 }
-    );
+  // GoTrue merges top-level user_metadata keys, so this only sets linkedin_url.
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+    user_metadata: { linkedin_url: result.normalizedUrl },
+  });
+  if (updateError) {
+    log.error("Failed to save LinkedIn URL to user_metadata", { userId: user.id, error: updateError.message });
+    return json({ error: "Couldn't save your LinkedIn URL. Please try again." }, 500);
   }
+
+  return json({ ok: true, linkedinUrl: result.normalizedUrl });
 }

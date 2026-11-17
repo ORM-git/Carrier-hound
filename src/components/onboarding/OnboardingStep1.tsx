@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, X, MapPin, Check, HelpCircle, Briefcase } from "lucide-react";
+import { Plus, X, Globe, Check, HelpCircle } from "lucide-react";
 import BrandIcon from "@/components/BrandIcon";
 import JobFunctionBottomSheet from "./JobFunctionBottomSheet";
-import LocationPickerModal from "./LocationPickerModal";
-import { JOB_TYPE_OPTIONS } from "@/data/onboardingCategories";
+import CountryPickerModal from "./CountryPickerModal";
+import { JOB_TYPE_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 
 interface OnboardingStep1Props {
   roles: string[];
@@ -13,11 +13,14 @@ interface OnboardingStep1Props {
   onRemoveRole: (role: string) => void;
   employmentTypes: string[];
   onToggleEmploymentType: (type: string) => void;
-  location: string;
-  onSelectLocation: (loc: string) => void;
+  country: string;
+  onSelectCountry: (country: { code: string; name: string }) => void;
   openToRemote: boolean;
   onToggleOpenToRemote: () => void;
+  workAuth: string;
+  onSelectWorkAuth: (auth: string) => void;
   onNext: () => void;
+  isEditMode?: boolean;
 }
 
 export default function OnboardingStep1({
@@ -26,17 +29,26 @@ export default function OnboardingStep1({
   onRemoveRole,
   employmentTypes,
   onToggleEmploymentType,
-  location,
-  onSelectLocation,
+  country,
+  onSelectCountry,
   openToRemote,
   onToggleOpenToRemote,
+  workAuth,
+  onSelectWorkAuth,
   onNext,
+  isEditMode = false,
 }: OnboardingStep1Props) {
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
-  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
+  const [isCountryPickerOpen, setIsCountryPickerOpen] = useState(false);
   const [showRemoteHelp, setShowRemoteHelp] = useState(false);
+  const [showWorkAuthHelp, setShowWorkAuthHelp] = useState(false);
 
-  const isFormValid = roles.length > 0 && employmentTypes.length > 0;
+  // Form is valid only when all 4 required fields are filled
+  const isFormValid =
+    roles.length > 0 &&
+    employmentTypes.length > 0 &&
+    Boolean(country && country.trim().length > 0) &&
+    Boolean(workAuth && workAuth.trim().length > 0);
 
   return (
     <div className="w-full max-w-lg mx-auto flex flex-col pb-28 pt-4 px-4 sm:px-6">
@@ -53,11 +65,17 @@ export default function OnboardingStep1({
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">CareerMonke Copilot</span>
-            <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">AI</span>
+            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+              CareerMonke Copilot
+            </span>
+            <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+              {isEditMode ? "Edit Mode" : "AI"}
+            </span>
           </div>
           <div className="p-3.5 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed">
-            Hi, I&apos;m your CareerMonke Copilot. What type of role are you looking for?
+            {isEditMode
+              ? "Update your job preferences below to tune your recommended jobs feed."
+              : "Hi, I'm your CareerMonke Copilot. What type of role are you looking for?"}
           </div>
         </div>
       </div>
@@ -68,7 +86,10 @@ export default function OnboardingStep1({
         <div>
           <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
             <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
-            Job Function <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">(select from categories for best results)</span>
+            Job Function{" "}
+            <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+              (select from categories for best results)
+            </span>
           </label>
 
           {roles.length === 0 ? (
@@ -148,22 +169,31 @@ export default function OnboardingStep1({
           </div>
         </div>
 
-        {/* 3. Location */}
+        {/* 3. Location / Country (Required, Searchable Country Picker, Blank State Initial) */}
         <div>
           <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
-            Location
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
+            Country / Location
           </label>
           <button
             type="button"
-            onClick={() => setIsLocationPickerOpen(true)}
-            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600 transition"
+            onClick={() => setIsCountryPickerOpen(true)}
+            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
           >
             <div className="flex items-center gap-2.5 truncate">
-              <MapPin className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span className="truncate">{location || "Anywhere in India"}</span>
+              <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              {country ? (
+                <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
+                  {country}
+                </span>
+              ) : (
+                <span className="text-zinc-400 dark:text-zinc-500 truncate">
+                  Select your country
+                </span>
+              )}
             </div>
             <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0 ml-2">
-              Change
+              {country ? "Change" : "Select"}
             </span>
           </button>
         </div>
@@ -210,6 +240,58 @@ export default function OnboardingStep1({
             </p>
           )}
         </div>
+
+        {/* 5. Work Authorization / Sponsorship (Required, Never default to Authorized) */}
+        <div>
+          <div className="flex items-center justify-between mb-2.5">
+            <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
+              Work Authorization
+            </label>
+            <div
+              className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full cursor-pointer"
+              onClick={() => setShowWorkAuthHelp(!showWorkAuthHelp)}
+              aria-label="Info about work authorization"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </div>
+          </div>
+
+          {showWorkAuthHelp && (
+            <p className="mb-2.5 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
+              Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
+            </p>
+          )}
+
+          <div className="space-y-2">
+            {WORK_AUTH_OPTIONS.map((opt) => {
+              const isSelected = workAuth === opt.label || workAuth === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => onSelectWorkAuth(opt.label)}
+                  className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+                    isSelected
+                      ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-sm"
+                      : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors flex-shrink-0 ${
+                      isSelected
+                        ? "bg-emerald-600 border-emerald-600 text-white"
+                        : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                    }`}
+                  >
+                    {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <span className="text-xs sm:text-sm">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Sticky Bottom Bar with Progress Indicator and Next Button */}
@@ -247,12 +329,12 @@ export default function OnboardingStep1({
         onToggleRole={onToggleRole}
       />
 
-      {/* Location Picker Modal */}
-      <LocationPickerModal
-        isOpen={isLocationPickerOpen}
-        onClose={() => setIsLocationPickerOpen(false)}
-        selectedLocation={location}
-        onSelectLocation={onSelectLocation}
+      {/* Searchable Country Picker Modal */}
+      <CountryPickerModal
+        isOpen={isCountryPickerOpen}
+        onClose={() => setIsCountryPickerOpen(false)}
+        selectedCountry={country}
+        onSelectCountry={(c) => onSelectCountry(c)}
       />
     </div>
   );

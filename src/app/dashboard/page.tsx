@@ -12,16 +12,15 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonClasses } from "@/components/ui/button";
-import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
+import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { CandidateProfile } from "@/lib/resume/types";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
-import { toast } from "react-toastify";
 import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracker/types";
 import type { User } from "@supabase/supabase-js";
-import { isSwrStale, readSwr, swrFetch, updateSwr } from "@/lib/cache/swr";
+import { isSwrStale, readSwr, swrFetch } from "@/lib/cache/swr";
 import {
   Sparkles,
   Lock,
@@ -563,7 +562,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <Link
-                  href="/onboarding"
+                  href="/onboarding?mode=edit"
                   className={buttonClasses({ variant: "outline", size: "sm" })}
                 >
                   <Settings className="w-3.5 h-3.5 mr-1.5" />
@@ -595,7 +594,7 @@ export default function DashboardPage() {
                         Location
                       </h4>
                       <p className="text-sm font-medium text-ink mt-0.5">
-                        {preferences.locations?.[0] || "Anywhere in India"}
+                        {preferences.country || preferences.locations?.[0] || "Not specified"}
                         {preferences.remotePreference === "remote" && " • Open to Remote"}
                       </p>
                     </div>

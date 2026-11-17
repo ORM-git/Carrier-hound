@@ -1,255 +1,147 @@
 import { describe, it, expect } from "vitest";
+import { validateAndNormalizeLinkedInUrl } from "../onboarding/step2";
 import {
-  validateAndNormalizeLinkedInUrl,
-} from "../onboarding/step2";
-import {
-  validateResumeBuffer,
-  extractSkillsFromText,
+  BodyTooLargeError,
   MAX_RESUME_SIZE_BYTES,
+  RESUME_MIME,
+  buildResumeStoragePath,
+  readBodyWithLimit,
+  sanitizeResumeFileName,
+  sniffResumeKind,
+  validateResumeFile,
 } from "../onboarding/step2Resume";
-import {
-  scoreJobRecommendation,
-  rankJobsByRecommendation,
-  OnboardingAnswers,
-} from "../jobs/recommendations";
-import { isOnboardingStep2Active } from "@/config/onboarding";
+import { bodyCapForPath, exceedsGlobalBodyCap, GLOBAL_API_BODY_CAP_BYTES } from "../security/bodySize";
 
-describe("Onboarding Step 2: LinkedIn URL Validation & Normalization", () => {
-  it("accepts canonical standard LinkedIn profile URL", () => {
-    const res = validateAndNormalizeLinkedInUrl("https://www.linkedin.com/in/johndoe");
-    expect(res.valid).toBe(true);
-    expect(res.normalizedUrl).toBe("https://www.linkedin.com/in/johndoe");
-    expect(res.slug).toBe("johndoe");
+const enc = (s: string) => new TextEncoder().encode(s);
+export const PDF_BYTES = enc("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF");
+export const DOCX_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...Array.from(enc("....word/document.xml...."))]);
+
+describe("validateAndNormalizeLinkedInUrl", () => {
+  it.each([
+    ["https://www.linkedin.com/in/jane-doe", "https://www.linkedin.com/in/jane-doe"],
+    ["https://linkedin.com/in/jane-doe/", "https://www.linkedin.com/in/jane-doe"],
+    ["linkedin.com/in/jane-doe-123", "https://www.linkedin.com/in/jane-doe-123"],
+    ["  https://www.linkedin.com/in/JaneDoe?utm_source=x#top ", "https://www.linkedin.com/in/JaneDoe"],
+  ])("accepts %s", (input, expected) => {
+    const r = validateAndNormalizeLinkedInUrl(input);
+    expect(r.valid).toBe(true);
+    expect(r.normalizedUrl).toBe(expected);
   });
 
-  it("normalizes URL without protocol", () => {
-    const res = validateAndNormalizeLinkedInUrl("linkedin.com/in/jane-doe-123");
-    expect(res.valid).toBe(true);
-    expect(res.normalizedUrl).toBe("https://www.linkedin.com/in/jane-doe-123");
-    expect(res.slug).toBe("jane-doe-123");
+  it.each([
+    ["", "empty"],
+    ["http://www.linkedin.com/in/jane", "http scheme"],
+    ["javascript:alert(1)", "non-https scheme"],
+    ["ftp://linkedin.com/in/jane", "ftp scheme"],
+    ["https://in.linkedin.com/in/jane", "country subdomain"],
+    ["https://linkedin.com.evil.com/in/jane", "lookalike host"],
+    ["https://evil.com/linkedin.com/in/jane", "other host"],
+    ["https://user:pw@www.linkedin.com/in/jane", "userinfo"],
+    ["https://www.linkedin.com:8443/in/jane", "port"],
+    ["https://www.linkedin.com/company/acme", "company page"],
+    ["https://www.linkedin.com/in/jane/details/skills", "extra path segment"],
+    ["https://www.linkedin.com/in/", "missing handle"],
+    ["https://www.linkedin.com/in/ab", "handle too short"],
+    ["https://www.linkedin.com/in/jane%20doe", "encoded space"],
+    ["https://www.linkedin.com/in/<script>", "markup"],
+    [`https://www.linkedin.com/in/${"a".repeat(300)}`, "too long"],
+  ])("rejects %s (%s)", (input) => {
+    const r = validateAndNormalizeLinkedInUrl(input);
+    expect(r.valid).toBe(false);
+    expect(r.error).toBeTruthy();
   });
 
-  it("handles country subdomains correctly", () => {
-    const res = validateAndNormalizeLinkedInUrl("https://in.linkedin.com/in/suryakant-sahoo");
-    expect(res.valid).toBe(true);
-    expect(res.normalizedUrl).toBe("https://www.linkedin.com/in/suryakant-sahoo");
-    expect(res.slug).toBe("suryakant-sahoo");
+  it("rejects non-string input", () => {
+    expect(validateAndNormalizeLinkedInUrl(42).valid).toBe(false);
+    expect(validateAndNormalizeLinkedInUrl(undefined).valid).toBe(false);
+  });
+});
+
+describe("resume file validation (MIME + extension + magic bytes)", () => {
+  it("sniffs PDF and DOCX by magic bytes", () => {
+    expect(sniffResumeKind(PDF_BYTES)).toBe("pdf");
+    expect(sniffResumeKind(DOCX_BYTES)).toBe("docx");
+    expect(sniffResumeKind(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]))).toBeNull(); // plain zip
+    expect(sniffResumeKind(enc("hello"))).toBeNull();
   });
 
-  it("strips trailing slashes, tracking query params, and fragments", () => {
-    const res = validateAndNormalizeLinkedInUrl(
-      "https://www.linkedin.com/in/alex-dev/?utm_source=share&utm_medium=member_desktop#experience"
+  it("accepts a real PDF and a real DOCX", () => {
+    expect(validateResumeFile(PDF_BYTES, RESUME_MIME.pdf, "cv.pdf")).toEqual({ ok: true, kind: "pdf" });
+    expect(validateResumeFile(DOCX_BYTES, RESUME_MIME.docx, "cv.docx")).toEqual({ ok: true, kind: "docx" });
+  });
+
+  it("rejects a renamed file whose bytes don't match", () => {
+    expect(validateResumeFile(enc("MZ\x90\x00 exe"), RESUME_MIME.pdf, "cv.pdf").ok).toBe(false);
+    expect(validateResumeFile(PDF_BYTES, RESUME_MIME.docx, "cv.docx").ok).toBe(false);
+  });
+
+  it("rejects a MIME/extension mismatch, other types, empty and oversized files", () => {
+    expect(validateResumeFile(PDF_BYTES, "text/plain", "cv.pdf").ok).toBe(false);
+    expect(validateResumeFile(PDF_BYTES, RESUME_MIME.pdf, "cv.txt").ok).toBe(false);
+    expect(validateResumeFile(PDF_BYTES, "application/msword", "cv.doc").ok).toBe(false);
+    expect(validateResumeFile(new Uint8Array(0), RESUME_MIME.pdf, "cv.pdf").ok).toBe(false);
+    const big = new Uint8Array(MAX_RESUME_SIZE_BYTES + 1);
+    big.set(PDF_BYTES);
+    expect(validateResumeFile(big, RESUME_MIME.pdf, "cv.pdf").error).toMatch(/5 MB/);
+  });
+
+  it("sanitizes display names and never uses them in the storage path", () => {
+    expect(sanitizeResumeFileName("../../etc/pass wd<>.pdf")).toBe("pass wd__.pdf");
+    const p = buildResumeStoragePath("11111111-2222-3333-4444-555555555555", "pdf");
+    expect(p).toMatch(/^11111111-2222-3333-4444-555555555555\/onboarding\/[0-9a-f-]{36}\.pdf$/);
+  });
+});
+
+describe("readBodyWithLimit (size cap before buffering)", () => {
+  it("rejects early on an oversized Content-Length without reading the body", async () => {
+    let pulled = false;
+    const body = new ReadableStream(
+      {
+        pull() {
+          pulled = true;
+        },
+      },
+      { highWaterMark: 0 }
     );
-    expect(res.valid).toBe(true);
-    expect(res.normalizedUrl).toBe("https://www.linkedin.com/in/alex-dev");
-    expect(res.slug).toBe("alex-dev");
+    const req = new Request("http://x/api", {
+      method: "POST",
+      body,
+      headers: { "content-length": "999999999" },
+      // @ts-expect-error undici requires duplex for stream bodies
+      duplex: "half",
+    });
+    await expect(readBodyWithLimit(req, 1000)).rejects.toBeInstanceOf(BodyTooLargeError);
+    expect(pulled).toBe(false);
   });
 
-  it("rejects non-profile LinkedIn paths (company, jobs, feed, school)", () => {
-    const company = validateAndNormalizeLinkedInUrl("https://www.linkedin.com/company/google");
-    expect(company.valid).toBe(false);
-    expect(company.error).toContain("personal profile");
-
-    const jobs = validateAndNormalizeLinkedInUrl("https://www.linkedin.com/jobs/view/123456");
-    expect(jobs.valid).toBe(false);
-    expect(jobs.error).toContain("personal profile");
-
-    const feed = validateAndNormalizeLinkedInUrl("https://www.linkedin.com/feed/");
-    expect(feed.valid).toBe(false);
-    expect(feed.error).toContain("personal profile");
+  it("stops a chunked body as soon as it passes the cap", async () => {
+    let chunksServed = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        chunksServed++;
+        c.enqueue(new Uint8Array(400));
+        if (chunksServed > 100) c.close();
+      },
+    });
+    // @ts-expect-error undici requires duplex for stream bodies
+    const req = new Request("http://x/api", { method: "POST", body, duplex: "half" });
+    await expect(readBodyWithLimit(req, 1000)).rejects.toBeInstanceOf(BodyTooLargeError);
+    expect(chunksServed).toBeLessThan(10);
   });
 
-  it("rejects non-LinkedIn domains and phishing attempts", () => {
-    const evil = validateAndNormalizeLinkedInUrl("https://evil-linkedin.com/in/username");
-    expect(evil.valid).toBe(false);
-    expect(evil.error).toContain("linkedin.com");
-
-    const fb = validateAndNormalizeLinkedInUrl("https://facebook.com/in/username");
-    expect(fb.valid).toBe(false);
-    expect(fb.error).toContain("linkedin.com");
-  });
-
-  it("rejects invalid slugs (too short, too long, empty)", () => {
-    const short = validateAndNormalizeLinkedInUrl("https://www.linkedin.com/in/ab");
-    expect(short.valid).toBe(false);
-    expect(short.error).toContain("too short");
-
-    const empty = validateAndNormalizeLinkedInUrl("https://www.linkedin.com/in/");
-    expect(empty.valid).toBe(false);
-
-    const blank = validateAndNormalizeLinkedInUrl("   ");
-    expect(blank.valid).toBe(false);
+  it("returns the bytes when under the cap", async () => {
+    const req = new Request("http://x/api", { method: "POST", body: "hello" });
+    expect(new TextDecoder().decode(await readBodyWithLimit(req, 1000))).toBe("hello");
   });
 });
 
-describe("Onboarding Step 2: Resume File-Type Verification & Magic Bytes", () => {
-  it("accepts valid PDF buffer starting with %PDF- header", () => {
-    const validPdfBuffer = Buffer.from("%PDF-1.5\n%\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF");
-    const res = validateResumeBuffer(validPdfBuffer, "my_resume.pdf");
-    expect(res.valid).toBe(true);
-    expect(res.type).toBe("pdf");
-    expect(res.sanitizedFilename).toBe("my_resume.pdf");
-  });
-
-  it("rejects a fake PDF named .pdf that contains plain text or executable headers", () => {
-    const fakePdfText = Buffer.from("This is not a real PDF file but I named it resume.pdf");
-    const resText = validateResumeBuffer(fakePdfText, "resume.pdf");
-    expect(resText.valid).toBe(false);
-    expect(resText.error).toContain("not a valid PDF");
-
-    const fakePdfExe = Buffer.from([0x4d, 0x5a, 0x90, 0x00]); // MZ executable header
-    const resExe = validateResumeBuffer(fakePdfExe, "trojan.pdf");
-    expect(resExe.valid).toBe(false);
-    expect(resExe.error).toContain("not a valid PDF");
-  });
-
-  it("accepts valid DOCX zip archive containing [Content_Types].xml", () => {
-    // PK\x03\x04 + [Content_Types].xml header
-    const validDocxBuffer = Buffer.concat([
-      Buffer.from([0x50, 0x4b, 0x03, 0x04]),
-      Buffer.from("\x14\x00\x06\x00[Content_Types].xml fake content word/document.xml"),
-    ]);
-    const res = validateResumeBuffer(validDocxBuffer, "senior_engineer.docx");
-    expect(res.valid).toBe(true);
-    expect(res.type).toBe("docx");
-  });
-
-  it("rejects fake DOCX that does not start with PK zip signature", () => {
-    const fakeDocx = Buffer.from("Plain text content saved with .docx extension");
-    const res = validateResumeBuffer(fakeDocx, "fake.docx");
-    expect(res.valid).toBe(false);
-    expect(res.error).toContain("not a valid DOCX");
-  });
-
-  it("rejects files exceeding the 5 MB size limit", () => {
-    const hugePdfBuffer = Buffer.alloc(MAX_RESUME_SIZE_BYTES + 1024);
-    hugePdfBuffer.write("%PDF-1.4");
-    const res = validateResumeBuffer(hugePdfBuffer, "huge_resume.pdf");
-    expect(res.valid).toBe(false);
-    expect(res.error).toContain("5MB limit");
-  });
-
-  it("rejects empty files (0 bytes)", () => {
-    const empty = Buffer.alloc(0);
-    const res = validateResumeBuffer(empty, "empty.pdf");
-    expect(res.valid).toBe(false);
-    expect(res.error).toContain("empty");
-  });
-
-  it("rejects unsupported file extensions (.txt, .exe, .png, .sh)", () => {
-    const txtBuffer = Buffer.from("Resume text");
-    const resTxt = validateResumeBuffer(txtBuffer, "resume.txt");
-    expect(resTxt.valid).toBe(false);
-    expect(resTxt.error).toContain("Only PDF (.pdf) and Word (.docx)");
-
-    const pngBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-    const resPng = validateResumeBuffer(pngBuffer, "resume.png");
-    expect(resPng.valid).toBe(false);
-  });
-});
-
-describe("Onboarding Step 2: Skill Extraction from Text", () => {
-  it("extracts recognized technical skills deterministically from text", () => {
-    const sampleResume = `
-      Senior Software Engineer with 6 years of experience.
-      Proficient in TypeScript, React, Next.js, Node.js, and PostgreSQL.
-      Familiar with Docker, Kubernetes, AWS, and Tailwind CSS.
-    `;
-    const skills = extractSkillsFromText(sampleResume);
-    expect(skills).toContain("TypeScript");
-    expect(skills).toContain("React");
-    expect(skills).toContain("Next.js");
-    expect(skills).toContain("Node.js");
-    expect(skills).toContain("PostgreSQL");
-    expect(skills).toContain("Docker");
-    expect(skills).toContain("AWS");
-    expect(skills).toContain("Tailwind CSS");
-  });
-
-  it("returns empty array for text with no matching skills", () => {
-    const nonTechText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
-    const skills = extractSkillsFromText(nonTechText);
-    expect(skills).toEqual([]);
-  });
-});
-
-describe("Onboarding Step 2: Job Recommendations Scoring with Enriched Profile", () => {
-  const baseAnswers: OnboardingAnswers = {
-    roles: ["Frontend Developer"],
-    experienceLevel: "mid",
-    remotePreference: "remote",
-    locations: ["Remote / Global"],
-    employmentTypes: ["full-time"],
-  };
-
-  const sampleJob = {
-    id: "job-fe-1",
-    title: "Senior Frontend Developer",
-    category: "Software Development",
-    location: "Remote / Global",
-    remote: true,
-    remote_scope: "remote",
-    job_type: "full-time",
-    description: "Looking for an expert in React, TypeScript, and Tailwind CSS to build our client portal.",
-    posted_at: new Date().toISOString(),
-  };
-
-  it("computes baseline score without resume skills", () => {
-    const result = scoreJobRecommendation(sampleJob, baseAnswers);
-    expect(result.score).toBeGreaterThan(0);
-    expect(result.breakdown.skillsScore || 0).toBe(0);
-  });
-
-  it("boosts score when resume skills match the job description", () => {
-    const enrichedAnswers: OnboardingAnswers = {
-      ...baseAnswers,
-      skills: ["React", "TypeScript", "Tailwind CSS"],
-    };
-
-    const baseResult = scoreJobRecommendation(sampleJob, baseAnswers);
-    const enrichedResult = scoreJobRecommendation(sampleJob, enrichedAnswers);
-
-    expect(enrichedResult.breakdown.skillsScore).toBeGreaterThan(0);
-    expect(enrichedResult.score).toBeGreaterThanOrEqual(baseResult.score);
-    expect(enrichedResult.reasons.some((r) => r.includes("matched skill"))).toBe(true);
-  });
-
-  it("prioritizes candidate-skill-aligned jobs in recommendation ranking", () => {
-    const jobA = {
-      id: "job-a",
-      title: "Frontend Developer (React / TypeScript)",
-      category: "Software Development",
-      location: "Remote",
-      remote: true,
-      job_type: "full-time",
-      description: "Build interfaces using React and TypeScript.",
-      posted_at: "2026-11-15T00:00:00Z",
-    };
-
-    const jobB = {
-      id: "job-b",
-      title: "Frontend Developer (Angular / Java)",
-      category: "Software Development",
-      location: "Remote",
-      remote: true,
-      job_type: "full-time",
-      description: "Enterprise portal with Angular and Java backends.",
-      posted_at: "2026-11-15T00:00:00Z",
-    };
-
-    const reactAnswers: OnboardingAnswers = {
-      ...baseAnswers,
-      skills: ["React", "TypeScript"],
-    };
-
-    const ranked = rankJobsByRecommendation([jobB, jobA], reactAnswers);
-    expect(ranked[0].id).toBe("job-a");
-  });
-});
-
-describe("Onboarding Step 2: Feature Flag Behavior", () => {
-  it("reports active by default when not explicitly disabled", () => {
-    const active = isOnboardingStep2Active();
-    expect(typeof active).toBe("boolean");
+describe("global body cap override for the resume route only", () => {
+  it("lets a 4 MB upload reach /api/onboarding/resume but not other routes", () => {
+    const fourMb = String(4 * 1024 * 1024);
+    expect(exceedsGlobalBodyCap("POST", "/api/onboarding/resume", fourMb)).toBe(false);
+    expect(exceedsGlobalBodyCap("POST", "/api/onboarding/linkedin", fourMb)).toBe(true);
+    expect(exceedsGlobalBodyCap("POST", "/api/onboarding/resume/x", fourMb)).toBe(true);
+    expect(exceedsGlobalBodyCap("POST", "/api/onboarding/resume", String(6 * 1024 * 1024))).toBe(true);
+    expect(bodyCapForPath("/api/track")).toBe(GLOBAL_API_BODY_CAP_BYTES);
   });
 });

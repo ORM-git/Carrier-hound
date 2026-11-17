@@ -1,249 +1,111 @@
 /**
  * src/lib/onboarding/step2Resume.ts
  *
- * Secure resume file validation and text extraction for Onboarding Step 2.
- * Used on Node.js runtime endpoints (/api/onboarding/resume).
+ * Edge-safe helpers for the onboarding resume upload (store only, no parsing).
+ * No Node Buffer / fs: Web streams and Uint8Array only, so it runs on Cloudflare Pages.
  */
 
-import { stripHtmlAndExecutableMarkup, sanitizeDownloadFilename } from "@/lib/security/xss";
-import { SKILLS_TAXONOMY } from "@/lib/resume/parser";
-import { inflateSync } from "zlib";
-
+export const RESUME_BUCKET = "resumes";
 export const MAX_RESUME_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+// Multipart framing (boundaries, part headers, filename) on top of the file itself.
+export const MAX_MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
-export interface ResumeValidationResult {
-  valid: boolean;
-  type?: "pdf" | "docx";
-  sanitizedFilename: string;
+export const RESUME_MIME = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+} as const;
+export type ResumeKind = keyof typeof RESUME_MIME;
+
+export class BodyTooLargeError extends Error {}
+
+/**
+ * Reads a request body but stops (and cancels the stream) as soon as it exceeds maxBytes,
+ * so an oversized upload is rejected before it is fully buffered. Rejects early on a
+ * Content-Length that is already over the cap.
+ */
+export async function readBodyWithLimit(req: Request, maxBytes: number): Promise<Uint8Array> {
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new BodyTooLargeError();
+  }
+  if (!req.body) return new Uint8Array(0);
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new BodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
+
+function startsWith(bytes: Uint8Array, sig: number[]): boolean {
+  return bytes.length >= sig.length && sig.every((b, i) => bytes[i] === b);
+}
+
+function containsAscii(bytes: Uint8Array, needle: string): boolean {
+  const n = Array.from(needle, (c) => c.charCodeAt(0));
+  outer: for (let i = 0; i <= bytes.length - n.length; i++) {
+    for (let j = 0; j < n.length; j++) {
+      if (bytes[i + j] !== n[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** Real file type from magic bytes: %PDF- for PDF; a ZIP holding word/document.xml for DOCX. */
+export function sniffResumeKind(bytes: Uint8Array): ResumeKind | null {
+  if (startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])) return "pdf";
+  if (startsWith(bytes, [0x50, 0x4b, 0x03, 0x04]) && containsAscii(bytes, "word/document.xml")) return "docx";
+  return null;
+}
+
+export interface ResumeValidation {
+  ok: boolean;
+  kind?: ResumeKind;
   error?: string;
 }
 
-/**
- * Checks real file type using magic bytes, validates file size <= 5MB,
- * and ensures file extension matches actual binary content.
- */
-export function validateResumeBuffer(
-  buffer: Buffer | Uint8Array,
-  originalFilename: string,
-  declaredSize?: number
-): ResumeValidationResult {
-  const sanitizedFilename = sanitizeDownloadFilename(originalFilename || "resume", "resume");
-  const dotParts = (originalFilename || "").split(".");
-  const extension = dotParts.length > 1 ? dotParts.pop()!.toLowerCase().trim() : "";
+/** Declared MIME, extension and magic bytes must all agree on PDF or DOCX; size 1 byte..5 MB. */
+export function validateResumeFile(bytes: Uint8Array, declaredMime: string, fileName: string): ResumeValidation {
+  if (bytes.byteLength === 0) return { ok: false, error: "That file is empty." };
+  if (bytes.byteLength > MAX_RESUME_SIZE_BYTES) return { ok: false, error: "Resume must be 5 MB or smaller." };
 
-  // 1. Extension allowlist check
-  if (extension !== "pdf" && extension !== "docx") {
-    return {
-      valid: false,
-      sanitizedFilename,
-      error: "Unsupported file type. Only PDF (.pdf) and Word (.docx) documents are accepted.",
-    };
+  const ext = fileName.toLowerCase().split(".").pop();
+  const kindFromExt: ResumeKind | null = ext === "pdf" ? "pdf" : ext === "docx" ? "docx" : null;
+  if (!kindFromExt) return { ok: false, error: "Please upload a PDF or DOCX file." };
+  if (declaredMime !== RESUME_MIME[kindFromExt]) {
+    return { ok: false, error: "Please upload a PDF or DOCX file." };
   }
-
-  // 2. Size check
-  const actualSize = buffer ? buffer.byteLength : (declaredSize || 0);
-  if (!actualSize || actualSize <= 0) {
-    return {
-      valid: false,
-      sanitizedFilename,
-      error: "Uploaded file is empty.",
-    };
+  const sniffed = sniffResumeKind(bytes);
+  if (sniffed !== kindFromExt) {
+    return { ok: false, error: "That file's contents don't match a PDF or DOCX." };
   }
-
-  if (actualSize > MAX_RESUME_SIZE_BYTES) {
-    return {
-      valid: false,
-      sanitizedFilename,
-      error: "File size exceeds 5MB limit. Please upload a document under 5MB.",
-    };
-  }
-
-  // 3. Real file type verification via magic bytes
-  if (!buffer || buffer.length < 4) {
-    return {
-      valid: false,
-      sanitizedFilename,
-      error: "Corrupted or truncated file content.",
-    };
-  }
-
-  // PDF Magic Bytes: %PDF (0x25, 0x50, 0x44, 0x46)
-  const isPdf =
-    buffer[0] === 0x25 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x44 &&
-    buffer[3] === 0x46;
-
-  // DOCX Magic Bytes: PK\x03\x04 (0x50, 0x4B, 0x03, 0x04)
-  const isZip =
-    buffer[0] === 0x50 &&
-    buffer[1] === 0x4B &&
-    buffer[2] === 0x03 &&
-    buffer[3] === 0x04;
-
-  if (extension === "pdf") {
-    if (!isPdf) {
-      return {
-        valid: false,
-        sanitizedFilename,
-        error: "Invalid file content: The file is not a valid PDF document.",
-      };
-    }
-    return {
-      valid: true,
-      type: "pdf",
-      sanitizedFilename,
-    };
-  }
-
-  if (extension === "docx") {
-    if (!isZip) {
-      return {
-        valid: false,
-        sanitizedFilename,
-        error: "Invalid file content: The file is not a valid DOCX document.",
-      };
-    }
-
-    const bufferSlice = Buffer.isBuffer(buffer)
-      ? buffer.subarray(0, Math.min(buffer.length, 4096))
-      : Buffer.from(buffer.subarray(0, Math.min(buffer.length, 4096)));
-    const headerString = bufferSlice.toString("binary");
-    const hasDocxIndicators =
-      headerString.includes("[Content_Types].xml") ||
-      headerString.includes("word/") ||
-      headerString.includes("docProps/");
-
-    if (!hasDocxIndicators) {
-      return {
-        valid: false,
-        sanitizedFilename,
-        error: "Invalid file content: The archive is not a valid Word (.docx) document.",
-      };
-    }
-
-    return {
-      valid: true,
-      type: "docx",
-      sanitizedFilename,
-    };
-  }
-
-  return {
-    valid: false,
-    sanitizedFilename,
-    error: "Invalid file format.",
-  };
+  return { ok: true, kind: sniffed };
 }
 
-/**
- * Extracts plain text from a valid PDF or DOCX buffer on the server.
- */
-export async function extractTextFromResumeBuffer(
-  buffer: Buffer,
-  type: "pdf" | "docx"
-): Promise<string> {
-  if (type === "docx") {
-    try {
-      const mammoth = await import("mammoth");
-      const result = await mammoth.extractRawText({ buffer });
-      const rawText = stripHtmlAndExecutableMarkup(result.value || "");
-      return rawText.trim();
-    } catch (_err: any) {
-      throw new Error("Unable to parse Word document text. Please ensure the document is not password-protected.");
-    }
-  }
-
-  if (type === "pdf") {
-    try {
-      const rawPdf = buffer.toString("binary");
-      const cleanedPdf = rawPdf
-        .replace(/\/JavaScript\s*<<[\s\S]*?>>/gi, "")
-        .replace(/\/JS\s*<<[\s\S]*?>>/gi, "")
-        .replace(/\/JS\s*\([^)]*\)/gi, "")
-        .replace(/\/JS\s*<[^>]*>/gi, "")
-        .replace(/\/S\s*\/JavaScript\b/gi, "");
-
-      const textMatches = cleanedPdf.match(/\(([^)]+)\)\s*(?:Tj|'|")/g) || [];
-      const arrayMatches = cleanedPdf.match(/\[([^[\]]+)\]\s*TJ/gi) || [];
-
-      const extractedPieces: string[] = [];
-
-      for (const m of textMatches) {
-        const piece = m.replace(/^\(/, "").replace(/\)\s*(?:Tj|'|")$/, "");
-        if (piece.length > 0) extractedPieces.push(piece);
-      }
-
-      for (const arr of arrayMatches) {
-        const innerStrings = arr.match(/\(([^)]+)\)/g) || [];
-        for (const s of innerStrings) {
-          const piece = s.replace(/^\(/, "").replace(/\)$/, "");
-          if (piece.length > 0) extractedPieces.push(piece);
-        }
-      }
-
-      let combined = extractedPieces.join(" ");
-
-      if (combined.trim().length < 20) {
-        try {
-          const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-          let streamMatch: RegExpExecArray | null;
-          const decompressedChunks: string[] = [];
-
-          while ((streamMatch = streamRegex.exec(rawPdf)) !== null) {
-            try {
-              const rawStreamData = Buffer.from(streamMatch[1], "binary");
-              const decompressed = inflateSync(rawStreamData);
-              const textContent = decompressed.toString("utf8");
-              const innerTextMatches = textContent.match(/\(([^)]+)\)\s*(?:Tj|'|")/g) || [];
-              for (const m of innerTextMatches) {
-                const piece = m.replace(/^\(/, "").replace(/\)\s*(?:Tj|'|")$/, "");
-                if (piece.length > 0) decompressedChunks.push(piece);
-              }
-            } catch {
-              // Non-flate stream or uncompressed chunk; continue
-            }
-          }
-
-          if (decompressedChunks.length > 0) {
-            combined = decompressedChunks.join(" ");
-          }
-        } catch {
-          // zlib fallback
-        }
-      }
-
-      const sanitized = stripHtmlAndExecutableMarkup(combined || "");
-      if (sanitized.trim().length < 10) {
-        return "Resume uploaded (scanned / visual layout).";
-      }
-
-      return sanitized.trim();
-    } catch (_err: any) {
-      throw new Error("Unable to parse PDF text. Please ensure the document is not password-protected.");
-    }
-  }
-
-  throw new Error("Unsupported document type for text extraction.");
+/** Display-only name: strip any path, control chars and odd characters; cap at 120 chars. */
+export function sanitizeResumeFileName(name: string): string {
+  const base = name.split(/[\\/]/).pop() || "resume";
+  const cleaned = base.replace(/[^\w.\- ()]/g, "_").replace(/\s+/g, " ").trim();
+  return (cleaned || "resume").slice(0, 120);
 }
 
-/**
- * Extracts recognized candidate skills deterministically from resume text.
- */
-export function extractSkillsFromText(text: string): string[] {
-  if (!text || typeof text !== "string") return [];
-  const lowerText = ` ${text.toLowerCase()} `;
-  const detectedSkills = new Set<string>();
-
-  for (const skill of SKILLS_TAXONOMY) {
-    if (!skill || skill.length < 2) continue;
-    const lowerSkill = skill.toLowerCase();
-    const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(?:^|[\\s,;:.()/\\[\\]-])${escaped}(?:$|[\\s,;:.()/\\[\\]-])`, "i");
-    if (regex.test(lowerText)) {
-      detectedSkills.add(skill);
-    }
-  }
-
-  return Array.from(detectedSkills);
+/** Per-user private folder; random object name so user input never becomes a storage key. */
+export function buildResumeStoragePath(userId: string, kind: ResumeKind): string {
+  return `${userId}/onboarding/${crypto.randomUUID()}.${kind}`;
 }

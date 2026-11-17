@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
 -- Freshness Header: Generated on 2026-11-17
--- Migrations Count: 79
+-- Migrations Count: 80
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
 
@@ -10200,100 +10200,134 @@ COMMIT;
 
 
 -- ------------------------------------------------------------------------------
--- Migration: 20261117b_onboarding_step2_profile_enrichment.sql
+-- Migration: 20261117_user_preferences_country.sql
 -- ------------------------------------------------------------------------------
--- Migration: 20261117b_onboarding_step2_profile_enrichment.sql
--- Description: Add linkedin_url and resume_filename to profiles and candidate_profiles,
---              and configure the private 'resumes' storage bucket and RLS policies.
--- Date: 2026-11-17
--- Safe & Idempotent: Uses ADD COLUMN IF NOT EXISTS and ON CONFLICT.
+-- ============================================================================
+-- Migration: Add country and country_code to user_preferences
+-- Description: Supports explicit user country persistence from mobile onboarding.
+-- ============================================================================
 
--- 1. Defensively add profile enrichment columns to public.profiles
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS linkedin_url TEXT;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS resume_filename TEXT;
-
--- 2. Defensively add profile enrichment columns to public.candidate_profiles
-ALTER TABLE public.candidate_profiles ADD COLUMN IF NOT EXISTS linkedin_url TEXT;
-ALTER TABLE public.candidate_profiles ADD COLUMN IF NOT EXISTS resume_filename TEXT;
-
--- 3. Configure private 'resumes' Supabase storage bucket (max 5 MB, PDF and DOCX only)
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'resumes',
-  'resumes',
-  false,
-  5242880, -- 5 MB (5 * 1024 * 1024 bytes)
-  ARRAY[
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ]
-)
-ON CONFLICT (id) DO UPDATE SET
-  public = false,
-  file_size_limit = 5242880,
-  allowed_mime_types = ARRAY[
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ];
-
--- 4. Enable RLS on storage.objects (if not already enabled)
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
--- 5. Drop existing policies on 'resumes' bucket to ensure clean idempotent recreation
-DROP POLICY IF EXISTS "Users can upload their own resume" ON storage.objects;
-DROP POLICY IF EXISTS "Users can view their own resume" ON storage.objects;
-DROP POLICY IF EXISTS "Users can update their own resume" ON storage.objects;
-DROP POLICY IF EXISTS "Users can delete their own resume" ON storage.objects;
-
--- 6. RLS Policies: Authenticated users can manage files strictly in their own folder
-CREATE POLICY "Users can upload their own resume"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'resumes' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
-
-CREATE POLICY "Users can view their own resume"
-ON storage.objects FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'resumes' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
-
-CREATE POLICY "Users can update their own resume"
-ON storage.objects FOR UPDATE
-TO authenticated
-USING (
-  bucket_id = 'resumes' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-)
-WITH CHECK (
-  bucket_id = 'resumes' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
-
-CREATE POLICY "Users can delete their own resume"
-ON storage.objects FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'resumes' AND
-  (storage.foldername(name))[1] = auth.uid()::text
-);
+ALTER TABLE public.user_preferences
+ADD COLUMN IF NOT EXISTS country TEXT,
+ADD COLUMN IF NOT EXISTS country_code VARCHAR(2);
 
 -- ============================================================================
--- ROLLBACK INSTRUCTIONS
+-- ROLLBACK:
+--   ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS country_code;
+--   ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS country;
 -- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261118_onboarding_resume_uploads.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261118_onboarding_resume_uploads.sql
+-- Description: Pointer table + orphan finder for the onboarding resume upload (PR #655).
+--   * Additive only. Does NOT modify the existing private `resumes` bucket row
+--     (size limit / allowed MIME types), its policies, or any stored object.
+--   * The 5 MB, PDF/DOCX-only rule is enforced by /api/onboarding/resume.
+--   * Uploads run server-side with the service role (client writes to the bucket
+--     stay blocked by 20261116c).
+--   * Rate limiting reuses public.check_rate_limit (20261020).
+-- Transactional: preflight + all DDL run in one transaction; any failure rolls back.
+-- Idempotent: safe to run twice.
+-- Status: NOT APPLIED. Record with:
+--   node scripts/record-migration.cjs 20261118_onboarding_resume_uploads
+-- ============================================================================
+
+BEGIN;
+
+-- PREFLIGHT: abort (rolls back everything) unless prerequisites hold. Read-only.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes') THEN
+    RAISE EXCEPTION 'preflight: storage bucket "resumes" does not exist';
+  END IF;
+  IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes' AND public IS DISTINCT FROM false) THEN
+    RAISE EXCEPTION 'preflight: storage bucket "resumes" is not private';
+  END IF;
+  IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes'
+             AND file_size_limit IS NOT NULL AND file_size_limit < 5242880) THEN
+    RAISE EXCEPTION 'preflight: "resumes" size limit is below 5 MB';
+  END IF;
+  IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes'
+             AND allowed_mime_types IS NOT NULL
+             AND NOT allowed_mime_types @> ARRAY[
+               'application/pdf',
+               'application/vnd.openxmlformats-officedocument.wordprocessingml.document']) THEN
+    RAISE EXCEPTION 'preflight: "resumes" does not allow both PDF and DOCX';
+  END IF;
+  IF to_regprocedure('public.check_rate_limit(text,integer,integer)') IS NULL THEN
+    RAISE EXCEPTION 'preflight: public.check_rate_limit(text,integer,integer) is missing';
+  END IF;
+END $$;
+
+-- 1. Additive table: one current onboarding resume per user (pointer to the private object).
+CREATE TABLE IF NOT EXISTS public.onboarding_resume_uploads (
+  user_id      uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  storage_path text NOT NULL UNIQUE
+               CHECK (storage_path LIKE user_id::text || '/onboarding/%'),
+  file_name    text NOT NULL CHECK (char_length(file_name) BETWEEN 1 AND 255),
+  mime_type    text NOT NULL CHECK (mime_type IN (
+                 'application/pdf',
+                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')),
+  size_bytes   integer NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+  uploaded_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- 2. Owner may read own row; all writes are server-side (service role) only.
+ALTER TABLE public.onboarding_resume_uploads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.onboarding_resume_uploads FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.onboarding_resume_uploads FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.onboarding_resume_uploads TO authenticated;
+
+DROP POLICY IF EXISTS "onboarding_resume_uploads_owner_select" ON public.onboarding_resume_uploads;
+CREATE POLICY "onboarding_resume_uploads_owner_select"
+  ON public.onboarding_resume_uploads
+  FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+
+-- 3. Orphan finder: onboarding objects older than N with no pointer row.
+--    Only LISTS names; deletion goes through the Storage API so blobs are really removed.
+CREATE OR REPLACE FUNCTION public.list_onboarding_resume_orphans(
+  p_older_than interval DEFAULT interval '1 hour',
+  p_limit      integer  DEFAULT 500
+)
+RETURNS TABLE (object_name text)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT o.name
+  FROM storage.objects o
+  WHERE o.bucket_id = 'resumes'
+    AND (storage.foldername(o.name))[2] = 'onboarding'
+    AND o.created_at < now() - p_older_than
+    AND NOT EXISTS (
+      SELECT 1 FROM public.onboarding_resume_uploads u WHERE u.storage_path = o.name
+    )
+  ORDER BY o.created_at
+  LIMIT LEAST(GREATEST(p_limit, 1), 1000);
+$$;
+ALTER FUNCTION public.list_onboarding_resume_orphans(interval, integer) SET statement_timeout = '5s';
+REVOKE ALL ON FUNCTION public.list_onboarding_resume_orphans(interval, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_onboarding_resume_orphans(interval, integer) TO service_role;
+
+COMMIT;
+
+-- ============================================================================
+-- VERIFY (run separately):
+-- SELECT public, file_size_limit, allowed_mime_types FROM storage.buckets WHERE id = 'resumes';  -- unchanged
+-- SELECT policyname, cmd FROM pg_policies WHERE tablename = 'onboarding_resume_uploads';          -- owner_select only
+-- SELECT has_table_privilege('authenticated', 'public.onboarding_resume_uploads', 'INSERT');      -- false
+-- ============================================================================
+-- ROLLBACK (non-destructive: keeps every row and every storage object; bucket untouched):
 -- BEGIN;
--- DROP POLICY IF EXISTS "Users can delete their own resume" ON storage.objects;
--- DROP POLICY IF EXISTS "Users can update their own resume" ON storage.objects;
--- DROP POLICY IF EXISTS "Users can view their own resume" ON storage.objects;
--- DROP POLICY IF EXISTS "Users can upload their own resume" ON storage.objects;
--- DELETE FROM storage.buckets WHERE id = 'resumes';
--- ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS resume_filename;
--- ALTER TABLE public.candidate_profiles DROP COLUMN IF EXISTS linkedin_url;
--- ALTER TABLE public.profiles DROP COLUMN IF EXISTS resume_filename;
--- ALTER TABLE public.profiles DROP COLUMN IF EXISTS linkedin_url;
+-- REVOKE EXECUTE ON FUNCTION public.list_onboarding_resume_orphans(interval, integer) FROM service_role;
+-- DROP FUNCTION IF EXISTS public.list_onboarding_resume_orphans(interval, integer);
+-- REVOKE SELECT ON TABLE public.onboarding_resume_uploads FROM authenticated;
+-- ALTER TABLE IF EXISTS public.onboarding_resume_uploads
+--   RENAME TO onboarding_resume_uploads_rolled_back_20261118;
 -- COMMIT;
+-- ============================================================================
 
