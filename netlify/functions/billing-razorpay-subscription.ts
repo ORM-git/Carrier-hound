@@ -169,7 +169,10 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         return {
           statusCode: 500,
           headers,
-          body: JSON.stringify({ error: "Supabase service configuration missing" }),
+          body: JSON.stringify({
+            error: "Supabase service configuration missing",
+            code: "NETLIFY_SUBSCRIPTION_SUPABASE_CONFIG_MISSING",
+          }),
         };
       }
 

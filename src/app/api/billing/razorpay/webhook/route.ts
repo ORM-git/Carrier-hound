@@ -296,7 +296,10 @@ export async function POST(req: Request) {
     } catch (err: any) {
       log.error("[Razorpay Webhook] Supabase admin init error", { error: err?.message || String(err) });
       return NextResponse.json(
-        { error: "Supabase service configuration missing" },
+        {
+          error: "Supabase service configuration missing",
+          code: "WEBHOOK_ROUTE_SUPABASE_CONFIG_MISSING",
+        },
         { status: 500 }
       );
     }

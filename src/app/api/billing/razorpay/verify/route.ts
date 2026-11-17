@@ -132,7 +132,13 @@ export async function POST(req: Request) {
         getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
-        return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
+        return NextResponse.json(
+          {
+            error: "Supabase service configuration missing",
+            code: "VERIFY_ROUTE_SUPABASE_CONFIG_MISSING",
+          },
+          { status: 500 }
+        );
       }
 
       // Verify user session token

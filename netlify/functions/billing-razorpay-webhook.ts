@@ -227,7 +227,10 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         return {
           statusCode: 500,
           headers,
-          body: JSON.stringify({ error: "Supabase service configuration missing" }),
+          body: JSON.stringify({
+            error: "Supabase service configuration missing",
+            code: "NETLIFY_WEBHOOK_SUPABASE_CONFIG_MISSING",
+          }),
         };
       }
 
