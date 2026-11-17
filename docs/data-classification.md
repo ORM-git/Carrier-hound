@@ -20,6 +20,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `candidate_profiles` | name, email, phone, headline, summary, skills, experience/education JSON, raw resume text | The core profile; exported and deleted with the account. |
 | `profiles` | `full_name`, `target_roles` (PII); internal fields: `user_id`, `created_at`, `onboarding_completed_at` (lifecycle state) | Account onboarding and profile metadata; retained until account deletion (`docs/retention-policy.md`); not yet in the account export (known gap); deletion works through the `auth.users` cascade FK. |
 | `resumes` | resume file metadata (`file_name`, `storage_path`, `mime_type`, `size_bytes`) per user | Bytes live in the `resumes` storage bucket (private). |
+| `onboarding_resume_uploads` | pointer to the user's onboarding resume (`storage_path`, `file_name`, `mime_type`, `size_bytes`, `uploaded_at`) | Bytes live under `<uid>/onboarding/` in the private `resumes` bucket; writes are service-role only, owner can read their own row; deleted with the account via the `auth.users` cascade FK (20261118, NOT APPLIED). |
 | `tailored_resumes` | tailored resume and cover-letter content per user/job | AI-generated from the profile. |
 | `user_preferences` | roles, locations, salary expectations, work authorization, digest opt-in | `work_auth` is sensitive; treat with care in logs. |
 | `applications` | jobs applied to, stage, free-text `notes` | Notes can contain anything the user types. |

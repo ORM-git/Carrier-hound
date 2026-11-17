@@ -10520,7 +10520,7 @@ DECLARE
   p text;
 BEGIN
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-    FOREACH p IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] LOOP
+    FOREACH p IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'TRIGGER'] LOOP
       IF has_table_privilege(r, 'public.onboarding_resume_uploads', p) THEN
         RAISE EXCEPTION 'post-check: role % still holds % on public.onboarding_resume_uploads', r, p;
       END IF;
@@ -10529,6 +10529,18 @@ BEGIN
       RAISE EXCEPTION 'post-check: role % can EXECUTE public.list_onboarding_resume_orphans', r;
     END IF;
   END LOOP;
+  -- Every ACL entry: PUBLIC and anon hold nothing; authenticated holds SELECT only.
+  IF EXISTS (
+    SELECT 1
+      FROM pg_class c
+     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+      LEFT JOIN pg_roles g ON g.oid = a.grantee
+     WHERE c.oid = 'public.onboarding_resume_uploads'::regclass
+       AND (a.grantee = 0 OR g.rolname IN ('anon', 'authenticated'))
+       AND NOT (g.rolname = 'authenticated' AND a.privilege_type = 'SELECT')
+  ) THEN
+    RAISE EXCEPTION 'post-check: PUBLIC/anon/authenticated hold a privilege beyond owner SELECT on public.onboarding_resume_uploads';
+  END IF;
   IF has_table_privilege('anon', 'public.onboarding_resume_uploads', 'SELECT') THEN
     RAISE EXCEPTION 'post-check: anon can SELECT public.onboarding_resume_uploads';
   END IF;
