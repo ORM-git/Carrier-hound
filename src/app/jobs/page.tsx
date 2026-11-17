@@ -6,19 +6,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
-import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
-import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
+import { getAuthUser } from "@/lib/auth/session";
+import { calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { TrackedApplication } from "@/lib/tracker/types";
-import {
-  addApplicationToTracker,
-  getTrackedApplications,
-  removeApplicationFromTracker,
-  updateApplicationStage,
-  quickTrackJob,
-  isMatchingTrackerJob,
-} from "@/lib/tracker/storage";
+import { isMatchingTrackerJob } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";

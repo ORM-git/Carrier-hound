@@ -13,7 +13,7 @@ const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
 export const runtime = "edge";
 
-export const RECOMMENDED_POOL_SIZE = 1000;
+const RECOMMENDED_POOL_SIZE = 1000;
 
 function sanitizeSearchQuery(input: string): string {
   if (!input) return "";
