@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef, Suspense } from "react";
-import Link from "next/link";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
 import { createClient } from "@/lib/supabase/client";
-import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
+import { checkAccountOnboardingCompleted, markAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 import {
   getValidReturnUrl,
   getAuthUser,
@@ -14,24 +13,13 @@ import {
 } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
-import {
-  validateResumeUploadFile,
-  extractTextFromFile,
-  parseResumeText,
-} from "@/lib/resume/parser";
-import { saveConfirmedCandidateProfile } from "@/lib/resume/storage";
-import { CandidateProfile } from "@/lib/resume/types";
 import { updateSwr, invalidateSwr } from "@/lib/cache/swr";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
-  CheckCircle2,
-  FileText,
-  Upload,
   Sparkles,
   Loader2,
-  AlertCircle,
   Briefcase,
   Compass,
   MapPin,
@@ -98,7 +86,7 @@ const EMPLOYMENT_TYPES: {
   { id: "internship", label: "Internship", desc: "Internship or graduate program" },
 ];
 
-type ProcessingStep = 1 | 2 | 3 | 4;
+const TOTAL_STEPS = 5;
 
 function OnboardingPageInner() {
   const router = useRouter();
@@ -106,13 +94,13 @@ function OnboardingPageInner() {
   const rawNext = searchParams.get("returnTo") || searchParams.get("return_to") || searchParams.get("next");
   const next = getValidReturnUrl(rawNext, "/dashboard");
 
-  // Onboarding screens: 1 = Role, 2 = Experience, 3 = Work Model, 4 = Preferred Countries, 5 = Job Type, 6 = Upload Resume
+  // Onboarding screens: 1 = Role, 2 = Experience, 3 = Work Model, 4 = Preferred Countries, 5 = Job Type
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [userId, setUserId] = useState<string | undefined>(undefined);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [existingPrefs, setExistingPrefs] = useState<UserPreferences | null>(null);
 
-  // Preference fields (saved to existing UserPreferences)
+  // Preference fields (saved to existing UserPreferences and profiles)
   const [roles, setRoles] = useState<string[]>([]);
   const [customRoleInput, setCustomRoleInput] = useState("");
   const [experienceLevel, setExperienceLevel] = useState<UserPreferences["experienceLevel"] | "">("");
@@ -120,14 +108,7 @@ function OnboardingPageInner() {
   const [locations, setLocations] = useState<string[]>([]);
   const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
   const [dailyDigestOptIn] = useState<boolean>(false);
-
-  // Resume Processing State (Jobright style)
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStep, setProcessingStep] = useState<ProcessingStep>(1);
-  const [processingError, setProcessingError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Funnel: onboarding started (once per mount, consent-gated in the emitter)
   useEffect(() => {
@@ -174,7 +155,7 @@ function OnboardingPageInner() {
     return () => {
       isMounted = false;
     };
-  }, [router, rawNext]);
+  }, [router, rawNext, next]);
 
   // Persist preferences snapshot helper
   const persistPreferences = async (completed = false) => {
@@ -183,7 +164,6 @@ function OnboardingPageInner() {
       const basePrefs: Partial<UserPreferences> = existingPrefs ? { ...existingPrefs } : {};
       const payload: UserPreferences = {
         ...basePrefs,
-        // Save only the 5 answered fields on top, keeping skipped fields empty/unchanged
         roles: roles.length > 0 ? roles : (existingPrefs?.roles ?? []),
         experienceLevel: (experienceLevel || existingPrefs?.experienceLevel || "mid") as UserPreferences["experienceLevel"],
         remotePreference: (remotePreference || existingPrefs?.remotePreference || "remote") as UserPreferences["remotePreference"],
@@ -199,6 +179,23 @@ function OnboardingPageInner() {
       };
       await saveUserPreferences(payload, userId);
       setExistingPrefs(payload);
+
+      if (completed) {
+        const supabase = createClient();
+        await markAccountOnboardingCompleted(supabase, userId).catch((err) => {
+          console.warn("Could not mark onboarding completed in profiles:", err);
+        });
+        if (roles.length > 0) {
+          await supabase.from("profiles").upsert(
+            {
+              user_id: userId,
+              target_roles: roles,
+              onboarding_completed_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          ).catch(() => {});
+        }
+      }
     } catch (err: any) {
       console.warn("Could not save preferences snapshot:", err);
       if (completed) {
@@ -210,8 +207,10 @@ function OnboardingPageInner() {
   // Navigation handlers
   const handleNextStep = async () => {
     await persistPreferences(false);
-    if (currentStep < 6) {
+    if (currentStep < TOTAL_STEPS) {
       setCurrentStep((prev) => prev + 1);
+    } else {
+      await handleCompleteOnboarding();
     }
   };
 
@@ -223,14 +222,15 @@ function OnboardingPageInner() {
 
   const handleSkipQuestion = async () => {
     await persistPreferences(false);
-    if (currentStep < 6) {
+    if (currentStep < TOTAL_STEPS) {
       setCurrentStep((prev) => prev + 1);
     } else {
-      await handleSkipResume();
+      await handleCompleteOnboarding();
     }
   };
 
-  const handleSkipResume = async () => {
+  const handleCompleteOnboarding = async () => {
+    setIsSaving(true);
     try {
       await persistPreferences(true);
       if (userId) {
@@ -239,10 +239,13 @@ function OnboardingPageInner() {
         );
         invalidateSwr(`dashboard:${userId}`);
       }
-      toast.info("Preferences saved! You can upload your resume anytime from the dashboard.");
+      trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
+      toast.success("Preferences saved! Your personalized recommendations are ready.");
       router.push(next);
     } catch (err: any) {
       toast.error(err?.message || "Failed to save preferences. Please try again.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -277,107 +280,6 @@ function OnboardingPageInner() {
     );
   };
 
-  // Resume Processing Stepper Execution (Strictly real events, no fake timers, no AI before payment)
-  const processResumeFile = async (file: File) => {
-    setSelectedFile(file);
-    setIsProcessing(true);
-    setProcessingError(null);
-
-    try {
-      // Step 1: Uploading & format validation
-      setProcessingStep(1);
-      const validation = validateResumeUploadFile(file);
-      if (!validation.valid) {
-        throw new Error(validation.error || "Invalid file format. Please upload a PDF, DOCX, or TXT document under 10MB.");
-      }
-
-      // Step 2: Reading your resume (extracting raw text)
-      setProcessingStep(2);
-      const extractedText = await extractTextFromFile(file);
-      if (!extractedText || extractedText.trim().length < 40) {
-        throw new Error(
-          "Could not extract sufficient text from this file. Please ensure the document is not an image-only scan or password-protected."
-        );
-      }
-
-      // Step 3: Extracting skills and experience (Strictly deterministic non-AI parser)
-      setProcessingStep(3);
-      const parsed = parseResumeText(extractedText);
-      const candidateProfile: CandidateProfile = {
-        ...parsed.profile,
-        confirmedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await saveConfirmedCandidateProfile(candidateProfile);
-
-      // Step 4: Saving your preferences (Persist final completed preferences)
-      setProcessingStep(4);
-      const basePrefs: Partial<UserPreferences> = existingPrefs ? { ...existingPrefs } : {};
-      const finalPrefs: UserPreferences = {
-        ...basePrefs,
-        roles: roles.length > 0 ? roles : (existingPrefs?.roles ?? []),
-        experienceLevel: (experienceLevel || existingPrefs?.experienceLevel || "mid") as UserPreferences["experienceLevel"],
-        remotePreference: (remotePreference || existingPrefs?.remotePreference || "remote") as UserPreferences["remotePreference"],
-        locations: locations.length > 0 ? locations : (existingPrefs?.locations ?? []),
-        employmentTypes: employmentTypes.length > 0 ? employmentTypes : (existingPrefs?.employmentTypes ?? []),
-        categories: existingPrefs?.categories ?? [],
-        salaryCurrency: existingPrefs?.salaryCurrency ?? "USD",
-        workAuth: existingPrefs?.workAuth,
-        minSalary: existingPrefs?.minSalary,
-        dailyDigestOptIn,
-        onboardingCompleted: true,
-        updatedAt: new Date().toISOString(),
-      };
-      await saveUserPreferences(finalPrefs, userId);
-      setExistingPrefs(finalPrefs);
-      if (userId) {
-        updateSwr<any>(`dashboard:${userId}`, (current) =>
-          current ? { ...current, onboardingCompleted: true } : current
-        );
-        invalidateSwr(`dashboard:${userId}`);
-      }
-      trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
-
-      // Successfully processed: redirect to dashboard
-      toast.success("Resume saved");
-      setTimeout(() => {
-        router.push(next);
-      }, 400);
-    } catch (err: any) {
-      console.error("Resume processing failed:", err);
-      setProcessingError(err?.message || "Failed to process resume. Please try another file or skip to dashboard.");
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processResumeFile(file);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processResumeFile(file);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
   // Loading auth state
   if (checkingAuth) {
     return (
@@ -392,166 +294,8 @@ function OnboardingPageInner() {
     );
   }
 
-  // =========================================================================
-  // FULL-PAGE RESUME PROCESSING SCREEN (Jobright Style)
-  // =========================================================================
-  if (isProcessing) {
-    const stepsConfig = [
-      {
-        step: 1,
-        title: "Uploading",
-        desc: "Validating file format and secure payload",
-        doneDesc: "File validated successfully",
-      },
-      {
-        step: 2,
-        title: "Reading your resume",
-        desc: "Extracting raw text from document",
-        doneDesc: "Document text read successfully",
-      },
-      {
-        step: 3,
-        title: "Extracting skills and experience",
-        desc: "Structuring skills, experience, and timeline",
-        doneDesc: "Verified candidate profile created",
-      },
-      {
-        step: 4,
-        title: "Saving your preferences",
-        desc: "Updating your target role, work model, and location preferences",
-        doneDesc: "Preferences saved successfully",
-      },
-    ];
-
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 animate-fadeIn">
-        <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xl space-y-6">
-          {/* Header */}
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto shadow-2xs">
-              <BrandIcon className="w-8 h-8" />
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Analyzing Your Profile
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
-              We extract your verified facts and match you against active remote jobs.
-            </p>
-          </div>
-
-          {/* Stepper list */}
-          <div className="space-y-3 pt-2">
-            {stepsConfig.map((s) => {
-              const isDone = processingStep > s.step || (processingStep === 4 && !processingError);
-              const isCurrent = processingStep === s.step && !processingError;
-              const isFailed = processingStep === s.step && Boolean(processingError);
-
-              return (
-                <div
-                  key={s.step}
-                  className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition-all duration-200 ${
-                    isCurrent
-                      ? "bg-blue-50/70 border-blue-200 shadow-2xs"
-                      : isDone
-                      ? "bg-slate-50/60 border-slate-200"
-                      : isFailed
-                      ? "bg-rose-50/70 border-rose-200"
-                      : "bg-white border-slate-100 opacity-60"
-                  }`}
-                >
-                  {/* Status Icon */}
-                  <div className="shrink-0 mt-0.5">
-                    {isDone ? (
-                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-2xs">
-                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                      </div>
-                    ) : isCurrent ? (
-                      <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shadow-2xs">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      </div>
-                    ) : isFailed ? (
-                      <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shadow-2xs">
-                        <AlertCircle className="w-3.5 h-3.5" />
-                      </div>
-                    ) : (
-                      <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-400 text-xs font-bold flex items-center justify-center">
-                        {s.step}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Text Content */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p
-                        className={`text-xs sm:text-sm font-bold truncate ${
-                          isFailed
-                            ? "text-rose-900"
-                            : isCurrent
-                            ? "text-blue-900"
-                            : isDone
-                            ? "text-slate-800"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {s.title}
-                      </p>
-                      {isDone && (
-                        <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider shrink-0">
-                          Complete
-                        </span>
-                      )}
-                      {isCurrent && (
-                        <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider shrink-0 animate-pulse">
-                          In progress
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-snug">
-                      {isDone ? s.doneDesc : s.desc}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Error & Retry Display */}
-          {processingError && (
-            <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-3">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <p className="leading-relaxed">{processingError}</p>
-              </div>
-              <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsProcessing(false);
-                    setProcessingError(null);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer"
-                >
-                  Try Another File
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSkipResume}
-                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs transition cursor-pointer"
-                >
-                  Skip to Dashboard
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Calculate progress bar % (5 questions + 1 resume step = 6 steps)
-  const progressPercent = Math.round((currentStep / 6) * 100);
+  // Calculate progress bar % (5 questions)
+  const progressPercent = Math.round((currentStep / TOTAL_STEPS) * 100);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col">
@@ -569,8 +313,9 @@ function OnboardingPageInner() {
 
           <button
             type="button"
-            onClick={handleSkipResume}
-            className="text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+            onClick={handleCompleteOnboarding}
+            disabled={isSaving}
+            className="text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer disabled:opacity-50"
           >
             Skip Setup →
           </button>
@@ -584,7 +329,7 @@ function OnboardingPageInner() {
           <div className="flex items-center justify-between text-xs font-bold text-slate-600">
             <span className="flex items-center gap-1.5 text-blue-600">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Step {currentStep} of 6</span>
+              <span>Step {currentStep} of {TOTAL_STEPS}</span>
             </span>
             <span className="text-slate-400 font-semibold">{progressPercent}%</span>
           </div>
@@ -844,45 +589,14 @@ function OnboardingPageInner() {
           </div>
         )}
 
-        {/* STEP 6: UPLOAD RESUME (Coming Soon) */}
-        {currentStep === 6 && (
-          <div className="bg-white rounded-2xl p-5 sm:p-7 border border-slate-200 shadow-sm space-y-5 animate-fadeIn">
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
-                <FileText className="w-3.5 h-3.5" />
-                <span>Resume Processing • Coming Soon</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Resume parsing & matching is coming soon
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-500">
-                We are upgrading our deterministic skill extractor and matching engine. Your career preferences are saved and you can browse live jobs immediately.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl border border-slate-200 bg-slate-50/60 text-center space-y-3">
-              <p className="text-xs sm:text-sm text-slate-600">
-                Click below to complete setup and start exploring unindexed jobs.
-              </p>
-              <button
-                type="button"
-                onClick={handleSkipResume}
-                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold transition shadow-xs cursor-pointer"
-              >
-                <span>Continue to Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Bottom Navigation Buttons */}
         <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200/60">
           {currentStep > 1 ? (
             <button
               type="button"
               onClick={handlePrevStep}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm transition cursor-pointer"
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm transition cursor-pointer disabled:opacity-50"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Back</span>
@@ -895,19 +609,40 @@ function OnboardingPageInner() {
             <button
               type="button"
               onClick={handleSkipQuestion}
-              className="px-3.5 py-2.5 rounded-xl text-slate-500 hover:text-slate-800 font-bold text-xs sm:text-sm transition cursor-pointer"
+              disabled={isSaving}
+              className="px-3.5 py-2.5 rounded-xl text-slate-500 hover:text-slate-800 font-bold text-xs sm:text-sm transition cursor-pointer disabled:opacity-50"
             >
               Skip
             </button>
 
-            {currentStep < 6 && (
+            {currentStep < TOTAL_STEPS ? (
               <button
                 type="button"
                 onClick={handleNextStep}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition cursor-pointer"
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition cursor-pointer disabled:opacity-50"
               >
                 <span>Continue</span>
                 <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCompleteOnboarding}
+                disabled={isSaving}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs sm:text-sm shadow-2xs transition cursor-pointer disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>View Recommended Jobs</span>
+                    <Check className="w-4 h-4 stroke-[2.5]" />
+                  </>
+                )}
               </button>
             )}
           </div>

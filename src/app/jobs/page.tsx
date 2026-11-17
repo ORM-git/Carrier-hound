@@ -851,7 +851,7 @@ function JobsPageInner() {
     }
 
     const isRecommended = activeTab === "recommended";
-    const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+    const effectiveSortBy = isRecommended ? "match" : sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -955,7 +955,7 @@ function JobsPageInner() {
     setLoadingMore(true);
     try {
       const isRecommended = activeTab === "recommended";
-      const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+      const effectiveSortBy = isRecommended ? "match" : sortBy;
       const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
       const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 

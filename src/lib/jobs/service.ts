@@ -7,6 +7,7 @@ import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/securit
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
 import { singleFlight } from "@/lib/cache/singleFlight";
+import { rankJobsByRecommendation, hasOnboardingAnswers } from "./recommendations";
 
 export interface LiveJob {
   id: string;
@@ -767,16 +768,30 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         data = cappedPool.slice(from, to + 1);
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
-      // Guest or profile without confirmed resume: sensible global relevance (verified roles first, then newest)
-      const res = await query
-        .order("verified", { ascending: false })
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(from, to);
-      if (res.error && !isLegacyBehavior) {
-        return DEGRADED_JOBS_RESULT;
+      if (hasOnboardingAnswers(preferences)) {
+        const poolQuery = query
+          .order("posted_at", { ascending: false, nullsFirst: false })
+          .range(0, 199);
+        const poolRes = await poolQuery;
+        if (poolRes.error && !isLegacyBehavior) {
+          return DEGRADED_JOBS_RESULT;
+        }
+        const ranked = rankJobsByRecommendation(poolRes.data || [], preferences);
+        const capped = capJobsPerCompany(ranked, 3, 30);
+        data = capped.slice(from, to + 1);
+        count = poolRes.count ?? ranked.length;
+      } else {
+        // Guest or profile without confirmed resume or preferences: sensible global relevance (verified roles first, then newest)
+        const res = await query
+          .order("verified", { ascending: false })
+          .order("posted_at", { ascending: false, nullsFirst: false })
+          .range(from, to);
+        if (res.error && !isLegacyBehavior) {
+          return DEGRADED_JOBS_RESULT;
+        }
+        data = capJobsPerCompany(res.data || [], 3, 30);
+        count = res.count;
       }
-      data = capJobsPerCompany(res.data || [], 3, 30);
-      count = res.count;
     } else {
       // Default newest first
       const res = await query
