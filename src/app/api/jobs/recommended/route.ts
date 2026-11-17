@@ -176,7 +176,7 @@ export async function GET(req: Request) {
     if (error) {
       log.error("Failed to query jobs for recommendations", { error: error.message || error });
       return NextResponse.json(
-        { degraded: true, jobs: [], totalCount: 0, personalized: false, isPro },
+        { error: "Database service unavailable", jobs: [], totalCount: 0 },
         { status: 503 }
       );
     }
