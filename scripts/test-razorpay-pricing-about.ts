@@ -217,8 +217,8 @@ async function runTests() {
   const disabledUpgradeButtons = pricingHtml.match(/<button[^>]*disabled[^>]*>Upgrade<\/button>/g) || [];
   assert.strictEqual(
     disabledUpgradeButtons.length,
-    6,
-    `Expected 6 disabled Upgrade buttons (3 desktop + 3 mobile), got ${disabledUpgradeButtons.length}`
+    3,
+    `Expected 3 disabled Upgrade buttons (one per plan card), got ${disabledUpgradeButtons.length}`
   );
 
   // No "early access" wording on /pricing, and "Payments will open soon." present

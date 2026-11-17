@@ -19,6 +19,7 @@ import {
   PER_WEEK_NOTE,
   UPGRADE_BUTTON_LABEL,
   PREPAID_PRICE_SUMMARY,
+  PLAN_PRICING,
 } from "@/config/plans";
 import { PLAN_FEATURE_ROWS } from "@/config/plan-features";
 import { getProAccessStatus } from "@/lib/billing/subscription";
@@ -233,16 +234,69 @@ export default function PricingPage() {
     }
   };
 
+
+  // Short per-card feature lists. Quota numbers come from the central plan config.
+  const getPlanFeatures = (plan: PlanConfig): string[] => [
+    `AI resume tailoring + cover letters: ${plan.quotaPeriodText}`,
+    "Employer names, logos and verified salary bands",
+    "Direct ATS apply links on company career pages",
+    "Top 10 high-compatibility job matches",
+  ];
+
+  const faqItems: Array<{ q: string; a: React.ReactNode }> = [
+    {
+      q: "Does my plan renew automatically?",
+      a: (
+        <>
+          No. Plans are prepaid for a fixed duration and do not auto-renew. You pay once ({PREPAID_PRICE_SUMMARY}) and
+          premium access ends when the period is over unless you choose to buy again.
+        </>
+      ),
+    },
+    {
+      q: "How much AI usage do I get?",
+      a: (
+        <>
+          {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
+        </>
+      ),
+    },
+    {
+      q: "What happens when my plan ends?",
+      a: "Premium features and remaining plan quotas expire automatically. Your account, profile, resumes and saved jobs stay available on the free plan.",
+    },
+    {
+      q: "Can I get a refund?",
+      a: (
+        <>
+          All sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded. See the{" "}
+          <Link href="/refund-policy" className="underline underline-offset-2 hover:text-[#2563EB]">
+            Cancellation &amp; Refund Policy
+          </Link>
+          .
+        </>
+      ),
+    },
+    {
+      q: "How can I pay?",
+      a: "Payments are processed in Indian Rupees through Razorpay, with UPI, NetBanking and cards supported.",
+    },
+  ];
+
   const pricingContent = (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex flex-col items-center p-tk-4 sm:p-tk-3 gap-tk-4 sm:gap-tk-3 space-y-tk-4 sm:space-y-tk-3">
-      {/* 1. Centered Page Header */}
-      <div className="text-center space-y-2 mb-6 sm:mb-10 max-w-3xl mx-auto">
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#090E34] dark:text-white tracking-tight">
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 flex flex-col items-center p-tk-4 sm:p-tk-3 gap-tk-4 sm:gap-tk-3 space-y-tk-4 sm:space-y-tk-3">
+      {/* 1. Header */}
+      <div className="text-center max-w-2xl mx-auto space-y-3 mb-8 sm:mb-12">
+        <h1 className="text-3xl sm:text-5xl font-semibold text-[#090E34] dark:text-white tracking-tight leading-tight">
           Get more interviews with CareerMonke Premium
         </h1>
-        <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto">
+        <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
           Stronger resumes + faster applications tailored to verified unindexed remote roles.
         </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          One-time payment. No subscription, no auto-renewal.
+        </p>
+        {/* Same footprint in both billing states so the header does not shift */}
         <div className="pt-2">
           {isBillingEnabled ? (
             <span
@@ -259,574 +313,253 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {/* 2 & 3. Main Jobright-Turbo-Style Layout: Left Big Rounded Card (3 Tiles + Table) + Right Grey Panel */}
-      <div className="w-full">
-        {/* DESKTOP VIEW: Unified Table Layout guaranteeing row-by-row alignment */}
-        <div className="hidden lg:block w-full">
-          <table className="w-full border-separate border-spacing-0">
-            <tbody>
-              {/* TOP ROW: Left White Card Top (3 Tiles + Title) & Right Grey Free Plan Header */}
-              <tr>
-                {/* Left Cell: White rounded card containing the three plan tiles */}
-                <td className="w-[74%] bg-white dark:bg-slate-950 rounded-t-2xl border-t border-l border-r border-slate-200 dark:border-slate-800 p-6 sm:p-7 align-top shadow-xs">
-                  {/* Three Plan Tiles Side-by-Side: Weekly, Monthly, Quarterly */}
-                  <div
-                    role="radiogroup"
-                    aria-label="Subscription plans"
-                    className="grid grid-cols-3 gap-3.5"
-                  >
-                    {paidPlansToDisplay.map((plan) => {
-                      const isSelected = selectedPlanId === plan.id;
-                      const perWeekText = getPlanPerWeekText(plan);
-                      const billingLine =
-                        plan.id === "weekly"
-                          ? "7 days access"
-                          : plan.id === "monthly"
-                          ? "30 days access"
-                          : "90 days access";
+      {/* 2. Plan cards: one responsive grid, stacked on mobile */}
+      <div
+        role="radiogroup"
+        aria-label="Subscription plans"
+        className="w-full grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 items-stretch"
+      >
+        {paidPlansToDisplay.map((plan) => {
+          const isSelected = selectedPlanId === plan.id;
+          const isPopular = plan.id === "monthly";
+          const durationDays = PLAN_PRICING[plan.id].duration_days;
 
-                      return (
-                        <div
-                          key={plan.id}
-                          role="radio"
-                          aria-checked={isSelected}
-                          tabIndex={0}
-                          onClick={() => handleSelectPlan(plan.id)}
-                          onKeyDown={(e) => handleKeyDownPlan(e, plan.id)}
-                          className={cnTokens(
-                            "relative flex flex-col justify-between rounded-xl p-4 sm:p-5 transition-colors cursor-pointer select-none min-h-[220px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2",
-                            isSelected
-                              ? "border-2 border-[#2563EB] bg-blue-50/20 dark:bg-blue-950/20 shadow-xs"
-                              : "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-700"
-                          )}
-                        >
-                          <div>
-                            {/* Plan Name & Badge */}
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                                {plan.name}
-                              </span>
-                              {plan.badge && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
-                                  {plan.badge}
-                                </span>
-                              )}
-                            </div>
+          return (
+            <div
+              key={plan.id}
+              role="radio"
+              aria-checked={isSelected}
+              tabIndex={0}
+              onClick={() => handleSelectPlan(plan.id)}
+              onKeyDown={(e) => handleKeyDownPlan(e, plan.id)}
+              className={cnTokens(
+                "relative flex flex-col rounded-2xl p-6 sm:p-7 bg-white dark:bg-slate-950 transition-shadow cursor-pointer select-none min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2",
+                isSelected
+                  ? "border-2 border-[#2563EB] shadow-lg shadow-blue-600/10"
+                  : "border border-slate-200 dark:border-slate-800 hover:shadow-md"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2 min-h-[28px]">
+                <h2 className="text-xl font-semibold text-[#090E34] dark:text-white">{plan.name}</h2>
+                {isPopular && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#2563EB] text-white">
+                    Most popular
+                  </span>
+                )}
+              </div>
 
-                            {/* Big Price from Config */}
-                            <div className="my-1">
-                              <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                                {formatPriceINR(plan.price)}
-                              </span>
-                            </div>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{plan.subLine}</p>
 
-                            {/* Billing Line */}
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                              {billingLine}
-                            </p>
+              <div className="mt-6 flex items-baseline gap-1.5">
+                <span className="text-4xl font-semibold text-[#090E34] dark:text-white tracking-tight">
+                  {formatPriceINR(plan.price)}
+                </span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">/ {durationDays} days</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {plan.billingText} · <span className="text-[#2563EB] dark:text-blue-400 font-medium">{getPlanPerWeekText(plan)}</span>
+              </p>
+              <p className="sr-only">{getPlanBillingLabel(plan)}</p>
 
-                            {/* Per-week Figure */}
-                            <p className="text-xs font-semibold text-[#2563EB] dark:text-blue-400 mt-1">
-                              {perWeekText}
-                            </p>
-
-                            {/* Configured Quota / Usage Limit */}
-                            <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                              {plan.subLine}
-                            </p>
-
-                            <p className="sr-only">{getPlanBillingLabel(plan)}</p>
-                          </div>
-
-                          {/* Upgrade / Buy Button */}
-                          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                            {isBillingEnabled ? (
-                              <>
-                                <button
-                                  type="button"
-                                  data-plan-code={plan.id}
-                                  disabled={isCheckoutLocked}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectPlan(plan.id, { planCode: plan.id });
-                                  }}
-                                  className={cnTokens(
-                                    "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed",
-                                    isSelected
-                                      ? "bg-[#2563EB] text-white hover:bg-blue-700"
-                                      : "bg-black text-white dark:bg-slate-100 dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200"
-                                  )}
-                                >
-                                  Buy {plan.name}
-                                </button>
-                                <div className="flex justify-center mt-2" aria-hidden="true">
-                                  <span className="invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none">
-                                    &nbsp;
-                                  </span>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  disabled
-                                  aria-disabled="true"
-                                  className={cnTokens(
-                                    "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none opacity-80",
-                                    isSelected
-                                      ? "bg-[#2563EB] text-white shadow-xs"
-                                      : "bg-black text-white dark:bg-slate-100 dark:text-slate-900"
-                                  )}
-                                >
-                                  Upgrade
-                                </button>
-                                <div className="flex justify-center mt-2">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                    {UPGRADE_BUTTON_LABEL}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Footnote right below cards */}
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 leading-normal">
-                    {PER_WEEK_NOTE}
-                  </p>
-
-                  {/* Heading below tiles */}
-                  <div className="mt-6 mb-2">
-                    <h2 className="text-lg font-bold text-[#090E34] dark:text-white">
-                      All features included in Premium
-                    </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
-                    </p>
-                  </div>
-                </td>
-
-                {/* Right Cell: Grey Free Plan Panel Header */}
-                <td className="w-[26%] bg-[#F8F9FA] dark:bg-slate-900/60 rounded-t-2xl border-t border-r border-slate-200 dark:border-slate-800 p-6 sm:p-7 align-top">
-                  <div className="flex flex-col justify-between rounded-xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs min-h-[220px]">
-                    <div>
-                      {/* Plan Name */}
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                          Free Plan
-                        </span>
-                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] text-slate-600 dark:text-slate-300 font-bold" aria-hidden="true">
-                          i
-                        </span>
-                      </div>
-
-                      {/* Big Price */}
-                      <div className="my-1">
-                        <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                          ₹0.00
-                        </span>
-                      </div>
-
-                      {/* Billing Line */}
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        Free forever
-                      </p>
-
-                      {/* Subline */}
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
-                        Basic search & masked previews
-                      </p>
-
-                      {/* Free Tier Usage Limit */}
-                      <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                        0 AI application sets · Unlimited job browsing
-                      </p>
-                    </div>
-
-                    {/* Button container matching paid cards */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <div className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center select-none bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                        Your current plan
-                      </div>
-                      <div className="flex justify-center mt-2 invisible" aria-hidden="true">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium">
-                          placeholder
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-
-              {/* 4. Table Rows: Sourced from Config */}
-              {PLAN_FEATURE_ROWS.map((row, idx) => {
-                const isLast = idx === PLAN_FEATURE_ROWS.length - 1;
-
-                return (
-                  <tr key={idx}>
-                    {/* Left Cell: Inside the white card */}
-                    <td
-                      className={cnTokens(
-                        "w-[74%] bg-white dark:bg-slate-950 border-l border-r border-slate-200 dark:border-slate-800 px-6 sm:px-7 py-3 align-middle",
-                        isLast
-                          ? "rounded-b-2xl border-b border-slate-200 dark:border-slate-800 shadow-xs"
-                          : "border-b border-slate-100 dark:border-slate-800/60"
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-semibold text-sm text-[#090E34] dark:text-white shrink-0">
-                            {row.name}
-                          </span>
-                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 text-[10px] text-slate-400">
-                              i
-                            </span>
-                            {row.info}
-                          </span>
-                        </div>
-                        <div className="shrink-0">
-                          <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
-                            {row.premium}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Right Cell: Inside the grey Free Plan panel */}
-                    <td
-                      className={cnTokens(
-                        "w-[26%] bg-[#F8F9FA] dark:bg-slate-900/60 border-r border-slate-200 dark:border-slate-800 px-6 pl-8 py-3 align-middle",
-                        isLast
-                          ? "rounded-b-2xl border-b border-slate-200 dark:border-slate-800"
-                          : "border-b border-slate-200/50 dark:border-slate-800/50"
-                      )}
-                    >
-                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                        {row.free}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* MOBILE VIEW (< 1024px): Stacked Tiles + Free Card + Responsive Comparison */}
-        <div className="block lg:hidden w-full space-y-6">
-          {/* Stacked Plan Tiles */}
-          <div
-            role="radiogroup"
-            aria-label="Subscription plans"
-            className="space-y-3.5"
-          >
-            {paidPlansToDisplay.map((plan) => {
-              const isSelected = selectedPlanId === plan.id;
-              const perWeekText = getPlanPerWeekText(plan);
-              const billingLine =
-                plan.id === "weekly"
-                  ? "7 days access"
-                  : plan.id === "monthly"
-                  ? "30 days access"
-                  : "90 days access";
-
-              return (
-                <div
-                  key={plan.id}
-                  role="radio"
-                  aria-checked={isSelected}
-                  tabIndex={0}
-                  onClick={() => handleSelectPlan(plan.id)}
-                  onKeyDown={(e) => handleKeyDownPlan(e, plan.id)}
-                  className={cnTokens(
-                    "flex flex-col justify-between rounded-2xl p-5 transition-colors cursor-pointer select-none bg-white dark:bg-slate-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]",
-                    isSelected
-                      ? "border-2 border-[#2563EB] shadow-xs"
-                      : "border border-slate-200 dark:border-slate-800"
-                  )}
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                        {plan.name}
-                      </span>
-                      {plan.badge && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
-                          {plan.badge}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="my-1">
-                      <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                        {formatPriceINR(plan.price)}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-slate-500 font-medium">{billingLine}</p>
-
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs font-semibold text-[#2563EB] dark:text-blue-400">
-                        {perWeekText}
-                      </span>
-                    </div>
-
-                    <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                      {plan.subLine}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    {isBillingEnabled ? (
-                      <>
-                        <button
-                          type="button"
-                          data-plan-code={plan.id}
-                          disabled={isCheckoutLocked}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectPlan(plan.id, { planCode: plan.id });
-                          }}
-                          className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center transition-colors hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed"
-                        >
-                          Buy {plan.name}
-                        </button>
-                        <div className="flex justify-center mt-2" aria-hidden="true">
-                          <span className="invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none">
-                            &nbsp;
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled
-                          aria-disabled="true"
-                          className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none opacity-80"
-                        >
-                          Upgrade
-                        </button>
-                        <div className="flex justify-center mt-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                            {UPGRADE_BUTTON_LABEL}
-                          </span>
-                        </div>
-                      </>
+              <div className="mt-6">
+                {isBillingEnabled ? (
+                  <button
+                    type="button"
+                    data-plan-code={plan.id}
+                    disabled={isCheckoutLocked}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectPlan(plan.id, { planCode: plan.id });
+                    }}
+                    className={cnTokens(
+                      "w-full min-h-[48px] rounded-xl font-semibold text-sm flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed",
+                      isPopular || isSelected
+                        ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
+                        : "bg-[#090E34] text-white hover:bg-slate-800 dark:bg-white dark:text-[#090E34] dark:hover:bg-slate-200"
                     )}
+                  >
+                    Buy {plan.name}
+                  </button>
+                ) : null}
+                {isBillingEnabled ? (
+                  <div className="flex justify-center mt-2" aria-hidden="true">
+                    <span className="invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none">
+                      &nbsp;
+                    </span>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled
+                      aria-disabled="true"
+                      className="w-full min-h-[48px] rounded-xl font-semibold text-sm flex items-center justify-center cursor-not-allowed bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      Upgrade
+                    </button>
+                    <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">{UPGRADE_BUTTON_LABEL}</p>
+                  </>
+                )}
+              </div>
 
-          {/* Footnote right below cards */}
-          <p className="text-[11px] text-slate-400 dark:text-slate-500 -mt-2 leading-normal text-center">
-            {PER_WEEK_NOTE}
+              <ul className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3 text-sm text-slate-700 dark:text-slate-300">
+                {getPlanFeatures(plan).map((feature) => (
+                  <li key={feature} className="flex items-start gap-2.5">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 20 20"
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[#2563EB]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.25"
+                    >
+                      <path d="M4 10.5l4 4 8-9" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span className="min-w-0">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="w-full text-[11px] text-slate-400 dark:text-slate-500 mt-3 leading-normal text-center">
+        {PER_WEEK_NOTE}
+      </p>
+
+      {/* 3. Free plan strip */}
+      <div className="w-full mt-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-[#F8F9FA] dark:bg-slate-900/60 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-semibold text-[#090E34] dark:text-white">Free Plan</span>
+            <span className="text-base font-semibold text-[#090E34] dark:text-white">₹0.00</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Free forever</span>
+          </div>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Basic search &amp; masked previews · 0 AI application sets · Unlimited job browsing
           </p>
-
-          {/* Free Tier Card on Mobile */}
-          <div className="flex flex-col justify-between rounded-2xl p-5 bg-[#F8F9FA] dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div>
-              <div className="mb-1">
-                <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                  Free Plan
-                </span>
-              </div>
-
-              <div className="my-1">
-                <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                  ₹0.00
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-500 font-medium">Free forever</p>
-
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Basic search & masked previews
-                </span>
-              </div>
-
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                0 AI application sets · Unlimited job browsing
-              </p>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
-              <div className="w-full min-h-[48px] h-11 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm flex items-center justify-center select-none">
-                Your current plan
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile Comparison Table */}
-          <div className="bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
-            <div className="mb-3">
-              <h2 className="text-base font-bold text-[#090E34] dark:text-white">
-                All features included in Premium
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
-              </p>
-            </div>
-
-            <div className="overflow-x-auto -mx-2 px-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    <th className="py-2.5 px-2">Feature</th>
-                    <th className="py-2.5 px-2 text-center">Free</th>
-                    <th className="py-2.5 px-2 text-center">Premium</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {PLAN_FEATURE_ROWS.map((row, idx) => (
-                    <tr key={idx}>
-                      <td className="py-2.5 px-2">
-                        <span className="font-semibold text-[#090E34] dark:text-white block">
-                          {row.name}
-                        </span>
-                        <span className="text-[11px] text-slate-500 block mt-0.5 leading-snug">
-                          {row.info}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center align-middle text-slate-600">
-                        {row.free}
-                      </td>
-                      <td className="py-2.5 px-2 text-center align-middle">
-                        <span className="inline-flex items-center justify-center px-2 py-1 rounded-lg text-[11px] font-semibold bg-blue-50 text-[#2563EB] text-center leading-snug">
-                          {row.premium}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        </div>
+        <div className="shrink-0 min-h-[44px] px-4 rounded-xl text-sm font-medium flex items-center justify-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+          Your current plan
         </div>
       </div>
 
-      {/* 5. Clearly Separated Add-on Packs Section */}
-      <section
-        aria-labelledby="addon-packs-heading"
-        className="w-full mt-10 pt-8 border-t border-slate-200 dark:border-slate-800"
-      >
-        <div className="w-full bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-xs space-y-5">
-          <div className="space-y-1.5 text-center sm:text-left">
-            <h2
-              id="addon-packs-heading"
-              className="text-lg sm:text-xl font-bold text-[#090E34] dark:text-white"
-            >
-              Add-on Packs
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Need extra capacity during your billing period? 10 / 30 / 60 extra generations are used only after your plan quota is exhausted, respect the 30/day fair-use limit, and expire together with the subscription.
-            </p>
-          </div>
+      {/* 4. Feature comparison */}
+      <section aria-labelledby="premium-features-heading" className="w-full mt-12">
+        <h2 id="premium-features-heading" className="text-xl sm:text-2xl font-semibold text-[#090E34] dark:text-white">
+          All features included in Premium
+        </h2>
+        <ul className="mt-4 divide-y divide-slate-100 dark:divide-slate-800 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+          {PLAN_FEATURE_ROWS.map((row) => (
+            <li key={row.name} className="px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-6">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[#090E34] dark:text-white">{row.name}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{row.info}</p>
+              </div>
+              <div className="text-xs sm:text-right sm:shrink-0 sm:max-w-[45%]">
+                <span className="font-medium text-[#2563EB] dark:text-blue-400">{row.premium}</span>
+                <span className="text-slate-400 dark:text-slate-500"> · Free: {row.free}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {ADD_ON_PACKS.map((pack) => {
-              const addonCode = pack.code || (pack.sets === 10 ? "addon_10" : pack.sets === 30 ? "addon_30" : "addon_60");
+      {/* 5. Add-on Packs */}
+      <section aria-labelledby="addon-packs-heading" className="w-full mt-12">
+        <h2 id="addon-packs-heading" className="text-xl sm:text-2xl font-semibold text-[#090E34] dark:text-white">
+          Add-on Packs
+        </h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+          Need extra capacity during your plan? 10 / 30 / 60 extra generations are used only after your plan quota is exhausted, respect the 30/day fair-use limit, and expire together with the subscription.
+        </p>
 
-              return (
-                <div
-                  key={pack.sets}
-                  className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8F9FA] dark:bg-slate-900/60 p-4 sm:p-5"
-                >
-                  <div>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB] dark:text-blue-400">
-                      One-time add-on
-                    </span>
-                    <div className="mt-1 text-2xl font-black text-[#090E34] dark:text-white tracking-tight">
-                      {formatPriceINR(pack.price)}
-                    </div>
-                    <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                      {pack.sets} extra generations
-                    </p>
-                    <p className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-                      Used after plan quota · Expires together with your subscription
-                    </p>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {ADD_ON_PACKS.map((pack) => {
+            const addonCode = pack.code || (pack.sets === 10 ? "addon_10" : pack.sets === 30 ? "addon_30" : "addon_60");
+
+            return (
+              <div
+                key={pack.sets}
+                className="flex flex-col justify-between rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-5"
+              >
+                <div>
+                  <span className="text-xs font-medium text-[#2563EB] dark:text-blue-400">One-time add-on</span>
+                  <div className="mt-1 text-2xl font-semibold text-[#090E34] dark:text-white tracking-tight">
+                    {formatPriceINR(pack.price)}
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800">
-                    <button
-                      type="button"
-                      data-addon-code={addonCode}
-                      disabled={isCheckoutLocked || !isBillingEnabled}
-                      aria-disabled={!isBillingEnabled ? "true" : undefined}
-                      onClick={() => handleSelectPlan(addonCode, { addonCode })}
-                      className={cnTokens(
-                        "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75",
-                        !isBillingEnabled
-                          ? "cursor-not-allowed opacity-80"
-                          : "hover:bg-blue-700 cursor-pointer"
-                      )}
-                    >
-                      Buy
-                    </button>
-                  </div>
+                  <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{pack.sets} extra generations</p>
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Used after plan quota · Expires together with your subscription
+                  </p>
                 </div>
-              );
-            })}
-          </div>
 
-          <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 text-center sm:text-left">
-            <p className="text-xs sm:text-sm font-semibold text-[#090E34] dark:text-white">
-              {ADD_ON_PACKS_NOTE}
-            </p>
-          </div>
+                <button
+                  type="button"
+                  data-addon-code={addonCode}
+                  disabled={isCheckoutLocked || !isBillingEnabled}
+                  aria-disabled={!isBillingEnabled ? "true" : undefined}
+                  onClick={() => handleSelectPlan(addonCode, { addonCode })}
+                  className={cnTokens(
+                    "mt-4 w-full min-h-[44px] rounded-xl font-semibold text-sm flex items-center justify-center transition-colors border border-slate-300 dark:border-slate-700 text-[#090E34] dark:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-60",
+                    !isBillingEnabled ? "cursor-not-allowed" : "hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
+                  )}
+                >Buy</button>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{ADD_ON_PACKS_NOTE}</p>
+      </section>
+
+      {/* 6. FAQ */}
+      <section aria-labelledby="pricing-faq-heading" className="w-full max-w-3xl mx-auto mt-14">
+        <h2 id="pricing-faq-heading" className="text-xl sm:text-2xl font-semibold text-[#090E34] dark:text-white text-center">
+          Frequently asked questions
+        </h2>
+        <div className="mt-6 divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {faqItems.map((item) => (
+            <details key={item.q} className="group py-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm sm:text-base font-medium text-[#090E34] dark:text-white [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0">{item.q}</span>
+                <span aria-hidden="true" className="shrink-0 text-slate-400 transition-transform group-open:rotate-45 text-xl leading-none">
+                  +
+                </span>
+              </summary>
+              <div className="mt-3 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{item.a}</div>
+            </details>
+          ))}
         </div>
       </section>
 
-      {/* 6. Under the section: Final-sale and Policy Links */}
-      <div className="w-full max-w-3xl mx-auto mt-6 px-4 text-center space-y-4">
-        <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
-          <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
-          <p>
-            Plans are prepaid for a fixed duration and do not auto-renew. ({PREPAID_PRICE_SUMMARY}). Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-            <Link
-              href="/about"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              About Us
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/terms-and-conditions"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Terms &amp; Conditions
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/privacy-policy"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Privacy Policy
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/refund-policy"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Cancellation &amp; Refund Policy
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/contact"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Contact Us
-            </Link>
-          </div>
+      {/* 7. Final-sale note and policy links */}
+      <div className="w-full max-w-3xl mx-auto mt-8 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
+        <p className="font-semibold text-[#090E34] dark:text-white">All sales final · no refunds</p>
+        <p>
+          Plans are prepaid for a fixed duration and do not auto-renew. ({PREPAID_PRICE_SUMMARY}). Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <Link href="/about" className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors">
+            About Us
+          </Link>
+          <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+          <Link href="/terms-and-conditions" className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors">
+            Terms &amp; Conditions
+          </Link>
+          <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+          <Link href="/privacy-policy" className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors">
+            Privacy Policy
+          </Link>
+          <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+          <Link href="/refund-policy" className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors">
+            Cancellation &amp; Refund Policy
+          </Link>
+          <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+          <Link href="/contact" className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors">
+            Contact Us
+          </Link>
         </div>
       </div>
     </div>
@@ -834,7 +567,7 @@ export default function PricingPage() {
 
   return (
     <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
-  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Pricing", path: "/pricing" }]} />
+      <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Pricing", path: "/pricing" }]} />
       {pricingContent}
       <Footer />
     </LoggedInAppShell>

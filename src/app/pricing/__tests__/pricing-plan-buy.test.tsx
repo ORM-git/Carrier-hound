@@ -182,8 +182,8 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await mountPage();
 
       const buyButtons = container ? Array.from(container.querySelectorAll("button[data-plan-code]")) : [];
-      // Both desktop and mobile buttons are rendered (3 plans * 2 views = 6 buttons)
-      expect(buyButtons.length).toBe(6);
+      // One responsive card grid: one Buy button per plan
+      expect(buyButtons.length).toBe(3);
 
       const codes = buyButtons.map((btn) => btn.getAttribute("data-plan-code"));
       expect(codes).toContain("weekly");
@@ -337,7 +337,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await mountPage();
 
       const planButtons = container ? Array.from(container.querySelectorAll("button[data-plan-code]")) as HTMLButtonElement[] : [];
-      expect(planButtons.length).toBe(6);
+      expect(planButtons.length).toBe(3);
       expect(planButtons.every((btn) => !btn.disabled)).toBe(true);
 
       // Click monthly plan
