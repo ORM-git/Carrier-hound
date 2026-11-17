@@ -6,19 +6,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
-import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
-import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
+import { getAuthUser } from "@/lib/auth/session";
+import { calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { TrackedApplication } from "@/lib/tracker/types";
-import {
-  addApplicationToTracker,
-  getTrackedApplications,
-  removeApplicationFromTracker,
-  updateApplicationStage,
-  quickTrackJob,
-  isMatchingTrackerJob,
-} from "@/lib/tracker/storage";
+import { isMatchingTrackerJob } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
@@ -251,6 +244,9 @@ function getCompanyTagPills(category?: string | null): string[] {
 }
 
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
+  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) {
+    return Math.max(10, Math.min(99, Math.round(job.matchScore)));
+  }
   if (candidate && candidate.confirmedAt) {
     try {
       const res = computeFitDiagnostics(candidate, {
@@ -536,6 +532,10 @@ function JobsPageInner() {
           if (job) {
             if (job.isExpired || job.status === "expired" || job.status === "closed") {
               setDetailStatus("expired");
+            }
+            if (typeof job.matchScore !== "number" && candidate) {
+              const score = getJobMatchScore(job, candidate);
+              if (score !== null) job.matchScore = score;
             }
             setSelectedJob(job);
           } else {
@@ -851,7 +851,7 @@ function JobsPageInner() {
     }
 
     const isRecommended = activeTab === "recommended";
-    const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+    const effectiveSortBy = isRecommended ? "match" : sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -955,7 +955,7 @@ function JobsPageInner() {
     setLoadingMore(true);
     try {
       const isRecommended = activeTab === "recommended";
-      const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+      const effectiveSortBy = isRecommended ? "match" : sortBy;
       const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
       const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -1311,7 +1311,12 @@ function JobsPageInner() {
     if (!job.description || job.description.length < 50 || job.proUnlockError) {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
-        if (fullJob) setSelectedJob(fullJob);
+        if (fullJob) {
+          if (typeof job.matchScore === "number") {
+            fullJob.matchScore = job.matchScore;
+          }
+          setSelectedJob(fullJob);
+        }
       } catch {}
     }
   };
@@ -1866,6 +1871,9 @@ function JobsPageInner() {
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
+                        if (matchScore !== null) {
+                          job.matchScore = matchScore;
+                        }
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
@@ -2121,9 +2129,9 @@ function JobsPageInner() {
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
                                       {cardZeroSkills
                                         ? "EXPERIENCE MATCH"
-                                        : matchScore >= 80
+                                        : matchScore !== null && matchScore >= 80
                                         ? "STRONG MATCH"
-                                        : matchScore >= 60
+                                        : matchScore !== null && matchScore >= 60
                                         ? "GOOD MATCH"
                                         : "FAIR MATCH"}
                                     </div>

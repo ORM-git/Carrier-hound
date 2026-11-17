@@ -241,6 +241,13 @@ paths:
       summary: Unlock Pro job details
       responses:
         "200": { description: Unlocked details }
+  /api/jobs/recommended:
+    get:
+      tags: [jobs]
+      summary: Personalized recommended jobs from onboarding answers
+      responses:
+        "200": { description: Recommended jobs result }
+        "503": { description: Service unavailable }
   /api/jobs/search:
     get:
       tags: [jobs]

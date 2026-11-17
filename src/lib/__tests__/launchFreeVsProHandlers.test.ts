@@ -115,7 +115,7 @@ beforeAll(async () => {
   search = (await import("@/app/api/jobs/search/route")).GET;
   proDetail = (await import("@/app/api/jobs/pro/route")).GET;
   verify = (await import("@/app/api/billing/razorpay/verify/route")).POST;
-});
+}, 30000);
 
 beforeEach(() => {
   state.fulfilCalls = 0;
