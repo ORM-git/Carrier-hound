@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import {
   resolveOrderPricing,
   normalizePlanCode,
+  checkMonthlyIntroEligibilityAndReserve,
+  releaseMonthlyIntroReservation,
   hasEarlierSuccessfulMonthlyPayment,
 } from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
@@ -302,16 +304,30 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
 
-    // Server-side first-month check: no earlier successful monthly payment for that user
+    // Server-side first-month check: authoritative and fail-closed
     let isFirstMonthlyPurchase = true;
     const requestedPlanCode = normalizePlanCode(
       body.planCode || body.planId || (!body.addonCode && !body.planCode ? "monthly" : null)
     );
     if (requestedPlanCode === "monthly") {
-      const checkEarlierFn =
-        deps.hasEarlierSuccessfulMonthlyPayment || hasEarlierSuccessfulMonthlyPayment;
-      const hasEarlier = await checkEarlierFn(supabaseAdmin, user.id);
-      isFirstMonthlyPurchase = !hasEarlier;
+      if (typeof deps.checkMonthlyIntroEligibilityAndReserve === "function") {
+        const eligibility = await deps.checkMonthlyIntroEligibilityAndReserve(
+          supabaseAdmin,
+          user.id,
+          configuredMode
+        );
+        isFirstMonthlyPurchase = eligibility.isFirstMonthlyPurchase;
+      } else if (typeof deps.hasEarlierSuccessfulMonthlyPayment === "function") {
+        const hasEarlier = await deps.hasEarlierSuccessfulMonthlyPayment(supabaseAdmin, user.id);
+        isFirstMonthlyPurchase = !hasEarlier;
+      } else {
+        const eligibility = await checkMonthlyIntroEligibilityAndReserve(
+          supabaseAdmin,
+          user.id,
+          configuredMode
+        );
+        isFirstMonthlyPurchase = eligibility.isFirstMonthlyPurchase;
+      }
     }
 
     // Resolve server-authoritative price from plans/addon_packs catalog, ignoring any client amount
@@ -381,6 +397,9 @@ export async function POST(req: Request) {
     });
 
     if (!rzpRes.ok) {
+      if (requestedPlanCode === "monthly" && isFirstMonthlyPurchase) {
+        await releaseMonthlyIntroReservation(supabaseAdmin, user.id).catch(() => {});
+      }
       const err = await rzpRes.json().catch(() => ({}));
       return NextResponse.json(
         { error: err.error?.description || "Failed to create Razorpay order" },
@@ -391,7 +410,9 @@ export async function POST(req: Request) {
     const orderData = await rzpRes.json();
 
     // Record order in payment_orders table with status 'created' and resolved server mode
-    const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
+    const isIntroPromo =
+      pricing.type === "plan" && pricing.code === "monthly" && isFirstMonthlyPurchase;
+    const insertResult = supabaseAdmin.from("payment_orders").insert({
       user_id: user.id,
       provider: "razorpay",
       provider_order_id: orderData.id,
@@ -401,9 +422,27 @@ export async function POST(req: Request) {
       currency,
       status: "created",
       mode: resolvedMode,
+      metadata: {
+        is_intro_promo: isIntroPromo,
+      },
     });
 
+    let orderRow: any = null;
+    let insertErr: any = null;
+
+    if (insertResult && typeof insertResult.select === "function") {
+      const { data, error } = await insertResult.select("id").single();
+      orderRow = data;
+      insertErr = error;
+    } else {
+      const res = await insertResult;
+      insertErr = res?.error;
+    }
+
     if (insertErr) {
+      if (requestedPlanCode === "monthly" && isFirstMonthlyPurchase) {
+        await releaseMonthlyIntroReservation(supabaseAdmin, user.id).catch(() => {});
+      }
       log.error("Critical: payment_orders insert failed; failing closed", {
         error: insertErr?.message || String(insertErr),
       });
@@ -414,6 +453,21 @@ export async function POST(req: Request) {
         },
         { status: 500 }
       );
+    }
+
+    if (isIntroPromo && orderRow?.id) {
+      try {
+        await supabaseAdmin
+          .from("intro_promo_reservations")
+          .update({
+            order_id: orderRow.id,
+            provider_order_id: orderData.id,
+          })
+          .eq("user_id", user.id)
+          .eq("status", "active");
+      } catch {
+        // Non-fatal reservation metadata update
+      }
     }
 
     return NextResponse.json({

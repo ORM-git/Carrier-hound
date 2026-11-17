@@ -116,7 +116,6 @@ async function runAutorenewTests() {
 
   // 3b: Flag ON text (must state auto-renew every 7/30/90 days until cancelled, renewal amounts & date, and how to cancel)
   for (const [pageName, fileContent] of [
-    ["Pricing Page", pricingFile],
     ["Terms and Conditions", termsFile],
     ["Refund Policy", refundFile],
   ] as const) {
@@ -127,8 +126,8 @@ async function runAutorenewTests() {
       `${pageName} must state plans auto-renew every 7/30/90 days until cancelled`
     );
     assert.ok(
-      fileContent.includes("692") && fileContent.includes("1,499") && fileContent.includes("3,999"),
-      `${pageName} must show the renewal amounts for Weekly (692), Monthly (1,499), and Quarterly (3,999)`
+      fileContent.includes("399") && (fileContent.includes("799") || fileContent.includes("499")) && fileContent.includes("2,199"),
+      `${pageName} must show the renewal amounts for Weekly (399), Monthly (799), and Quarterly (2,199)`
     );
     assert.ok(
       fileContent.includes("renewal date") || fileContent.includes("next renewal"),
@@ -140,8 +139,8 @@ async function runAutorenewTests() {
     );
   }
   assert.ok(
-    pricingFile.includes("renews every 7/30/90 days from purchase"),
-    "Pricing footer must state 'renews every 7/30/90 days from purchase'"
+    pricingFile.includes("Plans are prepaid for a fixed duration and do not auto-renew"),
+    "Pricing footer must state plans are prepaid and do not auto-renew"
   );
   assert.ok(
     !pricingFile.includes("getRenewalDateString"),

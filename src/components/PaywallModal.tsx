@@ -131,7 +131,7 @@ export default function PaywallModal({
                   }`}
                 >
                   <div className="text-xs font-bold text-brand-900 mb-0.5">Weekly</div>
-                  <div className="text-sm font-black text-ink">₹692</div>
+                  <div className="text-sm font-black text-ink">₹399</div>
                   <p className="text-[10px] text-ink-muted mt-0.5">7 days</p>
                 </div>
 
@@ -145,8 +145,8 @@ export default function PaywallModal({
                   }`}
                 >
                   <div className="text-xs font-bold text-brand-900 mb-0.5">Monthly</div>
-                  <div className="text-sm font-black text-ink">₹1,499</div>
-                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">₹346/wk</p>
+                  <div className="text-sm font-black text-ink">₹499</div>
+                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">30 days</p>
                 </div>
 
                 {/* Quarterly Plan */}
@@ -159,8 +159,8 @@ export default function PaywallModal({
                   }`}
                 >
                   <div className="text-xs font-bold text-brand-900 mb-0.5">Quarterly</div>
-                  <div className="text-sm font-black text-ink">₹3,999</div>
-                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">₹308/wk</p>
+                  <div className="text-sm font-black text-ink">₹2,199</div>
+                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">90 days</p>
                 </div>
               </div>
             </div>

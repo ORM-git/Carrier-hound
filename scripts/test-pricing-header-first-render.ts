@@ -150,7 +150,7 @@ async function runPricingHeaderFirstRenderSuite() {
     "Pricing page must render Upgrade CTA linking to login/signup for logged-out visitors"
   );
   assert.ok(
-    markup.includes("Billed weekly"),
+    markup.includes("7 days access"),
     "Pricing page must include the Weekly plan row"
   );
   assert.ok(
@@ -158,7 +158,7 @@ async function runPricingHeaderFirstRenderSuite() {
     "Pricing page must include the Weekly price ₹399"
   );
   assert.ok(
-    markup.includes("billed monthly"),
+    markup.includes("30 days access"),
     "Pricing page must include the Monthly plan row"
   );
   assert.ok(
@@ -166,7 +166,7 @@ async function runPricingHeaderFirstRenderSuite() {
     "Pricing page must include the Monthly price ₹499"
   );
   assert.ok(
-    markup.includes("billed every 3 months"),
+    markup.includes("90 days access"),
     "Pricing page must include the Quarterly plan row"
   );
   assert.ok(

@@ -92,7 +92,7 @@ export default function ProUpgradeScreen({
             }`}
           >
             <span>Weekly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹692 / wk</span>
+            <span className="text-[11px] font-semibold text-ink-muted">₹399 / 7d</span>
           </button>
           <button
             type="button"
@@ -104,7 +104,7 @@ export default function ProUpgradeScreen({
             }`}
           >
             <span>Monthly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹1,499 / mo</span>
+            <span className="text-[11px] font-semibold text-ink-muted">₹499 / 30d</span>
           </button>
           <button
             type="button"
@@ -116,7 +116,7 @@ export default function ProUpgradeScreen({
             }`}
           >
             <span>Quarterly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹3,999 / 3mo</span>
+            <span className="text-[11px] font-semibold text-ink-muted">₹2,199 / 90d</span>
           </button>
         </div>
 

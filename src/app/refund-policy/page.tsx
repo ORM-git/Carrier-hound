@@ -44,7 +44,7 @@ export default function RefundPolicyPage() {
         <p className="mb-2">
           {isAutorenewEnabled ? (
             <>
-              CareerMonke plans auto-renew every 7/30/90 days until cancelled. Renewal amount: Weekly ₹692 (every 7 days), Monthly ₹1,499 (every 30 days), Quarterly ₹3,999 (every 90 days), automatically billed on the scheduled renewal date at the end of each billing cycle. You can cancel auto-renewal at any time through your account settings before the scheduled renewal date. Once cancelled, no further recurring charges are made and you retain access until the end of the current period.
+              CareerMonke plans auto-renew every 7/30/90 days until cancelled. Renewal amount: Weekly ₹399 (every 7 days), Monthly ₹799 (every 30 days, ₹499 first month), Quarterly ₹2,199 (every 90 days), automatically billed on the scheduled renewal date at the end of each billing cycle. You can cancel auto-renewal at any time through your account settings before the scheduled renewal date. Once cancelled, no further recurring charges are made and you retain access until the end of the current period.
             </>
           ) : (
             <>

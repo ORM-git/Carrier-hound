@@ -255,7 +255,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(window.location.href).toBe("/login?returnTo=%2Fpricing");
   });
 
-  it("renders exact 'prepaid, no auto-renew' text when NEXT_PUBLIC_AUTORENEW_ENABLED is false", async () => {
+  it("renders exact 'prepaid, no auto-renew' text and durations", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
 
@@ -263,30 +263,26 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     const textContent = container?.textContent || "";
     expect(textContent).toContain(
-      "Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires."
+      "Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 first time then ₹799 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires."
     );
-    expect(textContent).toContain("billed weekly");
-    expect(textContent).toContain("billed monthly");
-    expect(textContent).toContain("billed every 3 months");
+    expect(textContent).toContain("7 days access");
+    expect(textContent).toContain("30 days access (₹499 first time, then ₹799)");
+    expect(textContent).toContain("90 days access");
   });
 
-  it("renders auto-renew copy with amounts, schedule, and cancellation instructions without dynamic Date.now when flag is on", async () => {
+  it("renders prepaid copy and prices with new amounts (₹399, ₹499, ₹2,199)", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
 
     await mountPage();
 
     const textContent = container?.textContent || "";
-    expect(textContent).toContain("Plans auto-renew every 7 days (Weekly: ₹692");
-    expect(textContent).toContain("30 days (Monthly: ₹1,499");
-    expect(textContent).toContain("90 days (Quarterly: ₹3,999");
-    expect(textContent).toContain("until cancelled");
-    expect(textContent).toContain("renews every 7/30/90 days from purchase");
-    expect(textContent).not.toContain("next renewal");
-    expect(textContent).toContain("Cancel anytime from your account settings before the renewal date");
-
-    expect(textContent).toContain("auto-renews every 7 days");
-    expect(textContent).toContain("auto-renews every 30 days");
-    expect(textContent).toContain("auto-renews every 90 days");
+    expect(textContent).toContain("Plans are prepaid for a fixed duration and do not auto-renew");
+    expect(textContent).toContain("Weekly: ₹399 for 7 days");
+    expect(textContent).toContain("Monthly: ₹499 first time then ₹799 for 30 days");
+    expect(textContent).toContain("Quarterly: ₹2,199 for 90 days");
+    expect(textContent).toContain("7 days access");
+    expect(textContent).toContain("30 days access");
+    expect(textContent).toContain("90 days access");
   });
 });

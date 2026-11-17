@@ -98,7 +98,7 @@ export default function TermsPage() {
           <li>
             {isAutorenewEnabled ? (
               <>
-                <strong>Automatic renewal:</strong> plans auto-renew every 7/30/90 days until cancelled. Renewal amount: Weekly ₹692 (every 7 days), Monthly ₹1,499 (every 30 days), Quarterly ₹3,999 (every 90 days), debited on the scheduled renewal date at the end of each billing cycle. You may cancel renewal at any time from your account settings before the scheduled renewal date.
+                <strong>Automatic renewal:</strong> plans auto-renew every 7/30/90 days until cancelled. Renewal amount: Weekly ₹399 (every 7 days), Monthly ₹799 (every 30 days, ₹499 first month), Quarterly ₹2,199 (every 90 days), debited on the scheduled renewal date at the end of each billing cycle. You may cancel renewal at any time from your account settings before the scheduled renewal date.
               </>
             ) : (
               <>
@@ -126,7 +126,7 @@ export default function TermsPage() {
           <li>
             {isAutorenewEnabled ? (
               <>
-                Plans auto-renew every 7/30/90 days until cancelled (Weekly: ₹692 every 7 days, Monthly: ₹1,499 every 30 days, Quarterly: ₹3,999 every 90 days). Your upcoming renewal amount and date are displayed in your account settings. To cancel auto-renewal, visit your account settings and select cancel before the scheduled renewal date. Once cancelled, your premium access continues until the end of the paid cycle and no further renewal payments are charged.
+                Plans auto-renew every 7/30/90 days until cancelled (Weekly: ₹399 every 7 days, Monthly: ₹799 every 30 days, ₹499 first month, Quarterly: ₹2,199 every 90 days). Your upcoming renewal amount and date are displayed in your account settings. To cancel auto-renewal, visit your account settings and select cancel before the scheduled renewal date. Once cancelled, your premium access continues until the end of the paid cycle and no further renewal payments are charged.
               </>
             ) : (
               <>
