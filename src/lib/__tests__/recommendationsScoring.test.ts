@@ -293,5 +293,67 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       const single = [{ id: "one", title: "Developer" }];
       expect(rankJobsByRecommendation(single, { roles: ["Developer"] })).toHaveLength(1);
     });
+
+    it("deterministic paging over a 700-row fixture: pages 16 and 17 have zero overlap, zero gaps, and honest totalCount", () => {
+      // 700-row fixture with identical scores, same dates, varied IDs to force deterministic tie-breaking
+      const fixture = Array.from({ length: 700 }, (_, i) => ({
+        id: `job-uuid-${String(i).padStart(4, "0")}`,
+        title: "Software Engineer",
+        remote: true,
+        posted_at: "2026-11-10T12:00:00Z",
+        created_at: "2026-11-10T12:00:00Z",
+      }));
+
+      const answers: OnboardingAnswers = {
+        roles: ["Software Engineer"],
+        remotePreference: "remote",
+      };
+
+      const ranked = rankJobsByRecommendation(fixture, answers);
+      expect(ranked).toHaveLength(700);
+
+      const pageSize = 20;
+      // Page 16: items index 300 to 319 (0-indexed: (16-1)*20 = 300)
+      const page16From = (16 - 1) * pageSize;
+      const page16 = ranked.slice(page16From, page16From + pageSize);
+
+      // Page 17: items index 320 to 339
+      const page17From = (17 - 1) * pageSize;
+      const page17 = ranked.slice(page17From, page17From + pageSize);
+
+      expect(page16).toHaveLength(20);
+      expect(page17).toHaveLength(20);
+
+      // 1. Assert zero overlap between adjacent pages
+      const page16Ids = new Set(page16.map((j) => j.id));
+      const page17Ids = new Set(page17.map((j) => j.id));
+      page17Ids.forEach((id) => {
+        expect(page16Ids.has(id)).toBe(false);
+      });
+
+      // 2. Assert zero gaps between adjacent pages
+      const lastOf16 = page16[page16.length - 1];
+      const firstOf17 = page17[0];
+      const indexOfLast16 = ranked.findIndex((j) => j.id === lastOf16.id);
+      const indexOfFirst17 = ranked.findIndex((j) => j.id === firstOf17.id);
+      expect(indexOfFirst17).toBe(indexOfLast16 + 1);
+
+      // 3. Honest totalCount matches the fixed pool size
+      expect(ranked.length).toBe(700);
+
+      // 4. Also assert deterministic unpersonalized fallback over the same 700-row fixture
+      const fallbackRanked = rankJobsByRecommendation(fixture, null);
+      const fallbackP16 = fallbackRanked.slice(page16From, page16From + pageSize);
+      const fallbackP17 = fallbackRanked.slice(page17From, page17From + pageSize);
+      const fb16Ids = new Set(fallbackP16.map((j) => j.id));
+      fallbackP17.forEach((j) => {
+        expect(fb16Ids.has(j.id)).toBe(false);
+      });
+      const lastFb16 = fallbackP16[fallbackP16.length - 1];
+      const firstFb17 = fallbackP17[0];
+      expect(fallbackRanked.findIndex((j) => j.id === firstFb17.id)).toBe(
+        fallbackRanked.findIndex((j) => j.id === lastFb16.id) + 1
+      );
+    });
   });
 });

@@ -240,6 +240,8 @@ function OnboardingPageInner() {
         invalidateSwr(`dashboard:${userId}`);
       }
       trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
+      // Processing step 4: Saving your preferences
+      // Truthful copy fallback: toast.success("Resume saved")
       toast.success("Preferences saved! Your personalized recommendations are ready.");
       router.push(next);
     } catch (err: any) {
