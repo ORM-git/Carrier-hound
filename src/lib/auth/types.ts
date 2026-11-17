@@ -16,6 +16,29 @@ export interface UserPreferences {
   updatedAt: string;
 }
 
+/**
+ * Blank preferences for an account that has saved nothing yet. New users start
+ * here: no roles, no experience level, no salary, no work authorization.
+ * Never persisted on read; only an explicit save writes a row.
+ */
+export function emptyUserPreferences(): UserPreferences {
+  return {
+    roles: [],
+    categories: [],
+    employmentTypes: [],
+    locations: [],
+    remotePreference: "any",
+    dailyDigestOptIn: false,
+    onboardingCompleted: false,
+    eligibilityFilter: true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Legacy sample preferences. Do NOT seed these into the DB or use them as a
+ * fallback for real users; kept only as a negative-control fixture in tests.
+ */
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   roles: ["Software Engineer", "Frontend Developer", "Full Stack Developer"],
   categories: ["engineering", "tech"],

@@ -309,6 +309,29 @@ async function runMobileOnboardingSuite() {
     );
   });
 
+  await test("Partial user: page prefills saved roles and job types for ANY user, not only edit/completed", () => {
+    const code = fs.readFileSync(path.resolve(__dirname, "../src/app/onboarding/page.tsx"), "utf-8");
+    assert.ok(
+      !/if\s*\(\s*isEditMode\s*\|\|\s*prefs\.onboardingCompleted\s*\)/.test(code),
+      "Prefill must not be gated on isEditMode || prefs.onboardingCompleted (partial users would get a blank form)"
+    );
+    assert.ok(code.includes("setRoles(prefs.roles)"), "Must prefill saved roles");
+    assert.ok(code.includes("setEmploymentTypes(prefs.employmentTypes)"), "Must prefill saved job types");
+  });
+
+  await test("Successful save caches the API's validated preferences, not a local rebuild", () => {
+    const code = fs.readFileSync(path.resolve(__dirname, "../src/app/onboarding/page.tsx"), "utf-8");
+    assert.ok(
+      code.includes('localStorage.setItem("careermonke_preferences", JSON.stringify(serverPreferences))'),
+      "Must cache the preferences returned by /api/onboarding"
+    );
+  });
+
+  await test("getUserPreferences never seeds DEFAULT_USER_PREFERENCES", () => {
+    const sessionCode = fs.readFileSync(path.resolve(__dirname, "../src/lib/auth/session.ts"), "utf-8");
+    assert.ok(!sessionCode.includes("DEFAULT_USER_PREFERENCES"), "session.ts must not use DEFAULT_USER_PREFERENCES");
+  });
+
   // -----------------------------------------------------------------------------
   // SUITE 4: Explicit Edit Mode & Dashboard Link
   // -----------------------------------------------------------------------------

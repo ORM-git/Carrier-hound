@@ -5,6 +5,7 @@ import { UserPreferences } from "@/lib/auth/types";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { createLogger } from "@/lib/observability/logger";
 import { COUNTRY_CODE_TO_NAME, SUPPORTED_COUNTRIES } from "@/lib/countries";
+import { COUNTRY_MIGRATION, isMissingCountryColumnError } from "@/lib/auth/countryColumns";
 
 const log = createLogger({ context: { route: "/api/onboarding" } });
 
@@ -166,7 +167,7 @@ export async function POST(req: Request) {
   try {
     const { data: dbData, error: readError } = await supabaseAdmin
       .from("user_preferences")
-      .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency")
+      .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, eligibility_filter")
       .eq("user_id", user.id)
       .maybeSingle();
     if (readError) {
@@ -222,24 +223,8 @@ export async function POST(req: Request) {
     new Set([...(existingDbPrefs?.categories || []), ...derivedCategories])
   );
 
-  const clientPreferences: Partial<UserPreferences> = {
-    roles: sanitizedRoles,
-    categories: mergedCategories,
-    employmentTypes: sanitizedTypes,
-    locations: mergedLocations,
-    country: resolvedCountry.name,
-    countryCode: resolvedCountry.code,
-    workAuth: sanitizedWorkAuth,
-    remotePreference: finalRemotePref,
-    onboardingCompleted: true,
-    experienceLevel: existingDbPrefs?.experience_level || undefined,
-    minSalary: existingDbPrefs?.min_salary ?? undefined,
-    salaryCurrency: existingDbPrefs?.salary_currency || undefined,
-    updatedAt: new Date().toISOString(),
-  };
-
   try {
-    // 8. Upsert user_preferences - attempt with separate country columns first
+    // 8. Upsert user_preferences. country / country_code are required columns of this write.
     const fullDbPayload: Record<string, any> = {
       user_id: user.id,
       roles: sanitizedRoles,
@@ -250,33 +235,51 @@ export async function POST(req: Request) {
       work_auth: sanitizedWorkAuth,
       country: resolvedCountry.name,
       country_code: resolvedCountry.code,
+      // Launch scope: daily digest is Coming Soon; never opt in (the column defaults to true on insert).
+      daily_digest_opt_in: false,
       onboarding_completed: true,
       updated_at: new Date().toISOString(),
     };
 
-    if (existingDbPrefs?.experience_level) {
-      fullDbPayload.experience_level = existingDbPrefs.experience_level;
-    }
-    if (existingDbPrefs?.min_salary != null) {
-      fullDbPayload.min_salary = existingDbPrefs.min_salary;
-    }
-    if (existingDbPrefs?.salary_currency) {
-      fullDbPayload.salary_currency = existingDbPrefs.salary_currency;
-    }
+    // Carry saved values over explicitly; write null for a new user so column defaults
+    // (salary_currency defaults to 'USD') never invent a value the user did not choose.
+    fullDbPayload.experience_level = existingDbPrefs?.experience_level || null;
+    fullDbPayload.min_salary = existingDbPrefs?.min_salary ?? null;
+    fullDbPayload.salary_currency = existingDbPrefs?.salary_currency || null;
 
-    let { error: prefError } = await supabaseAdmin
+    // The validated preferences exactly as written, returned so the client caches what the DB holds.
+    const savedPreferences: UserPreferences = {
+      roles: sanitizedRoles,
+      categories: mergedCategories,
+      employmentTypes: sanitizedTypes,
+      locations: mergedLocations,
+      country: resolvedCountry.name,
+      countryCode: resolvedCountry.code,
+      workAuth: sanitizedWorkAuth,
+      remotePreference: finalRemotePref,
+      experienceLevel: fullDbPayload.experience_level || undefined,
+      minSalary: fullDbPayload.min_salary ?? undefined,
+      salaryCurrency: fullDbPayload.salary_currency || undefined,
+      dailyDigestOptIn: false,
+      onboardingCompleted: true,
+      eligibilityFilter: existingDbPrefs?.eligibility_filter ?? true,
+      updatedAt: fullDbPayload.updated_at,
+    };
+
+    const { error: prefError } = await supabaseAdmin
       .from("user_preferences")
       .upsert(fullDbPayload, { onConflict: "user_id" });
 
-    // Fallback: If country column does not exist yet in live DB, retry without country/country_code
-    if (prefError && (prefError.message?.includes("country") || prefError.code === "PGRST204")) {
-      log.warn("Retrying user_preferences upsert without country columns", { error: prefError.message });
-      delete fullDbPayload.country;
-      delete fullDbPayload.country_code;
-      const retryResult = await supabaseAdmin
-        .from("user_preferences")
-        .upsert(fullDbPayload, { onConflict: "user_id" });
-      prefError = retryResult.error;
+    // No retry without the country columns: a save that drops the country must never report success.
+    if (prefError && isMissingCountryColumnError(prefError)) {
+      log.error("user_preferences country columns missing; migration not applied", {
+        migration: COUNTRY_MIGRATION,
+        error: prefError.message,
+      });
+      return jsonResponse(
+        { error: "Saving your country is temporarily unavailable. Please try again later." },
+        503
+      );
     }
 
     if (prefError) {
@@ -289,7 +292,7 @@ export async function POST(req: Request) {
 
     return jsonResponse({
       success: true,
-      preferences: clientPreferences,
+      preferences: savedPreferences,
     });
   } catch (err: any) {
     log.error("Unhandled error in /api/onboarding", { error: err?.message || err });

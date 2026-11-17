@@ -200,8 +200,10 @@ describe("POST /api/onboarding", () => {
     expect(saved.country).toBe("United States");
     expect(saved.country_code).toBe("US");
     expect(saved.work_auth).toBe("Requires visa sponsorship (e.g. H1B)");
-    expect(saved.experience_level).toBeUndefined();
-    expect(saved.salary_currency).toBeUndefined();
+    // Written as explicit nulls so column defaults (salary_currency 'USD') never apply.
+    expect(saved.experience_level).toBeNull();
+    expect(saved.min_salary).toBeNull();
+    expect(saved.salary_currency).toBeNull();
   });
 
   it("preserves ALL old saved locations, hybrid remotePreference, experience_level, and currency for existing users", async () => {
@@ -290,6 +292,26 @@ describe("POST /api/onboarding", () => {
     expect(res.status).toBe(500);
     expect(res.headers.get("Cache-Control")).toBe("private, no-cache, no-store, must-revalidate");
     expect(upsert).not.toHaveBeenCalled();
+    expect(mockDb.user_preferences.size).toBe(0);
+  });
+
+  it("returns 503 (never success) and does not retry without country when the country columns are missing", async () => {
+    const upsert = vi.fn(async () => ({
+      data: null,
+      error: { code: "PGRST204", message: "Could not find the 'country' column of 'user_preferences' in the schema cache" },
+    }));
+    const table = {
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      upsert,
+    } as any;
+    // One call for the existing-prefs read, one for the upsert (a retry would need a third).
+    mockSupabaseAdmin.from.mockImplementationOnce(() => table).mockImplementationOnce(() => table);
+    const res = await POST(makeReq(validBody, "valid-user-token"));
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.success).toBeUndefined();
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect((upsert.mock.calls[0] as any[])[0]).toMatchObject({ country: "India", country_code: "IN" });
     expect(mockDb.user_preferences.size).toBe(0);
   });
 });

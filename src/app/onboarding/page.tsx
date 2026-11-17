@@ -19,6 +19,7 @@ import OnboardingStep1 from "@/components/onboarding/OnboardingStep1";
 import OnboardingStep2 from "@/components/onboarding/OnboardingStep2";
 import { isOnboardingActive } from "@/config/onboarding";
 import { normalizeUserCountries } from "@/lib/countries";
+import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 
 function OnboardingPageInner() {
   const router = useRouter();
@@ -77,55 +78,42 @@ function OnboardingPageInner() {
           return;
         }
 
-        // Migrate and prefill any existing preferences
+        // Prefill every saved value for ANY user with saved preferences (partial, completed or
+        // editing). getUserPreferences returns blank values for accounts with no row, so this
+        // never invents defaults, and a partial user never sees a blank form that would then
+        // overwrite their saved roles and job types on submit.
         const prefs = await getUserPreferences(user.id);
         if (prefs) {
           setExistingPrefs(prefs);
 
-          // In edit mode or for completed users, prefill their saved values
-          if (isEditMode || prefs.onboardingCompleted) {
-            if (Array.isArray(prefs.roles) && prefs.roles.length > 0) {
-              setRoles(prefs.roles);
-            }
-            if (Array.isArray(prefs.employmentTypes) && prefs.employmentTypes.length > 0) {
-              setEmploymentTypes(prefs.employmentTypes);
-            }
-            if (prefs.country) {
-              setCountry(prefs.country);
-              if (prefs.countryCode) setCountryCode(prefs.countryCode);
-            } else if (Array.isArray(prefs.locations) && prefs.locations.length > 0) {
-              const normalized = normalizeUserCountries(prefs.locations);
-              if (normalized.names.length > 0) {
-                setCountry(normalized.names[0]);
-                if (normalized.codes.length > 0) {
-                  setCountryCode(normalized.codes[0]);
-                }
+          if (Array.isArray(prefs.roles) && prefs.roles.length > 0) {
+            setRoles(prefs.roles);
+          }
+          if (Array.isArray(prefs.employmentTypes) && prefs.employmentTypes.length > 0) {
+            setEmploymentTypes(prefs.employmentTypes);
+          }
+          if (prefs.country) {
+            setCountry(prefs.country);
+            if (prefs.countryCode) setCountryCode(prefs.countryCode);
+          } else if (Array.isArray(prefs.locations) && prefs.locations.length > 0) {
+            const normalized = normalizeUserCountries(prefs.locations);
+            if (normalized.names.length > 0) {
+              setCountry(normalized.names[0]);
+              if (normalized.codes.length > 0) {
+                setCountryCode(normalized.codes[0]);
               }
             }
-            if (prefs.workAuth) {
-              setWorkAuth(prefs.workAuth);
-            }
-            if (prefs.remotePreference) {
-              setOpenToRemote(prefs.remotePreference !== "onsite");
-            }
-          } else {
-            // Brand new onboarding user: strict blank state (no invented defaults)
-            // Only preserve explicit prior country if specifically recognized
-            if (prefs.country) {
-              setCountry(prefs.country);
-              if (prefs.countryCode) setCountryCode(prefs.countryCode);
-            } else if (Array.isArray(prefs.locations) && prefs.locations.length > 0) {
-              const normalized = normalizeUserCountries(prefs.locations);
-              if (normalized.names.length > 0) {
-                setCountry(normalized.names[0]);
-                if (normalized.codes.length > 0) {
-                  setCountryCode(normalized.codes[0]);
-                }
-              }
-            }
-            if (prefs.workAuth && prefs.workAuth !== "Authorized") {
-              setWorkAuth(prefs.workAuth);
-            }
+          }
+          // Only prefill a work authorization the form can actually show as selected
+          // (legacy seeded "Authorized" is not one of the options and stays blank).
+          if (
+            prefs.workAuth &&
+            WORK_AUTH_OPTIONS.some((opt) => opt.label === prefs.workAuth || opt.id === prefs.workAuth)
+          ) {
+            setWorkAuth(prefs.workAuth);
+          }
+          if (prefs.remotePreference) {
+            setOpenToRemote(prefs.remotePreference !== "onsite");
           }
         }
       } catch (err) {
@@ -193,7 +181,8 @@ function OnboardingPageInner() {
     };
 
     try {
-      let savedSuccessfully = false;
+      // Validated preferences returned by /api/onboarding (exactly what the DB now holds).
+      let serverPreferences: UserPreferences | null = null;
 
       // Try server-validated endpoint first if token is available
       if (authToken) {
@@ -216,39 +205,43 @@ function OnboardingPageInner() {
           throw new Error(data?.error || "Failed to save preferences");
         }
         if (res?.ok) {
-          savedSuccessfully = true;
+          const data = await res.json().catch(() => null);
+          if (!data?.preferences || typeof data.preferences !== "object") {
+            throw new Error("Failed to save preferences");
+          }
+          serverPreferences = data.preferences as UserPreferences;
         }
       }
 
-      // Preserve all old saved locations without narrowing
-      const existingLocations: string[] = Array.isArray(existingPrefs?.locations)
-        ? existingPrefs.locations
-        : [];
-      const mergedLocations = Array.from(new Set([country, ...existingLocations])).filter(Boolean);
+      if (serverPreferences) {
+        // Cache the server's validated copy, not a local rebuild, so cache and DB agree.
+        localStorage.setItem("careermonke_preferences", JSON.stringify(serverPreferences));
+        window.dispatchEvent(new Event("careermonke_preferences_updated"));
+      } else {
+        // Fallback (network failure only): client-side session save. saveUserPreferences
+        // writes the local cache itself, and only after the DB accepted the row.
+        const existingLocations: string[] = Array.isArray(existingPrefs?.locations)
+          ? existingPrefs.locations
+          : [];
+        const mergedLocations = Array.from(new Set([country, ...existingLocations])).filter(Boolean);
 
-      const userPrefs: UserPreferences = {
-        ...(existingPrefs || {}),
-        roles,
-        categories: existingPrefs?.categories || [],
-        experienceLevel: existingPrefs?.experienceLevel || undefined,
-        employmentTypes,
-        locations: mergedLocations,
-        country,
-        countryCode: countryCode || undefined,
-        workAuth,
-        remotePreference: finalRemotePref,
-        salaryCurrency: existingPrefs?.salaryCurrency || undefined,
-        dailyDigestOptIn: false,
-        onboardingCompleted: true,
-        updatedAt: new Date().toISOString(),
-      };
+        const userPrefs: UserPreferences = {
+          ...(existingPrefs || {}),
+          roles,
+          categories: existingPrefs?.categories || [],
+          experienceLevel: existingPrefs?.experienceLevel || undefined,
+          employmentTypes,
+          locations: mergedLocations,
+          country,
+          countryCode: countryCode || undefined,
+          workAuth,
+          remotePreference: finalRemotePref,
+          salaryCurrency: existingPrefs?.salaryCurrency || undefined,
+          dailyDigestOptIn: false,
+          onboardingCompleted: true,
+          updatedAt: new Date().toISOString(),
+        };
 
-      // Always refresh local preference cache and dispatch update event
-      localStorage.setItem("careermonke_preferences", JSON.stringify(userPrefs));
-      window.dispatchEvent(new Event("careermonke_preferences_updated"));
-
-      if (!savedSuccessfully) {
-        // Fallback: client-side session save
         await saveUserPreferences(userPrefs, userId);
         const supabase = createClient();
         await markAccountOnboardingCompleted(supabase, userId).catch(() => {});
