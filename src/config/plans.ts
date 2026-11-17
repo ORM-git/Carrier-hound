@@ -6,15 +6,74 @@
  * comparison capabilities, and policy notes.
  *
  * APPROVED PRICES & QUOTAS:
- * - Weekly: ₹692, billed weekly: 15 sets/week. (Supersedes old ₹499 price).
- * - Monthly: ₹1,499, billed monthly: 60 sets/month. Badge: "Recommended". Default selected.
- * - Quarterly: ₹3,999, billed every 3 months: 60 sets each month, resetting monthly. Badge: "Best value".
+ * - Weekly: ₹399, access 7 days: 15 sets/week.
+ * - Monthly: ₹499 for everyone, access 30 days: 60 sets/month. Badge: "Recommended". Default selected.
+ * - Quarterly: ₹2,199, access 90 days: 60 sets each month, resetting monthly. Badge: "Best value".
  * - Separate usage pools per feature: Weekly = 15 resume tailorings + 15 cover letters per 7 days; Monthly (30 days) & Quarterly (90 days) = 60 resume tailorings + 60 cover letters per 30 days.
  * - Add-ons: ₹149 / ₹399 / ₹699 for 10 / 30 / 60 extra generations, valid 60 days (planned / coming soon).
  * - Anti-abuse daily limit: 30 generations/day.
  */
 
 export type PlanInterval = "week" | "month" | "quarter";
+
+export interface PlanPricingItem {
+  code: "weekly" | "monthly" | "quarterly";
+  name: string;
+  duration_days: number;
+  price_paise: number;
+  price_inr: number;
+}
+
+/**
+ * Server-side source of truth for plan pricing and durations.
+ * All amounts kept in this ONE config file so prices change in one place.
+ */
+export const PLAN_PRICING: Record<"weekly" | "monthly" | "quarterly", PlanPricingItem> = {
+  weekly: {
+    code: "weekly",
+    name: "Weekly",
+    duration_days: 7,
+    price_paise: 39900,
+    price_inr: 399,
+  },
+  monthly: {
+    code: "monthly",
+    name: "Monthly",
+    duration_days: 30,
+    price_paise: 49900,
+    price_inr: 499,
+  },
+  quarterly: {
+    code: "quarterly",
+    name: "Quarterly",
+    duration_days: 90,
+    price_paise: 219900,
+    price_inr: 2199,
+  },
+} as const;
+
+export function getPlanPricePaise(
+  planCode: "weekly" | "monthly" | "quarterly"
+): number {
+  return PLAN_PRICING[planCode]?.price_paise ?? 0;
+}
+
+export function getPlanPriceINR(
+  planCode: "weekly" | "monthly" | "quarterly"
+): number {
+  return PLAN_PRICING[planCode]?.price_inr ?? 0;
+}
+
+/**
+ * Flat prepaid price summary built from PLAN_PRICING, used by Pricing, Terms and Refund copy.
+ * e.g. "Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days"
+ */
+export const PREPAID_PRICE_SUMMARY: string = (["weekly", "monthly", "quarterly"] as const)
+  .map((code) => {
+    const p = PLAN_PRICING[code];
+    return `${p.name}: ₹${p.price_inr.toLocaleString("en-IN")} for ${p.duration_days} days`;
+  })
+  .join(", ");
 
 export interface PlanConfig {
   id: "weekly" | "monthly" | "quarterly";
@@ -107,11 +166,11 @@ export const PLANS: PlanConfig[] = [
   {
     id: "weekly",
     name: "Weekly",
-    price: 692,
-    originalPrice: 999,
+    price: PLAN_PRICING.weekly.price_inr,
+    originalPrice: 599,
     currency: "INR",
     interval: "week",
-    billingText: "Billed weekly",
+    billingText: "7 days access",
     subLine: "15 sets/week",
     quotaSets: 15,
     quotaPeriodText: "15 sets per week",
@@ -119,12 +178,12 @@ export const PLANS: PlanConfig[] = [
   {
     id: "monthly",
     name: "Monthly",
-    price: 1499,
-    originalPrice: 2999,
+    price: PLAN_PRICING.monthly.price_inr,
+    originalPrice: 999,
     savingsBadge: "Save 50%",
     currency: "INR",
     interval: "month",
-    billingText: "billed monthly",
+    billingText: "30 days access",
     subLine: "60 sets/month",
     quotaSets: 60,
     quotaPeriodText: "60 sets per month",
@@ -134,12 +193,12 @@ export const PLANS: PlanConfig[] = [
   {
     id: "quarterly",
     name: "Quarterly",
-    price: 3999,
-    originalPrice: 8997,
-    savingsBadge: "Save 55%",
+    price: PLAN_PRICING.quarterly.price_inr,
+    originalPrice: 2999,
+    savingsBadge: "Save 27%",
     currency: "INR",
     interval: "quarter",
-    billingText: "billed every 3 months",
+    billingText: "90 days access",
     subLine: "60 sets each month (resets monthly)",
     quotaSets: 60,
     quotaPeriodText: "60 sets each month, resetting monthly",
@@ -281,8 +340,8 @@ export function formatPriceINR(amount: number): string {
 /**
  * Formats the primary billing label for the plan card/row:
  * - Weekly: "Billed weekly"
- * - Monthly: "₹1,499, billed monthly"
- * - Quarterly: "₹3,999, billed every 3 months"
+ * - Monthly: "₹499, billed monthly"
+ * - Quarterly: "₹2,199, billed every 3 months"
  */
 export function getPlanBillingLabel(plan: PlanConfig): string {
   if (plan.interval === "week") {
@@ -293,9 +352,9 @@ export function getPlanBillingLabel(plan: PlanConfig): string {
 
 /**
  * Formats the per-week display text for comparison:
- * - Weekly: "₹692 /week"
- * - Monthly: "₹346 /week*"
- * - Quarterly: "₹308 /week*"
+ * - Weekly: "₹399 /week"
+ * - Monthly: "₹115 /week*"
+ * - Quarterly: "₹169 /week*"
  */
 export function getPlanPerWeekText(plan: PlanConfig): string {
   const perWeek = calculatePerWeek(plan.price, plan.interval);

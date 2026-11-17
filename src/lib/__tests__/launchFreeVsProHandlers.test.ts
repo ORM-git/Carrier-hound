@@ -205,7 +205,7 @@ describe("payment verify -> refresh unlocks Pro (real verify route)", () => {
     (r as any).__testDeps = { fetchRazorpayPayment: async () => providerPayment };
     return r;
   };
-  const captured = { id: paymentId, order_id: orderId, status: "captured", amount: 149900, currency: "INR" };
+  const captured = { id: paymentId, order_id: orderId, status: "captured", amount: 49900, currency: "INR" };
 
   beforeEach(() => {
     state.tables.payment_orders = [
@@ -217,7 +217,7 @@ describe("payment verify -> refresh unlocks Pro (real verify route)", () => {
         provider_order_id: orderId,
         plan_code: "monthly",
         addon_code: null,
-        amount_paise: 149900,
+        amount_paise: 49900,
         currency: "INR",
         status: "created",
       },

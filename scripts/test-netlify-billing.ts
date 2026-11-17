@@ -385,7 +385,7 @@ async function runSuite() {
       "\nTest 3: Verifying server-authoritative order creation and Pro check on add-ons..."
     );
 
-    // 3A: Weekly plan order (client specifies tampered amount: 1 rupee; server must force 69200 paise)
+    // 3A: Weekly plan order (client specifies tampered amount: 1 rupee; server must force 39900 paise)
     const weeklyOrderRes = await orderHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer valid-token-pro" },
@@ -395,8 +395,8 @@ async function runSuite() {
     const weeklyOrder = JSON.parse(weeklyOrderRes.body);
     assert.strictEqual(
       weeklyOrder.amount,
-      69200,
-      "Weekly plan MUST resolve to 69200 paise (Rs 692)"
+      39900,
+      "Weekly plan MUST resolve to 39900 paise (Rs 399)"
     );
     assert.strictEqual(weeklyOrder.currency, "INR");
     assert(weeklyOrder.orderId.startsWith("order_test_"));
@@ -406,7 +406,7 @@ async function runSuite() {
     assert(recordedWeeklyOrder, "Order must be recorded in payment_orders");
     assert.strictEqual(recordedWeeklyOrder.status, "created");
     assert.strictEqual(recordedWeeklyOrder.plan_code, "weekly");
-    assert.strictEqual(recordedWeeklyOrder.amount_paise, 69200);
+    assert.strictEqual(recordedWeeklyOrder.amount_paise, 39900);
 
     // 3B: Monthly plan order
     const monthlyOrderRes = await orderHandler({
@@ -418,8 +418,8 @@ async function runSuite() {
     const monthlyOrder = JSON.parse(monthlyOrderRes.body);
     assert.strictEqual(
       monthlyOrder.amount,
-      149900,
-      "Monthly plan MUST resolve to 149900 paise (Rs 1,499)"
+      49900,
+      "Monthly plan MUST resolve to 49900 paise (Rs 499)"
     );
 
     // 3C: Free user attempts to buy Add-on 10 -> MUST be rejected with 403 PRO_REQUIRED
@@ -512,7 +512,7 @@ async function runSuite() {
     // ---------------------------------------------------------------------------
     console.log("\nTest 5: Verifying tamper protection on payment verify...");
 
-    // 5A: Client sends altered amount (recorded = 149900, payload = 69200)
+    // 5A: Client sends altered amount (recorded = 49900, payload = 39900)
     const verifyTamperedAmount = await verifyHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer valid-token-pro" },
@@ -520,7 +520,7 @@ async function runSuite() {
         order_id: targetOrderId,
         payment_id: samplePaymentId,
         razorpay_signature: validSignature,
-        amount: 69200,
+        amount: 39900,
       }),
     });
     assert.strictEqual(verifyTamperedAmount.statusCode, 400);
@@ -842,7 +842,7 @@ async function runSuite() {
         status: 200,
         json: async () => ({
           id: "order_b2_netlify_mock",
-          amount: 69200,
+          amount: 39900,
           currency: "INR",
           status: "created",
         }),

@@ -110,5 +110,16 @@
     "source": 1139510,
     "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
     "reason": "PostCSS build-time path traversal in sourceMappingURL. Used exclusively during build compilation and not exposed to external runtime user input."
+  },
+  {
+    "id": "GHSA-fc5q-39xc-vjpf",
+    "package": "picomatch",
+    "severity": "high",
+    "source": 1247710,
+    "title": "picomatch vulnerable to ReDoS through single-branch repeated extglobs",
+    "reason": "Build-time only, reviewed exception. No patched picomatch exists (advisory range <=4.0.7, latest npm release is 4.0.7), so an npm override cannot fix it. The production path is @sentry/nextjs, whose rollup bundling plugins match globs written in our build config during next build; no user-supplied pattern reaches picomatch at runtime. Remove once a patched picomatch or Sentry release ships.",
+    "path": "@sentry/nextjs > @rollup/plugin-commonjs > picomatch@4.0.7; @sentry/nextjs > @rollup/plugin-commonjs > @rollup/pluginutils > picomatch@4.0.7",
+    "reviewed_on": "2026-11-18",
+    "expires_on": "2026-12-02"
   }
 ]

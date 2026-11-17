@@ -14,7 +14,7 @@
  *    - Keeps card height/spacing footprint identical between flag states (invisible badge row space).
  *    - Redirects unauthenticated visitors to /login?returnTo=%2Fpricing.
  * 3. Server-Authoritative Pricing Resolution:
- *    - resolveOrderPricing resolves approved paise amounts for weekly (69200), monthly (149900), and quarterly (399900).
+ *    - resolveOrderPricing resolves approved paise amounts for weekly (39900), monthly (49900), and quarterly (219900).
  * 4. Server-Side Ban Checks on Plan Orders (Next & Netlify routes):
  *    - Fail-closed verification runs on plan orders (not only add-ons).
  *    - Rejects blocked users (metadata or blocked_users table) with 403 USER_BLOCKED.
@@ -168,13 +168,13 @@ async function main() {
     assert.deepStrictEqual(ids, ["weekly", "monthly", "quarterly"]);
 
     const weekly = PLANS.find((p) => p.id === "weekly")!;
-    assert.strictEqual(weekly.price, 692, "Weekly price must be ₹692");
+    assert.strictEqual(weekly.price, 399, "Weekly price must be ₹399");
 
     const monthly = PLANS.find((p) => p.id === "monthly")!;
-    assert.strictEqual(monthly.price, 1499, "Monthly price must be ₹1,499");
+    assert.strictEqual(monthly.price, 499, "Monthly price must be ₹499");
 
     const quarterly = PLANS.find((p) => p.id === "quarterly")!;
-    assert.strictEqual(quarterly.price, 3999, "Quarterly price must be ₹3,999");
+    assert.strictEqual(quarterly.price, 2199, "Quarterly price must be ₹2,199");
   });
 
   // 2. Static & Markup Conformance
@@ -264,19 +264,19 @@ async function main() {
   await check("resolveOrderPricing returns correct paise amounts for all subscription plans", () => {
     const weeklyOrder = resolveOrderPricing({ planCode: "weekly" });
     assert.ok(weeklyOrder, "Weekly plan must resolve");
-    assert.strictEqual(weeklyOrder.amount_paise, 69200, "Weekly order amount must be 69200 paise");
+    assert.strictEqual(weeklyOrder.amount_paise, 39900, "Weekly order amount must be 39900 paise");
     assert.strictEqual(weeklyOrder.currency, "INR");
     assert.strictEqual(weeklyOrder.code, "weekly");
 
     const monthlyOrder = resolveOrderPricing({ planCode: "monthly" });
     assert.ok(monthlyOrder, "Monthly plan must resolve");
-    assert.strictEqual(monthlyOrder.amount_paise, 149900, "Monthly order amount must be 149900 paise");
+    assert.strictEqual(monthlyOrder.amount_paise, 49900, "Monthly order amount must be 49900 paise");
     assert.strictEqual(monthlyOrder.currency, "INR");
     assert.strictEqual(monthlyOrder.code, "monthly");
 
     const quarterlyOrder = resolveOrderPricing({ planCode: "quarterly" });
     assert.ok(quarterlyOrder, "Quarterly plan must resolve");
-    assert.strictEqual(quarterlyOrder.amount_paise, 399900, "Quarterly order amount must be 399900 paise");
+    assert.strictEqual(quarterlyOrder.amount_paise, 219900, "Quarterly order amount must be 219900 paise");
     assert.strictEqual(quarterlyOrder.currency, "INR");
     assert.strictEqual(quarterlyOrder.code, "quarterly");
   });
@@ -362,7 +362,7 @@ async function main() {
     });
 
     await check("Next route creates plan order with server-resolved amounts for unblocked user", async () => {
-      for (const [code, expectedPaise] of [["weekly", 69200], ["monthly", 149900], ["quarterly", 399900]] as const) {
+      for (const [code, expectedPaise] of [["weekly", 39900], ["monthly", 49900], ["quarterly", 219900]] as const) {
         const mock = createMockSupabaseAdmin();
         const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
           method: "POST",
@@ -427,7 +427,7 @@ async function main() {
     });
 
     await check("Netlify handler creates plan order with server-resolved amounts for unblocked user", async () => {
-      for (const [code, expectedPaise] of [["weekly", 69200], ["monthly", 149900], ["quarterly", 399900]] as const) {
+      for (const [code, expectedPaise] of [["weekly", 39900], ["monthly", 49900], ["quarterly", 219900]] as const) {
         const mock = createMockSupabaseAdmin();
         const handler = createNetlifyOrderHandler({
           getSupabaseAdmin: () => mock.client,

@@ -77,19 +77,19 @@ async function runSuite() {
     assert(!content.includes("Hidden CI compatibility text"), "Hidden CI compatibility block must be removed");
   });
 
-  // 2. Plan and pricing data consistency (Weekly ₹692, Monthly ₹1,499, Quarterly ₹3,999)
+  // 2. Plan and pricing data consistency (Weekly ₹399, Monthly ₹499, Quarterly ₹2,199)
   check("Plan definitions in quota.ts and config/plans.ts match approved prices", () => {
-    assert.strictEqual(PLAN_DEFINITIONS.weekly.price_paise, 69200, "Weekly plan must be 69200 paise (₹692)");
-    assert.strictEqual(PLAN_DEFINITIONS.monthly.price_paise, 149900, "Monthly plan must be 149900 paise (₹1,499)");
-    assert.strictEqual(PLAN_DEFINITIONS.quarterly.price_paise, 399900, "Quarterly plan must be 399900 paise (₹3,999)");
+    assert.strictEqual(PLAN_DEFINITIONS.weekly.price_paise, 39900, "Weekly plan must be 39900 paise (₹399)");
+    assert.strictEqual(PLAN_DEFINITIONS.monthly.price_paise, 49900, "Monthly plan must be 49900 paise (₹499)");
+    assert.strictEqual(PLAN_DEFINITIONS.quarterly.price_paise, 219900, "Quarterly plan must be 219900 paise (₹2,199)");
 
     const weekly = PLANS.find((p) => p.id === "weekly");
     const monthly = PLANS.find((p) => p.id === "monthly");
     const quarterly = PLANS.find((p) => p.id === "quarterly");
 
-    assert.strictEqual(weekly?.price, 692, "Config weekly price must be 692");
-    assert.strictEqual(monthly?.price, 1499, "Config monthly price must be 1,499");
-    assert.strictEqual(quarterly?.price, 3999, "Config quarterly price must be 3,999");
+    assert.strictEqual(weekly?.price, 399, "Config weekly price must be 399");
+    assert.strictEqual(monthly?.price, 499, "Config monthly price must be 499");
+    assert.strictEqual(quarterly?.price, 2199, "Config quarterly price must be 2,199");
     assert.strictEqual(UPGRADE_BUTTON_LABEL, "Payments opening soon", "UPGRADE_BUTTON_LABEL must match");
   });
 

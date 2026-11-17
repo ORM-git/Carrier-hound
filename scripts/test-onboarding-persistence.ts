@@ -397,17 +397,17 @@ async function runOnboardingSuite() {
   // 4a. Real plan catalog verification
   const monthlyPlan = PLANS.find((p) => p.id === "monthly");
   assert.ok(monthlyPlan, "Catalog must define monthly plan.");
-  assert.strictEqual(monthlyPlan.price, 1499, "Default Pro monthly plan price must be ₹1,499.");
+  assert.strictEqual(monthlyPlan.price, 499, "Default Pro monthly plan price must be ₹499.");
   assert.strictEqual(monthlyPlan.currency, "INR", "Default Pro monthly currency must be INR.");
   assert.strictEqual(monthlyPlan.isDefault, true, "Monthly plan must be marked isDefault: true.");
 
   const weeklyPlan = PLANS.find((p) => p.id === "weekly");
   assert.ok(weeklyPlan, "Catalog must define weekly plan.");
-  assert.strictEqual(weeklyPlan.price, 692, "Weekly plan price must be ₹692.");
+  assert.strictEqual(weeklyPlan.price, 399, "Weekly plan price must be ₹399.");
 
   const quarterlyPlan = PLANS.find((p) => p.id === "quarterly");
   assert.ok(quarterlyPlan, "Catalog must define quarterly plan.");
-  assert.strictEqual(quarterlyPlan.price, 3999, "Quarterly plan price must be ₹3,999.");
+  assert.strictEqual(quarterlyPlan.price, 2199, "Quarterly plan price must be ₹2,199.");
 
   // 4b. No fake renewal date fallback in getUserSubscription
   const mockSubClient = {
@@ -562,7 +562,7 @@ async function runOnboardingSuite() {
   };
   const subInrResult = await getUserSubscription("user-inr-3-month", mockSubInrNoAmount as any);
   assert.strictEqual(subInrResult?.planId, "quarterly", "'3_month' must map to 'quarterly'.");
-  assert.strictEqual(subInrResult?.amount, 3999, "INR quarterly must use catalog price 3999 INR.");
+  assert.strictEqual(subInrResult?.amount, 2199, "INR quarterly must use catalog price 2199 INR.");
   assert.strictEqual(subInrResult?.currency, "INR");
 
   // When amount is present in paise, explicit conversion takes place
@@ -576,7 +576,7 @@ async function runOnboardingSuite() {
                 data: {
                   status: "active",
                   current_period_end: "2026-12-31T23:59:59Z",
-                  amount: 399900, // 3999 INR in paise
+                  amount: 219900, // 2199 INR in paise
                   currency: "INR",
                   plan_id: "quarterly",
                 },
@@ -589,7 +589,7 @@ async function runOnboardingSuite() {
     }),
   };
   const subPaiseResult = await getUserSubscription("user-paise", mockSubPaise as any);
-  assert.strictEqual(subPaiseResult?.amount, 3999, "Amount 399900 paise must convert to 3999.");
+  assert.strictEqual(subPaiseResult?.amount, 2199, "Amount 219900 paise must convert to 2199.");
 
   console.log("  ✓ Billing settings catalog and subscription checks passed.\n");
 
