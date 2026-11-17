@@ -1,5 +1,6 @@
 import { createClient } from "../supabase/client";
-import { UserPreferences, DEFAULT_USER_PREFERENCES } from "./types";
+import { UserPreferences, emptyUserPreferences } from "./types";
+import { COUNTRY_MIGRATION, isMissingCountryColumnError } from "./countryColumns";
 import { markAccountOnboardingCompleted } from "./onboarding";
 import { clearCandidateProfileMemoryCache } from "../resume/storage";
 import { clearTrackerMemoryState } from "../tracker/storage";
@@ -130,19 +131,34 @@ export async function getAuthUser(): Promise<User | null> {
   return null;
 }
 
+/** Columns that exist before migration 20261117 (country columns excluded). */
+const PREFS_COLUMNS_WITHOUT_COUNTRY =
+  "roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at";
+
 /**
  * Retrieves user preferences from Supabase with fallback to local storage.
- * Handles missing row by creating defaults, not by erroring.
+ * A missing row means the user has saved nothing yet: return blank preferences
+ * and write NOTHING (no seeded roles, experience level, salary or work auth).
  */
 export async function getUserPreferences(userId?: string): Promise<UserPreferences> {
   const supabase = createClient();
   if (userId && userId !== "local-user") {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("user_preferences")
-        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at")
+        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at, country, country_code")
         .eq("user_id", userId)
         .maybeSingle();
+
+      if (error && isMissingCountryColumnError(error)) {
+        // Migration not applied yet: read everything else, the country stays unknown.
+        log.warn("user_preferences country columns missing; reading without them", { migration: COUNTRY_MIGRATION });
+        ({ data, error } = await supabase
+          .from("user_preferences")
+          .select(PREFS_COLUMNS_WITHOUT_COUNTRY)
+          .eq("user_id", userId)
+          .maybeSingle());
+      }
 
       if (data && !error) {
         const prefs: UserPreferences = {
@@ -153,7 +169,9 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
           locations: data.locations || [],
           remotePreference: data.remote_preference || "any",
           workAuth: data.work_auth || undefined,
-          minSalary: data.min_salary,
+          country: data.country || undefined,
+          countryCode: data.country_code || undefined,
+          minSalary: data.min_salary ?? undefined,
           salaryCurrency: data.salary_currency || undefined,
           dailyDigestOptIn: data.daily_digest_opt_in ?? false,
           onboardingCompleted: Boolean(data.onboarding_completed),
@@ -166,15 +184,12 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
         return prefs;
       }
 
-      // Handle missing row by saving and returning defaults
+      // No row yet: blank preferences, nothing written to the DB.
       if (!error && !data) {
-        try {
-          await saveUserPreferences(DEFAULT_USER_PREFERENCES, userId);
-        } catch (_) {}
-        return DEFAULT_USER_PREFERENCES;
+        return emptyUserPreferences();
       }
     } catch (_) {
-      // Graceful fallback to local storage / defaults
+      // Graceful fallback to local storage / blank preferences
     }
   }
 
@@ -189,11 +204,16 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
     }
   }
 
-  return DEFAULT_USER_PREFERENCES;
+  return emptyUserPreferences();
 }
 
 /**
  * Saves user preferences to Supabase and syncs with local storage.
+ *
+ * country / country_code are first-class columns: they are written whenever the
+ * caller sets them (undefined means "not touched" and leaves the saved value
+ * alone). If the columns do not exist yet (migration 20261117 not applied) the
+ * save fails loudly instead of dropping the country and reporting success.
  */
 export async function saveUserPreferences(prefs: UserPreferences, userId?: string): Promise<void> {
   const updatedPrefs: UserPreferences = {
@@ -201,13 +221,10 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
     updatedAt: new Date().toISOString(),
   };
 
-  if (typeof window !== "undefined") {
-    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(updatedPrefs));
-    window.dispatchEvent(new Event("careermonke_preferences_updated"));
-  }
-
   const supabase = createClient();
   if (userId && userId !== "local-user") {
+    // Explicit column list (object literal). country / country_code are only written when the
+    // caller set them, so a save without a country never blanks a stored one.
     const { error: upsertError } = await supabase.from("user_preferences").upsert({
       user_id: userId,
       roles: updatedPrefs.roles || [],
@@ -224,16 +241,33 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
       updated_at: updatedPrefs.updatedAt,
+      ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
+      ...(updatedPrefs.countryCode !== undefined
+        ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
+        : {}),
     });
 
     if (upsertError) {
+      if (isMissingCountryColumnError(upsertError)) {
+        log.error("user_preferences country columns missing; refusing to save without them", {
+          migration: COUNTRY_MIGRATION,
+        });
+        throw new Error("Failed to save preferences: country storage is not available yet. Please try again later.");
+      }
       log.error("Failed to save user_preferences", { error: upsertError });
       throw new Error(`Failed to save preferences: ${upsertError.message || upsertError}`);
     }
 
-    if (updatedPrefs.onboardingCompleted) {
-      await markAccountOnboardingCompleted(supabase, userId);
-    }
+  }
+
+  // Cache only after the DB accepted the write, so the local cache never runs ahead of the DB.
+  if (typeof window !== "undefined") {
+    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(updatedPrefs));
+    window.dispatchEvent(new Event("careermonke_preferences_updated"));
+  }
+
+  if (userId && userId !== "local-user" && updatedPrefs.onboardingCompleted) {
+    await markAccountOnboardingCompleted(supabase, userId);
   }
 }
 
