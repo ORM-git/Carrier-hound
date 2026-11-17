@@ -4,7 +4,7 @@ import React, { useRef, useState } from "react";
 import BrandIcon from "@/components/BrandIcon";
 import { ArrowLeft, FileText, CheckCircle2, AlertCircle, Upload, Loader2, Check, FileCheck } from "lucide-react";
 import { toast } from "react-toastify";
-import { isOnboardingStep2Active } from "@/config/onboarding";
+import { isOnboardingStep2EnabledClient } from "@/config/onboarding";
 import { validateAndNormalizeLinkedInUrl } from "@/lib/onboarding/step2";
 import { MAX_RESUME_SIZE_BYTES, RESUME_MIME } from "@/lib/onboarding/step2Resume";
 
@@ -40,7 +40,7 @@ function SkipLink({ onClick, label, testId }: { onClick: () => void; label: stri
 }
 
 export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken }: OnboardingStep2Props) {
-  const isFeatureEnabled = isOnboardingStep2Active();
+  const isFeatureEnabled = isOnboardingStep2EnabledClient();
 
   const [linkedinInput, setLinkedinInput] = useState("");
   const [linkedinSaved, setLinkedinSaved] = useState(false);

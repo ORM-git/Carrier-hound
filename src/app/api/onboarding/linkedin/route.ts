@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient, getClientIpFromRequest } from "@/lib/ai/serviceHandler";
 import { checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 import { validateAndNormalizeLinkedInUrl } from "@/lib/onboarding/step2";
-import { isOnboardingStep2Active } from "@/config/onboarding";
+import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { createLogger } from "@/lib/observability/logger";
 
@@ -17,27 +17,28 @@ function json(data: unknown, status = 200): NextResponse {
 }
 
 /** Validates + normalizes a LinkedIn profile URL and saves it to auth user_metadata. No scraping. */
-export async function POST(req: Request) {
-  if (!isOnboardingStep2Active()) {
-    return json({ error: "Feature is coming soon", code: "FEATURE_COMING_SOON" }, 503);
-  }
-
+async function handle(req: Request): Promise<NextResponse> {
   let cfEnv: Record<string, any> | undefined;
   try {
     const ctx = getRequestContext();
     if (ctx?.env) cfEnv = ctx.env as Record<string, any>;
   } catch {}
 
+  if (!isOnboardingStep2EnabledServer(cfEnv)) {
+    return json({ error: "Feature is coming soon", code: "FEATURE_COMING_SOON" }, 503);
+  }
+
   const authHeader = req.headers.get("authorization") || "";
   if (!authHeader.startsWith("Bearer ")) {
     return json({ error: "Unauthorized: Missing authentication token" }, 401);
   }
 
+  // Service role only: no anon-key fallback. Missing key => 503.
   let supabaseAdmin: any;
   try {
-    supabaseAdmin = getSupabaseAdminClient(cfEnv, true);
+    supabaseAdmin = getSupabaseAdminClient(cfEnv);
   } catch (err: any) {
-    log.error("Database service unavailable", { error: err?.message });
+    log.error("Service role client unavailable", { error: err?.message });
     return json({ error: "Service unavailable" }, 503);
   }
 
@@ -81,4 +82,13 @@ export async function POST(req: Request) {
   }
 
   return json({ ok: true, linkedinUrl: result.normalizedUrl });
+}
+
+export async function POST(req: Request) {
+  try {
+    return await handle(req);
+  } catch (err: any) {
+    log.error("Unhandled error saving LinkedIn URL", { error: err?.message || String(err) });
+    return json({ error: "Couldn't save your LinkedIn URL. Please try again." }, 500);
+  }
 }

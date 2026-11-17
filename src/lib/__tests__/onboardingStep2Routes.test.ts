@@ -2,17 +2,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const state = vi.hoisted(() => ({
   admin: null as any,
+  cfEnv: undefined as Record<string, unknown> | undefined,
+  adminFactoryError: null as Error | null,
 }));
 
 vi.mock("@/lib/ai/serviceHandler", () => ({
-  getSupabaseAdminClient: vi.fn(() => state.admin),
+  getSupabaseAdminClient: vi.fn((..._args: unknown[]) => {
+    if (state.adminFactoryError) throw state.adminFactoryError;
+    return state.admin;
+  }),
   getClientIpFromRequest: (req: Request) => req.headers.get("cf-connecting-ip") || "anonymous-client",
 }));
-vi.mock("@cloudflare/next-on-pages", () => ({ getRequestContext: vi.fn(() => undefined) }));
+vi.mock("@cloudflare/next-on-pages", () => ({
+  getRequestContext: vi.fn(() => (state.cfEnv ? { env: state.cfEnv, ctx: {} } : undefined)),
+}));
 
 import { POST as postLinkedIn } from "@/app/api/onboarding/linkedin/route";
 import { POST as postResume } from "@/app/api/onboarding/resume/route";
 import { RESUME_MIME } from "@/lib/onboarding/step2Resume";
+import { getSupabaseAdminClient } from "@/lib/ai/serviceHandler";
+
+const FLAG = "NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED";
 
 const NO_STORE = "private, no-cache, no-store, must-revalidate";
 const USER_ID = "11111111-2222-3333-4444-555555555555";
@@ -26,6 +36,7 @@ function makeAdmin(opts: {
   uploadError?: any;
   upsertError?: any;
   orphans?: string[];
+  throwOn?: "getUser" | "updateUser" | "read" | "upload" | "upsert" | "removeOld" | "rpc";
 } = {}) {
   const calls = {
     updateUserById: [] as any[],
@@ -34,14 +45,19 @@ function makeAdmin(opts: {
     removes: [] as string[][],
     rpc: [] as any[],
   };
+  const boom = (where: string) => {
+    if (opts.throwOn === where) throw new Error(`network reset during ${where}`);
+  };
   const admin = {
     calls,
     auth: {
-      getUser: vi.fn(async (t: string) =>
-        t === "good" ? { data: { user: { id: USER_ID } }, error: null } : { data: { user: null }, error: { message: "bad" } }
-      ),
+      getUser: vi.fn(async (t: string) => {
+        boom("getUser");
+        return t === "good" ? { data: { user: { id: USER_ID } }, error: null } : { data: { user: null }, error: { message: "bad" } };
+      }),
       admin: {
         updateUserById: vi.fn(async (id: string, attrs: any) => {
+          boom("updateUser");
           calls.updateUserById.push({ id, attrs });
           return { data: {}, error: opts.updateUserError ?? null };
         }),
@@ -50,14 +66,18 @@ function makeAdmin(opts: {
     from: vi.fn(() => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: async () => ({
-            data: opts.previousPath ? { storage_path: opts.previousPath } : null,
-            error: opts.readError ?? null,
-          }),
+          maybeSingle: async () => {
+            boom("read");
+            return {
+              data: opts.previousPath ? { storage_path: opts.previousPath } : null,
+              error: opts.readError ?? null,
+            };
+          },
         }),
       }),
       upsert: async (row: any) => {
         calls.upserts.push(row);
+        boom("upsert");
         return { error: opts.upsertError ?? null };
       },
     })),
@@ -65,16 +85,19 @@ function makeAdmin(opts: {
       from: vi.fn(() => ({
         upload: async (path: string, _blob: Blob, o: any) => {
           calls.uploads.push({ path, contentType: o.contentType, upsert: o.upsert });
+          boom("upload");
           return { error: opts.uploadError ?? null };
         },
         remove: async (names: string[]) => {
           calls.removes.push(names);
+          if (opts.previousPath && names[0] === opts.previousPath) boom("removeOld");
           return { error: null };
         },
       })),
     },
     rpc: vi.fn(async (name: string, args: any) => {
       calls.rpc.push({ name, args });
+      boom("rpc");
       return { data: (opts.orphans ?? []).map((object_name) => ({ object_name })), error: null };
     }),
   };
@@ -85,6 +108,10 @@ let rateAllowed = true;
 const rateKeys: string[] = [];
 
 beforeEach(() => {
+  process.env[FLAG] = "true";
+  state.cfEnv = undefined;
+  state.adminFactoryError = null;
+  vi.mocked(getSupabaseAdminClient).mockClear();
   rateAllowed = true;
   rateKeys.length = 0;
   (globalThis as any).__mockRateLimitClient = {
@@ -96,6 +123,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   delete (globalThis as any).__mockRateLimitClient;
+  delete process.env[FLAG];
 });
 
 function linkedInReq(body: unknown, token = "good") {
@@ -227,5 +255,128 @@ describe("POST /api/onboarding/resume", () => {
     const res = await postResume(resumeReq(new File([PDF], "cv.pdf", { type: RESUME_MIME.pdf })));
     expect(res.status).toBe(429);
     expect(state.admin.calls.uploads).toHaveLength(0);
+  });
+});
+
+const validPdf = () => new File([PDF], "cv.pdf", { type: RESUME_MIME.pdf });
+const validLinkedIn = { linkedinUrl: "https://www.linkedin.com/in/jane-doe" };
+
+describe("feature flag: false really disables both endpoints", () => {
+  it.each([undefined, "false", "FALSE", "1", "yes", ""])("process.env flag %s => 503 before any work", async (value) => {
+    if (value === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = value;
+    state.admin = makeAdmin();
+    for (const res of [await postLinkedIn(linkedInReq(validLinkedIn)), await postResume(resumeReq(validPdf()))]) {
+      expect(res.status).toBe(503);
+      expect(res.headers.get("Cache-Control")).toBe(NO_STORE);
+      expect((await res.json()).code).toBe("FEATURE_COMING_SOON");
+    }
+    expect(getSupabaseAdminClient).not.toHaveBeenCalled();
+    expect(state.admin.calls.updateUserById).toHaveLength(0);
+    expect(state.admin.calls.uploads).toHaveLength(0);
+  });
+
+  it("Cloudflare env binding 'false' overrides a build-time process.env 'true'", async () => {
+    process.env[FLAG] = "true";
+    state.cfEnv = { [FLAG]: "false" };
+    state.admin = makeAdmin();
+    expect((await postLinkedIn(linkedInReq(validLinkedIn))).status).toBe(503);
+    expect((await postResume(resumeReq(validPdf()))).status).toBe(503);
+    expect(state.admin.calls.uploads).toHaveLength(0);
+  });
+
+  it("Cloudflare env binding 'true' enables it even when process.env is unset", async () => {
+    delete process.env[FLAG];
+    state.cfEnv = { [FLAG]: "true", SUPABASE_SERVICE_ROLE_KEY: "svc" };
+    state.admin = makeAdmin();
+    expect((await postLinkedIn(linkedInReq(validLinkedIn))).status).toBe(200);
+    expect((await postResume(resumeReq(validPdf()))).status).toBe(200);
+    // The CF env object is what the admin client is built from.
+    expect(vi.mocked(getSupabaseAdminClient).mock.calls[0][0]).toBe(state.cfEnv);
+  });
+
+  it("ignores client-style overrides: ?step2_enabled=true does not enable a disabled flag", async () => {
+    process.env[FLAG] = "false";
+    state.admin = makeAdmin();
+    const req = new Request("http://localhost/api/onboarding/linkedin?step2_enabled=true", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer good" },
+      body: JSON.stringify(validLinkedIn),
+    });
+    expect((await postLinkedIn(req)).status).toBe(503);
+  });
+});
+
+describe("service role key handling", () => {
+  it("missing service key => 503 on both routes, and no anon fallback is requested", async () => {
+    state.adminFactoryError = new Error('{"missing":["SUPABASE_SERVICE_ROLE_KEY"]}');
+    expect((await postLinkedIn(linkedInReq(validLinkedIn))).status).toBe(503);
+    expect((await postResume(resumeReq(validPdf()))).status).toBe(503);
+    for (const call of vi.mocked(getSupabaseAdminClient).mock.calls) {
+      expect(call[1]).not.toBe(true); // allowAnonFallback must never be set
+    }
+  });
+});
+
+describe("thrown failures return a clean 500 and never leave an orphan blob", () => {
+  it("LinkedIn: updateUserById throws => 500 no-store", async () => {
+    state.admin = makeAdmin({ throwOn: "updateUser" });
+    const res = await postLinkedIn(linkedInReq(validLinkedIn));
+    expect(res.status).toBe(500);
+    expect(res.headers.get("Cache-Control")).toBe(NO_STORE);
+    expect(JSON.stringify(await res.json())).not.toMatch(/network reset/);
+  });
+
+  it("LinkedIn: getUser throws => 500", async () => {
+    state.admin = makeAdmin({ throwOn: "getUser" });
+    expect((await postLinkedIn(linkedInReq(validLinkedIn))).status).toBe(500);
+  });
+
+  it("resume: getUser throws => 500, nothing uploaded", async () => {
+    state.admin = makeAdmin({ throwOn: "getUser" });
+    const res = await postResume(resumeReq(validPdf()));
+    expect(res.status).toBe(500);
+    expect(state.admin.calls.uploads).toHaveLength(0);
+    expect(state.admin.calls.removes).toHaveLength(0);
+  });
+
+  it("resume: pointer read throws => 500, nothing uploaded", async () => {
+    state.admin = makeAdmin({ throwOn: "read" });
+    expect((await postResume(resumeReq(validPdf()))).status).toBe(500);
+    expect(state.admin.calls.uploads).toHaveLength(0);
+  });
+
+  it("resume: upload throws (may have partially written) => 500 and the blob path is removed", async () => {
+    state.admin = makeAdmin({ throwOn: "upload" });
+    const res = await postResume(resumeReq(validPdf()));
+    expect(res.status).toBe(500);
+    expect(res.headers.get("Cache-Control")).toBe(NO_STORE);
+    const path = state.admin.calls.uploads[0].path;
+    expect(state.admin.calls.removes).toEqual([[path]]);
+    expect(state.admin.calls.upserts).toHaveLength(0);
+  });
+
+  it("resume: pointer upsert throws => 500 and the new blob is removed, old file kept", async () => {
+    state.admin = makeAdmin({ throwOn: "upsert", previousPath: `${USER_ID}/onboarding/old.pdf` });
+    const res = await postResume(resumeReq(validPdf()));
+    expect(res.status).toBe(500);
+    const path = state.admin.calls.uploads[0].path;
+    expect(state.admin.calls.removes).toEqual([[path]]);
+  });
+
+  it("resume: storage upload returns an error => 500 and the (possibly partial) blob is removed", async () => {
+    state.admin = makeAdmin({ uploadError: { message: "503 from storage" } });
+    expect((await postResume(resumeReq(validPdf()))).status).toBe(500);
+    expect(state.admin.calls.removes).toEqual([[state.admin.calls.uploads[0].path]]);
+  });
+
+  it("resume: post-commit failures (old-file removal / orphan sweep throw) keep the save: 200, new blob kept", async () => {
+    for (const throwOn of ["removeOld", "rpc"] as const) {
+      state.admin = makeAdmin({ throwOn, previousPath: `${USER_ID}/onboarding/old.pdf` });
+      const res = await postResume(resumeReq(validPdf()));
+      expect(res.status).toBe(200);
+      const newPath = state.admin.calls.uploads[0].path;
+      expect(state.admin.calls.removes.flat()).not.toContain(newPath);
+    }
   });
 });

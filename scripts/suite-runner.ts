@@ -134,6 +134,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-razorpay-mode-isolation.ts", command: "npx tsx scripts/test-razorpay-mode-isolation.ts", classification: "offline" },
   { name: "scripts/test-launch-scope-controls.ts", command: "npx tsx scripts/test-launch-scope-controls.ts", classification: "offline" },
   { name: "scripts/test-resumes-direct-write-block.ts", command: "npx tsx scripts/test-resumes-direct-write-block.ts", classification: "offline" },
+  { name: "scripts/test-onboarding-resume-migration.ts", command: "npx tsx scripts/test-onboarding-resume-migration.ts", classification: "offline" },
   { name: "scripts/test-policy-pages.ts", command: "npx tsx scripts/test-policy-pages.ts", classification: "offline" },
   { name: "scripts/test-ticker-paging-and-strip.ts", command: "npx tsx scripts/test-ticker-paging-and-strip.ts", classification: "offline" },
   { name: "scripts/test-lock-page-views-insert.ts", command: "npx tsx scripts/test-lock-page-views-insert.ts", classification: "offline" },

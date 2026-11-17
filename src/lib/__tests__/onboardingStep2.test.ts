@@ -145,3 +145,50 @@ describe("global body cap override for the resume route only", () => {
     expect(bodyCapForPath("/api/track")).toBe(GLOBAL_API_BODY_CAP_BYTES);
   });
 });
+
+describe("onboarding step 2 feature flag (strict_true, no client overrides)", () => {
+  const FLAG = "NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED";
+  const original = process.env[FLAG];
+  const restore = () => {
+    if (original === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = original;
+  };
+
+  it("client check is on only for exactly 'true'", async () => {
+    const { isOnboardingStep2EnabledClient } = await import("@/config/onboarding");
+    try {
+      for (const [v, expected] of [["true", true], ["false", false], ["TRUE", false], ["1", false], ["", false]] as const) {
+        process.env[FLAG] = v;
+        expect(isOnboardingStep2EnabledClient()).toBe(expected);
+      }
+      delete process.env[FLAG];
+      expect(isOnboardingStep2EnabledClient()).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("server check prefers the Cloudflare env binding over process.env", async () => {
+    const { isOnboardingStep2EnabledServer } = await import("@/config/onboarding");
+    try {
+      process.env[FLAG] = "true";
+      expect(isOnboardingStep2EnabledServer({ [FLAG]: "false" })).toBe(false);
+      expect(isOnboardingStep2EnabledServer({})).toBe(true);
+      expect(isOnboardingStep2EnabledServer(undefined)).toBe(true);
+      process.env[FLAG] = "false";
+      expect(isOnboardingStep2EnabledServer({ [FLAG]: "true" })).toBe(true);
+      expect(isOnboardingStep2EnabledServer({ [FLAG]: 1 as unknown as string })).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("config has no query-string or localStorage override path", async () => {
+    const fs = await import("fs");
+    const src = fs
+      .readFileSync("src/config/onboarding.ts", "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(src).not.toMatch(/localStorage|URLSearchParams|window\.location|step2_enabled/);
+  });
+});
