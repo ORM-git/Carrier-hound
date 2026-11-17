@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { rpcWithRetry } from "@/lib/db/rpcRetry";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -10,6 +11,25 @@ import { createLogger } from "@/lib/observability/logger";
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/verify" } });
 
 export const runtime = "edge";
+
+async function getCloudflareEnv(deps?: any): Promise<Record<string, any> | undefined> {
+  if (deps?.cfEnv) return deps.cfEnv;
+  if (deps?.env) return deps.env;
+  try {
+    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
+    const ctx = mod?.getRequestContext?.();
+    if (ctx?.env) {
+      return ctx.env as Record<string, any>;
+    }
+  } catch {}
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env) {
+      return cfContext.env as Record<string, any>;
+    }
+  } catch {}
+  return undefined;
+}
 
 interface VerifyPayload {
   order_id?: string;
@@ -83,8 +103,9 @@ async function verifySignature(
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
   try {
-    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+    if (getRuntimeEnv("NEXT_PUBLIC_BILLING_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
         { status: 503 }
@@ -103,11 +124,12 @@ export async function POST(req: Request) {
       supabaseAdmin = deps.getSupabaseAdmin();
     } else {
       const supabaseUrl =
-        process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.SUPABASE_URL ||
+        getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+        getRuntimeEnv("SUPABASE_URL", cfEnv) ||
         "https://szakevhxhwpeskidvtfs.supabase.co";
       const serviceRoleKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+        getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+        getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
         return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
@@ -128,8 +150,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
     }
 
-    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const keyId =
+      getRuntimeEnv("NEXT_PUBLIC_RAZORPAY_KEY_ID", cfEnv) ||
+      getRuntimeEnv("RAZORPAY_KEY_ID", cfEnv) ||
+      "";
+    const keySecret = getRuntimeEnv("RAZORPAY_KEY_SECRET", cfEnv);
 
     if (!keySecret || !keyId) {
       return NextResponse.json(

@@ -4,6 +4,7 @@ import { resolveOrderPricing } from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -13,7 +14,26 @@ const baseLog = createLogger({ context: { route: "/api/billing/razorpay/order" }
 
 export const runtime = "edge";
 
-function isProductionHost(req: Request, deps?: any): boolean {
+async function getCloudflareEnv(deps?: any): Promise<Record<string, any> | undefined> {
+  if (deps?.cfEnv) return deps.cfEnv;
+  if (deps?.env) return deps.env;
+  try {
+    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
+    const ctx = mod?.getRequestContext?.();
+    if (ctx?.env) {
+      return ctx.env as Record<string, any>;
+    }
+  } catch {}
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env) {
+      return cfContext.env as Record<string, any>;
+    }
+  } catch {}
+  return undefined;
+}
+
+function isProductionHost(req: Request, deps?: any, cfEnv?: Record<string, any>): boolean {
   if (deps?.isProductionHost !== undefined) {
     return Boolean(deps.isProductionHost);
   }
@@ -78,7 +98,11 @@ function isProductionHost(req: Request, deps?: any): boolean {
   }
 
   // 4. Deployment environment hints
-  const envUrls = [process.env.NEXT_PUBLIC_SITE_URL, process.env.URL, process.env.SITE_URL];
+  const envUrls = [
+    getRuntimeEnv("NEXT_PUBLIC_SITE_URL", cfEnv),
+    getRuntimeEnv("URL", cfEnv),
+    getRuntimeEnv("SITE_URL", cfEnv),
+  ];
   for (const envUrl of envUrls) {
     if (envUrl) {
       try {
@@ -154,8 +178,9 @@ async function checkAddonEligibility(
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
   try {
-    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+    if (getRuntimeEnv("NEXT_PUBLIC_BILLING_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
         { status: 503 }
@@ -177,11 +202,12 @@ export async function POST(req: Request) {
       supabaseAdmin = deps.getSupabaseAdmin();
     } else {
       const supabaseUrl =
-        process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.SUPABASE_URL ||
+        getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+        getRuntimeEnv("SUPABASE_URL", cfEnv) ||
         "https://szakevhxhwpeskidvtfs.supabase.co";
       const serviceRoleKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+        getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+        getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
         return NextResponse.json(
@@ -208,7 +234,7 @@ export async function POST(req: Request) {
     // Server-authoritative mode & key validation (Audit Blocker B2)
     // 1. Explicit env var RAZORPAY_MODE is strictly required: allowed values "test" or "live".
     // If unset or any other value, return 503 with generic config error (never env var name or value).
-    const configuredMode = process.env.RAZORPAY_MODE;
+    const configuredMode = getRuntimeEnv("RAZORPAY_MODE", cfEnv);
     if (configuredMode !== "test" && configuredMode !== "live") {
       log.error("Payment configuration error: invalid or missing mode");
       return NextResponse.json(
@@ -220,8 +246,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const keyId =
+      getRuntimeEnv("NEXT_PUBLIC_RAZORPAY_KEY_ID", cfEnv) ||
+      getRuntimeEnv("RAZORPAY_KEY_ID", cfEnv);
+    const keySecret = getRuntimeEnv("RAZORPAY_KEY_SECRET", cfEnv);
 
     if (!keyId || !keySecret) {
       log.error("Payment configuration error: missing credentials");
@@ -253,7 +281,7 @@ export async function POST(req: Request) {
 
     // 3. On production host (careermonke.com and www.careermonke.com), refuse rzp_test_ keys even if RAZORPAY_MODE=test.
     if (
-      isProductionHost(req, deps) &&
+      isProductionHost(req, deps, cfEnv) &&
       (keyId.startsWith("rzp_test_") || configuredMode === "test")
     ) {
       log.error("FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host");
