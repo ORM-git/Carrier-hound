@@ -20,6 +20,7 @@ import {
   Check,
   Sparkles,
   Loader2,
+  AlertCircle,
   Briefcase,
   Compass,
   MapPin,
@@ -109,6 +110,7 @@ function OnboardingPageInner() {
   const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
   const [dailyDigestOptIn] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [processingError, setProcessingError] = useState<string | null>(null);
 
   // Funnel: onboarding started (once per mount, consent-gated in the emitter)
   useEffect(() => {
@@ -231,6 +233,7 @@ function OnboardingPageInner() {
 
   const handleCompleteOnboarding = async () => {
     setIsSaving(true);
+    setProcessingError(null);
     try {
       await persistPreferences(true);
       if (userId) {
@@ -243,8 +246,11 @@ function OnboardingPageInner() {
       // Processing step 4: Saving your preferences
       // Truthful copy fallback: toast.success("Resume saved")
       toast.success("Preferences saved! Your personalized recommendations are ready.");
-      router.push(next);
+      setTimeout(() => {
+        router.push(next);
+      }, 400);
     } catch (err: any) {
+      setProcessingError(err?.message || "Failed to save preferences. Please try again.");
       toast.error(err?.message || "Failed to save preferences. Please try again.");
     } finally {
       setIsSaving(false);
@@ -342,6 +348,16 @@ function OnboardingPageInner() {
             />
           </div>
         </div>
+
+        {/* Save / Processing Error Banner */}
+        {processingError && (
+          <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">{processingError}</p>
+            </div>
+          </div>
+        )}
 
         {/* STEP 1: TARGET ROLE */}
         {currentStep === 1 && (
