@@ -370,6 +370,122 @@
         }
       ],
       "expected_outcome": "distinct_authoritative_keys"
+    },
+    {
+      "id": "case_12_turkish_dotted_i",
+      "name": "Turkish Dotted Capital I (İ / U+0130)",
+      "description": "Normalizes Turkish dotted capital İ to ASCII i across TS, Python, and SQL with 100% byte-for-byte parity",
+      "items": [
+        {
+          "label": "Turkish Capital Dotted İ",
+          "input": {
+            "company": "İş Bankası A.Ş.",
+            "title": "İş Geliştirme Uzmanı",
+            "country": "TR",
+            "location": "İstanbul, Türkiye"
+          },
+          "expected_payload": "v2|c:18:iş bankası a.ş.|t:23:iş geliştirme uzmanı|co:2:tr|loc:8:istanbul",
+          "expected_hash": "c962aa120eb03ac80adb1f0cf9d6955aa7cbab010e0dcb8cbdb9e42e9567311d"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_13_greek_final_sigma",
+      "name": "Greek Omicron Sigma and Final Sigma (ΟΣ / ς -> σ)",
+      "description": "Normalizes Greek final sigma ς to small sigma σ matching canonical Unicode case folding across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Greek Capital Sigma and Small Final Sigma",
+          "input": {
+            "company": "ΕΡΓΟΣ Α.Ε.",
+            "title": "Ανάπτυξη Λογισμικού (λόγος)",
+            "country": "GR",
+            "location": "Αθήνα, Ελλάδα"
+          },
+          "expected_payload": "v2|c:17:εργοσ α.ε.|t:50:ανάπτυξη λογισμικού (λόγοσ)|co:2:gr|loc:10:αθήνα",
+          "expected_hash": "535047d28e8329003e94067499333b9665603ee867ee46edfd85060313450011"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_14_nel_u0085_next_line",
+      "name": "Next Line Whitespace (NEL / U+0085)",
+      "description": "Normalizes U+0085 Next Line control character to space and collapses it cleanly across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "NEL inside company, title, and location",
+          "input": {
+            "company": "Acme\u0085Technologies Corp",
+            "title": "Staff\u0085Engineer",
+            "country": "US",
+            "location": "Austin\u0085Remote, TX"
+          },
+          "expected_payload": "v2|c:17:acme technologies|t:14:staff engineer|co:2:us|loc:13:austin remote",
+          "expected_hash": "361968560c2008d40c80665a4e6da63fadf296b12d4c02d7123564274e452612"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_15_japanese_location_identity_and_hash_framing",
+      "name": "Tokyo vs Osaka Location Identity and Provider ID Hash Escaping",
+      "description": "Unicode-safe location keys (Tokyo/Osaka) generate distinct length-framed identities without lossy slug stripping, and provider IDs with '#' are escaped without aliasing",
+      "items": [
+        {
+          "label": "Tokyo Location Key",
+          "authoritative": {
+            "sourceId": "greenhouse:paypay",
+            "providerJobId": "REQ",
+            "locationKey": "東京",
+            "expectedSourceJobId": "REQ#6:東京"
+          },
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "Software Engineer",
+            "country": "JP",
+            "location": "東京"
+          },
+          "expected_payload": "v2|c:6:paypay|t:17:software engineer|co:2:jp|loc:6:東京",
+          "expected_hash": "fcccd0d3a20f0a708be5cb9904b34c1716db8a66a39203a133180c42cd535656"
+        },
+        {
+          "label": "Osaka Location Key",
+          "authoritative": {
+            "sourceId": "greenhouse:paypay",
+            "providerJobId": "REQ",
+            "locationKey": "大阪",
+            "expectedSourceJobId": "REQ#6:大阪"
+          },
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "Software Engineer",
+            "country": "JP",
+            "location": "大阪"
+          },
+          "expected_payload": "v2|c:6:paypay|t:17:software engineer|co:2:jp|loc:6:大阪",
+          "expected_hash": "554628af4127829458cbb925fd5f9daa86b6c8630b571e7095181d46bc18c80d"
+        },
+        {
+          "label": "Provider ID with Hash Delimiter Escaping",
+          "authoritative": {
+            "sourceId": "greenhouse:paypay",
+            "providerJobId": "REQ#6",
+            "locationKey": null,
+            "expectedSourceJobId": "REQ%236"
+          },
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "Software Engineer",
+            "country": "JP",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:6:paypay|t:17:software engineer|co:2:jp|loc:6:remote",
+          "expected_hash": "431113e21e6e4c85bb9d8fbcb5342c3e7c81e8b8f40960652d78d36fdb1e89e9"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
     }
   ]
 }

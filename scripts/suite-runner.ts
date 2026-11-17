@@ -156,6 +156,8 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-seo-structured-data.ts", command: "npx tsx scripts/test-seo-structured-data.ts", classification: "offline" },
   { name: "scripts/test-email-unsubscribe.ts", command: "npx tsx scripts/test-email-unsubscribe.ts", classification: "offline" },
   { name: "scripts/test-incremental-ingestion.ts", command: "npx tsx scripts/test-incremental-ingestion.ts", classification: "offline" },
+  { name: "scripts/test-identity-and-migration-safety.ts", command: "npx tsx scripts/test-identity-and-migration-safety.ts", classification: "offline" },
+  { name: "scripts/test-python-identity-contract.ts", command: "npx tsx scripts/test-python-identity-contract.ts", classification: "offline" },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)
   { name: "scripts/test-enhanced-scoring.ts", command: "npx tsx scripts/test-enhanced-scoring.ts", classification: "db-read", requiresSupabase: true },

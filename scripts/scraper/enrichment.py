@@ -29,8 +29,6 @@ ROLE_CATEGORIES = ("SDE", "AI_ML", "CLOUD", "DATA", "OTHER")
 # 1. AUTHORITATIVE WRITE IDENTITY HELPERS
 # ============================================================================
 
-_LOCATION_KEY_CLEAN_RE = re.compile(r"[^a-z0-9_-]+")
-
 
 def build_source_id(vendor: str, board_token: str) -> str:
     """Builds canonical source_id '<vendor>:<board_token>'.
@@ -44,6 +42,18 @@ def build_source_id(vendor: str, board_token: str) -> str:
     return f"{vendor.strip().lower()}:{board_token.strip().lower()}"
 
 
+def clean_location_key(location_key: str | None) -> str:
+    """Normalizes location key for scoped job identity framing: NFC, lowercased, edge chars mapped, whitespace collapsed."""
+    if not location_key or not isinstance(location_key, str):
+        return ""
+    loc = unicodedata.normalize("NFC", location_key).lower()
+    loc = loc.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
+    loc = loc.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    loc = loc.replace("\u0085", " ")
+    loc = _WHITESPACE_RE.sub(" ", loc).strip()
+    return loc
+
+
 def build_scoped_job_identity(
     source_id: str,
     provider_job_id: str,
@@ -51,7 +61,8 @@ def build_scoped_job_identity(
 ) -> tuple[str, str]:
     """Builds authoritative (source_id, source_job_id) tuple.
 
-    For multi-location postings with a single requisition ID, appends '#<location_key>'.
+    Uses injective, Unicode-safe, length-framed location identity:
+    f"{clean_pid}#{loc_len}:{clean_loc}". Escapes '#' and '%' inside provider_job_id.
     Rejects missing or empty source identity components.
     """
     if not source_id or not isinstance(source_id, str) or not source_id.strip():
@@ -60,12 +71,17 @@ def build_scoped_job_identity(
         raise ValueError("provider_job_id must be a non-empty string")
 
     clean_source_id = source_id.strip().lower()
-    clean_job_id = str(provider_job_id).strip()
+    clean_pid = str(provider_job_id).strip().replace("%", "%25").replace("#", "%23")
 
     if location_key and isinstance(location_key, str) and location_key.strip():
-        loc_suffix = _LOCATION_KEY_CLEAN_RE.sub("_", location_key.strip().lower()).strip("_")
-        if loc_suffix:
-            clean_job_id = f"{clean_job_id}#{loc_suffix}"
+        clean_loc = clean_location_key(location_key)
+        if clean_loc:
+            loc_len = len(clean_loc.encode("utf-8"))
+            clean_job_id = f"{clean_pid}#{loc_len}:{clean_loc}"
+        else:
+            clean_job_id = clean_pid
+    else:
+        clean_job_id = clean_pid
 
     return clean_source_id, clean_job_id
 
@@ -82,38 +98,50 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def clean_company(company: str | None) -> str:
-    """Normalizes company name: NFC, lowercased, legal suffixes stripped, whitespace collapsed."""
+    """Normalizes company name: NFC, lowercased, edge chars mapped, legal suffixes stripped, whitespace collapsed."""
     if not company or not isinstance(company, str):
         return ""
     c = unicodedata.normalize("NFC", company).lower()
+    c = c.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
+    c = c.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    c = c.replace("\u0085", " ")
     c = _COMPANY_SUFFIX_RE.sub(" ", c)
     c = _WHITESPACE_RE.sub(" ", c).strip()
     return c
 
 
 def clean_title(title: str | None) -> str:
-    """Normalizes job title: NFC, lowercased, whitespace collapsed (preserves Unicode & punctuation)."""
+    """Normalizes job title: NFC, lowercased, edge chars mapped, whitespace collapsed."""
     if not title or not isinstance(title, str):
         return ""
     t = unicodedata.normalize("NFC", title).lower()
+    t = t.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
+    t = t.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    t = t.replace("\u0085", " ")
     t = _WHITESPACE_RE.sub(" ", t).strip()
     return t
 
 
 def clean_country(country: str | None) -> str:
-    """Normalizes country code: NFC, lowercased, whitespace collapsed."""
+    """Normalizes country code: NFC, lowercased, edge chars mapped, whitespace collapsed."""
     if not country or not isinstance(country, str):
         return ""
     co = unicodedata.normalize("NFC", country).lower()
+    co = co.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
+    co = co.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    co = co.replace("\u0085", " ")
     co = _WHITESPACE_RE.sub(" ", co).strip()
     return co
 
 
 def clean_location(location: str | None) -> str:
-    """Normalizes primary location/city segment before comma: NFC, lowercased, whitespace collapsed."""
+    """Normalizes primary location/city segment before comma: NFC, lowercased, edge chars mapped, whitespace collapsed."""
     if not location or not isinstance(location, str):
         return ""
     loc = unicodedata.normalize("NFC", location).lower()
+    loc = loc.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
+    loc = loc.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    loc = loc.replace("\u0085", " ")
     loc = loc.split(",")[0]
     loc = _WHITESPACE_RE.sub(" ", loc).strip()
     return loc

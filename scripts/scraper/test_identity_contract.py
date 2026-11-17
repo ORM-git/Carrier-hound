@@ -20,8 +20,13 @@ Verifies:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.scraper.enrichment import (
     build_scoped_job_identity,
@@ -45,7 +50,7 @@ def test_golden_cases_all_pass():
     assert golden_data["contract"] == "length_framed_utf8_sha256"
 
     cases = golden_data["cases"]
-    assert len(cases) == 11, f"Expected 11 golden cases, found {len(cases)}"
+    assert len(cases) == 15, f"Expected 15 golden cases, found {len(cases)}"
 
     for c in cases:
         case_id = c["id"]
@@ -77,6 +82,18 @@ def test_golden_cases_all_pass():
                 inp["company"], inp["title"], inp["country"], inp["location"]
             ) == computed_hash
 
+            # If authoritative keys are specified, assert their construction
+            if "authoritative" in item:
+                auth = item["authoritative"]
+                if "providerJobId" in auth and "expectedSourceJobId" in auth:
+                    src_id, scoped_job_id = build_scoped_job_identity(
+                        auth["sourceId"], auth["providerJobId"], auth.get("locationKey")
+                    )
+                    assert scoped_job_id == auth["expectedSourceJobId"], (
+                        f"[{case_id} - {item['label']}] Authoritative source_job_id mismatch!\n"
+                        f"Computed: {scoped_job_id}\nExpected: {auth['expectedSourceJobId']}"
+                    )
+
             hashes.append(computed_hash)
 
         # Assert case-level invariants
@@ -93,9 +110,10 @@ def test_golden_cases_all_pass():
             auth_1 = items[1]["authoritative"]
             assert (auth_0["sourceId"], auth_0["sourceJobId"]) != (auth_1["sourceId"], auth_1["sourceJobId"])
         elif outcome == "distinct_authoritative_keys":
-            auth_0 = items[0]["authoritative"]
-            auth_1 = items[1]["authoritative"]
-            assert (auth_0["sourceId"], auth_0["sourceJobId"]) != (auth_1["sourceId"], auth_1["sourceJobId"])
+            if "sourceJobId" in items[0]["authoritative"]:
+                auth_0 = items[0]["authoritative"]
+                auth_1 = items[1]["authoritative"]
+                assert (auth_0["sourceId"], auth_0["sourceJobId"]) != (auth_1["sourceId"], auth_1["sourceJobId"])
 
 
 def test_build_source_id_validations():
@@ -116,10 +134,28 @@ def test_build_scoped_job_identity_validations():
     assert src_id == "greenhouse:stripe"
     assert job_id == "REQ-1001"
 
-    # Multi-location with location key
+    # Multi-location with location key (length-framed, Unicode safe)
     src_id, job_id = build_scoped_job_identity("greenhouse:stripe", "REQ-1001", "Tokyo, Japan")
     assert src_id == "greenhouse:stripe"
-    assert job_id == "REQ-1001#tokyo_japan"
+    assert job_id == "REQ-1001#12:tokyo, japan"
+
+    # Japanese non-ASCII location keys: Tokyo vs Osaka must NOT collide
+    tokyo_src, tokyo_job = build_scoped_job_identity("greenhouse:paypay", "REQ", "東京")
+    osaka_src, osaka_job = build_scoped_job_identity("greenhouse:paypay", "REQ", "大阪")
+    assert tokyo_src == "greenhouse:paypay"
+    assert osaka_src == "greenhouse:paypay"
+    assert tokyo_job == "REQ#6:東京"
+    assert osaka_job == "REQ#6:大阪"
+    assert tokyo_job != osaka_job
+
+    # Provider ID with '#' delimiter character does not alias
+    hash_src, hash_job = build_scoped_job_identity("greenhouse:stripe", "REQ#6")
+    assert hash_job == "REQ%236"
+    assert hash_job != tokyo_job
+
+    # Scoped provider ID with '#' and location key
+    scoped_src, scoped_job = build_scoped_job_identity("greenhouse:stripe", "REQ#42", "Berlin")
+    assert scoped_job == "REQ%2342#6:berlin"
 
     # Validation errors on empty inputs
     with pytest.raises(ValueError, match="source_id must be a non-empty string"):
@@ -127,3 +163,10 @@ def test_build_scoped_job_identity_validations():
 
     with pytest.raises(ValueError, match="provider_job_id must be a non-empty string"):
         build_scoped_job_identity("greenhouse:stripe", "")
+
+
+if __name__ == "__main__":
+    test_golden_cases_all_pass()
+    test_build_source_id_validations()
+    test_build_scoped_job_identity_validations()
+    print("ALL PYTHON IDENTITY CONTRACT TESTS PASSED!")

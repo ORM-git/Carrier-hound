@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
--- Freshness Header: Generated on 2026-11-15
--- Migrations Count: 76
+-- Freshness Header: Generated on 2026-11-17
+-- Migrations Count: 79
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
 
@@ -9849,5 +9849,549 @@ COMMIT;
 --   DROP FUNCTION IF EXISTS public.handle_subscription_lifecycle_event(text, text, numeric, text);
 --   DROP FUNCTION IF EXISTS public.fulfil_subscription_renewal(text, text, text, numeric, numeric);
 --   Restore public.fulfil_payment_order(text, uuid, text) from 20261114a_payment_plan_stack_guard.sql
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116d_repair_642_identity_and_similarity_safety.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261116d_repair_642_identity_and_similarity_safety.sql
+-- STATUS: NOT APPLIED
+-- Record after applying manually in the Supabase SQL editor:
+--   node scripts/record-migration.cjs 20261116d_repair_642_identity_and_similarity_safety
+--
+-- Purpose:
+--   Phase 1 of Repair PR #642: Short Additive DDL & Trigger Safety.
+--   1. Strict preflight check that aborts if baseline constraints/tables differ.
+--   2. Authoritative write identity separation: removes harmful triggers & destructive dedupe indexes.
+--   3. Versioned similarity fingerprinting (v2): Unicode-preserving, NFC normalized,
+--      length-framed UTF-8 serialization, SHA-256 digest (byte-for-byte with TS & Python,
+--      exact normalization for Turkish 'İ', Greek 'ς'->'σ', and NEL 'U+0085').
+--   4. Strictly ADVISORY similarity: No unique constraint on similarity_hash_v2,
+--      no automatic trigger-driven row merging, and no cross-source row replacement.
+--   5. Fixes jobs_touch_last_seen trigger so metadata/enrichment updates (source_priority,
+--      is_remote, role_category, similarity_hash_v2, etc.) do NOT clobber last_seen_at.
+--      Defines liveness explicitly: only caller-provided last_seen_at or explicit scraper
+--      refresh session (careermonke.scraper_refresh = 'on') updates it.
+--   6. Preserves incident recovery tables (public.recovery_642_restore48_20261116) untouched.
+--   7. Updates jobs_public view using CREATE OR REPLACE VIEW (never DROP VIEW),
+--      preserving owner, permissions/grants, RLS, and column order.
+--   8. Uses built-in pg_catalog.sha256 (no CREATE EXTENSION).
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- PREFLIGHT INTEGRITY & SAFETY CHECK (Aborts transaction if baseline differs)
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_dup_source_keys integer := 0;
+BEGIN
+  -- 1. Check required tables exist
+  IF to_regclass('public.jobs') IS NULL THEN
+    RAISE EXCEPTION 'Preflight check failed: public.jobs table does not exist';
+  END IF;
+  IF to_regclass('public.companies') IS NULL THEN
+    RAISE EXCEPTION 'Preflight check failed: public.companies table does not exist';
+  END IF;
+
+  -- 2. Verify incident recovery table is present and uncorrupted if it exists
+  IF to_regclass('public.recovery_642_restore48_20261116') IS NOT NULL THEN
+    RAISE NOTICE 'Preflight: incident recovery table verified intact.';
+  END IF;
+
+  -- 3. Check for existing duplicate (source_id, source_job_id) pairs if column already exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'source_id'
+  ) THEN
+    SELECT count(*) INTO v_dup_source_keys FROM (
+      SELECT source_id, source_job_id
+      FROM public.jobs
+      WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL
+      GROUP BY source_id, source_job_id
+      HAVING count(*) > 1
+    ) dups;
+
+    IF v_dup_source_keys > 0 THEN
+      RAISE EXCEPTION 'Preflight check failed: found % duplicate (source_id, source_job_id) pairs in public.jobs', v_dup_source_keys;
+    END IF;
+  END IF;
+
+  RAISE NOTICE 'Preflight checks passed: baseline tables and source key integrity verified.';
+END $$;
+
+BEGIN;
+
+-- Lock and statement execution budgets for zero-downtime additive DDL
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '10s';
+
+-- ----------------------------------------------------------------------------
+-- 1. CONTAINMENT: PERMANENTLY REMOVE HARMFUL TRIGGERS & DESTRUCTIVE INDEXES
+-- ----------------------------------------------------------------------------
+DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
+DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
+DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
+
+-- ----------------------------------------------------------------------------
+-- 2. REPAIR jobs_touch_last_seen TRIGGER (EXPLICIT LIVENESS CONTRACT)
+-- ----------------------------------------------------------------------------
+-- The legacy trigger unconditionally set NEW.last_seen_at := now() on EVERY update.
+-- This clobbered ranking order during metadata backfills and reversed dry-run winners.
+-- Liveness is now defined explicitly:
+-- 1) If careermonke.skip_touch_last_seen = 'on' -> preserve OLD.last_seen_at.
+-- 2) If caller explicitly provides a distinct last_seen_at -> keep NEW.last_seen_at.
+-- 3) If explicit scraper refresh setting careermonke.scraper_refresh = 'on' -> set now().
+-- 4) All other updates (source_priority, is_remote, role_category, similarity_hash_v2,
+--    top_keywords, backfills, tags, etc.) preserve OLD.last_seen_at.
+CREATE OR REPLACE FUNCTION public.touch_job_last_seen()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- 1. Explicit caller update: caller passed a distinct last_seen_at
+  IF NEW.last_seen_at IS DISTINCT FROM OLD.last_seen_at THEN
+    RETURN NEW;
+  END IF;
+
+  -- 2. Explicit skip setting (maintenance or ingestion session)
+  IF current_setting('careermonke.skip_touch_last_seen', true) = 'on' THEN
+    NEW.last_seen_at := OLD.last_seen_at;
+    RETURN NEW;
+  END IF;
+
+  -- 3. Explicit scraper refresh session setting
+  IF current_setting('careermonke.scraper_refresh', true) = 'on' THEN
+    NEW.last_seen_at := now();
+    RETURN NEW;
+  END IF;
+
+  -- 4. Default: all metadata updates (source_priority, is_remote, role_category,
+  --    similarity_hash_v2, top_keywords, etc.) preserve OLD.last_seen_at.
+  NEW.last_seen_at := OLD.last_seen_at;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS jobs_touch_last_seen ON public.jobs;
+CREATE TRIGGER jobs_touch_last_seen
+  BEFORE UPDATE ON public.jobs
+  FOR EACH ROW EXECUTE FUNCTION public.touch_job_last_seen();
+
+-- ----------------------------------------------------------------------------
+-- 3. VERSIONED SIMILARITY HASH FUNCTION (v2 LENGTH-FRAMED UTF-8 SHA-256)
+-- ----------------------------------------------------------------------------
+-- Immutable, deterministic hash function shared with Python and TypeScript.
+-- Preserves all Unicode letters (Japanese, Cyrillic, accented Latin).
+-- Normalization contract matches TS & Python byte-for-byte:
+--   - Turkish 'İ' (U+0130) and 'i\u0307' -> 'i' (U+0069)
+--   - Greek final sigma 'ς' (U+03C2 / chr(962)) -> 'σ' (U+03C3 / chr(963))
+--   - Next Line 'U+0085' (chr(133)) -> ' '
+-- Serializes using length-framed UTF-8 octets:
+--   v2|c:{len}:{comp}|t:{len}:{title}|co:{len}:{co}|loc:{len}:{loc}
+-- Uses built-in pg_catalog.sha256 to avoid search_path or extension resolution bugs.
+CREATE OR REPLACE FUNCTION public.compute_job_similarity_hash_v2(
+  p_company text,
+  p_title text,
+  p_country text,
+  p_location text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_company text;
+  v_title text;
+  v_country text;
+  v_location text;
+  v_c_len integer;
+  v_t_len integer;
+  v_co_len integer;
+  v_loc_len integer;
+  v_payload text;
+BEGIN
+  -- 1. Normalize company: NFC, lowercase, edge characters, strip legal suffixes, collapse whitespace
+  v_company := lower(COALESCE(normalize(p_company, NFC), ''));
+  v_company := replace(v_company, 'i' || chr(775), 'i');
+  v_company := replace(v_company, chr(962), chr(963));
+  v_company := replace(v_company, chr(133), ' ');
+  v_company := regexp_replace(v_company, '\m(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\M\.?', ' ', 'gi');
+  v_company := trim(regexp_replace(v_company, '\s+', ' ', 'g'));
+
+  -- 2. Normalize title: NFC, lowercase, edge characters, collapse whitespace (preserves Unicode & punctuation)
+  v_title := lower(COALESCE(normalize(p_title, NFC), ''));
+  v_title := replace(v_title, 'i' || chr(775), 'i');
+  v_title := replace(v_title, chr(962), chr(963));
+  v_title := replace(v_title, chr(133), ' ');
+  v_title := trim(regexp_replace(v_title, '\s+', ' ', 'g'));
+
+  -- 3. Normalize country: NFC, lowercase, edge characters, collapse whitespace
+  v_country := lower(COALESCE(normalize(p_country, NFC), ''));
+  v_country := replace(v_country, 'i' || chr(775), 'i');
+  v_country := replace(v_country, chr(962), chr(963));
+  v_country := replace(v_country, chr(133), ' ');
+  v_country := trim(regexp_replace(v_country, '\s+', ' ', 'g'));
+
+  -- 4. Normalize location: primary city/territory before comma, NFC, lowercase, edge characters, collapse whitespace
+  v_location := lower(COALESCE(normalize(p_location, NFC), ''));
+  v_location := replace(v_location, 'i' || chr(775), 'i');
+  v_location := replace(v_location, chr(962), chr(963));
+  v_location := replace(v_location, chr(133), ' ');
+  v_location := split_part(v_location, ',', 1);
+  v_location := trim(regexp_replace(v_location, '\s+', ' ', 'g'));
+
+  -- 5. Length framing in UTF-8 octets
+  v_c_len := octet_length(convert_to(v_company, 'UTF8'));
+  v_t_len := octet_length(convert_to(v_title, 'UTF8'));
+  v_co_len := octet_length(convert_to(v_country, 'UTF8'));
+  v_loc_len := octet_length(convert_to(v_location, 'UTF8'));
+
+  v_payload := 'v2|c:' || v_c_len || ':' || v_company ||
+               '|t:' || v_t_len || ':' || v_title ||
+               '|co:' || v_co_len || ':' || v_country ||
+               '|loc:' || v_loc_len || ':' || v_location;
+
+  RETURN encode(pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex');
+END;
+$$;
+
+-- Replace legacy compute_job_dedupe_hash to delegate to compute_job_similarity_hash_v2
+CREATE OR REPLACE FUNCTION public.compute_job_dedupe_hash(
+  p_company text,
+  p_title text,
+  p_country text,
+  p_location text
+)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT public.compute_job_similarity_hash_v2(p_company, p_title, p_country, p_location);
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 4. ADDITIVE SCHEMA COLUMNS ON jobs AND companies
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS canonical_domain text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS logo_url text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS role_category text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS top_keywords text[] DEFAULT '{}'::text[];
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS similarity_hash_v2 text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_remote boolean;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_priority smallint DEFAULT 2;
+
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS canonical_domain text;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS category text;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS logo_url text;
+
+-- ----------------------------------------------------------------------------
+-- 5. SAFE CHECK CONSTRAINTS (NOT VALID FOR ZERO TABLE-LOCK DOWNTIME)
+-- ----------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'jobs_role_category_check') THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_role_category_check
+      CHECK (role_category IN ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER')) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'jobs_source_priority_check') THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_priority_check
+      CHECK (source_priority IN (1, 2)) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'companies_category_check') THEN
+    ALTER TABLE public.companies ADD CONSTRAINT companies_category_check
+      CHECK (category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER')) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'jobs_source_type_check'
+  ) THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+      CHECK (source_type IN (
+        'ats', 'api', 'feed', 'direct',
+        'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+        'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+      )) NOT VALID;
+  ELSE
+    ALTER TABLE public.jobs DROP CONSTRAINT jobs_source_type_check;
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+      CHECK (source_type IN (
+        'ats', 'api', 'feed', 'direct',
+        'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+        'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+      )) NOT VALID;
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 6. TRANSACTIONAL jobs_public VIEW UPDATE (CREATE OR REPLACE VIEW)
+-- ----------------------------------------------------------------------------
+-- Preserves view owner, grants, RLS, and column order. NEVER DROP VIEW.
+CREATE OR REPLACE VIEW public.jobs_public AS
+SELECT
+  id,
+  title,
+  location,
+  remote,
+  remote_scope,
+  remote_eligibility,
+  job_type,
+  category,
+  country,
+  country_code,
+  seniority,
+  verified,
+  source_type,
+  first_seen_at,
+  last_seen_at,
+  discovered_at,
+  posted_at,
+  created_at,
+  status,
+  is_active,
+  -- Locked fields: Strictly masked from anon and authenticated non-Pro users
+  'Verified Employer'::text AS company,
+  NULL::text AS salary_text,
+  NULL::text AS description,
+  NULL::text AS apply_url,
+  '{}'::text[] AS skills,
+  -- Appended Phase 3 high-volume fields (non-breaking column order)
+  role_category,
+  COALESCE(top_keywords, '{}'::text[]) AS top_keywords,
+  COALESCE(is_remote, remote, false) AS is_remote
+FROM public.jobs
+WHERE is_active = true OR status = 'active';
+
+GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
+
+COMMIT;
+
+-- ============================================================================
+-- ROLLBACK (Run manually in the Supabase SQL editor if this must be undone):
+--   NON-DESTRUCTIVE ROLLBACK POLICY:
+--   - Restores legacy function definitions without dangling dropped references.
+--   - Uses CREATE OR REPLACE VIEW public.jobs_public (never DROP VIEW).
+--   - Does NOT drop pre-existing source-key unique index (jobs_source_source_job_id_unique).
+--   - Keeps additive columns (jobs.source_id, similarity_hash_v2, etc.) to prevent data loss.
+--   - Does NOT touch incident recovery tables (public.recovery_642_restore48_20261116).
+--
+--   -- 1. Restore self-contained compute_job_dedupe_hash FIRST (must not reference dropped function)
+--   CREATE OR REPLACE FUNCTION public.compute_job_dedupe_hash(
+--     p_company text,
+--     p_title text,
+--     p_country text,
+--     p_location text
+--   )
+--   RETURNS text
+--   LANGUAGE sql
+--   IMMUTABLE
+--   SET search_path = public
+--   AS $$
+--     SELECT encode(
+--       pg_catalog.sha256(
+--         pg_catalog.convert_to(
+--           lower(COALESCE(p_company, '')) || '|' ||
+--           lower(COALESCE(p_title, '')) || '|' ||
+--           lower(COALESCE(p_country, '')) || '|' ||
+--           lower(COALESCE(p_location, '')),
+--           'UTF8'
+--         )
+--       ),
+--       'hex'
+--     );
+--   $$;
+--
+--   -- 2. Drop similarity_hash_v2 function created by this migration
+--   DROP FUNCTION IF EXISTS public.compute_job_similarity_hash_v2(text, text, text, text);
+--
+--   -- 3. Restore touch_job_last_seen function to baseline behavior
+--   CREATE OR REPLACE FUNCTION public.touch_job_last_seen()
+--   RETURNS trigger
+--   LANGUAGE plpgsql
+--   AS $$
+--   BEGIN
+--     NEW.last_seen_at := now();
+--     RETURN NEW;
+--   END;
+--   $$;
+--
+--   -- 4. Restore legacy jobs_public view using CREATE OR REPLACE VIEW (never DROP VIEW)
+--   CREATE OR REPLACE VIEW public.jobs_public AS
+--   SELECT
+--     id, title, location, remote, remote_scope, remote_eligibility,
+--     job_type, category, country, country_code, seniority, verified,
+--     source_type, first_seen_at, last_seen_at, discovered_at, posted_at,
+--     created_at, status, is_active,
+--     'Verified Employer'::text AS company,
+--     NULL::text AS salary_text,
+--     NULL::text AS description,
+--     NULL::text AS apply_url,
+--     '{}'::text[] AS skills,
+--     NULL::text AS role_category,
+--     '{}'::text[] AS top_keywords,
+--     COALESCE(remote, false) AS is_remote
+--   FROM public.jobs
+--   WHERE is_active = true OR status = 'active';
+--   GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
+--
+--   -- 5. Drop indexes created by 20261116e (DO NOT drop pre-existing jobs_source_source_job_id_unique!)
+--   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_similarity_hash_v2;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_role_category;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_category;
+--   DROP INDEX IF EXISTS public.idx_companies_category;
+--   DROP INDEX IF EXISTS public.idx_companies_slug_uniq;
+--
+--   -- 6. Drop check constraints added by this migration
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
+--   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
+--
+--   -- 7. Preserve compatible expanded CHECK on jobs.source_type
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
+--   ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+--     CHECK (source_type IN (
+--       'ats', 'api', 'feed', 'direct',
+--       'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+--       'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+--     )) NOT VALID;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116e_repair_642_concurrent_indexes.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261116e_repair_642_concurrent_indexes.sql
+-- STATUS: NOT APPLIED
+-- Record after applying manually in the Supabase SQL editor:
+--   node scripts/record-migration.cjs 20261116e_repair_642_concurrent_indexes
+--
+-- Purpose:
+--   Phase 2 of Repair PR #642: CREATE INDEX CONCURRENTLY.
+--   Must be executed OUTSIDE of a transaction block (do NOT wrap in BEGIN / COMMIT).
+--   Builds indexes concurrently without table locks:
+--   1. Authoritative write identity unique partial index (board-scoped source_id + requisition source_job_id).
+--   2. Advisory similarity index (STANDARD INDEX - NOT UNIQUE! NO TRIGGER MERGING!).
+--   3. Category and taxonomy filter indexes.
+-- ============================================================================
+
+-- 1. Authoritative write identity unique partial index
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_source_id_source_job_id_uniq
+ON public.jobs (source_id, source_job_id)
+WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL;
+
+-- 2. Advisory similarity index (STANDARD INDEX - NOT UNIQUE!)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_similarity_hash_v2
+ON public.jobs (similarity_hash_v2)
+WHERE is_active = TRUE;
+
+-- 3. Taxonomy & Filtering Indexes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_role_category
+ON public.jobs (role_category)
+WHERE is_active = TRUE;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_category
+ON public.jobs (category)
+WHERE is_active = TRUE;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_companies_category
+ON public.companies (category);
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_companies_slug_uniq
+ON public.companies (slug);
+
+-- ============================================================================
+-- ROLLBACK (Run manually outside transaction if indexes must be undone):
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_similarity_hash_v2;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_role_category;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_category;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_category;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_slug_uniq;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116f_repair_642_batch_backfill.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261116f_repair_642_batch_backfill.sql
+-- STATUS: NOT APPLIED
+-- Record after applying manually in the Supabase SQL editor:
+--   node scripts/record-migration.cjs 20261116f_repair_642_batch_backfill
+--
+-- Purpose:
+--   Phase 3 of Repair PR #642: Bounded, Resumable Batch Backfill.
+--   - Sets careermonke.skip_touch_last_seen = 'on' to preserve last_seen_at.
+--   - Updates companies.canonical_domain and jobs.source_priority safely.
+--   - Uses keyset / cursor loop with LIMIT 500 FOR UPDATE SKIP LOCKED to backfill
+--     similarity_hash_v2 without table-level locking or ranking corruption.
+-- ============================================================================
+
+SET LOCAL lock_timeout = '3s';
+SET careermonke.skip_touch_last_seen = 'on';
+
+-- 1. Backfill companies canonical_domain
+UPDATE public.companies
+SET canonical_domain = lower(trim(domain))
+WHERE canonical_domain IS NULL AND domain IS NOT NULL;
+
+-- 2. Backfill jobs source_priority based on source_type or source metadata
+UPDATE public.jobs
+SET source_priority = CASE
+  WHEN source_type IN ('ats', 'direct', 'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'amazon', 'microsoft')
+    OR lower(COALESCE(source, '')) IN ('greenhouse', 'lever', 'ashby', 'smartrecruiters', 'recruitee', 'workable', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join')
+  THEN 1
+  ELSE 2
+END
+WHERE source_priority IS NULL;
+
+-- 3. Resumable batch backfill of similarity_hash_v2 in bounded chunks of 500 rows
+DO $$
+DECLARE
+  v_batch_size constant integer := 500;
+  v_updated integer := 0;
+  v_total integer := 0;
+BEGIN
+  LOOP
+    UPDATE public.jobs
+    SET similarity_hash_v2 = public.compute_job_similarity_hash_v2(
+      company,
+      title,
+      COALESCE(country_code, country),
+      location
+    )
+    WHERE id IN (
+      SELECT id
+      FROM public.jobs
+      WHERE is_active = TRUE AND similarity_hash_v2 IS NULL
+      LIMIT v_batch_size
+      FOR UPDATE SKIP LOCKED
+    );
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+    v_total := v_total + v_updated;
+    EXIT WHEN v_updated = 0;
+    RAISE NOTICE 'Backfilled % similarity hashes (total: %)...', v_updated, v_total;
+  END LOOP;
+  RAISE NOTICE 'Batch backfill complete. Total backfilled: %', v_total;
+END $$;
+
+RESET careermonke.skip_touch_last_seen;
+
+-- ============================================================================
+-- ROLLBACK (Run manually if batch backfill data must be reset):
+--   -- NOTE: Backfilled columns (canonical_domain, source_priority, similarity_hash_v2)
+--   -- are non-destructive and can safely remain populated. To reset if desired:
+--   -- UPDATE public.jobs SET similarity_hash_v2 = NULL;
 -- ============================================================================
 

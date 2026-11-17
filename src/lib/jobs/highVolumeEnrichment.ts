@@ -32,6 +32,16 @@ export function buildSourceId(vendor: string, boardToken: string): string {
   return `${vendor.trim().toLowerCase()}:${boardToken.trim().toLowerCase()}`;
 }
 
+export function cleanLocationKey(locationKey?: string | null): string {
+  if (!locationKey || typeof locationKey !== 'string') return '';
+  let loc = locationKey.normalize('NFC').toLowerCase();
+  loc = loc.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
+  loc = loc.replace(/ς|\u03c2/g, '\u03c3');
+  loc = loc.replace(/\u0085/g, ' ');
+  loc = loc.replace(/\s+/g, ' ').trim();
+  return loc;
+}
+
 export function buildScopedJobIdentity(
   sourceId: string,
   providerJobId: string,
@@ -45,12 +55,14 @@ export function buildScopedJobIdentity(
   }
 
   const cleanSourceId = sourceId.trim().toLowerCase();
-  let cleanJobId = providerJobId.trim();
+  const cleanPid = providerJobId.trim().replace(/%/g, '%25').replace(/#/g, '%23');
 
+  let cleanJobId = cleanPid;
   if (locationKey && typeof locationKey === 'string' && locationKey.trim()) {
-    const locClean = locationKey.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
-    if (locClean) {
-      cleanJobId = `${cleanJobId}#${locClean}`;
+    const cleanLoc = cleanLocationKey(locationKey);
+    if (cleanLoc) {
+      const locLen = Buffer.byteLength(cleanLoc, 'utf8');
+      cleanJobId = `${cleanPid}#${locLen}:${cleanLoc}`;
     }
   }
 
@@ -66,6 +78,9 @@ const COMPANY_SUFFIX_REGEX = /\b(inc|llc|ltd|corp|corporation|limited|pvt|privat
 export function cleanCompany(company?: string | null): string {
   if (!company || typeof company !== 'string') return '';
   let c = company.normalize('NFC').toLowerCase();
+  c = c.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
+  c = c.replace(/ς|\u03c2/g, '\u03c3');
+  c = c.replace(/\u0085/g, ' ');
   c = c.replace(COMPANY_SUFFIX_REGEX, ' ');
   c = c.replace(/\s+/g, ' ').trim();
   return c;
@@ -74,6 +89,9 @@ export function cleanCompany(company?: string | null): string {
 export function cleanTitle(title?: string | null): string {
   if (!title || typeof title !== 'string') return '';
   let t = title.normalize('NFC').toLowerCase();
+  t = t.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
+  t = t.replace(/ς|\u03c2/g, '\u03c3');
+  t = t.replace(/\u0085/g, ' ');
   t = t.replace(/\s+/g, ' ').trim();
   return t;
 }
@@ -81,6 +99,9 @@ export function cleanTitle(title?: string | null): string {
 export function cleanCountry(country?: string | null): string {
   if (!country || typeof country !== 'string') return '';
   let co = country.normalize('NFC').toLowerCase();
+  co = co.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
+  co = co.replace(/ς|\u03c2/g, '\u03c3');
+  co = co.replace(/\u0085/g, ' ');
   co = co.replace(/\s+/g, ' ').trim();
   return co;
 }
@@ -88,6 +109,9 @@ export function cleanCountry(country?: string | null): string {
 export function cleanLocation(location?: string | null): string {
   if (!location || typeof location !== 'string') return '';
   let loc = location.normalize('NFC').toLowerCase();
+  loc = loc.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
+  loc = loc.replace(/ς|\u03c2/g, '\u03c3');
+  loc = loc.replace(/\u0085/g, ' ');
   loc = loc.split(',')[0];
   loc = loc.replace(/\s+/g, ' ').trim();
   return loc;

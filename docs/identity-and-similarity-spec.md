@@ -37,9 +37,10 @@ Every ingested job must have a deterministic and scoped write identity:
    ```
    Or for multi-location requisitions published under a single job ID:
    ```
-   <provider_job_id>#<location_key>
+   <escaped_provider_job_id>#<loc_len>:<clean_location_key>
    ```
-   - Examples: `REQ-1001`, `54321`, `REQ-1001#tokyo`, `REQ-1001#san_francisco`.
+   - Examples: `REQ-1001`, `54321`, `REQ-1001#6:東京`, `REQ-1001#6:大阪`, `REQ%236` (when provider job ID contains `#`).
+   - Unicode-safe, injective, length-framed: Non-ASCII characters (e.g. Japanese `東京`, `大阪`, Hungarian `óbuda`) are preserved without lossy slug conversion. `#` and `%` inside provider IDs are escaped (`%23` and `%25`), guaranteeing zero aliasing.
 
 ### Database Enforcement
 Enforced via a partial unique index in PostgreSQL:
@@ -61,12 +62,14 @@ The `v2` similarity hash is computed byte-for-byte identically across PostgreSQL
 
 ### Normalization Pipeline
 Given `company`, `title`, `country`, and `location`:
-1. **Unicode NFC Normalization**:
-   - Python: `unicodedata.normalize('NFC', text)`
-   - TypeScript: `text.normalize('NFC')`
-   - PostgreSQL: `normalize(text, NFC)`
-2. **Case Folding**:
-   - Converted to lowercase using standard Unicode case folding.
+1. **Unicode NFC Normalization & Case Folding**:
+   - Python: `unicodedata.normalize('NFC', text).lower()`
+   - TypeScript: `text.normalize('NFC').toLowerCase()`
+   - PostgreSQL: `lower(COALESCE(normalize(text, NFC), ''))`
+2. **Deterministic Parity Normalization**:
+   - Turkish dotted capital `İ` (U+0130) and combining dot `i\u0307` -> ASCII `i` (U+0069)
+   - Greek final sigma `ς` (U+03C2) -> small sigma `σ` (U+03C3) matching canonical Unicode case folding
+   - Next Line `U+0085` (chr(133)) -> space `' '`
 3. **Legal Entity Suffix Stripping (Company only)**:
    - Suffixes removed at word boundaries:
      `\b(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\b\.?`

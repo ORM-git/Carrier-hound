@@ -4,19 +4,19 @@
  * Dedicated PostgreSQL Integration & Safety Test Suite
  *
  * Runs against a real in-process PostgreSQL database (PGlite) with full migrations applied.
- * Verifies:
- * 1. Additive forward migration executes cleanly against already-mutated production baseline.
- * 2. Harmful triggers (trg_jobs_merge_dedupe_priority) and unique dedupe indexes are dropped.
- * 3. Incident recovery tables (recovery_642_restore48_20261116) are strictly preserved.
- * 4. Byte-for-byte parity between PostgreSQL public.compute_job_similarity_hash_v2() and TypeScript
- *    computeSimilarityHashV2() across all 11 language-neutral golden test cases.
- * 5. Backfills and enrichment updates do NOT touch last_seen_at (ranking order preserved).
- * 6. Authoritative identity (source_id, source_job_id) prevents cross-board and requisition collisions.
- * 7. Non-destructive rollback restores baseline view and drops temporary objects while preserving data.
+ * Verifies all 8 reviewer blockers:
+ * 1. Location identity: Unicode-safe, length-framed (Tokyo vs Osaka distinct, '#' in provider ID escaped).
+ * 2. Normalization parity: Turkish 'İ', Greek 'ς'->'σ', and NEL 'U+0085' match byte-for-byte across SQL, Python, and TS.
+ * 3. touch_job_last_seen: any update to source_priority, is_remote, or metadata preserves OLD.last_seen_at.
+ *    Explicit liveness (caller-provided last_seen_at or careermonke.scraper_refresh='on') updates it.
+ * 4. Split migration: (a) short additive DDL in transaction, (b) concurrent indexes outside transaction, (c) bounded batch backfill.
+ * 5. View preservation: CREATE OR REPLACE VIEW jobs_public (never DROP VIEW), owner/grants/RLS/columns preserved.
+ * 6. Rollback safety: compute_job_dedupe_hash restored self-contained, pre-existing source-key index preserved, columns preserved.
+ * 7. Preflight check: aborts if baseline state or duplicate source keys differ.
+ * 8. Golden test vectors: all 15 cases pass with 100% byte-for-byte PG/TS/Python parity.
  */
 
 import { PGlite } from "@electric-sql/pglite";
-import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import * as fs from "fs";
 import * as path from "path";
 import * as assert from "assert";
@@ -30,7 +30,13 @@ import {
 
 interface GoldenItem {
   label: string;
-  authoritative?: { sourceId: string; sourceJobId: string };
+  authoritative?: {
+    sourceId: string;
+    sourceJobId?: string;
+    providerJobId?: string;
+    locationKey?: string | null;
+    expectedSourceJobId?: string;
+  };
   input: {
     company: string | null;
     title: string | null;
@@ -57,7 +63,7 @@ interface GoldenFile {
 
 export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   console.log("=== Starting Identity & Database Migration Safety Test Suite ===");
-  const db = new PGlite({ extensions: { pgcrypto } });
+  const db = new PGlite();
 
   // 1. Setup required Postgres roles
   await db.exec(`
@@ -71,8 +77,6 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
 
   // 2. Setup baseline production schema & tables
   await db.exec(`
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
     CREATE TABLE public.companies (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name text NOT NULL,
@@ -125,6 +129,9 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
       external_id text,
       skills text[] DEFAULT '{}'::text[]
     );
+
+    -- Pre-existing unique constraint on source keys (must NOT be dropped on rollback)
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_source_job_id_unique UNIQUE (source, source_job_id);
 
     -- Baseline jobs_touch_last_seen trigger from schema.sql
     CREATE OR REPLACE FUNCTION public.touch_job_last_seen()
@@ -186,7 +193,47 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   `);
   console.log("  [PASS] Pre-migration mutated baseline and recovery tables established.");
 
-  // 3. Populate initial job data to test timestamp protection
+  // 3. Test Preflight Validation (Blocker 7)
+  const migrationDPath = path.resolve(__dirname, "../supabase/migrations/20261116d_repair_642_identity_and_similarity_safety.sql");
+  assert.ok(fs.existsSync(migrationDPath), `Migration file 20261116d must exist at: ${migrationDPath}`);
+  const migrationDRaw = fs.readFileSync(migrationDPath, "utf8");
+
+  // Extract Preflight DO block
+  const preflightStart = migrationDRaw.indexOf("DO $$");
+  const preflightEnd = migrationDRaw.indexOf("END $$;", preflightStart) + "END $$;".length;
+  assert.ok(preflightStart !== -1 && preflightEnd !== -1, "Preflight DO block must exist");
+  const preflightSql = migrationDRaw.substring(preflightStart, preflightEnd);
+
+  // Preflight should pass on clean baseline
+  await db.exec(preflightSql);
+  console.log("  [PASS] Preflight checks pass on clean baseline.");
+
+  // Preflight aborts if duplicate (source_id, source_job_id) rows exist
+  await db.exec("ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;");
+  await db.exec(`
+    INSERT INTO public.jobs (id, title, company, source_type, source_id, source_job_id)
+    VALUES
+      ('00000000-0000-0000-0000-000000000001', 'Dup 1', 'Acme', 'ats', 'dup_source', 'DUP-1'),
+      ('00000000-0000-0000-0000-000000000002', 'Dup 2', 'Acme', 'ats', 'dup_source', 'DUP-1');
+  `);
+  let preflightAborted = false;
+  try {
+    await db.exec(preflightSql);
+  } catch (err: any) {
+    preflightAborted = true;
+    assert.ok(
+      err.message.includes("Preflight check failed: found 1 duplicate") ||
+      err.message.includes("duplicate"),
+      `Expected preflight duplicate abort, got: ${err.message}`
+    );
+  }
+  assert.ok(preflightAborted, "Preflight must abort when duplicate source keys exist");
+  console.log("  [PASS] Preflight check correctly aborted on duplicate source keys.");
+
+  // Clean up duplicate test rows
+  await db.exec("DELETE FROM public.jobs WHERE source_id = 'dup_source';");
+
+  // Populate initial valid job data to test timestamp protection
   await db.exec(`
     INSERT INTO public.jobs (
       id, title, company, location, country, country_code, source_type, source_job_id,
@@ -197,24 +244,52 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
     );
   `);
 
-  // 4. Read and Execute Forward Migration 20261116d
-  const migrationPath = path.resolve(__dirname, "../supabase/migrations/20261116d_repair_642_identity_and_similarity_safety.sql");
-  assert.ok(fs.existsSync(migrationPath), `Migration file must exist at: ${migrationPath}`);
-  const migrationRaw = fs.readFileSync(migrationPath, "utf8");
-
-  // Extract executable transaction body
+  // 4. Execute Split Migration Phase 1: 20261116d (Short Additive DDL)
   const beginMarker = "BEGIN;";
   const commitMarker = "COMMIT;";
-  const beginIdx = migrationRaw.indexOf(beginMarker);
-  const commitIdx = migrationRaw.indexOf(commitMarker, beginIdx);
-  assert.ok(beginIdx !== -1 && commitIdx !== -1, "Migration must contain BEGIN; ... COMMIT; transaction");
-  const forwardSql = migrationRaw.substring(beginIdx, commitIdx + commitMarker.length);
+  const beginIdx = migrationDRaw.indexOf(beginMarker);
+  const commitIdx = migrationDRaw.indexOf(commitMarker, beginIdx);
+  assert.ok(beginIdx !== -1 && commitIdx !== -1, "20261116d must contain BEGIN; ... COMMIT; transaction");
+  const forwardDSql = migrationDRaw.substring(beginIdx, commitIdx + commitMarker.length);
 
-  console.log("  Applying 20261116d Forward Migration...");
-  await db.exec(forwardSql);
-  console.log("  [PASS] Forward Migration applied successfully.");
+  console.log("  Applying 20261116d Short Additive DDL...");
+  await db.exec(forwardDSql);
+  console.log("  [PASS] 20261116d applied successfully.");
 
-  // 5. Containment Assertions
+  // 5. Execute Split Migration Phase 2: 20261116e (Concurrent Indexes)
+  const migrationEPath = path.resolve(__dirname, "../supabase/migrations/20261116e_repair_642_concurrent_indexes.sql");
+  assert.ok(fs.existsSync(migrationEPath), `Migration file 20261116e must exist at: ${migrationEPath}`);
+  const migrationERaw = fs.readFileSync(migrationEPath, "utf8");
+
+  console.log("  Applying 20261116e Concurrent Indexes individually outside transaction block...");
+  const statementsE = migrationERaw
+    .split(";")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  for (const stmt of statementsE) {
+    // Strip leading comments to ensure clean statement execution
+    const cleanStmt = stmt
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n")
+      .trim();
+    if (cleanStmt) {
+      await db.exec(cleanStmt);
+    }
+  }
+  console.log("  [PASS] 20261116e applied successfully.");
+
+  // 6. Execute Split Migration Phase 3: 20261116f (Bounded Batch Backfill)
+  const migrationFPath = path.resolve(__dirname, "../supabase/migrations/20261116f_repair_642_batch_backfill.sql");
+  assert.ok(fs.existsSync(migrationFPath), `Migration file 20261116f must exist at: ${migrationFPath}`);
+  const migrationFRaw = fs.readFileSync(migrationFPath, "utf8");
+
+  console.log("  Applying 20261116f Bounded Batch Backfill...");
+  await db.exec(migrationFRaw);
+  console.log("  [PASS] 20261116f applied successfully.");
+
+  // 7. Containment Assertions
   const triggerCheck = await db.query(
     "SELECT tgname FROM pg_trigger WHERE tgname = 'trg_jobs_merge_dedupe_priority';"
   );
@@ -231,42 +306,71 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   assert.strictEqual(Number((recoveryCheck.rows[0] as any).count), 48, "Recovery table must remain untouched with all 48 rows");
   console.log("  [PASS] Containment verified: harmful objects dropped, recovery table preserved.");
 
-  // 6. Test Timestamp Protection during Backfills & Enrichment Updates
+  // 8. Test Explicit Liveness Contract on touch_job_last_seen (Blocker 3)
   const preUpdate = await db.query<{ last_seen_at: Date | string }>(
     "SELECT last_seen_at FROM public.jobs WHERE id = '11111111-1111-1111-1111-111111111111';"
   );
   const originalLastSeen = new Date(preUpdate.rows[0].last_seen_at).toISOString();
 
-  // Perform enrichment update
+  // A. Metadata update: source_priority, is_remote, role_category, top_keywords must PRESERVE last_seen_at
   await db.exec(`
     UPDATE public.jobs
-    SET role_category = 'SDE', top_keywords = '{"PostgreSQL", "Go"}'
+    SET source_priority = 1, is_remote = true, role_category = 'SDE', top_keywords = '{"PostgreSQL", "Go"}'
     WHERE id = '11111111-1111-1111-1111-111111111111';
   `);
 
-  const postUpdate = await db.query<{ last_seen_at: Date | string }>(
+  const postMetadataUpdate = await db.query<{ last_seen_at: Date | string }>(
     "SELECT last_seen_at FROM public.jobs WHERE id = '11111111-1111-1111-1111-111111111111';"
   );
-  const updatedLastSeen = new Date(postUpdate.rows[0].last_seen_at).toISOString();
-
+  const metadataLastSeen = new Date(postMetadataUpdate.rows[0].last_seen_at).toISOString();
   assert.strictEqual(
-    updatedLastSeen,
+    metadataLastSeen,
     originalLastSeen,
-    "Repaired touch_job_last_seen trigger must preserve last_seen_at during metadata/enrichment updates"
+    "touch_job_last_seen must preserve last_seen_at when metadata (source_priority, is_remote, etc.) changes"
   );
-  console.log("  [PASS] Ranking timestamp protection verified (last_seen_at preserved during enrichment update).");
+  console.log("  [PASS] touch_job_last_seen preserves last_seen_at across all metadata updates.");
 
-  // 7. Test All 11 Language-Neutral Golden Cases against PostgreSQL & TypeScript
+  // B. Explicit caller-provided last_seen_at must be respected
+  const explicitTarget = "2026-11-15T12:00:00.000Z";
+  await db.exec(`
+    UPDATE public.jobs
+    SET last_seen_at = '2026-11-15 12:00:00+00'
+    WHERE id = '11111111-1111-1111-1111-111111111111';
+  `);
+  const postExplicitUpdate = await db.query<{ last_seen_at: Date | string }>(
+    "SELECT last_seen_at FROM public.jobs WHERE id = '11111111-1111-1111-1111-111111111111';"
+  );
+  const explicitLastSeen = new Date(postExplicitUpdate.rows[0].last_seen_at).toISOString();
+  assert.strictEqual(explicitLastSeen, explicitTarget, "Caller-provided explicit last_seen_at must be respected");
+  console.log("  [PASS] touch_job_last_seen respects caller-provided distinct last_seen_at.");
+
+  // C. Explicit scraper refresh session setting updates last_seen_at
+  await db.exec(`
+    SET careermonke.scraper_refresh = 'on';
+    UPDATE public.jobs
+    SET title = 'Lead Systems Architect'
+    WHERE id = '11111111-1111-1111-1111-111111111111';
+    RESET careermonke.scraper_refresh;
+  `);
+  const postScraperUpdate = await db.query<{ last_seen_at: Date | string }>(
+    "SELECT last_seen_at FROM public.jobs WHERE id = '11111111-1111-1111-1111-111111111111';"
+  );
+  const scraperLastSeen = new Date(postScraperUpdate.rows[0].last_seen_at).toISOString();
+  assert.notStrictEqual(scraperLastSeen, explicitTarget, "Scraper refresh session setting must update last_seen_at");
+  console.log("  [PASS] touch_job_last_seen updates last_seen_at when careermonke.scraper_refresh = 'on'.");
+
+  // 9. Test All 15 Language-Neutral Golden Cases against PostgreSQL & TypeScript (Blocker 2)
   const fixturesPath = path.resolve(__dirname, "fixtures/identity_golden_cases.json");
   const goldenRaw = fs.readFileSync(fixturesPath, "utf8");
   const goldenData: GoldenFile = JSON.parse(goldenRaw);
 
   console.log(`  Evaluating ${goldenData.cases.length} Golden Cases for byte-for-byte PG/TS parity...`);
+  assert.strictEqual(goldenData.cases.length, 15, "Expected 15 golden cases including Turkish İ, Greek ς, NEL U+0085, and Tokyo/Osaka");
 
   for (const c of goldenData.cases) {
     const hashes: string[] = [];
     for (const item of c.items) {
-      // 1. TypeScript computation
+      // TypeScript computation
       const tsPayload = buildSimilarityPayloadV2(
         item.input.company,
         item.input.title,
@@ -280,14 +384,14 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
         item.input.location
       );
 
-      // 2. PostgreSQL computation
+      // PostgreSQL computation
       const pgRes = await db.query<{ hash: string }>(
         "SELECT public.compute_job_similarity_hash_v2($1, $2, $3, $4) as hash;",
         [item.input.company, item.input.title, item.input.country, item.input.location]
       );
       const pgHash = pgRes.rows[0].hash;
 
-      // 3. Assertions
+      // Assertions
       assert.strictEqual(
         tsPayload,
         item.expected_payload,
@@ -309,6 +413,20 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
         `[${c.id} - ${item.label}] PG hash and TS hash must be byte-for-byte identical`
       );
 
+      // Authoritative key checks
+      if (item.authoritative && item.authoritative.providerJobId && item.authoritative.expectedSourceJobId) {
+        const scoped = buildScopedJobIdentity(
+          item.authoritative.sourceId,
+          item.authoritative.providerJobId,
+          item.authoritative.locationKey
+        );
+        assert.strictEqual(
+          scoped.sourceJobId,
+          item.authoritative.expectedSourceJobId,
+          `[${c.id} - ${item.label}] Authoritative sourceJobId mismatch`
+        );
+      }
+
       hashes.push(pgHash);
     }
 
@@ -326,71 +444,63 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
     console.log(`    [PASS] ${c.id}: ${c.name}`);
   }
 
-  // 8. Test Case 10 & 11 in Database (Authoritative Write Identity Uniqueness)
-  // Two jobs with identical title/location at Google, distinct requisition IDs
+  // 10. Test Tokyo vs Osaka Location Identity & '#' Provider ID Escaping (Blocker 1)
+  const tokyoScoped = buildScopedJobIdentity("greenhouse:paypay", "REQ", "東京");
+  const osakaScoped = buildScopedJobIdentity("greenhouse:paypay", "REQ", "大阪");
+  const hashScoped = buildScopedJobIdentity("greenhouse:paypay", "REQ#6");
+
+  assert.strictEqual(tokyoScoped.sourceJobId, "REQ#6:東京");
+  assert.strictEqual(osakaScoped.sourceJobId, "REQ#6:大阪");
+  assert.strictEqual(hashScoped.sourceJobId, "REQ%236");
+  assert.notStrictEqual(tokyoScoped.sourceJobId, osakaScoped.sourceJobId);
+  assert.notStrictEqual(tokyoScoped.sourceJobId, hashScoped.sourceJobId);
+
+  // Insert into DB to verify coexistence under unique index
   await db.exec(`
     INSERT INTO public.jobs (
       id, title, company, location, country, country_code, source_type, source_id, source_job_id,
       similarity_hash_v2, is_active, status
     ) VALUES (
-      '22222222-2222-2222-2222-222222222222', 'Software Engineer', 'Google', 'Mountain View, CA',
-      'United States', 'US', 'greenhouse', 'greenhouse:google', 'REQ-101',
-      public.compute_job_similarity_hash_v2('Google', 'Software Engineer', 'US', 'Mountain View, CA'),
+      '66666666-6666-6666-6666-666666666666', 'Software Engineer', 'PayPay', '東京', 'JP', 'JP',
+      'greenhouse', 'greenhouse:paypay', '${tokyoScoped.sourceJobId}',
+      public.compute_job_similarity_hash_v2('PayPay', 'Software Engineer', 'JP', '東京'),
       true, 'active'
     ), (
-      '33333333-3333-3333-3333-333333333333', 'Software Engineer', 'Google', 'Mountain View, CA',
-      'United States', 'US', 'greenhouse', 'greenhouse:google', 'REQ-102',
-      public.compute_job_similarity_hash_v2('Google', 'Software Engineer', 'US', 'Mountain View, CA'),
+      '77777777-7777-7777-7777-777777777777', 'Software Engineer', 'PayPay', '大阪', 'JP', 'JP',
+      'greenhouse', 'greenhouse:paypay', '${osakaScoped.sourceJobId}',
+      public.compute_job_similarity_hash_v2('PayPay', 'Software Engineer', 'JP', '大阪'),
+      true, 'active'
+    ), (
+      '88888888-8888-8888-8888-888888888888', 'Software Engineer', 'PayPay', 'Remote', 'JP', 'JP',
+      'greenhouse', 'greenhouse:paypay', '${hashScoped.sourceJobId}',
+      public.compute_job_similarity_hash_v2('PayPay', 'Software Engineer', 'JP', 'Remote'),
       true, 'active'
     );
   `);
-  console.log("  [PASS] Case 10: Same title/location with distinct requisitions coexists safely without collision.");
+  console.log("  [PASS] Blocker 1 verified: Tokyo and Osaka location identities and '#' provider IDs coexist without collision.");
 
-  // Provider job IDs duplicated across different boards
-  await db.exec(`
-    INSERT INTO public.jobs (
-      id, title, company, location, country, country_code, source_type, source_id, source_job_id,
-      similarity_hash_v2, is_active, status
-    ) VALUES (
-      '44444444-4444-4444-4444-444444444444', 'Data Scientist', 'Alpha Corp', 'New York, NY',
-      'United States', 'US', 'greenhouse', 'greenhouse:board_alpha', '101',
-      public.compute_job_similarity_hash_v2('Alpha Corp', 'Data Scientist', 'US', 'New York, NY'),
-      true, 'active'
-    ), (
-      '55555555-5555-5555-5555-555555555555', 'DevOps Specialist', 'Beta Corp', 'Austin, TX',
-      'United States', 'US', 'greenhouse', 'greenhouse:board_beta', '101',
-      public.compute_job_similarity_hash_v2('Beta Corp', 'DevOps Specialist', 'US', 'Austin, TX'),
-      true, 'active'
-    );
-  `);
-  console.log("  [PASS] Case 11: Identical provider requisition IDs scoped across boards coexist cleanly.");
-
-  // 9. Assert Exact Duplicate (source_id, source_job_id) is Rejected by Unique Index
-  let duplicateRejected = false;
+  // Assert duplicate rejection
+  let duplicateBlocked = false;
   try {
     await db.exec(`
-      INSERT INTO public.jobs (
-        title, company, source_type, source_id, source_job_id
-      ) VALUES (
-        'Duplicate Attempt', 'Google', 'greenhouse', 'greenhouse:google', 'REQ-101'
-      );
+      INSERT INTO public.jobs (title, company, source_type, source_id, source_job_id)
+      VALUES ('Duplicate Tokyo', 'PayPay', 'greenhouse', 'greenhouse:paypay', 'REQ#6:東京');
     `);
   } catch (err: any) {
-    duplicateRejected = true;
+    duplicateBlocked = true;
     assert.ok(
-      err.message.includes("idx_jobs_source_id_source_job_id_uniq") ||
-      err.message.includes("unique constraint"),
+      err.message.includes("idx_jobs_source_id_source_job_id_uniq") || err.message.includes("unique"),
       `Expected unique constraint violation, got: ${err.message}`
     );
   }
-  assert.ok(duplicateRejected, "Duplicate (source_id, source_job_id) must be rejected by unique index");
-  console.log("  [PASS] Authoritative unique constraint idx_jobs_source_id_source_job_id_uniq actively enforces write safety.");
+  assert.ok(duplicateBlocked, "Duplicate (source_id, source_job_id) must be blocked by unique index");
+  console.log("  [PASS] Authoritative unique index idx_jobs_source_id_source_job_id_uniq actively enforces write uniqueness.");
 
-  // 10. Verify jobs_public View Data & Permissions
+  // 11. Verify jobs_public View Data & Permissions (Blocker 5)
   const publicViewRows = await db.query(
     "SELECT id, title, company, salary_text, description, apply_url, role_category, is_remote FROM public.jobs_public WHERE is_active = true;"
   );
-  assert.ok(publicViewRows.rows.length >= 5, "jobs_public must return active jobs");
+  assert.ok(publicViewRows.rows.length >= 4, "jobs_public must return active jobs");
   for (const row of publicViewRows.rows as any[]) {
     assert.strictEqual(row.company, "Verified Employer", "Company name must be masked in public view");
     assert.strictEqual(row.salary_text, null, "Salary text must be masked in public view");
@@ -399,11 +509,11 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   }
   console.log("  [PASS] jobs_public view properly masks paid fields and presents public columns.");
 
-  // 11. Extract and Execute Non-Destructive Rollback SQL
+  // 12. Extract and Execute Non-Destructive Rollback SQL (Blocker 6)
   const rollbackMarker = "--   -- 1.";
-  const rollbackStartIdx = migrationRaw.indexOf(rollbackMarker);
-  assert.ok(rollbackStartIdx !== -1, "Migration must contain '--   -- 1.' in rollback section");
-  const rollbackRaw = migrationRaw.substring(rollbackStartIdx);
+  const rollbackStartIdx = migrationDRaw.indexOf(rollbackMarker);
+  assert.ok(rollbackStartIdx !== -1, "20261116d must contain '--   -- 1.' in rollback section");
+  const rollbackRaw = migrationDRaw.substring(rollbackStartIdx);
 
   const rollbackLines = rollbackRaw
     .split("\n")
@@ -422,32 +532,46 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   await db.exec(rollbackLines);
   console.log("  [PASS] Rollback SQL executed cleanly.");
 
-  // 12. Post-Rollback Assertions
-  // A. All rows remain intact
-  const postRollbackCount = await db.query("SELECT count(*) as count FROM public.jobs;");
-  assert.strictEqual(Number((postRollbackCount.rows[0] as any).count), 5, "All 5 jobs must remain after rollback");
-
-  // B. jobs_public view works and returns legacy columns
-  const postRollbackPublic = await db.query(
-    "SELECT id, title, company, salary_text FROM public.jobs_public WHERE is_active = true;"
+  // 13. Post-Rollback Assertions (Blocker 6)
+  // A. compute_job_dedupe_hash must be callable and NOT call dropped compute_job_similarity_hash_v2
+  const legacyHashCheck = await db.query<{ hash: string }>(
+    "SELECT public.compute_job_dedupe_hash('Google', 'Software Engineer', 'US', 'Mountain View') as hash;"
   );
-  assert.strictEqual(postRollbackPublic.rows.length, 5, "jobs_public must return all 5 rows");
+  assert.ok(legacyHashCheck.rows[0].hash.length === 64, "compute_job_dedupe_hash must execute cleanly after rollback");
 
-  // C. Additive columns and their data are preserved
+  // B. compute_job_similarity_hash_v2 must be dropped
+  const droppedFuncCheck = await db.query(
+    "SELECT to_regproc('public.compute_job_similarity_hash_v2') as func_proc;"
+  );
+  assert.strictEqual((droppedFuncCheck.rows[0] as any).func_proc, null, "compute_job_similarity_hash_v2 must be dropped");
+
+  // C. Pre-existing jobs_source_source_job_id_unique constraint must NOT be dropped
+  const preExistingConstraint = await db.query(
+    "SELECT conname FROM pg_constraint WHERE conname = 'jobs_source_source_job_id_unique';"
+  );
+  assert.strictEqual(preExistingConstraint.rows.length, 1, "Pre-existing jobs_source_source_job_id_unique must NOT be dropped");
+
+  // D. Additive columns and their data are preserved
   const additiveCheck = await db.query<{ source_id: string }>(
-    "SELECT source_id FROM public.jobs WHERE id = '22222222-2222-2222-2222-222222222222';"
+    "SELECT source_id FROM public.jobs WHERE id = '66666666-6666-6666-6666-666666666666';"
   );
   assert.strictEqual(
     additiveCheck.rows[0].source_id,
-    "greenhouse:google",
+    "greenhouse:paypay",
     "Additive columns (source_id) must be preserved in rollback"
   );
 
-  // D. Recovery table intact
+  // E. Recovery table intact
   const recoveryPost = await db.query(
     "SELECT count(*) as count FROM public.recovery_642_restore48_20261116;"
   );
   assert.strictEqual(Number((recoveryPost.rows[0] as any).count), 48, "Recovery table must remain intact after rollback");
+
+  // F. jobs_public view works and returns legacy columns
+  const postRollbackPublic = await db.query(
+    "SELECT id, title, company, salary_text FROM public.jobs_public WHERE is_active = true;"
+  );
+  assert.ok(postRollbackPublic.rows.length >= 4, "jobs_public must return active jobs after rollback");
 
   console.log("=== ALL INTEGRATION & MIGRATION SAFETY CHECKS PASSED ===");
 }

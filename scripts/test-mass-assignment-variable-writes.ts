@@ -31,6 +31,7 @@ const BASELINE: Record<string, string> = {
   "src/lib/cron/dailyDigestCron.ts :: upsert(pendingDigestRows)": "cron-built digest rows",
   "src/lib/cron/dailyDigestCron.ts :: upsert(row)": "cron-built digest row (per-row retry)",
   "src/lib/billing/razorpay.ts :: update(rawBody)": "NOT a DB write: crypto HMAC update",
+  "src/lib/jobs/highVolumeEnrichment.ts :: update(payload)": "NOT a DB write: crypto sha256 hash update",
   "src/lib/resume/storage.ts :: upsert(payload)": "payload built from the validated candidate profile (two sites: first try and retry)",
 };
 const EXPECTED_COUNTS: Record<string, number> = { "src/lib/resume/storage.ts :: upsert(payload)": 2 };
