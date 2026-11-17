@@ -48,6 +48,7 @@ export interface ProUnlockError {
 }
 
 export interface GetJobsOptions {
+  baseUrl?: string;
   page?: number;
   pageSize?: number;
   category?: string;
@@ -352,11 +353,11 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const relevanceTerms = isMatchSort
     ? extractCandidateRelevanceTerms(candidate, preferences)
     : [];
+  const isRecommendedWithoutResume = isMatchSort && (!candidate || relevanceTerms.length === 0);
 
-  // 1. Route text search and default list through safe server endpoint so company capping can use service-key company_id
-  // without exposing raw database tables or leaking paid fields to guests
+  const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
   const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
-  const shouldUseServer = typeof window !== "undefined" && (hasServerFilter || !candidate || relevanceTerms.length === 0);
+  const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
       let token: string | undefined;
@@ -370,6 +371,61 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       const headers: Record<string, string> = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      // Wire recommendations into the real production path:
+      // When user requests match/recommended jobs without an uploaded resume, call /api/jobs/recommended
+      if (isRecommendedWithoutResume) {
+        const recParams = new URLSearchParams({
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+        if (preferences?.roles?.length) recParams.set("roles", preferences.roles.join(","));
+        if (preferences?.experienceLevel) recParams.set("experienceLevel", preferences.experienceLevel);
+        if (preferences?.remotePreference) recParams.set("remotePreference", preferences.remotePreference);
+        if (preferences?.locations?.length) recParams.set("locations", preferences.locations.join(","));
+        if (preferences?.employmentTypes?.length) recParams.set("employmentTypes", preferences.employmentTypes.join(","));
+        if (category && category !== "all") recParams.set("category", category);
+        if (remoteOnly) recParams.set("remoteOnly", "true");
+        if (location && location !== "all") recParams.set("location", location);
+        if (level && level !== "all") recParams.set("level", level);
+        if (jobType && jobType !== "all") recParams.set("jobType", jobType);
+        if (workModel && workModel !== "all") recParams.set("workModel", workModel);
+        if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
+
+        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers });
+        if (recRes.status === 403) {
+          return {
+            jobs: [],
+            totalCount: 0,
+            nextCursor: null,
+            hasNextPage: false,
+            error: "forbidden",
+          };
+        }
+        if (recRes.status === 503) {
+          return {
+            jobs: [],
+            totalCount: 0,
+            nextCursor: null,
+            hasNextPage: false,
+            isDegraded: true,
+            error: "degraded",
+          };
+        }
+        if (recRes.ok) {
+          const json = await recRes.json();
+          const count = json.totalCount ?? (json.jobs?.length || 0);
+          return {
+            jobs: json.jobs || [],
+            totalCount: count,
+            nextCursor: null,
+            hasNextPage: (page * pageSize) < count,
+            isDegraded: false,
+          };
+        } else {
+          log.warn(`Recommended endpoint responded with status ${recRes.status}, falling back to public preview query.`);
+        }
       }
 
       const params = new URLSearchParams({
@@ -394,7 +450,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (options.eligibility) params.set("eligibility", options.eligibility);
       if (options.currency) params.set("currency", options.currency);
 
-      const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers });
       if (res.status === 403) {
         return {
           jobs: [],
@@ -769,9 +825,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       if (hasOnboardingAnswers(preferences)) {
+        const poolLimit = Math.min(2000, Math.max(500, to + pageSize * 4));
         const poolQuery = query
           .order("posted_at", { ascending: false, nullsFirst: false })
-          .range(0, 199);
+          .range(0, poolLimit - 1);
         const poolRes = await poolQuery;
         if (poolRes.error && !isLegacyBehavior) {
           return DEGRADED_JOBS_RESULT;
@@ -779,7 +836,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         const ranked = rankJobsByRecommendation(poolRes.data || [], preferences);
         const capped = capJobsPerCompany(ranked, 3, 30);
         data = capped.slice(from, to + 1);
-        count = poolRes.count ?? ranked.length;
+        count = capped.length;
       } else {
         // Guest or profile without confirmed resume or preferences: sensible global relevance (verified roles first, then newest)
         const res = await query

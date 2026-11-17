@@ -79,8 +79,11 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "25", 10)));
+    const rawPage = parseInt(searchParams.get("page") || "1", 10);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+
+    const rawPageSize = parseInt(searchParams.get("pageSize") || "25", 10);
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 25;
 
     let cfEnv: Record<string, any> | undefined;
     try {
@@ -165,45 +168,73 @@ export async function GET(req: Request) {
       query = query.eq("is_active", true);
     }
 
-    // Fetch candidate pool (limit 250 for fast client-edge scoring)
-    query = query
-      .order("posted_at", { ascending: false, nullsFirst: false })
-      .order("id", { ascending: false })
-      .limit(250);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
 
-    const { data: rawJobs, count, error } = await query;
+    let paginatedJobs: any[] = [];
+    let totalCount = 0;
 
-    if (error) {
-      log.error("Failed to query jobs for recommendations", { error: error.message || error });
-      return NextResponse.json(
-        { error: "Database service unavailable", jobs: [], totalCount: 0 },
-        { status: 503 }
-      );
+    if (isPersonalized) {
+      // Bounded candidate pool for deterministic client-side recommendation scoring.
+      // Pool bounds dynamically cover up to (page + 4) * pageSize or at least 500, capped at 2000,
+      // ensuring page 11+ (250+) is fully populated with scored jobs.
+      const poolLimit = Math.min(2000, Math.max(500, to + pageSize * 4));
+      query = query
+        .order("posted_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .range(0, poolLimit - 1);
+
+      const { data: rawJobs, error } = await query;
+
+      if (error) {
+        log.error("Failed to query candidate jobs for recommendations", { error: error.message || error });
+        return NextResponse.json(
+          { error: "Database service unavailable", jobs: [], totalCount: 0 },
+          { status: 503 }
+        );
+      }
+
+      const candidateJobs = rawJobs || [];
+      const rankedJobs = rankJobsByRecommendation(candidateJobs, answers);
+      const cappedJobs = capJobsPerCompany(rankedJobs, 3, 30);
+      totalCount = cappedJobs.length; // Honest total representing scored candidate pool
+      paginatedJobs = cappedJobs.slice(from, to + 1);
+    } else {
+      // Unpersonalized fallback: latest jobs directly paginated over corpus with honest exact count
+      query = query
+        .order("posted_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .range(from, to);
+
+      const { data: rawJobs, count, error } = await query;
+
+      if (error) {
+        log.error("Failed to query latest jobs for fallback", { error: error.message || error });
+        return NextResponse.json(
+          { error: "Database service unavailable", jobs: [], totalCount: 0 },
+          { status: 503 }
+        );
+      }
+
+      totalCount = count ?? (rawJobs?.length || 0);
+      paginatedJobs = capJobsPerCompany(rawJobs || [], 3, 30);
     }
 
-    let candidateJobs = rawJobs || [];
-
-    // Rank jobs using deterministic TS scoring with fallback to latest jobs
-    let rankedJobs = rankJobsByRecommendation(candidateJobs, isPersonalized ? answers : null);
-
-    // Apply company capping (max 3 per company in visible list)
-    rankedJobs = capJobsPerCompany(rankedJobs, 3, 30);
-
-    const totalCount = count ?? rankedJobs.length;
-
-    // Slice according to pagination
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize;
-    const paginatedJobs = rankedJobs.slice(from, to);
-
     // Build company group ID map for non-Pro responses to prevent company_id leakage
+    // Fails closed with 503 if HMAC secret is missing or unavailable
     let listGroupIds = new Map<string, string>();
     if (!(isPro && hasServiceKey)) {
       try {
-        const secret = getRuntimeEnv(COMPANY_GROUP_SECRET_ENV, cfEnv) || process.env[COMPANY_GROUP_SECRET_ENV] || "default-secret-dev";
+        const secret = getRuntimeEnv(COMPANY_GROUP_SECRET_ENV, cfEnv) || process.env[COMPANY_GROUP_SECRET_ENV];
         listGroupIds = await buildCompanyGroupIdMap(paginatedJobs.map((r: any) => r.company_id), secret);
       } catch (groupErr: any) {
-        log.error("Company group secret error in /api/jobs/recommended", { error: groupErr?.message || groupErr });
+        log.error("Company group secret unavailable; refusing non-Pro response in /api/jobs/recommended", {
+          error: groupErr?.message || groupErr,
+        });
+        return NextResponse.json(
+          { error: "Database service unavailable", jobs: [], totalCount: 0 },
+          { status: 503 }
+        );
       }
     }
 
