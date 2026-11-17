@@ -317,11 +317,11 @@ function createMockSupabase(db: MockDbState) {
 
         const planCode = order?.plan_code || sub?.plan_id || "monthly";
         const planPrices: Record<string, number> = {
-          weekly: 69200,
-          monthly: 149900,
-          quarterly: 399900,
+          weekly: 39900,
+          monthly: 79900,
+          quarterly: 219900,
         };
-        const expectedPrice = planPrices[planCode] || 149900;
+        const expectedPrice = planPrices[planCode] || 79900;
         if (args.p_amount_paise && args.p_amount_paise !== expectedPrice) {
           return {
             data: {
@@ -1274,7 +1274,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "live",
             status: "created",
-            amount_paise: 69200,
+            amount_paise: 39900,
             plan_code: "weekly",
           },
         ],
@@ -1314,7 +1314,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "test",
             status: "created",
-            amount_paise: 69200,
+            amount_paise: 39900,
             plan_code: "weekly",
           },
         ],
@@ -1356,7 +1356,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "test",
             status: "created",
-            amount_paise: 69200,
+            amount_paise: 39900,
             plan_code: "weekly",
           },
         ],
@@ -1396,7 +1396,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "test",
             status: "created",
-            amount_paise: 69200,
+            amount_paise: 39900,
             plan_code: "weekly",
           },
         ],
@@ -1412,7 +1412,7 @@ async function runTestSuite() {
       event: "subscription.activated",
       payload: {
         subscription: { entity: { id: "sub_rzp_new_user" } },
-        payment: { entity: { id: "pay_initial_101", amount: 69200 } },
+        payment: { entity: { id: "pay_initial_101", amount: 39900 } },
       },
     });
     const req = buildMockRequest({
@@ -1469,7 +1469,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "test",
             status: "paid",
-            amount_paise: 69200,
+            amount_paise: 39900,
             plan_code: "weekly",
           },
         ],
@@ -1485,7 +1485,7 @@ async function runTestSuite() {
       event: "subscription.charged",
       payload: {
         subscription: { entity: { id: "sub_rzp_same_cycle" } },
-        payment: { entity: { id: "pay_initial_101", amount: 69200 } },
+        payment: { entity: { id: "pay_initial_101", amount: 39900 } },
       },
     });
     const req = buildMockRequest({
@@ -1527,7 +1527,7 @@ async function runTestSuite() {
             provider: "razorpay",
             mode: "test",
             status: "paid",
-            amount_paise: 149900,
+            amount_paise: 79900,
             plan_code: "monthly",
           },
         ],
@@ -1542,7 +1542,7 @@ async function runTestSuite() {
       event: "subscription.charged",
       payload: {
         subscription: { entity: { id: "sub_rzp_renewal_1" } },
-        payment: { entity: { id: "pay_cycle_2", amount: 149900 } },
+        payment: { entity: { id: "pay_cycle_2", amount: 79900 } },
       },
     });
     const req = buildMockRequest({

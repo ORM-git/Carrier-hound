@@ -283,7 +283,7 @@ async function runSuite() {
       provider_order_id: testOrderId,
       plan_code: "monthly",
       addon_code: null,
-      amount_paise: 149900,
+      amount_paise: 49900,
       currency: "INR",
       status: "created",
       mode: "test",
@@ -303,7 +303,7 @@ async function runSuite() {
           id: testPaymentId,
           order_id: testOrderId,
           status: "authorized", // NOT captured
-          amount: 149900,
+          amount: 49900,
           currency: "INR",
         }),
       };
@@ -328,7 +328,7 @@ async function runSuite() {
           id: testPaymentId,
           order_id: testOrderId,
           status: "failed",
-          amount: 149900,
+          amount: 49900,
           currency: "INR",
         }),
       };
@@ -379,7 +379,7 @@ async function runSuite() {
           // missing id
           order_id: testOrderId,
           status: "captured",
-          amount: 149900,
+          amount: 49900,
           currency: "INR",
         }),
       };
@@ -401,7 +401,7 @@ async function runSuite() {
           id: testPaymentId,
           // missing order_id
           status: "captured",
-          amount: 149900,
+          amount: 49900,
           currency: "INR",
         }),
       };
@@ -423,7 +423,7 @@ async function runSuite() {
           id: testPaymentId,
           order_id: testOrderId,
           status: "captured",
-          amount: 149900,
+          amount: 49900,
           // missing currency
         }),
       };
@@ -465,7 +465,7 @@ async function runSuite() {
         getSupabaseAdmin: () => mockDb5.client,
         fetchRazorpayPayment: async () => ({
           status: "captured",
-          amount: 149900,
+          amount: 49900,
         }),
       };
       const res5 = await verifyNextPost(req5);
@@ -487,7 +487,7 @@ async function runSuite() {
         fetchRazorpayPayment: async () => ({
           id: testPaymentId,
           status: "captured",
-          amount: 149900,
+          amount: 49900,
           currency: "INR",
         }),
       })({
@@ -507,7 +507,7 @@ async function runSuite() {
           id: testPaymentId,
           order_id: testOrderId,
           status: "captured",
-          amount: 149900,
+          amount: 49900,
         }),
       })({
         httpMethod: "POST",
@@ -524,7 +524,7 @@ async function runSuite() {
         getSupabaseAdmin: () => mockDb3.client,
         fetchRazorpayPayment: async () => ({
           status: "captured",
-          amount: 149900,
+          amount: 49900,
         }),
       })({
         httpMethod: "POST",
@@ -572,7 +572,7 @@ async function runSuite() {
           id: testPaymentId,
           order_id: testOrderId,
           status: "captured",
-          amount: 149900,
+          amount: 49900,
           currency: "INR",
         }),
       };

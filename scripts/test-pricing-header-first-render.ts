@@ -154,24 +154,24 @@ async function runPricingHeaderFirstRenderSuite() {
     "Pricing page must include the Weekly plan row"
   );
   assert.ok(
-    markup.includes("₹692"),
-    "Pricing page must include the Weekly price ₹692"
+    markup.includes("₹399"),
+    "Pricing page must include the Weekly price ₹399"
   );
   assert.ok(
     markup.includes("billed monthly"),
     "Pricing page must include the Monthly plan row"
   );
   assert.ok(
-    markup.includes("₹1,499"),
-    "Pricing page must include the Monthly price ₹1,499"
+    markup.includes("₹499"),
+    "Pricing page must include the Monthly price ₹499"
   );
   assert.ok(
     markup.includes("billed every 3 months"),
     "Pricing page must include the Quarterly plan row"
   );
   assert.ok(
-    markup.includes("₹3,999"),
-    "Pricing page must include the Quarterly price ₹3,999"
+    markup.includes("₹2,199"),
+    "Pricing page must include the Quarterly price ₹2,199"
   );
   assert.ok(
     markup.includes("Free Plan") && markup.includes("₹0.00"),
