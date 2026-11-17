@@ -42,6 +42,15 @@ def build_source_id(vendor: str, board_token: str) -> str:
     return f"{vendor.strip().lower()}:{board_token.strip().lower()}"
 
 
+_WHITESPACE_RE = re.compile(
+    r"[ \t\n\r\f\v\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+"
+)
+_COMPANY_SUFFIX_RE = re.compile(
+    r"(?<![^\W_])(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\.?(?![^\W_])",
+    re.IGNORECASE,
+)
+
+
 def clean_location_key(location_key: str | None) -> str:
     """Normalizes location key for scoped job identity framing: NFC, lowercased, edge chars mapped, whitespace collapsed."""
     if not location_key or not isinstance(location_key, str):
@@ -90,11 +99,6 @@ def build_scoped_job_identity(
 # 2. VERSIONED SIMILARITY CONTRACT (v2 LENGTH-FRAMED UTF-8 SHA-256)
 # ============================================================================
 
-_COMPANY_SUFFIX_RE = re.compile(
-    r"\b(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\b\.?",
-    re.IGNORECASE,
-)
-_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def clean_company(company: str | None) -> str:

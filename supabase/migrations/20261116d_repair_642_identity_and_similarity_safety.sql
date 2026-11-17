@@ -30,7 +30,7 @@ DO $$
 DECLARE
   v_dup_source_keys integer := 0;
 BEGIN
-  -- 1. Check required tables exist
+  -- 1. Check required baseline tables exist
   IF to_regclass('public.jobs') IS NULL THEN
     RAISE EXCEPTION 'Preflight check failed: public.jobs table does not exist';
   END IF;
@@ -38,12 +38,52 @@ BEGIN
     RAISE EXCEPTION 'Preflight check failed: public.companies table does not exist';
   END IF;
 
-  -- 2. Verify incident recovery table is present and uncorrupted if it exists
+  -- 2. Verify expected primary key constraint on public.jobs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.jobs'::regclass
+      AND conname = 'jobs_pkey'
+      AND contype = 'p'
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected primary key constraint jobs_pkey on public.jobs missing or definition differs';
+  END IF;
+
+  -- 3. Verify expected primary key constraint on public.companies
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.companies'::regclass
+      AND conname = 'companies_pkey'
+      AND contype = 'p'
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected primary key constraint companies_pkey on public.companies missing or definition differs';
+  END IF;
+
+  -- 4. Verify expected source uniqueness constraint on public.jobs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.jobs'::regclass
+      AND conname IN ('jobs_source_source_job_id_unique', 'jobs_source_source_job_id_key')
+      AND contype = 'u'
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected unique constraint on (source, source_job_id) missing or definition differs';
+  END IF;
+
+  -- 5. Verify expected baseline trigger jobs_touch_last_seen on public.jobs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.jobs'::regclass
+      AND tgname = 'jobs_touch_last_seen'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected trigger jobs_touch_last_seen on public.jobs missing or definition differs';
+  END IF;
+
+  -- 6. Verify incident recovery table is present and uncorrupted if it exists
   IF to_regclass('public.recovery_642_restore48_20261116') IS NOT NULL THEN
     RAISE NOTICE 'Preflight: incident recovery table verified intact.';
   END IF;
 
-  -- 3. Check for existing duplicate (source_id, source_job_id) pairs if column already exists
+  -- 7. Check for existing duplicate (source_id, source_job_id) pairs if column already exists
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'source_id'
@@ -61,7 +101,7 @@ BEGIN
     END IF;
   END IF;
 
-  RAISE NOTICE 'Preflight checks passed: baseline tables and source key integrity verified.';
+  RAISE NOTICE 'Preflight checks passed: baseline tables, constraints, triggers, and source key integrity verified.';
 END $$;
 
 BEGIN;
@@ -160,33 +200,25 @@ DECLARE
 BEGIN
   -- 1. Normalize company: NFC, lowercase, edge characters, strip legal suffixes, collapse whitespace
   v_company := lower(COALESCE(normalize(p_company, NFC), ''));
-  v_company := replace(v_company, 'i' || chr(775), 'i');
-  v_company := replace(v_company, chr(962), chr(963));
-  v_company := replace(v_company, chr(133), ' ');
-  v_company := regexp_replace(v_company, '\m(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\M\.?', ' ', 'gi');
-  v_company := trim(regexp_replace(v_company, '\s+', ' ', 'g'));
+  v_company := replace(replace(replace(replace(v_company, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  v_company := regexp_replace(v_company, '\y(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\y\.?', ' ', 'gi');
+  v_company := trim(regexp_replace(v_company, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
   -- 2. Normalize title: NFC, lowercase, edge characters, collapse whitespace (preserves Unicode & punctuation)
   v_title := lower(COALESCE(normalize(p_title, NFC), ''));
-  v_title := replace(v_title, 'i' || chr(775), 'i');
-  v_title := replace(v_title, chr(962), chr(963));
-  v_title := replace(v_title, chr(133), ' ');
-  v_title := trim(regexp_replace(v_title, '\s+', ' ', 'g'));
+  v_title := replace(replace(replace(replace(v_title, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  v_title := trim(regexp_replace(v_title, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
   -- 3. Normalize country: NFC, lowercase, edge characters, collapse whitespace
   v_country := lower(COALESCE(normalize(p_country, NFC), ''));
-  v_country := replace(v_country, 'i' || chr(775), 'i');
-  v_country := replace(v_country, chr(962), chr(963));
-  v_country := replace(v_country, chr(133), ' ');
-  v_country := trim(regexp_replace(v_country, '\s+', ' ', 'g'));
+  v_country := replace(replace(replace(replace(v_country, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  v_country := trim(regexp_replace(v_country, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
   -- 4. Normalize location: primary city/territory before comma, NFC, lowercase, edge characters, collapse whitespace
   v_location := lower(COALESCE(normalize(p_location, NFC), ''));
-  v_location := replace(v_location, 'i' || chr(775), 'i');
-  v_location := replace(v_location, chr(962), chr(963));
-  v_location := replace(v_location, chr(133), ' ');
+  v_location := replace(replace(replace(replace(v_location, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
   v_location := split_part(v_location, ',', 1);
-  v_location := trim(regexp_replace(v_location, '\s+', ' ', 'g'));
+  v_location := trim(regexp_replace(v_location, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
   -- 5. Length framing in UTF-8 octets
   v_c_len := octet_length(convert_to(v_company, 'UTF8'));
@@ -327,7 +359,7 @@ COMMIT;
 --   - Keeps additive columns (jobs.source_id, similarity_hash_v2, etc.) to prevent data loss.
 --   - Does NOT touch incident recovery tables (public.recovery_642_restore48_20261116).
 --
---   -- 1. Restore self-contained compute_job_dedupe_hash FIRST (must not reference dropped function)
+--   -- 1. Restore ORIGINAL compute_job_dedupe_hash definition from #642
 --   CREATE OR REPLACE FUNCTION public.compute_job_dedupe_hash(
 --     p_company text,
 --     p_title text,
@@ -335,22 +367,36 @@ COMMIT;
 --     p_location text
 --   )
 --   RETURNS text
---   LANGUAGE sql
+--   LANGUAGE plpgsql
 --   IMMUTABLE
 --   SET search_path = public
 --   AS $$
---     SELECT encode(
---       pg_catalog.sha256(
---         pg_catalog.convert_to(
---           lower(COALESCE(p_company, '')) || '|' ||
---           lower(COALESCE(p_title, '')) || '|' ||
---           lower(COALESCE(p_country, '')) || '|' ||
---           lower(COALESCE(p_location, '')),
---           'UTF8'
---         )
---       ),
---       'hex'
---     );
+--   DECLARE
+--     v_company text;
+--     v_title text;
+--     v_country text;
+--     v_city text;
+--     v_payload text;
+--   BEGIN
+--     v_company := lower(trim(COALESCE(p_company, '')));
+--     v_company := regexp_replace(v_company, '\m(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\M\.?', '', 'gi');
+--     v_company := trim(regexp_replace(v_company, '[^a-z0-9]+', ' ', 'g'));
+--
+--     v_title := lower(trim(COALESCE(p_title, '')));
+--     v_title := trim(regexp_replace(v_title, '[^a-z0-9]+', ' ', 'g'));
+--
+--     v_country := lower(trim(COALESCE(NULLIF(trim(p_country), ''), 'any')));
+--     v_country := trim(regexp_replace(v_country, '[^a-z0-9]+', ' ', 'g'));
+--
+--     v_city := lower(trim(split_part(COALESCE(p_location, ''), ',', 1)));
+--     v_city := trim(regexp_replace(v_city, '[^a-z0-9]+', ' ', 'g'));
+--     IF v_city = '' THEN
+--       v_city := 'any';
+--     END IF;
+--
+--     v_payload := v_company || '|' || v_title || '|' || v_country || '|' || v_city;
+--     RETURN encode(pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex');
+--   END;
 --   $$;
 --
 --   -- 2. Drop similarity_hash_v2 function created by this migration

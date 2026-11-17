@@ -2,7 +2,8 @@
  * scripts/test-python-identity-contract.ts
  *
  * Runs the Python identity contract test suite (scripts/scraper/test_identity_contract.py)
- * and asserts that it passes 100% of language-neutral golden test cases and validations.
+ * using pytest in CI and local test runner, asserting 100% of language-neutral
+ * golden test cases and validations pass.
  */
 
 import { spawnSync } from "child_process";
@@ -12,13 +13,32 @@ export async function runPythonIdentityContract(): Promise<void> {
   const repoRoot = path.resolve(__dirname, "..");
   const testScript = path.resolve(__dirname, "scraper/test_identity_contract.py");
 
-  // Try python then python3
+  // Try python candidates
   const candidates = process.platform === "win32" ? ["python", "python3", "py"] : ["python3", "python"];
   let executed = false;
   let lastError: Error | null = null;
   let lastOutput = "";
 
   for (const cmd of candidates) {
+    // 1. Try running via pytest
+    try {
+      const pytestRes = spawnSync(cmd, ["-m", "pytest", testScript, "-v"], {
+        cwd: repoRoot,
+        env: { ...process.env, PYTHONPATH: repoRoot },
+        encoding: "utf8",
+      });
+
+      if (!pytestRes.error && pytestRes.status === 0) {
+        executed = true;
+        console.log(`[PASS] Python identity contract tests passed via ${cmd} -m pytest:`);
+        console.log(pytestRes.stdout.trim());
+        break;
+      }
+    } catch {
+      // Fall through to direct script execution
+    }
+
+    // 2. Fallback to direct python script execution
     try {
       const res = spawnSync(cmd, [testScript], {
         cwd: repoRoot,

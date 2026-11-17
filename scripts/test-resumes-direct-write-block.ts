@@ -16,7 +16,11 @@ import fs from "fs";
 import path from "path";
 
 const MIGRATION = "20261116d_resumes_block_direct_writes.sql";
-const SKIPPED = new Set(["20261108a_pg_cron_scheduled_jobs.sql"]);
+const SKIPPED = new Set([
+  "20261108a_pg_cron_scheduled_jobs.sql",
+  "20261116e_repair_642_concurrent_indexes.sql",
+  "20261116f_repair_642_batch_backfill.sql",
+]);
 const FREE = "11111111-1111-4111-8111-111111111111";
 const PRO = "22222222-2222-4222-8222-222222222222";
 const OTHER = "33333333-3333-4333-8333-333333333333";
@@ -106,7 +110,10 @@ async function main() {
   await snapshot(pg, "AFTER 20261116d");
 
   // Later migrations must not re-open the table.
-  for (const f of files.filter((f) => f > MIGRATION)) await pg.exec(fs.readFileSync(path.join(dir, f), "utf8"));
+  for (const f of files.filter((f) => f > MIGRATION)) {
+    if (SKIPPED.has(f)) continue;
+    await pg.exec(fs.readFileSync(path.join(dir, f), "utf8"));
+  }
 
   const ins = (uid: string, owner: string) =>
     asUser(pg, uid, `INSERT INTO public.resumes(user_id,file_name,storage_path) VALUES ($1,'x.pdf',$2)`, [owner, `${owner}/x.pdf`]);

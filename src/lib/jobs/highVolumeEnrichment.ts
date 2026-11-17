@@ -32,13 +32,19 @@ export function buildSourceId(vendor: string, boardToken: string): string {
   return `${vendor.trim().toLowerCase()}:${boardToken.trim().toLowerCase()}`;
 }
 
+const WHITESPACE_REGEX = /[ \t\n\r\f\v\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
+const COMPANY_SUFFIX_REGEX = new RegExp(
+  '(?<![\\p{L}\\p{N}_])(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\\.?(?![\\p{L}\\p{N}_])',
+  'gui'
+);
+
 export function cleanLocationKey(locationKey?: string | null): string {
   if (!locationKey || typeof locationKey !== 'string') return '';
   let loc = locationKey.normalize('NFC').toLowerCase();
   loc = loc.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
   loc = loc.replace(/ς|\u03c2/g, '\u03c3');
   loc = loc.replace(/\u0085/g, ' ');
-  loc = loc.replace(/\s+/g, ' ').trim();
+  loc = loc.replace(WHITESPACE_REGEX, ' ').trim();
   return loc;
 }
 
@@ -73,8 +79,6 @@ export function buildScopedJobIdentity(
 // 2. VERSIONED SIMILARITY CONTRACT (v2 LENGTH-FRAMED UTF-8 SHA-256)
 // ============================================================================
 
-const COMPANY_SUFFIX_REGEX = /\b(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\b\.?/gi;
-
 export function cleanCompany(company?: string | null): string {
   if (!company || typeof company !== 'string') return '';
   let c = company.normalize('NFC').toLowerCase();
@@ -82,7 +86,7 @@ export function cleanCompany(company?: string | null): string {
   c = c.replace(/ς|\u03c2/g, '\u03c3');
   c = c.replace(/\u0085/g, ' ');
   c = c.replace(COMPANY_SUFFIX_REGEX, ' ');
-  c = c.replace(/\s+/g, ' ').trim();
+  c = c.replace(WHITESPACE_REGEX, ' ').trim();
   return c;
 }
 
@@ -92,7 +96,7 @@ export function cleanTitle(title?: string | null): string {
   t = t.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
   t = t.replace(/ς|\u03c2/g, '\u03c3');
   t = t.replace(/\u0085/g, ' ');
-  t = t.replace(/\s+/g, ' ').trim();
+  t = t.replace(WHITESPACE_REGEX, ' ').trim();
   return t;
 }
 
@@ -102,7 +106,7 @@ export function cleanCountry(country?: string | null): string {
   co = co.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
   co = co.replace(/ς|\u03c2/g, '\u03c3');
   co = co.replace(/\u0085/g, ' ');
-  co = co.replace(/\s+/g, ' ').trim();
+  co = co.replace(WHITESPACE_REGEX, ' ').trim();
   return co;
 }
 
@@ -113,7 +117,7 @@ export function cleanLocation(location?: string | null): string {
   loc = loc.replace(/ς|\u03c2/g, '\u03c3');
   loc = loc.replace(/\u0085/g, ' ');
   loc = loc.split(',')[0];
-  loc = loc.replace(/\s+/g, ' ').trim();
+  loc = loc.replace(WHITESPACE_REGEX, ' ').trim();
   return loc;
 }
 

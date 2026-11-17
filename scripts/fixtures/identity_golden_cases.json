@@ -486,6 +486,63 @@
         }
       ],
       "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_16_company_inc_kanji",
+      "name": "Company Inc with Japanese Kanji (Company Inc東京)",
+      "description": "Verifies Inc directly attached to Japanese Kanji is not stripped as a word boundary across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Company Inc followed by Tokyo Kanji",
+          "input": {
+            "company": "Company Inc東京",
+            "title": "Engineer",
+            "country": "JP",
+            "location": "Tokyo"
+          },
+          "expected_payload": "v2|c:17:company inc東京|t:8:engineer|co:2:jp|loc:5:tokyo",
+          "expected_hash": "f6165fc1280d23e93bc97b2b84c894765980551c793bc73415fe3360aab74a50"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_17_bom_feff_whitespace_preservation",
+      "name": "Zero Width No-Break Space (U+FEFF / BOM Preservation)",
+      "description": "Verifies U+FEFF is preserved and not converted into whitespace across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Title containing A, U+FEFF, B",
+          "input": {
+            "company": "Acme Corp",
+            "title": "A\uFEFFB",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:4:acme|t:5:a\uFEFFb|co:2:us|loc:6:remote",
+          "expected_hash": "010dda9715382d884ad20176e4fcaec63f3195eda1583be3a407835f29967e8e"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_18_information_separator_u001c",
+      "name": "Information Separator Four (U+001C Preservation)",
+      "description": "Verifies U+001C is preserved and not treated as whitespace across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Title containing A, U+001C, B",
+          "input": {
+            "company": "Acme Technologies",
+            "title": "A\u001cB",
+            "country": "US",
+            "location": "Austin"
+          },
+          "expected_payload": "v2|c:17:acme technologies|t:3:a\u001cb|co:2:us|loc:6:austin",
+          "expected_hash": "dcf7ff09b76332c776c7115f717a9b3b0d977b09a283b60a49ca4b9a26b79d3e"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
     }
   ]
 }

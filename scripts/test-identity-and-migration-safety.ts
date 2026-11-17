@@ -208,7 +208,60 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   await db.exec(preflightSql);
   console.log("  [PASS] Preflight checks pass on clean baseline.");
 
-  // Preflight aborts if duplicate (source_id, source_job_id) rows exist
+  // Test strict preflight verification of constraints, triggers, and duplicates:
+  // A. Abort on missing primary key
+  await db.exec("ALTER TABLE public.jobs DROP CONSTRAINT jobs_pkey;");
+  let pkeyAborted = false;
+  try {
+    await db.exec(preflightSql);
+  } catch (err: any) {
+    pkeyAborted = true;
+    assert.ok(
+      err.message.includes("jobs_pkey"),
+      `Expected jobs_pkey abort, got: ${err.message}`
+    );
+  }
+  assert.ok(pkeyAborted, "Preflight must abort when jobs_pkey is missing");
+  await db.exec("ALTER TABLE public.jobs ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);");
+  console.log("  [PASS] Stricter preflight correctly aborted on missing primary key constraint.");
+
+  // B. Abort on missing unique constraint
+  await db.exec("ALTER TABLE public.jobs DROP CONSTRAINT jobs_source_source_job_id_unique;");
+  let uniqueAborted = false;
+  try {
+    await db.exec(preflightSql);
+  } catch (err: any) {
+    uniqueAborted = true;
+    assert.ok(
+      err.message.includes("unique constraint on (source, source_job_id)"),
+      `Expected unique constraint abort, got: ${err.message}`
+    );
+  }
+  assert.ok(uniqueAborted, "Preflight must abort when source unique constraint is missing");
+  await db.exec("ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_source_job_id_unique UNIQUE (source, source_job_id);");
+  console.log("  [PASS] Stricter preflight correctly aborted on missing source unique constraint.");
+
+  // C. Abort on missing baseline trigger
+  await db.exec("DROP TRIGGER jobs_touch_last_seen ON public.jobs;");
+  let triggerAborted = false;
+  try {
+    await db.exec(preflightSql);
+  } catch (err: any) {
+    triggerAborted = true;
+    assert.ok(
+      err.message.includes("jobs_touch_last_seen"),
+      `Expected trigger abort, got: ${err.message}`
+    );
+  }
+  assert.ok(triggerAborted, "Preflight must abort when jobs_touch_last_seen trigger is missing");
+  await db.exec(`
+    CREATE TRIGGER jobs_touch_last_seen
+      BEFORE UPDATE ON public.jobs
+      FOR EACH ROW EXECUTE FUNCTION public.touch_job_last_seen();
+  `);
+  console.log("  [PASS] Stricter preflight correctly aborted on missing trigger.");
+
+  // D. Preflight aborts if duplicate (source_id, source_job_id) rows exist
   await db.exec("ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;");
   await db.exec(`
     INSERT INTO public.jobs (id, title, company, source_type, source_id, source_job_id)
@@ -285,9 +338,52 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   assert.ok(fs.existsSync(migrationFPath), `Migration file 20261116f must exist at: ${migrationFPath}`);
   const migrationFRaw = fs.readFileSync(migrationFPath, "utf8");
 
+  // Populate test companies and jobs to test batching and resumability
+  await db.exec(`
+    INSERT INTO public.companies (id, name, slug, domain)
+    VALUES
+      ('aaaaaaaa-1111-0000-0000-000000000001', 'Test Company 1', 'test-company-1', ' Test1.com '),
+      ('aaaaaaaa-2222-0000-0000-000000000002', 'Test Company 2', 'test-company-2', ' Test2.com '),
+      ('aaaaaaaa-3333-0000-0000-000000000003', 'Test Company 3', 'test-company-3', ' Test3.com ');
+
+    INSERT INTO public.jobs (id, title, company, country, location, source, source_type, is_active, status)
+    VALUES
+      ('bbbbbbbb-1111-0000-0000-000000000001', 'Engineer 1', 'Test Company 1', 'US', 'New York', 'greenhouse', 'ats', true, 'active'),
+      ('bbbbbbbb-2222-0000-0000-000000000002', 'Engineer 2', 'Test Company 2', 'US', 'Austin', 'manual', 'direct', true, 'active'),
+      ('bbbbbbbb-3333-0000-0000-000000000003', 'Engineer 3', 'Test Company 3', 'US', 'Remote', 'lever', 'ats', true, 'active');
+  `);
+
   console.log("  Applying 20261116f Bounded Batch Backfill...");
-  await db.exec(migrationFRaw);
+  // Execute DDL (table + procedure) and CALL invocation as separate top-level statements
+  // to allow transaction control (COMMIT after each batch) in PostgreSQL
+  const callIndex = migrationFRaw.indexOf("CALL public.repair_645_run_resumable_backfill");
+  assert.ok(callIndex !== -1, "20261116f must define and call repair_645_run_resumable_backfill");
+  const ddlPart = migrationFRaw.substring(0, callIndex).trim();
+  const callPart = migrationFRaw.substring(callIndex).split(";")[0] + ";";
+
+  await db.exec(ddlPart);
+  await db.exec(callPart);
   console.log("  [PASS] 20261116f applied successfully.");
+
+  // Verify progress table recorded row counts
+  const progressCheck = await db.query<{ phase: string; total_rows_updated: number }>(
+    "SELECT phase, total_rows_updated FROM public.repair_645_backfill_progress ORDER BY phase;"
+  );
+  assert.ok(progressCheck.rows.length >= 2, "Progress tracking table must record updated phases");
+  for (const row of progressCheck.rows) {
+    assert.ok(row.total_rows_updated >= 1, `Phase ${row.phase} must have updated rows`);
+  }
+  console.log("  [PASS] Progress tracking verified in repair_645_backfill_progress.");
+
+  // Test Resumability: Call again with batch size 2, verify it resumes and leaves 0 pending
+  await db.exec("CALL public.repair_645_run_resumable_backfill(2);");
+  const pendingCompanies = await db.query("SELECT count(*) as count FROM public.companies WHERE canonical_domain IS NULL AND domain IS NOT NULL;");
+  const pendingPriorities = await db.query("SELECT count(*) as count FROM public.jobs WHERE source_priority IS NULL;");
+  const pendingHashes = await db.query("SELECT count(*) as count FROM public.jobs WHERE is_active = TRUE AND similarity_hash_v2 IS NULL;");
+  assert.strictEqual(Number((pendingCompanies.rows[0] as any).count), 0, "Zero pending canonical_domain after resumable backfill");
+  assert.strictEqual(Number((pendingPriorities.rows[0] as any).count), 0, "Zero pending source_priority after resumable backfill");
+  assert.strictEqual(Number((pendingHashes.rows[0] as any).count), 0, "Zero pending similarity_hash_v2 after resumable backfill");
+  console.log("  [PASS] Resumable backfill verified: 0 pending rows remaining across all batched targets.");
 
   // 7. Containment Assertions
   const triggerCheck = await db.query(
@@ -365,7 +461,7 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   const goldenData: GoldenFile = JSON.parse(goldenRaw);
 
   console.log(`  Evaluating ${goldenData.cases.length} Golden Cases for byte-for-byte PG/TS parity...`);
-  assert.strictEqual(goldenData.cases.length, 15, "Expected 15 golden cases including Turkish İ, Greek ς, NEL U+0085, and Tokyo/Osaka");
+  assert.strictEqual(goldenData.cases.length, 18, "Expected 18 golden cases including Turkish İ, Greek ς, NEL U+0085, Tokyo/Osaka, and Unicode edge cases");
 
   for (const c of goldenData.cases) {
     const hashes: string[] = [];
@@ -533,11 +629,25 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   console.log("  [PASS] Rollback SQL executed cleanly.");
 
   // 13. Post-Rollback Assertions (Blocker 6)
-  // A. compute_job_dedupe_hash must be callable and NOT call dropped compute_job_similarity_hash_v2
+  // A. compute_job_dedupe_hash must be callable and match original #642 definition and outputs
   const legacyHashCheck = await db.query<{ hash: string }>(
-    "SELECT public.compute_job_dedupe_hash('Google', 'Software Engineer', 'US', 'Mountain View') as hash;"
+    "SELECT public.compute_job_dedupe_hash('Google Inc.', 'Staff Software Engineer', 'US', 'Mountain View, CA') as hash;"
   );
-  assert.ok(legacyHashCheck.rows[0].hash.length === 64, "compute_job_dedupe_hash must execute cleanly after rollback");
+  assert.strictEqual(
+    legacyHashCheck.rows[0].hash,
+    "28982a93b15ebb69494a913e0b69d25d6295db9e2ebb1d9b8a93f7f6b1181dd1",
+    "Restored compute_job_dedupe_hash must match original #642 definition and outputs (stripping legal suffix Inc. and taking first city)"
+  );
+
+  const legacyDefaultsCheck = await db.query<{ hash: string }>(
+    "SELECT public.compute_job_dedupe_hash('Apple LLC', 'Designer', '', '') as hash;"
+  );
+  assert.strictEqual(
+    legacyDefaultsCheck.rows[0].hash,
+    "b92e477648ae731a4ff90ca18f9aab81df11c8a1f8cb751edd92a20f0c9df7e8",
+    "Restored compute_job_dedupe_hash must match original #642 defaults ('any' for empty country/city)"
+  );
+  console.log("  [PASS] Rollback restored original #642 compute_job_dedupe_hash with exact output match.");
 
   // B. compute_job_similarity_hash_v2 must be dropped
   const droppedFuncCheck = await db.query(

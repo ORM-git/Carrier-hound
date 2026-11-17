@@ -71,10 +71,16 @@ Given `company`, `title`, `country`, and `location`:
    - Greek final sigma `ς` (U+03C2) -> small sigma `σ` (U+03C3) matching canonical Unicode case folding
    - Next Line `U+0085` (chr(133)) -> space `' '`
 3. **Legal Entity Suffix Stripping (Company only)**:
-   - Suffixes removed at word boundaries:
-     `\b(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\b\.?`
+   - Suffixes removed only at true Unicode-aware boundaries:
+     - TypeScript: `(?<![\p{L}\p{N}_])(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\.?(?![\p{L}\p{N}_])/gui`
+     - Python: `(?<![^\W_])(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\.?(?![^\W_])`
+     - PostgreSQL: `\y(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\y\.?`
+     - This guarantees that suffixes directly attached to non-Latin scripts (e.g. `Company Inc東京`) are preserved identically across all runtimes without stripping.
 4. **Whitespace Normalization**:
-   - All consecutive whitespace characters `[\s\t\r\n]+` collapsed to a single ASCII space `' '`.
+   - Explicit character set matching across all three runtimes:
+     `[ \t\n\r\f\v\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+`
+   - Explicitly preserves byte values like `\uFEFF` (zero-width no-break space / BOM) and `\x1c` (ASCII 28 / information separator four), preventing cross-runtime divergence.
+   - All matching whitespace is collapsed to a single ASCII space `' '`.
    - Trim leading and trailing whitespace.
 5. **Location Handling**:
    - Extract primary city/territory segment before any comma (e.g. `San Francisco, CA` -> `san francisco`, `Óbuda, Budapest` -> `óbuda`).
@@ -172,7 +178,7 @@ SET search_path = public;
 ---
 
 ## 5. Golden Fixtures Reference
-A language-neutral JSON fixture file containing all 11 test scenarios and expected hashes is located at:
+A language-neutral JSON fixture file containing all 18 test scenarios and expected hashes is located at:
 `scripts/fixtures/identity_golden_cases.json`
 
 Scenarios covered:
@@ -187,3 +193,28 @@ Scenarios covered:
 9. Delimiter characters injection safety (`|`, `:`, `/`)
 10. Same posting title/location with distinct requisition IDs
 11. Provider job IDs duplicated across different boards
+12. Turkish dotted capital I (`İ` / U+0130)
+13. Greek Omicron Sigma and Final Sigma (`ΟΣ` / `ς` -> `σ`)
+14. Next Line whitespace (`NEL` / U+0085)
+15. Tokyo vs Osaka location identity and provider ID hash escaping (`#` -> `%23`)
+16. Company Inc with Japanese Kanji (`Company Inc東京` preserved without stripping)
+17. Zero Width No-Break Space (`U+FEFF` / BOM preservation)
+18. Information Separator Four (`U+001C` preservation)
+
+---
+
+## 6. Migration Structure & Resumable Batch Backfill
+The migration is safely split into three independent phases:
+1. **Phase 1: Short Additive DDL (`20261116d`)**:
+   - Strict preflight verifying exact constraints (`jobs_pkey`, `companies_pkey`, `jobs_source_source_job_id_unique`), triggers (`jobs_touch_last_seen`), and dedupe integrity.
+   - Non-breaking additive columns (`jobs.source_id`, `jobs.similarity_hash_v2`, `jobs.source_priority`, `companies.canonical_domain`).
+   - `jobs_public` view updated via `CREATE OR REPLACE VIEW` preserving owner, grants, and column layout.
+   - Preserved `last_seen_at` trigger gating: updates to metadata or priority do not alter ranking timestamps.
+2. **Phase 2: Concurrent Indexes (`20261116e`)**:
+   - `idx_jobs_source_id_source_job_id_uniq` and `idx_jobs_active_similarity_hash_v2` created concurrently outside transaction blocks.
+3. **Phase 3: Resumable Batch Backfill (`20261116f`)**:
+   - Coordinated via stored procedure `public.repair_645_run_resumable_backfill(p_batch_size integer DEFAULT 500)`.
+   - Each batch executes `LIMIT p_batch_size FOR UPDATE SKIP LOCKED` and commits immediately (`COMMIT;`).
+   - Progress is persisted across restarts in table `public.repair_645_backfill_progress`.
+   - All three targets (`companies.canonical_domain`, `jobs.source_priority`, and `jobs.similarity_hash_v2`) are batched identically.
+   - Sets `careermonke.skip_touch_last_seen = 'on'` to ensure zero timestamp corruption during backfill.

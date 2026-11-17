@@ -51,6 +51,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `plans` | `20261103_plans_addons_usage.sql` |
 | `push_subscriptions` | `20261106i_push_subscriptions.sql` |
 | `rate_limits` | `20261020_rate_limits.sql` |
+| `repair_645_backfill_progress` | `20261116f_repair_642_batch_backfill.sql` |
 | `resumes` | `20261031_account_delete_and_private_resumes.sql` |
 | `row_change_history` | `20261106c_change_history_triggers.sql` |
 | `saved_jobs` | `20261031_account_delete_and_private_resumes.sql` |
@@ -66,7 +67,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 45
+baseline-count: 46
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -100,6 +101,7 @@ table: plan_usage_events | 20261103_plans_addons_usage.sql
 table: plans | 20261103_plans_addons_usage.sql
 table: push_subscriptions | 20261106i_push_subscriptions.sql
 table: rate_limits | 20261020_rate_limits.sql
+table: repair_645_backfill_progress | 20261116f_repair_642_batch_backfill.sql
 table: resumes | 20261031_account_delete_and_private_resumes.sql
 table: row_change_history | 20261106c_change_history_triggers.sql
 table: saved_jobs | 20261031_account_delete_and_private_resumes.sql
