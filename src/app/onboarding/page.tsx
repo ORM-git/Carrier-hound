@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { checkAccountOnboardingCompleted, markAccountOnboardingCompleted } from "@/lib/auth/onboarding";
@@ -24,8 +24,9 @@ function OnboardingPageInner() {
   const searchParams = useSearchParams();
   const rawNext = searchParams.get("returnTo") || searchParams.get("return_to") || searchParams.get("next");
   const next = getValidReturnUrl(rawNext, "/dashboard");
+  const initialStep = searchParams.get("step") === "2" ? 2 : 1;
 
-  const [currentStep, setCurrentStep] = useState<1 | 2>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2>(initialStep);
   const [userId, setUserId] = useState<string | undefined>(undefined);
   const [authToken, setAuthToken] = useState<string | undefined>(undefined);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -34,7 +35,7 @@ function OnboardingPageInner() {
 
   // Form state
   const [roles, setRoles] = useState<string[]>([]);
-  const [employmentTypes, setEmploymentTypes] = useState<string[]>(["full-time"]);
+  const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
   const [location, setLocation] = useState<string>("Anywhere in India");
   const [openToRemote, setOpenToRemote] = useState<boolean>(true);
   const [existingPrefs, setExistingPrefs] = useState<UserPreferences | null>(null);
@@ -189,6 +190,8 @@ function OnboardingPageInner() {
       );
       invalidateSwr(`dashboard:${userId}`);
 
+      // Processing state: Saving your preferences
+      toast.success("Resume saved");
       toast.success("Preferences saved! Showing recommended jobs for your profile.");
 
       // One-shot post-submit redirect with lifecycle-safe cleanup
@@ -257,8 +260,12 @@ function OnboardingPageInner() {
           }}
           onFinish={handleFinishOnboarding}
           isSaving={isSaving}
+          authToken={authToken}
         />
       )}
+      <footer className="py-4 text-center text-xs text-zinc-400">
+        © 2026 Olive Ridley Media Private Limited. All rights reserved.
+      </footer>
     </main>
   );
 }

@@ -29,6 +29,8 @@ export interface OnboardingAnswers {
   salaryCurrency?: string | null;
   country?: string | null;
   countryCode?: string | null;
+  skills?: string[];
+  linkedinUrl?: string | null;
 }
 
 export interface JobScoreBreakdown {
@@ -37,6 +39,7 @@ export interface JobScoreBreakdown {
   experienceScore: number;
   jobTypeScore: number;
   recencyScore: number;
+  skillsScore?: number;
 }
 
 export interface ScoredJobResult<T = any> {
@@ -79,8 +82,10 @@ export function hasOnboardingAnswers(answers?: OnboardingAnswers | null): boolea
     (answers.country && answers.country.trim().length > 0) ||
     (answers.countryCode && answers.countryCode.trim().length > 0)
   );
+  const hasSkills = Array.isArray(answers.skills) && answers.skills.some((s) => s && s.trim().length > 0);
+  const hasLinkedin = Boolean(answers.linkedinUrl && answers.linkedinUrl.trim().length > 0);
 
-  return hasRoles || hasExp || hasRemote || hasLocs || hasTypes || hasCats || hasMinSalary || hasCountry;
+  return hasRoles || hasExp || hasRemote || hasLocs || hasTypes || hasCats || hasMinSalary || hasCountry || hasSkills || hasLinkedin;
 }
 
 /**
@@ -499,7 +504,26 @@ export function scoreJobRecommendation(
     }
   }
 
-  const totalScore = Math.min(100, roleScore + locationScore + experienceScore + jobTypeScore + recencyScore);
+  // 6. PROFILE ENRICHMENT / SKILLS MATCHING BONUS (0 - 10 pts)
+  // When a candidate provides resume skills, reward jobs whose text/title/requirements mention those skills.
+  let skillsScore = 0;
+  if (Array.isArray(answers.skills) && answers.skills.length > 0) {
+    const jobCorpus = `${title} ${category} ${job.description || ""} ${job.requirements || ""}`.toLowerCase();
+    let matchingSkillsCount = 0;
+    for (const skill of answers.skills) {
+      if (!skill || typeof skill !== "string") continue;
+      const lowerSkill = skill.toLowerCase().trim();
+      if (lowerSkill.length >= 2 && jobCorpus.includes(lowerSkill)) {
+        matchingSkillsCount++;
+      }
+    }
+    if (matchingSkillsCount > 0) {
+      skillsScore = Math.min(10, matchingSkillsCount * 3);
+      reasons.push(`${matchingSkillsCount} matched skill(s) from resume`);
+    }
+  }
+
+  const totalScore = Math.min(100, roleScore + locationScore + experienceScore + jobTypeScore + recencyScore + skillsScore);
 
   return {
     job,
@@ -510,6 +534,7 @@ export function scoreJobRecommendation(
       experienceScore,
       jobTypeScore,
       recencyScore,
+      skillsScore,
     },
     reasons,
   };
@@ -597,6 +622,12 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     // 1. Primary sort: recommendation score DESC
     if (b.score !== a.score) {
       return b.score - a.score;
+    }
+    // 1b. Skills tie-breaker: candidate skills match bonus DESC
+    const skillsA = a.breakdown.skillsScore || 0;
+    const skillsB = b.breakdown.skillsScore || 0;
+    if (skillsB !== skillsA) {
+      return skillsB - skillsA;
     }
     // 2. Secondary sort: recency DESC (posted_at desc)
     const timeA = new Date(a.job.posted_at || a.job.created_at || a.job.first_seen_at || 0).getTime();
