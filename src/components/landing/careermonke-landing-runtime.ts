@@ -21,6 +21,19 @@ export function initCareerMonkeLanding(): () => void {
     });
   }
 
+  // Handle avatar & founder image fallbacks cleanly without inline JSX error handlers
+  document.querySelectorAll<HTMLImageElement>(".mq-av img").forEach((img) => {
+    addListener(img, "error", () => {
+      img.remove();
+    });
+  });
+  const founderImg = document.querySelector<HTMLImageElement>(".landing-wrapper .founder img");
+  if (founderImg) {
+    addListener(founderImg, "error", () => {
+      founderImg.style.visibility = "hidden";
+    });
+  }
+
   /* ---------- DEMO (front-end simulation, sample data only) ---------- */
   interface JobData {
     label: string;
@@ -457,6 +470,7 @@ export function initCareerMonkeLanding(): () => void {
   const cv = document.getElementById('globe') as HTMLCanvasElement | null;
   let gLoopReq = 0;
   let tourT: ReturnType<typeof setInterval> | null = null;
+  let isGlobeVisible = false;
   let globeObserver: IntersectionObserver | null = null;
   const cardObservers: IntersectionObserver[] = [];
 
@@ -503,7 +517,7 @@ export function initCareerMonkeLanding(): () => void {
   }
 
   function gDraw() {
-    if (!cv) return;
+    if (!cv || !isGlobeVisible) return;
     const gx = cv.getContext('2d');
     if (!gx) return;
     const R = GS / 2 - 4;
@@ -636,7 +650,7 @@ export function initCareerMonkeLanding(): () => void {
         el.textContent = (c.ok ? '✓ ' : '✕ ') + c.e;
         el.className = 'gl-elig ' + (c.ok ? 'yes' : 'no');
       }
-      if (d) {
+      if (d && touched) {
         d.classList.remove('flash');
         void d.offsetWidth;
         d.classList.add('flash');
@@ -664,6 +678,7 @@ export function initCareerMonkeLanding(): () => void {
     };
 
     const gLoop = () => {
+      if (!isGlobeVisible) return;
       gPulse += 0.06;
       if (gTarget) {
         const dl = ((gTarget.lon - rot.lon + 540) % 360) - 180;
@@ -679,7 +694,6 @@ export function initCareerMonkeLanding(): () => void {
       gDraw();
       gLoopReq = requestAnimationFrame(gLoop);
     };
-    gLoopReq = requestAnimationFrame(gLoop);
 
     addListener(cv, 'pointerdown', ((e: Event) => {
       const pe = e as PointerEvent;
@@ -730,10 +744,24 @@ export function initCareerMonkeLanding(): () => void {
     if (glFig && 'IntersectionObserver' in window) {
       globeObserver = new IntersectionObserver((es) => {
         es.forEach((e) => {
-          if (!e.isIntersecting && tourT) clearInterval(tourT);
+          if (e.isIntersecting) {
+            if (!isGlobeVisible) {
+              isGlobeVisible = true;
+              gDraw();
+              gLoop();
+            }
+          } else {
+            isGlobeVisible = false;
+            if (tourT) clearInterval(tourT);
+            if (gLoopReq) cancelAnimationFrame(gLoopReq);
+          }
         });
       });
       globeObserver.observe(glFig);
+    } else {
+      isGlobeVisible = true;
+      gDraw();
+      gLoop();
     }
   }
 

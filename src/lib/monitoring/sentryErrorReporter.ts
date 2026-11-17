@@ -1,5 +1,31 @@
-import * as Sentry from "@sentry/nextjs";
+import type * as SentryType from "@sentry/nextjs";
 import { readCookieConsent } from "@/lib/analytics/cookieConsent";
+
+let sentryModule: typeof SentryType | null = null;
+async function getSentry(): Promise<typeof SentryType | null> {
+  if (!sentryModule) {
+    try {
+      sentryModule = await import("@sentry/nextjs");
+      const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN;
+      if (
+        dsn &&
+        sentryModule &&
+        typeof sentryModule.init === "function" &&
+        typeof sentryModule.getClient === "function" &&
+        !sentryModule.getClient()
+      ) {
+        sentryModule.init({
+          dsn,
+          enabled: true,
+          tracesSampleRate: process.env.NODE_ENV === "production" ? 0.05 : 1.0,
+        });
+      }
+    } catch {
+      sentryModule = null;
+    }
+  }
+  return sentryModule;
+}
 
 /**
  * Checks whether error reporting to Sentry is permitted under current DSN configuration
@@ -59,16 +85,18 @@ export function reportErrorToSentry(error: unknown, options?: ReportErrorOptions
       return;
     }
 
-    if (typeof Sentry?.captureException === "function") {
-      if (requestId && typeof Sentry?.withScope === "function") {
-        Sentry.withScope((scope) => {
-          scope.setTag("request_id", requestId);
-          Sentry.captureException(error);
-        });
-        return;
+    getSentry().then((Sentry) => {
+      if (typeof Sentry?.captureException === "function") {
+        if (requestId && typeof Sentry?.withScope === "function") {
+          Sentry.withScope((scope) => {
+            scope.setTag("request_id", requestId);
+            Sentry.captureException(error);
+          });
+          return;
+        }
+        Sentry.captureException(error);
       }
-      Sentry.captureException(error);
-    }
+    }).catch(() => {});
   } catch {
     // Safe no-op on any monitoring dispatch failure
   }

@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "@/styles/tokens.css";
 import "./globals.css";
-import { ToastContainer } from "react-toastify";
+import ToastContainer from "@/components/notifications/AppToastContainer";
 import BackToTop from "@/components/BackToTop";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import WebVitalsTracker from "@/components/analytics/WebVitalsTracker";
@@ -15,10 +15,8 @@ import { getConnectionHints } from "@/lib/seo/structuredData";
 import RouteFocusManager from "@/components/a11y/RouteFocusManager";
 import JsonLd from "@/components/seo/JsonLd";
 
-
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
   display: "swap",
   variable: "--font-inter",
 });

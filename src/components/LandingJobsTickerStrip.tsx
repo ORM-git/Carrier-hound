@@ -153,11 +153,27 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
       }
     }
 
-    loadTicker();
-
-    return () => {
-      isMounted = false;
+    const startLoad = () => {
+      if (isMounted) {
+        loadTicker();
+      }
     };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const handle = (window as any).requestIdleCallback(startLoad, { timeout: 3000 });
+      return () => {
+        isMounted = false;
+        if ("cancelIdleCallback" in window) {
+          (window as any).cancelIdleCallback(handle);
+        }
+      };
+    } else {
+      const timer = setTimeout(startLoad, 400);
+      return () => {
+        isMounted = false;
+        clearTimeout(timer);
+      };
+    }
   }, [initialJobs]);
 
   // Dynamically tune duration to ensure real scroll speed is exactly ~50px/s: duration = (scrollWidth / 2) / 50

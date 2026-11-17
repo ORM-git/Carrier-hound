@@ -20,6 +20,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import lighthouse from "lighthouse";
 import * as chromeLauncher from "chrome-launcher";
 
@@ -89,7 +90,27 @@ function startStaticServer(dir) {
         return;
       }
       const body = await readFile(filePath);
-      res.writeHead(200, { "content-type": MIME[extname(filePath)] ?? "application/octet-stream" });
+      const ext = extname(filePath);
+      const mime = MIME[ext] ?? "application/octet-stream";
+      const acceptEncoding = req.headers["accept-encoding"] || "";
+      const isCompressible = mime.startsWith("text/") || mime.includes("json") || mime.includes("javascript") || mime.includes("xml");
+
+      if (isCompressible && acceptEncoding.includes("gzip")) {
+        const compressed = gzipSync(body);
+        res.writeHead(200, {
+          "content-type": mime,
+          "content-encoding": "gzip",
+          "content-length": compressed.length,
+          "vary": "accept-encoding",
+        });
+        res.end(compressed);
+        return;
+      }
+
+      res.writeHead(200, {
+        "content-type": mime,
+        "content-length": body.length,
+      });
       res.end(body);
     } catch (err) {
       res.writeHead(500).end(String(err));

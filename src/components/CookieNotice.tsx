@@ -50,15 +50,17 @@ export function useCookieNoticeHeight(): number {
     window.addEventListener(COOKIE_CONSENT_EVENT, updateHeight);
     window.addEventListener("resize", updateHeight);
 
-    const observer = new MutationObserver(updateHeight);
-    if (typeof document !== "undefined" && document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
+    let ro: ResizeObserver | null = null;
+    const el = document.getElementById("cm-cookie-notice");
+    if (el && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(updateHeight);
+      ro.observe(el);
     }
 
     return () => {
       window.removeEventListener(COOKIE_CONSENT_EVENT, updateHeight);
       window.removeEventListener("resize", updateHeight);
-      observer.disconnect();
+      ro?.disconnect();
     };
   }, []);
 
