@@ -13,6 +13,9 @@
  * Strictly non-AI, zero external calls, pure TypeScript scoring.
  */
 
+
+import { isJobEligible } from "./eligibility";
+
 export interface OnboardingAnswers {
   roles?: string[];
   experienceLevel?: "entry" | "mid" | "senior" | "lead" | "intern" | string | null;
@@ -20,6 +23,10 @@ export interface OnboardingAnswers {
   locations?: string[];
   employmentTypes?: string[];
   categories?: string[];
+  minSalary?: number | null;
+  salaryCurrency?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
 }
 
 export interface JobScoreBreakdown {
@@ -65,8 +72,13 @@ export function hasOnboardingAnswers(answers?: OnboardingAnswers | null): boolea
   const hasLocs = Array.isArray(answers.locations) && answers.locations.some((l) => l && l.trim().length > 0);
   const hasTypes = Array.isArray(answers.employmentTypes) && answers.employmentTypes.some((t) => t && t.trim().length > 0);
   const hasCats = Array.isArray(answers.categories) && answers.categories.some((c) => c && c.trim().length > 0);
+  const hasMinSalary = typeof answers.minSalary === "number" && answers.minSalary > 0;
+  const hasCountry = Boolean(
+    (answers.country && answers.country.trim().length > 0) ||
+    (answers.countryCode && answers.countryCode.trim().length > 0)
+  );
 
-  return hasRoles || hasExp || hasRemote || hasLocs || hasTypes || hasCats;
+  return hasRoles || hasExp || hasRemote || hasLocs || hasTypes || hasCats || hasMinSalary || hasCountry;
 }
 
 /**
@@ -123,9 +135,134 @@ export function scoreJobRecommendation(
   const location = (job.location || "").toLowerCase();
   const country = (job.country || "").toLowerCase();
   const countryCode = (job.country_code || "").toLowerCase();
-  const isRemote = job.remote === true || (job.remote_scope || "").toLowerCase() === "remote" || location.includes("remote");
-  const remoteScope = (job.remote_scope || "").toLowerCase();
+  const isRemote =
+    job.remote === true ||
+    (job.remote_scope || "").toLowerCase() === "remote" ||
+    (job.remote_scope || "").toLowerCase() === "worldwide" ||
+    (job.remoteScope || "").toLowerCase() === "remote" ||
+    (job.remoteScope || "").toLowerCase() === "worldwide" ||
+    location.includes("remote");
+  const remoteScope = (job.remote_scope || job.remoteScope || "").toLowerCase();
   const jobType = (job.job_type || "").toLowerCase();
+
+  // --- HARD FILTERS & STRONG RANKING SIGNALS ---
+
+  // 1. Work Model Hard Filter: 100% remote seeker must NEVER match on-site jobs
+  const userRemote = (answers.remotePreference || "").toLowerCase().trim();
+  if (userRemote === "remote" && !isRemote) {
+    return {
+      job,
+      score: 0,
+      breakdown: {
+        roleScore: 0,
+        locationScore: 0,
+        experienceScore: 0,
+        jobTypeScore: 0,
+        recencyScore: 0,
+      },
+      reasons: ["Work model mismatch: on-site job for 100% remote seeker"],
+    };
+  }
+
+  // 2. Seniority Level Hard Filter:
+  // An entry-level seeker must NEVER match Senior, Staff, Lead, Principal, Director, Manager roles
+  const userExp = (answers.experienceLevel || "").toLowerCase().trim();
+  const isLeadOrPrincipal = /\b(lead|staff|principal|head|director|architect|manager|vp|chief)\b/i.test(title);
+  const isSenior = /\b(senior|sr\.?)\b/i.test(title);
+  const isJuniorOrEntry = /\b(junior|entry|associate|graduate|fresher|intern|internship)\b/i.test(title);
+
+  if ((userExp === "entry" || userExp === "intern") && (isSenior || isLeadOrPrincipal)) {
+    return {
+      job,
+      score: 0,
+      breakdown: {
+        roleScore: 0,
+        locationScore: 0,
+        experienceScore: 0,
+        jobTypeScore: 0,
+        recencyScore: 0,
+      },
+      reasons: ["Seniority mismatch: Senior/Staff/Lead role for entry-level seeker"],
+    };
+  }
+
+  if ((userExp === "senior" || userExp === "lead") && isJuniorOrEntry) {
+    return {
+      job,
+      score: 0,
+      breakdown: {
+        roleScore: 0,
+        locationScore: 0,
+        experienceScore: 0,
+        jobTypeScore: 0,
+        recencyScore: 0,
+      },
+      reasons: ["Seniority mismatch: Entry/Junior/Intern role for senior/lead seeker"],
+    };
+  }
+
+  // 3. Country / Geographic Hard Filter:
+  // Jobs restricted outside user country preferences are disqualified (unless worldwide remote)
+  const userLocations = [
+    ...(answers.locations || []),
+    ...(answers.country ? [answers.country] : []),
+    ...(answers.countryCode ? [answers.countryCode] : []),
+  ].filter((l): l is string => Boolean(l && l.trim().length > 0));
+
+  if (userLocations.length > 0) {
+    const eligible = isJobEligible(job, userLocations);
+    if (!eligible) {
+      return {
+        job,
+        score: 0,
+        breakdown: {
+          roleScore: 0,
+          locationScore: 0,
+          experienceScore: 0,
+          jobTypeScore: 0,
+          recencyScore: 0,
+        },
+        reasons: ["Location mismatch: job restricted outside user preferences"],
+      };
+    }
+  }
+
+  // 4. Salary Hard Filter:
+  // If the job explicitly offers maximum compensation below 80% of user minSalary requirement, disqualify
+  if (typeof answers.minSalary === "number" && answers.minSalary > 0) {
+    const rawMax =
+      job.salary_max ??
+      job.max_amount ??
+      job.salaryMax ??
+      job.salary_min ??
+      job.min_amount ??
+      job.salaryMin;
+    if (typeof rawMax === "number" && rawMax > 0) {
+      const period = (job.salary_period || job.period || "").toLowerCase();
+      let annualMax = rawMax;
+      if (period === "hourly" || (rawMax < 500 && period !== "yearly")) {
+        annualMax = rawMax * 2080;
+      } else if (period === "monthly" || (rawMax < 25000 && period !== "yearly")) {
+        annualMax = rawMax * 12;
+      }
+      if (annualMax < answers.minSalary * 0.8) {
+        return {
+          job,
+          score: 0,
+          breakdown: {
+            roleScore: 0,
+            locationScore: 0,
+            experienceScore: 0,
+            jobTypeScore: 0,
+            recencyScore: 0,
+          },
+          reasons: ["Salary mismatch: compensation below minimum salary requirement"],
+        };
+      }
+    }
+  }
+
+  // --- DETERMINISTIC SCORING (For Qualifying Roles) ---
 
   // 1. ROLE & CATEGORY MATCHING (0 - 40 pts)
   let roleScore = 0;
@@ -173,8 +310,6 @@ export function scoreJobRecommendation(
 
   // 2. LOCATION & REMOTE WORK MODEL MATCHING (0 - 30 pts)
   let locationScore = 0;
-  const userRemote = (answers.remotePreference || "").toLowerCase().trim();
-  const userLocations = (answers.locations || []).filter((l) => l && l.trim().length > 0);
 
   // Work model component (up to 20 pts)
   if (userRemote === "remote" || userRemote === "any") {
@@ -230,13 +365,8 @@ export function scoreJobRecommendation(
 
   // 3. EXPERIENCE / SENIORITY LEVEL MATCHING (0 - 20 pts)
   let experienceScore = 0;
-  const userExp = (answers.experienceLevel || "").toLowerCase().trim();
 
   if (userExp) {
-    const isLeadOrPrincipal = /\b(lead|staff|principal|head|director|architect|manager)\b/i.test(title);
-    const isSenior = /\b(senior|sr\.?)\b/i.test(title);
-    const isJuniorOrEntry = /\b(junior|entry|associate|graduate|fresher|intern|internship)\b/i.test(title);
-
     if (userExp === "entry" || userExp === "intern") {
       if (isJuniorOrEntry) {
         experienceScore = 20;
@@ -244,7 +374,7 @@ export function scoreJobRecommendation(
       } else if (!isSenior && !isLeadOrPrincipal) {
         experienceScore = 14;
       } else {
-        experienceScore = 0; // Senior/lead penalty for entry seeker
+        experienceScore = 0;
       }
     } else if (userExp === "mid") {
       if (!isJuniorOrEntry && !isLeadOrPrincipal) {
@@ -334,12 +464,17 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     return [];
   }
 
-  // Fallback when a user has no answers: latest jobs
+  // Fallback when a user has no answers: latest jobs with deterministic tie-breaks
   if (!hasOnboardingAnswers(answers)) {
     return [...jobs].sort((a, b) => {
       const timeA = new Date(a.posted_at || a.created_at || a.first_seen_at || 0).getTime();
       const timeB = new Date(b.posted_at || b.created_at || b.first_seen_at || 0).getTime();
-      return timeB - timeA;
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      const idA = String(a.id ?? "");
+      const idB = String(b.id ?? "");
+      return idB.localeCompare(idA);
     });
   }
 
@@ -350,10 +485,16 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     if (b.score !== a.score) {
       return b.score - a.score;
     }
-    // 2. Secondary sort: recency DESC
+    // 2. Secondary sort: recency DESC (posted_at desc)
     const timeA = new Date(a.job.posted_at || a.job.created_at || a.job.first_seen_at || 0).getTime();
     const timeB = new Date(b.job.posted_at || b.job.created_at || b.job.first_seen_at || 0).getTime();
-    return timeB - timeA;
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    // 3. Deterministic tie-breaker: id DESC
+    const idA = String(a.job.id ?? "");
+    const idB = String(b.job.id ?? "");
+    return idB.localeCompare(idA);
   });
 
   return scored.map((s) => ({

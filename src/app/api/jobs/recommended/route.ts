@@ -7,10 +7,21 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
+import { getCountryFilterClause } from "@/lib/countries";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
 export const runtime = "edge";
+
+export const RECOMMENDED_POOL_SIZE = 1000;
+
+function sanitizeSearchQuery(input: string): string {
+  if (!input) return "";
+  return input
+    .replace(/[%_(),"'`;\\$]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function formatDate(dateStr?: string | null): string {
   if (!dateStr) return "Recently";
@@ -116,7 +127,7 @@ export async function GET(req: Request) {
           // Fetch user preferences for onboarding answers
           const { data: prefs } = await supabaseAdmin
             .from("user_preferences")
-            .select("roles, experience_level, remote_preference, locations, employment_types, categories")
+            .select("roles, experience_level, remote_preference, locations, employment_types, categories, min_salary, salary_currency")
             .eq("user_id", user.id)
             .maybeSingle();
 
@@ -128,6 +139,8 @@ export async function GET(req: Request) {
               locations: Array.isArray(prefs.locations) ? prefs.locations : [],
               employmentTypes: Array.isArray(prefs.employment_types) ? prefs.employment_types : [],
               categories: Array.isArray(prefs.categories) ? prefs.categories : [],
+              minSalary: prefs.min_salary != null ? Number(prefs.min_salary) : null,
+              salaryCurrency: prefs.salary_currency || null,
             };
           }
         }
@@ -142,6 +155,9 @@ export async function GET(req: Request) {
     const queryRemote = searchParams.get("remotePreference") || searchParams.get("workModel") || "";
     const queryLocations = searchParams.get("locations") || searchParams.get("location") || "";
     const queryEmployment = searchParams.get("employmentTypes") || searchParams.get("jobType") || "";
+    const queryMinSalary = searchParams.get("minSalary") || searchParams.get("salaryMin") || searchParams.get("salary_min") || "";
+    const queryCountry = searchParams.get("country") || "";
+    const queryCountryCode = searchParams.get("countryCode") || searchParams.get("country_code") || "";
 
     const answers: OnboardingAnswers = {
       roles: queryRoles ? queryRoles.split(",").map((s) => s.trim()).filter(Boolean) : (dbAnswers.roles || []),
@@ -150,9 +166,28 @@ export async function GET(req: Request) {
       locations: queryLocations ? queryLocations.split(",").map((s) => s.trim()).filter(Boolean) : (dbAnswers.locations || []),
       employmentTypes: queryEmployment ? queryEmployment.split(",").map((s) => s.trim()).filter(Boolean) : (dbAnswers.employmentTypes || []),
       categories: dbAnswers.categories || [],
+      minSalary: queryMinSalary ? Number(queryMinSalary) : (dbAnswers.minSalary ?? null),
+      salaryCurrency: dbAnswers.salaryCurrency || "USD",
+      country: queryCountry || dbAnswers.country || null,
+      countryCode: queryCountryCode || dbAnswers.countryCode || null,
     };
 
     const isPersonalized = hasOnboardingAnswers(answers);
+
+    // Read shared filter parameters to apply as HARD filters before ranking
+    const categoryParam = searchParams.get("category") || "";
+    const remoteOnly = searchParams.get("remoteOnly") === "true";
+    const countryCodeParam = searchParams.get("country_code") || searchParams.get("country") || searchParams.get("countryCode") || "";
+    const locationParam = searchParams.get("location") || "";
+    const jobTypeParam = searchParams.get("jobType") || "";
+    const levelParam = searchParams.get("level") || "";
+    const workModelParam = searchParams.get("workModel") || "";
+    const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
+    const experienceParam = searchParams.get("experience") || searchParams.get("exp") || "";
+    const salaryMinParam = searchParams.get("salaryMin") || searchParams.get("salary_min") || "";
+    const sourceTypeParam = searchParams.get("sourceType") || searchParams.get("source_type") || "";
+    const companyParam = searchParams.get("company") || "";
+    const searchParam = searchParams.get("q") || searchParams.get("search") || "";
 
     // Query active candidate jobs from Supabase
     const selectCols = hasServiceKey
@@ -168,57 +203,243 @@ export async function GET(req: Request) {
       query = query.eq("is_active", true);
     }
 
+    // Apply HARD filters before ranking:
+    // 1. Category hard filter
+    if (categoryParam && categoryParam !== "all") {
+      const c = sanitizeSearchQuery(categoryParam).toLowerCase().trim();
+      if (c === "trending") {
+        query = query.in("category", ["ai", "engineering", "devops"]);
+      } else if (c === "tech") {
+        query = query.in("category", ["engineering", "devops", "ai", "software"]);
+      } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
+        query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%,title.imatch.\\yAI\\y,title.ilike.ai %,title.ilike.% ai %,title.ilike.% ai,title.ilike.ai");
+      } else if (c === "data" || c === "data-analytics" || c === "data-science") {
+        query = query.or("category.eq.data,category.eq.data-analytics,title.ilike.%data %,title.ilike.%analytics%,title.ilike.%database%");
+      } else if (c === "engineering" || c === "software") {
+        query = query.in("category", ["engineering", "software"]);
+      } else if (c === "internships") {
+        query = query.or("job_type.eq.internship,title.ilike.%internship%,title.ilike.%internships%,title.ilike.% intern %,title.ilike.intern %,title.ilike.% intern,title.ilike.%-intern%,title.ilike.%(intern)%,title.ilike.%co-op%,title.ilike.%coop%");
+      } else if (c === "remote") {
+        query = query.eq("remote", true);
+      } else if (c === "fresher") {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%,title.ilike.%internship%,title.ilike.% intern %,job_type.eq.internship");
+      } else if (c === "operations") {
+        query = query.or("category.eq.operations,title.ilike.%operation%,title.ilike.%ops%");
+      } else if (c === "cyber-security") {
+        query = query.or("category.eq.cyber-security,title.ilike.%security%,title.ilike.%cyber%");
+      } else if (c === "customer-support") {
+        query = query.or("category.eq.customer-support,title.ilike.%support%,title.ilike.%customer%,title.ilike.%success%");
+      } else if (c === "legal") {
+        query = query.or("category.eq.legal,title.ilike.%legal%,title.ilike.%compliance%");
+      } else if (c === "healthcare") {
+        query = query.or("category.eq.healthcare,title.ilike.%health%,title.ilike.%clinical%");
+      } else {
+        query = query.or(`category.ilike.%${c}%,title.ilike.%${c}%`);
+      }
+    }
+
+    // 2. Remote only hard filter
+    if (remoteOnly) {
+      query = query.eq("remote", true);
+    }
+
+    // 3. Country code hard filter
+    if (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") {
+      const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
+      if (code) {
+        const orClause = getCountryFilterClause(code);
+        if (orClause) {
+          query = query.or(orClause);
+        } else {
+          query = query.eq("country_code", code);
+        }
+      }
+    }
+
+    // 4. Location hard filter
+    if (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") {
+      const loc = sanitizeSearchQuery(locationParam);
+      if (loc.toLowerCase() === "remote") {
+        query = query.or("remote.eq.true,location.ilike.%remote%");
+      } else if (loc) {
+        query = query.ilike("location", "%" + loc + "%");
+      }
+    }
+
+    // 5. Job type hard filter
+    if (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") {
+      const jt = jobTypeParam.trim().toLowerCase();
+      if (jt.includes("full")) {
+        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
+      } else if (jt.includes("contract")) {
+        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
+      } else if (jt.includes("part")) {
+        query = query.ilike("job_type", "%part%");
+      } else if (jt.includes("intern")) {
+        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
+      } else {
+        query = query.ilike("job_type", "%" + sanitizeSearchQuery(jobTypeParam) + "%");
+      }
+    }
+
+    // 6. Level hard filter
+    if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
+      const lvl = levelParam.trim().toLowerCase();
+      if (lvl.includes("lead") || lvl.includes("staff")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (lvl.includes("senior")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      } else if (lvl.includes("entry") || lvl.includes("junior")) {
+        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
+      } else if (lvl.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%");
+      }
+    }
+
+    // 7. Experience hard filter
+    if (experienceParam && experienceParam.trim() && experienceParam.toLowerCase() !== "all" && experienceParam.toLowerCase() !== "all experience") {
+      const exp = experienceParam.trim().toLowerCase();
+      if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
+        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+      } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
+        query = query
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%")
+          .not("title", "ilike", "%junior%")
+          .not("title", "ilike", "%entry%");
+      } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+        query = query
+          .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+          .not("title", "ilike", "%senior%")
+          .not("title", "ilike", "%sr.%")
+          .not("title", "ilike", "%staff%")
+          .not("title", "ilike", "%principal%")
+          .not("title", "ilike", "%lead%");
+      } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+      }
+    }
+
+    // 8. Work model hard filter
+    if (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") {
+      const wmTokens = workModelParam.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+      const orParts: string[] = [];
+      for (const wm of wmTokens) {
+        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
+        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
+        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
+      }
+      if (orParts.length > 0) {
+        query = query.or(orParts.join(","));
+      }
+    }
+
+    // 9. Date posted hard filter
+    if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
+      const dp = dateParam.trim().toLowerCase();
+      const ms =
+        dp === "24h" || dp.includes("24")
+          ? 24 * 60 * 60 * 1000
+          : dp === "7d" || dp.includes("week")
+          ? 7 * 24 * 60 * 60 * 1000
+          : dp === "30d" || dp.includes("month")
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+      if (ms > 0) {
+        const cutoff = new Date(Date.now() - ms).toISOString();
+        query = query.gte("posted_at", cutoff);
+      }
+    }
+
+    // 10. Company hard filter (server-side, jobs table only)
+    if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
+      if (hasServiceKey) {
+        const cleanComp = sanitizeSearchQuery(companyParam).trim();
+        if (cleanComp) {
+          query = query.or(`company.ilike.%${cleanComp}%,company_slug.ilike.%${cleanComp.toLowerCase()}%`);
+        }
+      }
+    }
+
+    // 11. Salary min hard filter (server-side, jobs table only)
+    if (salaryMinParam) {
+      if (hasServiceKey) {
+        const minVal = parseInt(salaryMinParam, 10);
+        if (!isNaN(minVal) && minVal > 0) {
+          query = query.not("salary_min", "is", null).gte("salary_min", minVal);
+        }
+      }
+    }
+
+    // 12. Source type hard filter (server-side, jobs table only)
+    if (sourceTypeParam && sourceTypeParam.trim() && sourceTypeParam.toLowerCase() !== "all") {
+      if (hasServiceKey) {
+        const st = sanitizeSearchQuery(sourceTypeParam).toLowerCase().trim();
+        if (st === "ats") {
+          query = query.or("source_type.eq.ats,source.ilike.%board%,source.ilike.%greenhouse%,source.ilike.%lever%,source.ilike.%ashby%");
+        } else if (st === "direct") {
+          query = query.or("source_type.eq.direct,source_type.eq.ats");
+        } else if (st === "aggregator") {
+          query = query.or("source_type.eq.aggregator,source_type.eq.feed,source_type.eq.api");
+        } else if (st) {
+          query = query.eq("source_type", st);
+        }
+      }
+    }
+
+    // 13. Search query hard filter
+    if (searchParam && searchParam.trim()) {
+      const cleanSearch = sanitizeSearchQuery(searchParam).trim();
+      if (cleanSearch) {
+        if (hasServiceKey) {
+          query = query.or(`title.ilike.%${cleanSearch}%,company.ilike.%${cleanSearch}%,description.ilike.%${cleanSearch}%`);
+        } else {
+          query = query.ilike("title", `%${cleanSearch}%`);
+        }
+      }
+    }
+
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
     let paginatedJobs: any[] = [];
     let totalCount = 0;
 
-    if (isPersonalized) {
-      // Bounded candidate pool for deterministic client-side recommendation scoring.
-      // Pool bounds dynamically cover up to (page + 4) * pageSize or at least 500, capped at 2000,
-      // ensuring page 11+ (250+) is fully populated with scored jobs.
-      const poolLimit = Math.min(2000, Math.max(500, to + pageSize * 4));
-      query = query
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .order("id", { ascending: false })
-        .range(0, poolLimit - 1);
+    // Use a fixed candidate set per request (fixed pool size, not growing with page)
+    // with deterministic tie-breaks (score desc, posted_at desc, id).
+    // Bounded candidate pool ensures zero duplicates and zero skips between adjacent pages.
+    query = query
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
+      .range(0, RECOMMENDED_POOL_SIZE - 1);
 
-      const { data: rawJobs, error } = await query;
+    const { data: rawJobs, error } = await query;
 
-      if (error) {
-        log.error("Failed to query candidate jobs for recommendations", { error: error.message || error });
-        return NextResponse.json(
-          { error: "Database service unavailable", jobs: [], totalCount: 0 },
-          { status: 503 }
-        );
-      }
-
-      const candidateJobs = rawJobs || [];
-      const rankedJobs = rankJobsByRecommendation(candidateJobs, answers);
-      const cappedJobs = capJobsPerCompany(rankedJobs, 3, 30);
-      totalCount = cappedJobs.length; // Honest total representing scored candidate pool
-      paginatedJobs = cappedJobs.slice(from, to + 1);
-    } else {
-      // Unpersonalized fallback: latest jobs directly paginated over corpus with honest exact count
-      query = query
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .order("id", { ascending: false })
-        .range(from, to);
-
-      const { data: rawJobs, count, error } = await query;
-
-      if (error) {
-        log.error("Failed to query latest jobs for fallback", { error: error.message || error });
-        return NextResponse.json(
-          { error: "Database service unavailable", jobs: [], totalCount: 0 },
-          { status: 503 }
-        );
-      }
-
-      totalCount = count ?? (rawJobs?.length || 0);
-      paginatedJobs = capJobsPerCompany(rawJobs || [], 3, 30);
+    if (error) {
+      log.error("Failed to query candidate jobs for recommendations", { error: error.message || error });
+      return NextResponse.json(
+        { error: "Database service unavailable", jobs: [], totalCount: 0 },
+        { status: 503 }
+      );
     }
+
+    const candidateJobs = rawJobs || [];
+    const rankedJobs = isPersonalized
+      ? rankJobsByRecommendation(candidateJobs, answers)
+      : rankJobsByRecommendation(candidateJobs, null);
+    const cappedJobs = capJobsPerCompany(rankedJobs, 3, 30);
+    totalCount = cappedJobs.length; // Honestly reports the bounded pool total
+    paginatedJobs = cappedJobs.slice(from, to + 1);
 
     // Build company group ID map for non-Pro responses to prevent company_id leakage
     // Fails closed with 503 if HMAC secret is missing or unavailable

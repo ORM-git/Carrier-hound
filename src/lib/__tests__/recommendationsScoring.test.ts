@@ -125,7 +125,7 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       const answers: OnboardingAnswers = {
         roles: ["Backend Engineer"],
         experienceLevel: "mid",
-        remotePreference: "remote",
+        remotePreference: "any",
         employmentTypes: ["full-time"],
       };
 
@@ -156,6 +156,124 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       expect(ranked.map((j) => j.id)).toEqual(["perfect", "partial", "unrelated"]);
       expect(ranked[0].matchScore).toBeGreaterThan(ranked[1].matchScore!);
       expect(ranked[1].matchScore).toBeGreaterThan(ranked[2].matchScore!);
+    });
+
+    it("hard filters: entry-level 100%-remote seeker never gets Senior/Staff on-site jobs as top matches", () => {
+      const entryRemoteAnswers: OnboardingAnswers = {
+        roles: ["Software Engineer"],
+        experienceLevel: "entry",
+        remotePreference: "remote",
+        employmentTypes: ["full-time"],
+      };
+
+      const jobs = [
+        {
+          id: "senior-onsite",
+          title: "Senior Staff Software Engineer",
+          remote: false,
+          location: "New York, NY",
+          job_type: "full-time",
+          posted_at: new Date().toISOString(),
+        },
+        {
+          id: "entry-remote",
+          title: "Junior Software Engineer",
+          remote: true,
+          remote_scope: "worldwide",
+          location: "Remote (Worldwide)",
+          job_type: "full-time",
+          posted_at: new Date(Date.now() - 3600000).toISOString(),
+        },
+        {
+          id: "entry-onsite",
+          title: "Junior Software Engineer",
+          remote: false,
+          location: "San Francisco, CA",
+          job_type: "full-time",
+          posted_at: new Date().toISOString(),
+        },
+        {
+          id: "lead-remote",
+          title: "Lead Software Architect",
+          remote: true,
+          location: "Remote",
+          job_type: "full-time",
+          posted_at: new Date().toISOString(),
+        },
+      ];
+
+      // Score individual jobs
+      const seniorOnsiteScore = scoreJobRecommendation(jobs[0], entryRemoteAnswers);
+      const entryRemoteScore = scoreJobRecommendation(jobs[1], entryRemoteAnswers);
+      const entryOnsiteScore = scoreJobRecommendation(jobs[2], entryRemoteAnswers);
+      const leadRemoteScore = scoreJobRecommendation(jobs[3], entryRemoteAnswers);
+
+      // Hard filters: Senior/Staff roles and on-site roles must score 0
+      expect(seniorOnsiteScore.score).toBe(0);
+      expect(entryOnsiteScore.score).toBe(0);
+      expect(leadRemoteScore.score).toBe(0);
+
+      // Qualifying entry remote role scores high
+      expect(entryRemoteScore.score).toBeGreaterThanOrEqual(80);
+
+      // In ranking, only qualifying role is returned as #1 top match; disqualified roles score 0
+      const ranked = rankJobsByRecommendation(jobs, entryRemoteAnswers);
+      expect(ranked[0].id).toBe("entry-remote");
+      expect(ranked[0].matchScore).toBe(entryRemoteScore.score);
+      const seniorOnsiteRanked = ranked.find((j) => j.id === "senior-onsite");
+      expect(seniorOnsiteRanked?.matchScore).toBe(0);
+    });
+
+    it("respects salary and country preferences as hard filters / strong ranking signals", () => {
+      const answers: OnboardingAnswers = {
+        roles: ["Frontend Developer"],
+        locations: ["United States"],
+        minSalary: 120000,
+        remotePreference: "remote",
+      };
+
+      const lowSalaryJob = {
+        id: "low-pay",
+        title: "Frontend Developer",
+        remote: true,
+        location: "Remote",
+        country_code: "US",
+        salary_max: 60000,
+        salary_period: "yearly",
+      };
+
+      const foreignCountryJob = {
+        id: "foreign-country",
+        title: "Frontend Developer",
+        remote: false,
+        location: "Berlin, Germany",
+        country_code: "DE",
+        salary_max: 140000,
+      };
+
+      const qualifyingJob = {
+        id: "qualifying",
+        title: "Frontend Developer",
+        remote: true,
+        location: "Remote (US)",
+        country_code: "US",
+        salary_max: 150000,
+        salary_period: "yearly",
+      };
+
+      const lowPayScore = scoreJobRecommendation(lowSalaryJob, answers);
+      const foreignScore = scoreJobRecommendation(foreignCountryJob, answers);
+      const qualScore = scoreJobRecommendation(qualifyingJob, answers);
+
+      expect(lowPayScore.score).toBe(0);
+      expect(foreignScore.score).toBe(0);
+      expect(qualScore.score).toBeGreaterThanOrEqual(60);
+
+      const ranked = rankJobsByRecommendation([lowSalaryJob, foreignCountryJob, qualifyingJob], answers);
+      expect(ranked[0].id).toBe("qualifying");
+      expect(ranked[0].matchScore).toBe(qualScore.score);
+      expect(ranked[1].matchScore).toBe(0);
+      expect(ranked[2].matchScore).toBe(0);
     });
 
     it("falls back to latest jobs (posted_at DESC) when user has no answers", () => {

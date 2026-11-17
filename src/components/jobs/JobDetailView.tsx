@@ -195,7 +195,11 @@ export default function JobDetailView({
     }
   }, [hasConfirmedResume, candidate, job]);
 
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
+  const matchScore = typeof job.matchScore === "number"
+    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    : diagnostics
+    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    : null;
 
   const expSubScore = diagnostics
     ? Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))
@@ -216,14 +220,7 @@ export default function JobDetailView({
       )
     : null;
 
-  const matchLabel =
-    matchScore !== null
-      ? matchScore > 70
-        ? "Great match"
-        : matchScore >= 50
-        ? "Good match"
-        : "Fair match"
-      : "";
+  const matchLabel = matchScore !== null ? "Match" : "";
 
   // Extract structured lists if present
   const requirementsList: string[] = useMemo(() => {
@@ -788,7 +785,7 @@ export default function JobDetailView({
                         : "bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
                   >
-                    {isUnlocked ? matchLabel : "Pro Match"}
+                    {isUnlocked ? matchLabel : "Match"}
                   </span>
                 </div>
 
