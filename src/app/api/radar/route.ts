@@ -231,6 +231,14 @@ async function computeRadarPayload(supabase: any, now: number): Promise<any> {
 }
 
 export async function GET(req: Request) {
+  // Launch scope gate: Radar is Coming Soon
+  return NextResponse.json(
+    { error: "This feature is coming soon.", code: "FEATURE_COMING_SOON" },
+    { status: 503, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+async function handleRadarLogic(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const now = Date.now();
 
@@ -249,7 +257,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Supabase credentials not configured' }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl, serviceKey, {
+  const supabase = createClient(supabaseUrl!, serviceKey!, {
     auth: { persistSession: false },
   });
 
@@ -268,3 +276,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+void handleRadarLogic;

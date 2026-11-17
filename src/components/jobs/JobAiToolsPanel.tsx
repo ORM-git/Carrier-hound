@@ -18,6 +18,7 @@ import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
+import { toast } from "react-toastify";
 
 export interface TailorClickDecision {
   action: "open_tailor" | "show_login_modal" | "redirect_resume";
@@ -75,7 +76,11 @@ export default function JobAiToolsPanel({
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
+  const matchScore = typeof job?.matchScore === "number" && !isNaN(job.matchScore)
+    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    : diagnostics
+    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    : null;
   const matchLabel =
     matchScore !== null
       ? matchScore > 70
@@ -89,20 +94,7 @@ export default function JobAiToolsPanel({
   const topMissingSkills = diagnostics?.missingSkills ? diagnostics.missingSkills.slice(0, 4) : [];
 
   const handleTailorClick = () => {
-    const decision = resolveTailorClickAction({ user, hasConfirmedResume });
-    if (decision.action === "show_login_modal") {
-      setShowLoginModal(true);
-      return;
-    }
-    if (decision.action === "redirect_resume") {
-      if (typeof window !== "undefined") {
-        window.location.href = decision.destination || "/resume";
-      }
-      return;
-    }
-    if (decision.action === "open_tailor") {
-      onOpenTailor();
-    }
+    toast.info("Tailor Resume is coming soon.");
   };
 
   const getLoginRedirectUrl = () => {

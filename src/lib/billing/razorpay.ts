@@ -77,7 +77,10 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
     return;
   }
 
-  // 1. Create order server-side via /api/billing/razorpay/order (server resolves pricing, client amounts ignored)
+  // 1. Load Razorpay Checkout SDK dynamically so checkout.js is fetched and window.Razorpay is defined
+  const scriptPromise = loadRazorpayScript();
+
+  // 2. Create order server-side via /api/billing/razorpay/order (server resolves pricing, client amounts ignored)
   let orderData: { orderId: string; amount: number; currency: string; keyId: string };
   try {
     const res = await fetch("/api/billing/razorpay/order", {
@@ -104,8 +107,8 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
     return;
   }
 
-  // 2. Load Razorpay Checkout SDK
-  const isLoaded = await loadRazorpayScript();
+  // 3. Ensure Razorpay Checkout SDK is ready
+  const isLoaded = await scriptPromise;
   if (!isLoaded) {
     options.onError?.(new Error("Failed to load Razorpay payment gateway"));
     return;
@@ -268,7 +271,10 @@ export async function openRazorpaySubscription(
     return;
   }
 
-  // 1. Create subscription server-side via /api/billing/razorpay/subscription
+  // 1. Load Razorpay Checkout SDK dynamically so checkout.js is fetched and window.Razorpay is defined
+  const scriptPromise = loadRazorpayScript();
+
+  // 2. Create subscription server-side via /api/billing/razorpay/subscription
   let subData: { subscriptionId: string; keyId?: string };
   try {
     const res = await fetch("/api/billing/razorpay/subscription", {
@@ -294,8 +300,8 @@ export async function openRazorpaySubscription(
     return;
   }
 
-  // 2. Load Razorpay Checkout SDK
-  const isLoaded = await loadRazorpayScript();
+  // 3. Ensure Razorpay Checkout SDK is ready
+  const isLoaded = await scriptPromise;
   if (!isLoaded) {
     options.onError?.(new Error("Failed to load Razorpay payment gateway"));
     return;

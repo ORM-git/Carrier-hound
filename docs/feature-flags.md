@@ -6,7 +6,8 @@ uses, and its default (all off, which is today's behavior). `scripts/test-flags-
 
 | Variable | Rule | Scope |
 | --- | --- | --- |
-| `NEXT_PUBLIC_BILLING_ENABLED` | exact `true` | public, inlined at build. Payments stay off until the owner activates billing |
+| `NEXT_PUBLIC_BILLING_ENABLED` | exact `true` | public, inlined at build. Defaults to `true` for launch scope (prepaid one-time checkout active) |
+| `NEXT_PUBLIC_AUTORENEW_ENABLED` | exact `true` | public, inlined at build. Defaults to `false` for launch scope (auto-renew mandates disabled) |
 | `NEXT_PUBLIC_ENABLE_INTERVIEW_PACK` | exact `true` | public, inlined at build |
 | `NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF` | exact `true` | public, inlined at build |
 | `ALLOW_LOCALHOST_CORS` | exact `true` | server |

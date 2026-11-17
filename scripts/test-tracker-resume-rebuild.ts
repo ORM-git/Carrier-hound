@@ -82,80 +82,15 @@ function runAudit() {
   // ===========================================================================
   // SECTION 2: TRACKER BOARD ARCHITECTURE & STAGES
   // ===========================================================================
-  // Check exact 5 stages in tracker
-  const stages = ["saved", "applied", "interview", "offer", "rejected"];
-  const stagesMatch = stages.every((st) => trackerCode.includes(`"${st}"`) || trackerCode.includes(`'${st}'`));
-  if (stagesMatch) {
-    console.log("  [PASS] Tracker Stages: preserved exactly 5 canonical stages (saved, applied, interview, offer, rejected)");
+  // Launch scope: the tracker board is Coming Soon (PR #644). The board UI
+  // (columns, cards, drag, top row) is intentionally removed from the page, so
+  // the page must be the gated ComingSoonView and must not ship board code.
+  const trackerIsGated = trackerCode.includes("ComingSoonView") && trackerCode.includes("Application Tracker");
+  const trackerHasNoBoard = !trackerCode.includes("isDragging") && !trackerCode.includes("Drop applications here");
+  if (trackerIsGated && trackerHasNoBoard) {
+    console.log("  [PASS] Tracker: gated behind ComingSoonView with no live board UI (launch scope)");
   } else {
-    failures.push("Tracker Stages: Must strictly preserve existing stages without additions or renames.");
-  }
-
-  // Column Tokens: #F1F5F9 bg, 16px radius, 12px padding (p-3), bold 14px header, dark count badge
-  const hasColBg = trackerCode.includes("bg-[#F1F5F9]");
-  const hasColRadius = trackerCode.includes("rounded-[16px]");
-  const hasColPadding = trackerCode.includes("p-3");
-  const hasColHeader = trackerCode.includes("text-[14px] font-bold text-[#0F172A]");
-  const hasColBadge = trackerCode.includes("bg-[#0F172A] text-white");
-
-  if (hasColBg && hasColRadius && hasColPadding && hasColHeader && hasColBadge) {
-    console.log("  [PASS] Tracker Columns: #F1F5F9 bg, 16px radius, 12px padding, bold 14px header with dark count badge");
-  } else {
-    failures.push("Tracker Columns: Missing specified tokens (#F1F5F9, rounded-[16px], p-3, 14px bold, dark badge).");
-  }
-
-  // Card Tokens: white, 12px radius, 1px #E2E8F0 ring, 14px padding (p-3.5), 32px company logo,
-  // 14px bold title, 13px company #475569, 12px applied/updated date #94A3B8
-  const hasCardRadius = trackerCode.includes("rounded-[12px]");
-  const hasCardRing = trackerCode.includes("ring-1 ring-[#E2E8F0]");
-  const hasCardPadding = trackerCode.includes("p-3.5");
-  const hasLogo32px = trackerCode.includes("w-8 h-8 rounded-lg");
-  const hasTitle14px = trackerCode.includes("text-[14px] font-bold text-[#0F172A]");
-  const hasCompany13px = trackerCode.includes("text-[13px] text-[#475569]");
-  const hasDate12px = trackerCode.includes("text-[12px] text-[#94A3B8]") || trackerCode.includes("text-[12px] text-[#64748B]");
-
-  if (hasCardRadius && hasCardRing && hasCardPadding && hasLogo32px && hasTitle14px && hasCompany13px && hasDate12px) {
-    console.log("  [PASS] Tracker Cards: white, 12px radius, 1px #E2E8F0 ring, 14px padding, 32px logo, 14px title, 13px company, 12px date");
-  } else {
-    failures.push("Tracker Cards: Missing specified tokens (rounded-[12px], ring-[#E2E8F0], p-3.5, 32px logo, 14px title, 13px company, 12px date).");
-  }
-
-  // Dragging State: lifted card gets #93C5FD ring and soft shadow only while dragging
-  const hasDragRing = trackerCode.includes("ring-2 ring-[#93C5FD]");
-  const hasDragShadow = trackerCode.includes("shadow-[0_8px_20px_rgba(15,23,42,0.12)]") || trackerCode.includes("shadow-");
-  const hasDragCond = trackerCode.includes("isDragging") && trackerCode.includes("cursor-grabbing");
-
-  if (hasDragRing && hasDragShadow && hasDragCond) {
-    console.log("  [PASS] Tracker Dragging: lifted card gets #93C5FD ring and soft shadow strictly while dragging");
-  } else {
-    failures.push("Tracker Dragging: Must apply #93C5FD ring and soft shadow strictly during active drag state.");
-  }
-
-  // Top Row: segmented control for views, search input pill, primary blue Add button
-  const hasSegmented = trackerCode.includes("bg-[#F1F5F9] border border-[#E2E8F0]") && trackerCode.includes("Board") && trackerCode.includes("List");
-  const hasSearchPill = trackerCode.includes("rounded-full border border-[#E2E8F0] bg-[#F1F5F9]") && trackerCode.includes("Search by title or company");
-  const hasAddPill = trackerCode.includes("bg-[#2563EB]") && trackerCode.includes("rounded-full") && trackerCode.includes("Add application");
-
-  if (hasSegmented && hasSearchPill && hasAddPill) {
-    console.log("  [PASS] Tracker Top Row: segmented control (Board/List), search input pill, primary blue Add pill button");
-  } else {
-    failures.push("Tracker Top Row: Missing segmented control, search input pill, or primary blue Add button.");
-  }
-
-  // Empty Column: dashed #CBD5E1 border, one muted line of existing wording
-  const hasEmptyCol = trackerCode.includes("border-2 border-dashed border-[#CBD5E1] rounded-[12px]") && trackerCode.includes("Drop applications here");
-  if (hasEmptyCol) {
-    console.log("  [PASS] Tracker Empty Column: dashed #CBD5E1 border with muted 'Drop applications here' line");
-  } else {
-    failures.push("Tracker Empty Column: Missing dashed #CBD5E1 border or muted 'Drop applications here' line.");
-  }
-
-  // Mobile Snap-Scroll
-  const hasMobileSnap = trackerCode.includes("overflow-x-auto snap-x snap-mandatory") && trackerCode.includes("snap-center");
-  if (hasMobileSnap) {
-    console.log("  [PASS] Tracker Mobile: columns render as a horizontal snap-scroll row on mobile");
-  } else {
-    failures.push("Tracker Mobile: Missing horizontal snap-scroll (overflow-x-auto snap-x snap-mandatory).");
+    failures.push("Tracker: Must render the ComingSoonView gate and ship no live board UI at launch.");
   }
 
   // ===========================================================================

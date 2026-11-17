@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
@@ -10,7 +11,26 @@ const baseLog = createLogger({ context: { route: "/api/billing/razorpay/subscrip
 
 export const runtime = "edge";
 
-function isProductionHost(req: Request, deps?: any): boolean {
+async function getCloudflareEnv(deps?: any): Promise<Record<string, any> | undefined> {
+  if (deps?.cfEnv) return deps.cfEnv;
+  if (deps?.env) return deps.env;
+  try {
+    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
+    const ctx = mod?.getRequestContext?.();
+    if (ctx?.env) {
+      return ctx.env as Record<string, any>;
+    }
+  } catch {}
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env) {
+      return cfContext.env as Record<string, any>;
+    }
+  } catch {}
+  return undefined;
+}
+
+function isProductionHost(req: Request, deps?: any, cfEnv?: Record<string, any>): boolean {
   if (deps?.isProductionHost !== undefined) {
     return Boolean(deps.isProductionHost);
   }
@@ -75,7 +95,11 @@ function isProductionHost(req: Request, deps?: any): boolean {
   }
 
   // 4. Deployment environment hints
-  const envUrls = [process.env.NEXT_PUBLIC_SITE_URL, process.env.URL, process.env.SITE_URL];
+  const envUrls = [
+    getRuntimeEnv("NEXT_PUBLIC_SITE_URL", cfEnv),
+    getRuntimeEnv("URL", cfEnv),
+    getRuntimeEnv("SITE_URL", cfEnv),
+  ];
   for (const envUrl of envUrls) {
     if (envUrl) {
       try {
@@ -93,10 +117,11 @@ function isProductionHost(req: Request, deps?: any): boolean {
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
 
   try {
     // 1. Feature Flag Check: NEXT_PUBLIC_AUTORENEW_ENABLED must be strictly "true"
-    if (process.env.NEXT_PUBLIC_AUTORENEW_ENABLED !== "true") {
+    if (getRuntimeEnv("NEXT_PUBLIC_AUTORENEW_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Auto-renew subscriptions are currently unavailable", code: "AUTORENEW_DISABLED" },
         { status: 503 }
@@ -104,7 +129,7 @@ export async function POST(req: Request) {
     }
 
     // Also verify base billing enabled flag
-    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+    if (getRuntimeEnv("NEXT_PUBLIC_BILLING_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
         { status: 503 }
@@ -127,11 +152,12 @@ export async function POST(req: Request) {
       supabaseAdmin = deps.getSupabaseAdmin();
     } else {
       const supabaseUrl =
-        process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.SUPABASE_URL ||
+        getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+        getRuntimeEnv("SUPABASE_URL", cfEnv) ||
         "https://szakevhxhwpeskidvtfs.supabase.co";
       const serviceRoleKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+        getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+        getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
         return NextResponse.json(
@@ -155,7 +181,7 @@ export async function POST(req: Request) {
     }
 
     // 3. Server-authoritative mode & key validation (Audit Blocker B2 & F01)
-    const configuredMode = process.env.RAZORPAY_MODE;
+    const configuredMode = getRuntimeEnv("RAZORPAY_MODE", cfEnv);
     if (configuredMode !== "test" && configuredMode !== "live") {
       log.error("Payment configuration error: invalid or missing mode");
       return NextResponse.json(
@@ -168,10 +194,10 @@ export async function POST(req: Request) {
     }
 
     const keyId =
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-      process.env.RAZORPAY_KEY_ID;
+      getRuntimeEnv("NEXT_PUBLIC_RAZORPAY_KEY_ID", cfEnv) ||
+      getRuntimeEnv("RAZORPAY_KEY_ID", cfEnv);
     const keySecret =
-      process.env.RAZORPAY_KEY_SECRET;
+      getRuntimeEnv("RAZORPAY_KEY_SECRET", cfEnv);
 
     if (!keyId || !keySecret) {
       log.error("Payment configuration error: missing Razorpay credentials");
@@ -209,7 +235,7 @@ export async function POST(req: Request) {
 
     const resolvedMode = keyPrefixMode;
 
-    if (keyPrefixMode === "test" && isProductionHost(req, deps)) {
+    if (keyPrefixMode === "test" && isProductionHost(req, deps, cfEnv)) {
       log.error("FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host");
       return NextResponse.json(
         {
@@ -246,11 +272,11 @@ export async function POST(req: Request) {
     // 6. Map planCode to Razorpay plan ID from env
     let razorpayPlanId: string | undefined;
     if (planCode === "weekly") {
-      razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY;
+      razorpayPlanId = getRuntimeEnv("RAZORPAY_AUTORENEW_PLAN_WEEKLY", cfEnv);
     } else if (planCode === "monthly") {
-      razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
+      razorpayPlanId = getRuntimeEnv("RAZORPAY_AUTORENEW_PLAN_MONTHLY", cfEnv);
     } else if (planCode === "quarterly") {
-      razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY;
+      razorpayPlanId = getRuntimeEnv("RAZORPAY_AUTORENEW_PLAN_QUARTERLY", cfEnv);
     }
 
     if (!razorpayPlanId || typeof razorpayPlanId !== "string" || !razorpayPlanId.trim()) {

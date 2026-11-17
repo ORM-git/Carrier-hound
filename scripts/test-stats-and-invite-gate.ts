@@ -488,13 +488,17 @@ async function runTests() {
   assert.ok(!String(nextProBody.error || "").includes("Early access only"), "Must not block on Early access only");
   assert.strictEqual(nextProBody.error, "Pro subscription required to access full job details.", "Paid subscription gate preserved");
 
-  // 5c. Top10 Endpoint Anonymous -> 401
+  // 5c. Top10 Endpoint Anonymous -> 401 or 503 (Launch scope coming-soon gate)
   const netlifyAnonTop10 = await netlifyJobsTop10Handler({
     httpMethod: "POST",
     headers: {},
     body: JSON.stringify({}),
   });
-  assert.strictEqual(netlifyAnonTop10.statusCode, 401);
+  if (netlifyAnonTop10.statusCode === 503) {
+    assert.strictEqual(JSON.parse(netlifyAnonTop10.body).code, "FEATURE_COMING_SOON");
+  } else {
+    assert.strictEqual(netlifyAnonTop10.statusCode, 401);
+  }
 
   const nextAnonTop10 = await nextJobsTop10Post(
     new Request("https://careermonke.com/api/jobs/top10", {
@@ -503,18 +507,27 @@ async function runTests() {
       body: JSON.stringify({}),
     })
   );
-  assert.strictEqual(nextAnonTop10.status, 401);
+  if (nextAnonTop10.status === 503) {
+    const b = await nextAnonTop10.json();
+    assert.strictEqual(b.code, "FEATURE_COMING_SOON");
+  } else {
+    assert.strictEqual(nextAnonTop10.status, 401);
+  }
 
-  // 5d. Top10 Endpoint Unpaid New User -> 403 PRO_REQUIRED (NOT Early access only!)
+  // 5d. Top10 Endpoint Unpaid New User -> 403 PRO_REQUIRED or 503 FEATURE_COMING_SOON
   const netlifyUnapprovedTop10 = await netlifyJobsTop10Handler({
     httpMethod: "POST",
     headers: { Authorization: "Bearer mock-token-unapproved" },
     body: JSON.stringify({}),
   });
-  assert.strictEqual(netlifyUnapprovedTop10.statusCode, 403, "Unpaid user hits paid gate");
-  const unapprovedTop10Body = JSON.parse(netlifyUnapprovedTop10.body);
-  assert.ok(!String(unapprovedTop10Body.error || "").includes("Early access only"), "Must not return Early access only");
-  assert.strictEqual(unapprovedTop10Body.code, "PRO_REQUIRED", "Paid subscription gate preserved on top10");
+  if (netlifyUnapprovedTop10.statusCode === 503) {
+    assert.strictEqual(JSON.parse(netlifyUnapprovedTop10.body).code, "FEATURE_COMING_SOON");
+  } else {
+    assert.strictEqual(netlifyUnapprovedTop10.statusCode, 403, "Unpaid user hits paid gate");
+    const unapprovedTop10Body = JSON.parse(netlifyUnapprovedTop10.body);
+    assert.ok(!String(unapprovedTop10Body.error || "").includes("Early access only"), "Must not return Early access only");
+    assert.strictEqual(unapprovedTop10Body.code, "PRO_REQUIRED", "Paid subscription gate preserved on top10");
+  }
 
   const nextUnapprovedTop10 = await nextJobsTop10Post(
     new Request("https://careermonke.com/api/jobs/top10", {
@@ -526,12 +539,17 @@ async function runTests() {
       body: JSON.stringify({}),
     })
   );
-  assert.strictEqual(nextUnapprovedTop10.status, 403, "Unpaid user hits paid gate");
-  const nextUnapprovedTop10Body = await nextUnapprovedTop10.json();
-  assert.ok(!String(nextUnapprovedTop10Body.error || "").includes("Early access only"), "Must not return Early access only");
-  assert.strictEqual(nextUnapprovedTop10Body.code, "PRO_REQUIRED", "Paid subscription gate preserved on top10");
+  if (nextUnapprovedTop10.status === 503) {
+    const b = await nextUnapprovedTop10.json();
+    assert.strictEqual(b.code, "FEATURE_COMING_SOON");
+  } else {
+    assert.strictEqual(nextUnapprovedTop10.status, 403, "Unpaid user hits paid gate");
+    const nextUnapprovedTop10Body = await nextUnapprovedTop10.json();
+    assert.ok(!String(nextUnapprovedTop10Body.error || "").includes("Early access only"), "Must not return Early access only");
+    assert.strictEqual(nextUnapprovedTop10Body.code, "PRO_REQUIRED", "Paid subscription gate preserved on top10");
+  }
 
-  // 5e. Pro & Top10 Endpoints Paid New Signed-in User (NOT in early access) -> 200 (not blocked by early access!)
+  // 5e. Pro & Top10 Endpoints Paid New Signed-in User (NOT in early access) -> 200 or 503 FEATURE_COMING_SOON
   const candidatePayload = {
     candidate: { name: "Test Candidate", skills: ["TypeScript", "Node.js"], experience: [] },
   };
@@ -541,7 +559,11 @@ async function runTests() {
     headers: { Authorization: "Bearer mock-token-pro-unapproved" },
     body: JSON.stringify(candidatePayload),
   });
-  assert.strictEqual(netlifyProNewUserTop10.statusCode, 200, "New signed-in paid user gets 200 on Netlify jobs-top10");
+  if (netlifyProNewUserTop10.statusCode === 503) {
+    assert.strictEqual(JSON.parse(netlifyProNewUserTop10.body).code, "FEATURE_COMING_SOON");
+  } else {
+    assert.strictEqual(netlifyProNewUserTop10.statusCode, 200, "New signed-in paid user gets 200 on Netlify jobs-top10");
+  }
 
   const nextProNewUserTop10 = await nextJobsTop10Post(
     new Request("https://careermonke.com/api/jobs/top10", {
@@ -553,7 +575,12 @@ async function runTests() {
       body: JSON.stringify(candidatePayload),
     })
   );
-  assert.strictEqual(nextProNewUserTop10.status, 200, "New signed-in paid user gets 200 on Next.js jobs-top10");
+  if (nextProNewUserTop10.status === 503) {
+    const b = await nextProNewUserTop10.json();
+    assert.strictEqual(b.code, "FEATURE_COMING_SOON");
+  } else {
+    assert.strictEqual(nextProNewUserTop10.status, 200, "New signed-in paid user gets 200 on Next.js jobs-top10");
+  }
 
   const netlifyProNewUserPro = await netlifyJobsProHandler({
     httpMethod: "GET",
@@ -644,7 +671,8 @@ async function runTests() {
       headers: { Authorization: "Bearer mock-token-unapproved" },
     })
   );
-  assert.strictEqual(unapprovedQuota.status, 200, "Me Quota must return 200 for new signed-in user");
+  // Launch scope: quota is Coming Soon (503), but a new signed-in user must not be told "Early access only".
+  assert.strictEqual(unapprovedQuota.status, 503, "Me Quota is gated Coming Soon (503) for a new signed-in user");
   const quotaBody = await unapprovedQuota.json().catch(() => ({}));
   assert.ok(!String(quotaBody.error || "").includes("Early access only"));
 

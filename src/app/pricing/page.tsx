@@ -77,6 +77,10 @@ export default function PricingPage() {
   const isCheckoutLocked = checkoutLockRef.current || loadingCheckout !== null;
 
   const handleBuyPlan = async (planCode: string) => {
+    if (!isBillingEnabled) {
+      toast.error("Payments not enabled. Billing is currently disabled.");
+      return;
+    }
     // Synchronous in-flight guard: acquired before any auth await
     if (checkoutLockRef.current || loadingCheckout !== null) {
       return;
@@ -148,6 +152,10 @@ export default function PricingPage() {
   };
 
   const handleBuyAddon = async (addonCode: string) => {
+    if (!isBillingEnabled) {
+      toast.error("Payments not enabled. Billing is currently disabled.");
+      return;
+    }
     // Synchronous in-flight guard: acquired before any auth await
     if (checkoutLockRef.current || loadingCheckout !== null) {
       return;
@@ -777,9 +785,15 @@ export default function PricingPage() {
                     <button
                       type="button"
                       data-addon-code={addonCode}
-                      disabled={isCheckoutLocked}
+                      disabled={isCheckoutLocked || !isBillingEnabled}
+                      aria-disabled={!isBillingEnabled ? "true" : undefined}
                       onClick={() => handleSelectPlan(addonCode, { addonCode })}
-                      className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75"
+                      className={cnTokens(
+                        "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75",
+                        !isBillingEnabled
+                          ? "cursor-not-allowed opacity-80"
+                          : "hover:bg-blue-700 cursor-pointer"
+                      )}
                     >
                       Buy
                     </button>

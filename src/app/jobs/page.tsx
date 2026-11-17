@@ -6,19 +6,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
-import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
-import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
+import { getAuthUser } from "@/lib/auth/session";
+import { calculateProfileCompletion } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { TrackedApplication } from "@/lib/tracker/types";
-import {
-  addApplicationToTracker,
-  getTrackedApplications,
-  removeApplicationFromTracker,
-  updateApplicationStage,
-  quickTrackJob,
-  isMatchingTrackerJob,
-} from "@/lib/tracker/storage";
+import { isMatchingTrackerJob } from "@/lib/tracker/storage";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
@@ -251,6 +244,9 @@ function getCompanyTagPills(category?: string | null): string[] {
 }
 
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
+  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) {
+    return Math.max(10, Math.min(99, Math.round(job.matchScore)));
+  }
   if (candidate && candidate.confirmedAt) {
     try {
       const res = computeFitDiagnostics(candidate, {
@@ -537,6 +533,10 @@ function JobsPageInner() {
             if (job.isExpired || job.status === "expired" || job.status === "closed") {
               setDetailStatus("expired");
             }
+            if (typeof job.matchScore !== "number" && candidate) {
+              const score = getJobMatchScore(job, candidate);
+              if (score !== null) job.matchScore = score;
+            }
             setSelectedJob(job);
           } else {
             setDetailStatus("not-found");
@@ -799,34 +799,20 @@ function JobsPageInner() {
 
     async function loadInitialContext() {
       try {
-        const [u, proRes, cp] = await Promise.all([
+        const [u, proRes] = await Promise.all([
           getAuthUser(),
           getProAccessStatus(),
-          getCandidateProfile(),
         ]);
         if (cancelled) return;
-
-        const apps = u ? await getTrackedApplications(u.id) : [];
 
         setUser(u);
         setIsPro(Boolean(proRes?.isPro));
         setIsProDefinitive(Boolean(proRes?.isDefinitive));
-        setCandidate(cp && cp.confirmedAt ? cp : null);
-        setTrackedApplications(apps);
-        const savedApps = apps.filter((a) => a.stage === "saved");
-        setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
-        const appliedApps = apps.filter((a) => a.stage === "applied");
-        const appliedIds = appliedApps.map((a) => a.jobId || "").filter(Boolean);
-        setAppliedJobIds(appliedIds);
-        setAppliedCount(appliedApps.length);
-
-        if (u) {
-          getUserPreferences(u.id).then((p) => {
-            if (!cancelled) {
-              setPreferences(p);
-            }
-          });
-        }
+        setCandidate(null);
+        setTrackedApplications([]);
+        setSavedJobIds([]);
+        setAppliedJobIds([]);
+        setAppliedCount(0);
       } catch (err) {
         console.warn("Failed to load initial context on jobs page:", err);
       }
@@ -841,39 +827,12 @@ function JobsPageInner() {
       });
     };
 
-    const handleProfileUpdate = () => {
-      getCandidateProfile().then((cp) => {
-        if (cp && cp.confirmedAt) {
-          setCandidate(cp);
-        } else {
-          setCandidate(null);
-        }
-      });
-    };
-
-    const handleTrackerUpdate = () => {
-      getTrackedApplications(user?.id).then((apps) => {
-        if (!cancelled) {
-          setTrackedApplications(apps);
-          const savedApps = apps.filter((a) => a.stage === "saved");
-          setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
-          const appliedApps = apps.filter((a) => a.stage === "applied");
-          setAppliedJobIds(appliedApps.map((a) => a.jobId || "").filter(Boolean));
-          setAppliedCount(appliedApps.length);
-        }
-      });
-    };
-
     window.addEventListener("careermonke_pro_updated", handleSubUpdate);
     window.addEventListener("careermonke_auth_updated", handleSubUpdate);
-    window.addEventListener("careermonke_profile_updated", handleProfileUpdate);
-    window.addEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     return () => {
       cancelled = true;
       window.removeEventListener("careermonke_pro_updated", handleSubUpdate);
       window.removeEventListener("careermonke_auth_updated", handleSubUpdate);
-      window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);
-      window.removeEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     };
     // Mount-once bootstrap + event subscriptions. user?.id is read inside the
     // tracker handler via closure; re-running on its change would duplicate
@@ -892,7 +851,7 @@ function JobsPageInner() {
     }
 
     const isRecommended = activeTab === "recommended";
-    const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+    const effectiveSortBy = isRecommended ? "match" : sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -996,7 +955,7 @@ function JobsPageInner() {
     setLoadingMore(true);
     try {
       const isRecommended = activeTab === "recommended";
-      const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+      const effectiveSortBy = isRecommended ? "match" : sortBy;
       const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
       const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -1306,121 +1265,12 @@ function JobsPageInner() {
     }
   };
 
-  const handleToggleApplied = async (job: LiveJob) => {
-    if (!user) {
-      handleLockedAction();
-      return;
-    }
-    // Synchronous lock check: immediately aborts duplicate same-tick invocations
-    if (inFlightAppliedRef.current.has(job.id)) return;
-    inFlightAppliedRef.current.add(job.id);
-    setUpdatingAppliedJobId(job.id);
-
-    try {
-      const apps = await getTrackedApplications(user.id);
-      const existing = apps.find((a) => isMatchingTrackerJob(a, job));
-
-      if (!existing) {
-        // No record: create at applied
-        await quickTrackJob(
-          {
-            id: job.id,
-            title: job.title,
-            company: job.company,
-            location: job.location,
-            salary_text: job.salary,
-            apply_url: job.applyUrl,
-          },
-          "applied"
-        );
-        trackFunnelEvent("apply_completed", { path: "/jobs" });
-        toast.success(`Marked "${job.title}" as applied! Added to Tracker.`);
-      } else if (existing.stage === "saved") {
-        // Existing saved record: move to applied, preserving notes, dates, and other fields
-        await updateApplicationStage(existing.id, "applied");
-        trackFunnelEvent("apply_completed", { path: "/jobs" });
-        toast.success(`Marked "${job.title}" as applied! Moved to Tracker Applied tab.`);
-      } else if (existing.stage === "applied") {
-        // Already applied: clicking again must NOT demote it
-        toast.info(`"${job.title}" is already marked as applied in Tracker.`);
-      } else {
-        // Any other stage (interview, offer, rejected): preserve it, notes, dates and other fields
-        const stageLabel = existing.stage.charAt(0).toUpperCase() + existing.stage.slice(1);
-        toast.info(`"${job.title}" is currently in ${stageLabel} stage in Tracker.`);
-      }
-
-      const updatedApps = await getTrackedApplications(user.id);
-      setTrackedApplications(updatedApps);
-      // Write-through: keep the dashboard SWR bundle consistent with the
-      // mutation so it never paints the pre-mutation list (row 88).
-      updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-        ...bundle,
-        appsRes: updatedApps,
-      }));
-      const appliedApps = updatedApps.filter((a) => a.stage === "applied");
-      setAppliedJobIds(appliedApps.map((a) => a.jobId || "").filter(Boolean));
-      setAppliedCount(appliedApps.length);
-
-      const savedApps = updatedApps.filter((a) => a.stage === "saved");
-      setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
-    } catch {
-      toast.error("Could not update application status.");
-    } finally {
-      inFlightAppliedRef.current.delete(job.id);
-      setUpdatingAppliedJobId(null);
-    }
+  const handleToggleApplied = async (_job: LiveJob) => {
+    toast.info("Application tracking is coming soon.");
   };
 
-  const handleSaveJob = async (job: LiveJob) => {
-    if (!user) {
-      toast.info("Please create a free account or sign in to like and track jobs.");
-      router.push(`/signup?next=${encodeURIComponent("/jobs")}`);
-      return;
-    }
-
-    // Synchronous lock check (same pattern as handleUpdateApplied):
-    // immediately aborts duplicate same-tick invocations (double-click race).
-    if (inFlightSaveRef.current.has(job.id)) return;
-    inFlightSaveRef.current.add(job.id);
-
-    try {
-      if (savedJobIds.includes(job.id)) {
-        try {
-          await removeApplicationFromTracker(job.id);
-          setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
-          updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-            ...bundle,
-            appsRes: bundle.appsRes.filter((a) => a.jobId !== job.id),
-          }));
-          toast.info(`Removed "${job.title}" from Liked Jobs.`);
-        } catch {
-          toast.error("Could not update saved job.");
-        }
-        return;
-      }
-
-      try {
-        const created = await addApplicationToTracker({
-          jobId: job.id,
-          title: job.title,
-          company: job.company,
-          location: job.location,
-          salaryText: job.salary,
-          applyUrl: job.applyUrl,
-          stage: "saved",
-        });
-        setSavedJobIds((prev) => [...prev, job.id]);
-        updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-          ...bundle,
-          appsRes: [...bundle.appsRes, created],
-        }));
-        toast.success(`Liked "${job.title}"! Saved to your tracker.`);
-      } catch {
-        toast.error("Could not save job.");
-      }
-    } finally {
-      inFlightSaveRef.current.delete(job.id);
-    }
+  const handleSaveJob = async (_job: LiveJob) => {
+    toast.info("Job bookmarking is coming soon.");
   };
 
   const handleRetryUnlock = async (jobId: string) => {
@@ -1461,7 +1311,12 @@ function JobsPageInner() {
     if (!job.description || job.description.length < 50 || job.proUnlockError) {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
-        if (fullJob) setSelectedJob(fullJob);
+        if (fullJob) {
+          if (typeof job.matchScore === "number") {
+            fullJob.matchScore = job.matchScore;
+          }
+          setSelectedJob(fullJob);
+        }
       } catch {}
     }
   };
@@ -2016,6 +1871,9 @@ function JobsPageInner() {
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
+                        if (matchScore !== null) {
+                          job.matchScore = matchScore;
+                        }
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
@@ -2271,9 +2129,9 @@ function JobsPageInner() {
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
                                       {cardZeroSkills
                                         ? "EXPERIENCE MATCH"
-                                        : matchScore >= 80
+                                        : matchScore !== null && matchScore >= 80
                                         ? "STRONG MATCH"
-                                        : matchScore >= 60
+                                        : matchScore !== null && matchScore >= 60
                                         ? "GOOD MATCH"
                                         : "FAIR MATCH"}
                                     </div>
