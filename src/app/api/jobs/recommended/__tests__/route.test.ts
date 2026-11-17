@@ -517,6 +517,77 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(resPage11.jobs[0].id).not.toBe(res.jobs[0].id);
     });
 
+    it("Passes all shared hard filter parameters to /api/jobs/recommended via getLiveJobs", async () => {
+      const freePrefs = state.tables.user_preferences[0];
+
+      const res = await getLiveJobs({
+        baseUrl: "http://localhost",
+        sortBy: "match",
+        page: 1,
+        pageSize: 10,
+        candidate: null,
+        preferences: freePrefs,
+        category: "engineering",
+        remoteOnly: true,
+        location: "Remote (Worldwide)",
+        level: "senior",
+        jobType: "full-time",
+        workModel: "remote",
+        countryCode: "US",
+        datePosted: "month",
+        experience: "senior",
+        salaryMin: 100000,
+        sourceType: "direct",
+        company: "Frontend Masters Inc",
+        search: "Frontend",
+      });
+
+      expect(res.isDegraded).toBe(false);
+      expect(res.jobs.length).toBeGreaterThanOrEqual(1);
+      expect(res.jobs[0].title).toContain("Frontend");
+    });
+
+    it("getLiveJobs handles 403, 503, and fallback 500 cleanly", async () => {
+      const freePrefs = state.tables.user_preferences[0];
+
+      // 1. 403 response
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async (input: any) => {
+        if (String(input).includes("/api/jobs/recommended")) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+        }
+        return origFetch(input);
+      });
+
+      const res403 = await getLiveJobs({
+        baseUrl: "http://localhost",
+        sortBy: "match",
+        preferences: freePrefs,
+      });
+      expect(res403.error).toBe("forbidden");
+      expect(res403.jobs).toEqual([]);
+
+      // 2. 503 response
+      globalThis.fetch = vi.fn(async (input: any) => {
+        if (String(input).includes("/api/jobs/recommended")) {
+          return new Response(JSON.stringify({ error: "Unavailable" }), { status: 503 });
+        }
+        return origFetch(input);
+      });
+
+      const res503 = await getLiveJobs({
+        baseUrl: "http://localhost",
+        sortBy: "match",
+        preferences: freePrefs,
+      });
+      expect(res503.isDegraded).toBe(true);
+      expect(res503.error).toBe("degraded");
+      expect(res503.jobs).toEqual([]);
+
+      // Restore
+      globalThis.fetch = origFetch;
+    });
+
     it("Propagates query overrides and ranks top match first", async () => {
       const res = await recommendedRoute(
         req("http://localhost/api/jobs/recommended?roles=Senior%20Frontend%20Developer&workModel=remote", "tok-user-no-answers")

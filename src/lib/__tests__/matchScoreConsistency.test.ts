@@ -1,23 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { computeFitDiagnostics } from "@/lib/matcher/scoring";
-import { CandidateProfile } from "@/lib/resume/types";
 import { LiveJob } from "@/lib/jobs/service";
-import { rankJobsByRecommendation, OnboardingAnswers } from "@/lib/jobs/recommendations";
+import {
+  scoreJobRecommendation,
+  rankJobsByRecommendation,
+  OnboardingAnswers,
+} from "@/lib/jobs/recommendations";
 
 describe("Match Score Consistency & Unified Label", () => {
-  const candidate: CandidateProfile = {
-    name: "Alex Doe",
-    email: "alex@example.com",
-    phone: "555-0100",
-    headline: "Frontend Engineer",
-    summary: "Experienced Frontend Engineer",
-    location: "United States",
-    skills: ["React", "TypeScript", "Next.js"],
-    experience: [],
-    education: [],
-    certifications: [],
-    confirmedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+  const answers: OnboardingAnswers = {
+    roles: ["Frontend Engineer"],
+    experienceLevel: "mid",
+    remotePreference: "remote",
+    locations: ["United States"],
+    employmentTypes: ["full-time"],
   };
 
   it("produces identical match score with or without full description when job.matchScore is preserved", () => {
@@ -39,19 +34,22 @@ describe("Match Score Consistency & Unified Label", () => {
       skills: ["React", "TypeScript"],
     };
 
-    // Diagnostics computed once server-side on initial job representation
-    const diagnostics = computeFitDiagnostics(candidate, {
-      id: cardJob.id,
-      title: cardJob.title,
-      company: cardJob.company,
-      location: cardJob.location,
-      remote_scope: "worldwide",
-      category: cardJob.category,
-      skills: cardJob.skills,
-      description: cardJob.description,
-    });
+    // Score computed once server-side on initial job representation
+    const scored = scoreJobRecommendation(
+      {
+        id: cardJob.id,
+        title: cardJob.title,
+        location: cardJob.location,
+        remote: cardJob.remote,
+        remote_scope: "worldwide",
+        category: cardJob.category,
+        country_code: cardJob.country,
+        job_type: cardJob.type,
+      },
+      answers
+    );
 
-    const serverScore = Math.max(10, Math.min(99, Math.round(diagnostics.score)));
+    const serverScore = Math.max(10, Math.min(99, Math.round(scored.score)));
     cardJob.matchScore = serverScore;
 
     // Simulate clicking card: getLiveJobById returns full job with full description
@@ -69,9 +67,10 @@ describe("Match Score Consistency & Unified Label", () => {
     const cardDisplayedScore = cardJob.matchScore;
 
     // Detail view score: must use job.matchScore if present
-    const detailDisplayedScore = typeof fullJob.matchScore === "number"
-      ? Math.max(10, Math.min(99, Math.round(fullJob.matchScore)))
-      : Math.max(10, Math.min(99, Math.round(computeFitDiagnostics(candidate, fullJob as any).score)));
+    const detailDisplayedScore =
+      typeof fullJob.matchScore === "number"
+        ? Math.max(10, Math.min(99, Math.round(fullJob.matchScore)))
+        : Math.max(10, Math.min(99, Math.round(scoreJobRecommendation(fullJob as any, answers).score)));
 
     expect(cardDisplayedScore).toBe(serverScore);
     expect(detailDisplayedScore).toBe(serverScore);
@@ -79,7 +78,7 @@ describe("Match Score Consistency & Unified Label", () => {
   });
 
   it("attaches server-computed matchScore in rankJobsByRecommendation", () => {
-    const answers: OnboardingAnswers = {
+    const onboardingAnswers: OnboardingAnswers = {
       roles: ["Fullstack Engineer"],
       experienceLevel: "entry",
       remotePreference: "remote",
@@ -95,7 +94,7 @@ describe("Match Score Consistency & Unified Label", () => {
       },
     ];
 
-    const ranked = rankJobsByRecommendation(jobs, answers);
+    const ranked = rankJobsByRecommendation(jobs, onboardingAnswers);
     expect(ranked).toHaveLength(1);
     expect(typeof ranked[0].matchScore).toBe("number");
     expect(ranked[0].matchScore).toBeGreaterThan(0);

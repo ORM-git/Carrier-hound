@@ -5,6 +5,21 @@ import {
   rankJobsByRecommendation,
   OnboardingAnswers,
 } from "@/lib/jobs/recommendations";
+import {
+  normalizeUserCountries,
+  isJobEligible,
+  applyEligibilityFilter,
+} from "@/lib/jobs/eligibility";
+import {
+  getCountryName,
+  getCountryFilterClause,
+  matchCountryWithStrictFallback,
+} from "@/lib/countries";
+import {
+  capJobsPerCompany,
+  buildCompanyGroupIdMap,
+  CompanyGroupSecretMissingError,
+} from "@/lib/jobs/capping";
 
 describe("Deterministic Recommendation Scoring Engine", () => {
   describe("hasOnboardingAnswers", () => {
@@ -354,6 +369,192 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       expect(fallbackRanked.findIndex((j) => j.id === firstFb17.id)).toBe(
         fallbackRanked.findIndex((j) => j.id === lastFb16.id) + 1
       );
+    });
+
+    it("covers all role token, work model, seniority, salary period, job type, and recency branches", () => {
+      // 1. hasOnboardingAnswers with minSalary, country, countryCode
+      expect(hasOnboardingAnswers({ minSalary: 90000 })).toBe(true);
+      expect(hasOnboardingAnswers({ country: "India" })).toBe(true);
+      expect(hasOnboardingAnswers({ countryCode: "IN" })).toBe(true);
+
+      // 2. Role token partial match (1 token -> 20, >=2 tokens -> 32) + category bonus (+15 up to 40)
+      const oneTokenRes = scoreJobRecommendation(
+        {
+          title: "Cloud Platform Specialist",
+          category: "devops",
+          remote: true,
+          posted_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(), // 3 days -> recency 3
+        },
+        { roles: ["Cloud Architect"], categories: ["devops"], remotePreference: "remote" }
+      );
+      expect(oneTokenRes.breakdown.roleScore).toBe(35); // 20 + 15 category bonus
+      expect(oneTokenRes.breakdown.recencyScore).toBe(3);
+
+      const twoTokenRes = scoreJobRecommendation(
+        {
+          title: "React TypeScript Consultant",
+          category: "engineering",
+          remote: true,
+          posted_at: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString(), // 15 days -> recency 1
+        },
+        { roles: ["React TypeScript Engineer"], categories: ["engineering"], remotePreference: "remote" }
+      );
+      expect(twoTokenRes.breakdown.roleScore).toBe(40); // min(40, 32 + 15)
+      expect(twoTokenRes.breakdown.recencyScore).toBe(1);
+
+      // 3. Hybrid and Onsite work model branches
+      const hybridMatch = scoreJobRecommendation(
+        { title: "Engineer", location: "New York (Hybrid)", remote_scope: "hybrid" },
+        { remotePreference: "hybrid" }
+      );
+      expect(hybridMatch.breakdown.locationScore).toBe(20);
+
+      const hybridRemoteFallback = scoreJobRecommendation(
+        { title: "Engineer", remote: true, location: "Remote" },
+        { remotePreference: "hybrid" }
+      );
+      expect(hybridRemoteFallback.breakdown.locationScore).toBe(15); // 10 + 5
+
+      const onsiteMatch = scoreJobRecommendation(
+        { title: "Engineer", remote: false, remote_scope: "onsite", location: "Boston, MA" },
+        { remotePreference: "onsite" }
+      );
+      expect(onsiteMatch.breakdown.locationScore).toBe(20);
+
+      // 4. Seniority branches for entry, mid, senior, lead
+      // Entry user on mid role -> 14 pts
+      expect(
+        scoreJobRecommendation({ title: "Software Engineer", remote: true }, { experienceLevel: "entry" }).breakdown.experienceScore
+      ).toBe(14);
+      // Mid user on junior -> 4, on lead -> 2, on senior -> 8, on mid -> 20
+      expect(
+        scoreJobRecommendation({ title: "Junior Engineer", remote: true }, { experienceLevel: "mid" }).breakdown.experienceScore
+      ).toBe(4);
+      expect(
+        scoreJobRecommendation({ title: "Staff Engineer", remote: true }, { experienceLevel: "mid" }).breakdown.experienceScore
+      ).toBe(2);
+      expect(
+        scoreJobRecommendation({ title: "Senior Engineer", remote: true }, { experienceLevel: "mid" }).breakdown.experienceScore
+      ).toBe(8);
+      // Senior user on junior -> 0 (hard filter), on lead -> 14, on mid -> 10
+      expect(
+        scoreJobRecommendation({ title: "Junior Engineer", remote: true }, { experienceLevel: "senior" }).score
+      ).toBe(0);
+      expect(
+        scoreJobRecommendation({ title: "Staff Engineer", remote: true }, { experienceLevel: "senior" }).breakdown.experienceScore
+      ).toBe(14);
+      expect(
+        scoreJobRecommendation({ title: "Software Engineer", remote: true }, { experienceLevel: "senior" }).breakdown.experienceScore
+      ).toBe(10);
+      // Lead user on lead -> 20, on senior -> 14, on mid -> 8, on junior -> 0
+      expect(
+        scoreJobRecommendation({ title: "Principal Engineer", remote: true }, { experienceLevel: "lead" }).breakdown.experienceScore
+      ).toBe(20);
+      expect(
+        scoreJobRecommendation({ title: "Senior Engineer", remote: true }, { experienceLevel: "lead" }).breakdown.experienceScore
+      ).toBe(14);
+      expect(
+        scoreJobRecommendation({ title: "Software Engineer", remote: true }, { experienceLevel: "lead" }).breakdown.experienceScore
+      ).toBe(8);
+      expect(
+        scoreJobRecommendation({ title: "Intern Engineer", remote: true }, { experienceLevel: "lead" }).score
+      ).toBe(0);
+
+      // 5. Hourly & Monthly salary conversion in hard filter + jobType fallback
+      const hourlyLow = scoreJobRecommendation(
+        { title: "Engineer", remote: true, max_amount: 20, salary_period: "hourly" },
+        { minSalary: 100000 }
+      );
+      expect(hourlyLow.score).toBe(0);
+
+      const monthlyLow = scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_min: 3000, salary_period: "monthly" },
+        { minSalary: 100000 }
+      );
+      expect(monthlyLow.score).toBe(0);
+
+      const fullTimeFallback = scoreJobRecommendation(
+        { title: "Engineer", remote: true, job_type: "job" },
+        { employmentTypes: ["full-time"] }
+      );
+      expect(fullTimeFallback.breakdown.jobTypeScore).toBe(8);
+    });
+  });
+
+  describe("Country Eligibility & Capping Helpers", () => {
+    it("normalizes user countries, checks eligibility, and filters lists accurately", () => {
+      expect(normalizeUserCountries(null)).toEqual({ codes: [], names: [] });
+      expect(normalizeUserCountries(["Worldwide", "US", "UK", "EU", "Germany", "India (IN)", "Mars Colony"])).toEqual(
+        expect.objectContaining({
+          codes: expect.arrayContaining(["US", "GB", "DE", "IN", "FR"]),
+          names: expect.arrayContaining(["United States", "United Kingdom", "Germany", "India", "Mars Colony"]),
+        })
+      );
+
+      expect(getCountryName(null)).toBeNull();
+      expect(getCountryName("US")).toBe("United States");
+      expect(getCountryName("ZZ")).toBeNull();
+
+      expect(getCountryFilterClause("ZZ")).toBeNull();
+      expect(getCountryFilterClause("IN")).toContain("Indiana");
+      expect(getCountryFilterClause("MX")).toContain("New Mexico");
+      expect(getCountryFilterClause("CA")).toContain("Canada");
+
+      expect(matchCountryWithStrictFallback("US", "Austin", "all")).toBe(true);
+      expect(matchCountryWithStrictFallback("IN", "Mumbai", "IN")).toBe(true);
+      expect(matchCountryWithStrictFallback(null, "Indianapolis, Indiana", "IN")).toBe(false);
+      expect(matchCountryWithStrictFallback(null, "Bengaluru, India", "IN")).toBe(true);
+      expect(matchCountryWithStrictFallback(null, "Santa Fe, New Mexico", "MX")).toBe(false);
+      expect(matchCountryWithStrictFallback(null, "Mexico City, Mexico", "MX")).toBe(true);
+      expect(matchCountryWithStrictFallback(null, "Anywhere", "ZZ")).toBe(false);
+
+      expect(isJobEligible({ location: "Berlin" }, ["US"], { filterEnabled: false })).toBe(true);
+      expect(isJobEligible({ location: "Berlin" }, [])).toBe(true);
+      expect(isJobEligible({ remote: true, location: "Remote" }, ["US"])).toBe(true);
+      expect(isJobEligible({ remote: true, location: "Bengaluru, India" }, ["US"])).toBe(false);
+      expect(isJobEligible({ remote: true, location: "Indianapolis, Indiana" }, ["US"])).toBe(true);
+      expect(isJobEligible({ remote: true, location: "Mexico City, Mexico" }, ["US"])).toBe(false);
+      expect(isJobEligible({ remote: false, location: "Berlin, DE" }, ["US"])).toBe(false);
+
+      const filterDisabled = applyEligibilityFilter([{ location: "Berlin" }], ["US"], { filterEnabled: false });
+      expect(filterDisabled.filteredOut).toBe(0);
+
+      const filterEmptyLocs = applyEligibilityFilter([{ location: "Berlin" }], []);
+      expect(filterEmptyLocs.appliedEligibility).toBeNull();
+
+      const filterMixed = applyEligibilityFilter(
+        [
+          { location: "Austin, United States", country_code: "US" },
+          { location: "Berlin, Germany", country_code: "DE" },
+        ],
+        ["US"]
+      );
+      expect(filterMixed.eligibleJobs).toHaveLength(1);
+      expect(filterMixed.filteredOut).toBe(1);
+    });
+
+    it("caps jobs per company and builds HMAC companyGroupId maps safely", async () => {
+      expect(capJobsPerCompany([])).toEqual([]);
+      const jobs = [
+        { id: "1", company: "Acme" },
+        { id: "2", company: "Acme" },
+        { id: "3", company: "Acme" },
+        { id: "4", company: "Verified Employer" },
+        { id: "5", company: "" },
+        { id: "6", company: "" },
+      ];
+      const capped = capJobsPerCompany(jobs, 2, 3);
+      expect(capped).toHaveLength(6);
+      expect(capped.slice(0, 3).map((j) => j.id)).toEqual(["1", "2", "4"]);
+
+      const emptyMap = await buildCompanyGroupIdMap([null, undefined, ""], null);
+      expect(emptyMap.size).toBe(0);
+
+      await expect(buildCompanyGroupIdMap(["comp-1"], "")).rejects.toThrow(CompanyGroupSecretMissingError);
+
+      const validMap = await buildCompanyGroupIdMap(["comp-1", "comp-2", "comp-1"], "test-secret-key-123");
+      expect(validMap.size).toBe(2);
+      expect(validMap.get("comp-1")).toHaveLength(12);
     });
   });
 });
