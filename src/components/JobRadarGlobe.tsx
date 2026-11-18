@@ -240,6 +240,7 @@ export default function JobRadarGlobe() {
     return () => {
       window.removeEventListener("careermonke_pro_updated", handleSubUpdate);
       window.removeEventListener("careermonke_auth_updated", handleSubUpdate);
+      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
     };
   }, []);
 
@@ -594,7 +595,7 @@ export default function JobRadarGlobe() {
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, isMobile ? 1.5 : 4, isMobile ? 22 : 14);
+    camera.position.set(0, isMobile ? 1.0 : 4, isMobile ? 28 : 14);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
@@ -617,8 +618,8 @@ export default function JobRadarGlobe() {
     controls.dampingFactor = 0.06;
     controls.rotateSpeed = 0.6;
     controls.zoomSpeed = 0.8;
-    controls.minDistance = 6.8;
-    controls.maxDistance = 32;
+    controls.minDistance = isMobile ? 8.0 : 6.8;
+    controls.maxDistance = isMobile ? 38 : 32;
     controls.autoRotate = !prefersReducedMotion && isSpinningRef.current;
     controls.autoRotateSpeed = 0.75;
     controlsRef.current = controls;
@@ -805,7 +806,7 @@ export default function JobRadarGlobe() {
           scratchWorldPos.set(x, y, z);
           scratchMarkerDir.copy(scratchWorldPos).normalize();
           const dot = camPos.dot(scratchMarkerDir);
-          const isFacingCamera = dot > 0.15;
+          const isFacingCamera = dot > (isMobile ? 0.20 : 0.15);
           const isMatch = matchesFilters(city, cFilter, rFilter);
 
           if (isFacingCamera && isMatch) {
@@ -831,6 +832,7 @@ export default function JobRadarGlobe() {
         });
 
         // Collision avoidance: keep diode dots visible, hide label badge if within 55px of another label
+        // Also clamp badge opacity if near horizontal screen edges to prevent text clipping
         const placedLabelPositions: { x: number; y: number }[] = [];
         for (const marker of visibleMarkers) {
           const badgeEl = marker.el.querySelector(".city-tag-badge") as HTMLElement | null;
@@ -852,7 +854,8 @@ export default function JobRadarGlobe() {
             }
           }
 
-          if (collides) {
+          const isNearHorizontalEdge = marker.screenX < 36 || marker.screenX > cWidth - 36;
+          if (collides || isNearHorizontalEdge) {
             badgeEl.style.opacity = "0";
             badgeEl.style.pointerEvents = "none";
           } else {
@@ -982,13 +985,17 @@ export default function JobRadarGlobe() {
     setSelectedCity(city);
     setIsSpinning(false);
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: true } }));
+    }
+
     if (!cameraRef.current || !controlsRef.current || !city.coordinates) return;
 
     const { x, y, z } = latLngToVector3(city.coordinates[1], city.coordinates[0], 5);
     const cityVec = new THREE.Vector3(x, y, z);
 
     const isMobile = window.innerWidth < 640;
-    const zoomScalar = isMobile ? 9.8 : 8.2;
+    const zoomScalar = isMobile ? 10.2 : 8.2;
     const cameraTarget = cityVec.clone().normalize().multiplyScalar(zoomScalar);
 
     targetCameraPosRef.current = cameraTarget;
@@ -1000,11 +1007,16 @@ export default function JobRadarGlobe() {
   const handleCloseDrawer = useCallback(() => {
     setRadarProUnlockError(false);
     setSelectedCity(null);
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
+    }
+
     if (!cameraRef.current || !controlsRef.current) return;
 
     const isMobile = window.innerWidth < 640;
     const currentDir = cameraRef.current.position.clone().normalize();
-    targetCameraPosRef.current = currentDir.multiplyScalar(isMobile ? 16.5 : 13.8);
+    targetCameraPosRef.current = currentDir.multiplyScalar(isMobile ? 28 : 13.8);
     targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
     isTransitioningRef.current = true;
     setIsSpinning(true);
@@ -1017,13 +1029,17 @@ export default function JobRadarGlobe() {
     setSelectedCity(null);
     updateUrlFilters({ country: "all" });
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
+    }
+
     if (!cameraRef.current || !controlsRef.current) return;
 
     const region = RADAR_REGIONS.find((r) => r.id === regionId);
     if (!region || region.id === "all") {
       setIsSpinning(true);
       const isMobile = window.innerWidth < 640;
-      targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 3.5 : 4, isMobile ? 16.5 : 14);
+      targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.0 : 4, isMobile ? 28 : 14);
       targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
       isTransitioningRef.current = true;
     } else {
@@ -1087,9 +1103,13 @@ export default function JobRadarGlobe() {
     setRegionFilter("all");
     setIsSpinning(true);
 
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
+    }
+
     if (!cameraRef.current || !controlsRef.current) return;
     const isMobile = window.innerWidth < 640;
-    targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 3.5 : 4, isMobile ? 16.5 : 14);
+    targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.0 : 4, isMobile ? 28 : 14);
     targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
     isTransitioningRef.current = true;
   };
@@ -1131,7 +1151,7 @@ export default function JobRadarGlobe() {
   }, [telemetry]);
 
   return (
-    <div className="relative w-full flex-1 h-full min-h-[580px] bg-[#040610] text-white overflow-hidden select-none font-sans">
+    <div className="relative w-full flex-1 h-full min-h-[580px] bg-[#040610] text-white overflow-hidden select-none font-sans max-w-full">
       {/* 3D WebGL Canvas Container */}
       {webglSupported ? (
         <div
@@ -1139,7 +1159,7 @@ export default function JobRadarGlobe() {
           onClick={() => {
             if (selectedCity) handleCloseDrawer();
           }}
-          className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
+          className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing touch-none select-none"
         />
       ) : (
         /* Accessible No-WebGL Fallback UI */
@@ -1252,9 +1272,68 @@ export default function JobRadarGlobe() {
       {/* ========================================================================= */}
       {/* TOP FLOATING CONTROLS: Row 1 (Telemetry & Regions) + Row 2 (4 Light Filters) */}
       {/* ========================================================================= */}
-      <div className="absolute top-3 left-0 right-0 z-30 flex flex-col gap-2 px-3 sm:px-6 pointer-events-none">
-        {/* Row 1: Telemetry Badge, Region Pills, Orbit Controls */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-2">
+      <div className="absolute top-2 sm:top-3 left-0 right-0 z-30 flex flex-col gap-1.5 sm:gap-2 px-2.5 sm:px-6 pointer-events-none max-w-full overflow-hidden">
+        {/* Mobile Header: Telemetry + Quick Controls side-by-side (< md) */}
+        <div className="flex md:hidden items-center justify-between gap-2 w-full">
+          {/* Telemetry Live Status Badge */}
+          <div className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/90 border border-cyan-500/30 backdrop-blur-md shadow-lg text-[11px]">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <div className="flex items-center gap-1 font-semibold text-cyan-200">
+              <Radio className="w-3 h-3 text-cyan-400 animate-pulse" />
+              <span className="uppercase font-mono tracking-wider text-[10px]">RADAR</span>
+              <span className="text-slate-500">•</span>
+              <span className="text-slate-200 font-bold">{activeCountDisplay}</span>
+            </div>
+          </div>
+
+          {/* Mobile Quick Controls */}
+          <div className="pointer-events-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleResetOrbit}
+              title="Reset to Global Orbit"
+              className="flex items-center justify-center p-1.5 min-w-[34px] min-h-[34px] rounded-full bg-slate-950/85 border border-slate-700 text-xs text-slate-200 hover:text-white hover:border-cyan-400 transition-all backdrop-blur-md cursor-pointer"
+              aria-label="Reset to Global Orbit"
+            >
+              <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSpinning((prev) => !prev)}
+              title={isSpinning ? "Pause Auto-Rotation" : "Resume Auto-Rotation"}
+              className={`p-1.5 min-w-[34px] min-h-[34px] flex items-center justify-center rounded-full border text-xs transition-all backdrop-blur-md cursor-pointer ${
+                isSpinning
+                  ? "bg-cyan-950/60 border-cyan-500/50 text-cyan-300"
+                  : "bg-slate-950/85 border-slate-700 text-slate-400 hover:text-white"
+              }`}
+              aria-label={isSpinning ? "Pause Auto-Rotation" : "Resume Auto-Rotation"}
+            >
+              <Compass
+                className={`w-3.5 h-3.5 ${isSpinning ? "animate-spin text-cyan-400" : ""}`}
+                style={{ animationDuration: "14s" }}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLegend((prev) => !prev)}
+              title="Density Color Scale Legend"
+              className={`p-1.5 min-w-[34px] min-h-[34px] flex items-center justify-center rounded-full border text-xs transition-all backdrop-blur-md cursor-pointer ${
+                showLegend
+                  ? "bg-violet-950/80 border-violet-500 text-violet-300"
+                  : "bg-slate-950/85 border-slate-700 text-slate-400 hover:text-white"
+              }`}
+              aria-label="Density Color Scale Legend"
+            >
+              <Layers className="w-3.5 h-3.5 text-violet-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop Row 1 (>= md) */}
+        <div className="hidden md:flex items-center justify-between gap-2 w-full">
           {/* Left: Telemetry Live Status Badge */}
           <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/85 border border-cyan-500/30 backdrop-blur-md shadow-lg shadow-cyan-950/30 text-xs">
             <span className="relative flex h-2.5 w-2.5">
@@ -1318,7 +1397,6 @@ export default function JobRadarGlobe() {
 
           {/* Right: Quick Controls */}
           <div className="pointer-events-auto flex items-center gap-2">
-            {/* Reset Orbit */}
             <button
               type="button"
               onClick={handleResetOrbit}
@@ -1328,8 +1406,6 @@ export default function JobRadarGlobe() {
               <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
               <span className="hidden sm:inline">Orbit</span>
             </button>
-
-            {/* Auto-Spin Toggle */}
             <button
               type="button"
               onClick={() => setIsSpinning((prev) => !prev)}
@@ -1345,8 +1421,6 @@ export default function JobRadarGlobe() {
                 style={{ animationDuration: "14s" }}
               />
             </button>
-
-            {/* Legend Toggle */}
             <button
               type="button"
               onClick={() => setShowLegend((prev) => !prev)}
@@ -1360,6 +1434,46 @@ export default function JobRadarGlobe() {
               <Layers className="w-4 h-4 text-violet-400" />
             </button>
           </div>
+        </div>
+
+        {/* Region Pills on Mobile (scrolling row below top bar) */}
+        <div className="flex md:hidden pointer-events-auto items-center gap-1 p-1 rounded-full bg-slate-950/85 border border-slate-700/60 backdrop-blur-md shadow-xl max-w-full overflow-x-auto no-scrollbar">
+          {RADAR_REGIONS.map((region) => {
+            const isActive =
+              regionFilter === region.id &&
+              countryFilter === "all" &&
+              !selectedCity?.isWorldwideRemote;
+            return (
+              <button
+                key={region.id}
+                type="button"
+                onClick={() => handleRegionPillClick(region.id)}
+                className={`flex items-center gap-1 px-2.5 py-1 min-h-[34px] rounded-full text-[11px] font-semibold transition-all duration-200 whitespace-nowrap ${
+                  isActive
+                    ? "bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.5)] font-bold scale-102"
+                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                }`}
+              >
+                <span>{region.flag}</span>
+                <span>{region.label}</span>
+              </button>
+            );
+          })}
+          {telemetry && (
+            <button
+              type="button"
+              onClick={handleWorldwideRemoteClick}
+              title="View all Worldwide Remote roles"
+              className={`flex items-center gap-1 px-2.5 py-1 min-h-[34px] rounded-full text-[11px] font-semibold transition-all duration-200 whitespace-nowrap border ${
+                selectedCity?.isWorldwideRemote
+                  ? "bg-emerald-500 text-slate-950 border-emerald-400 font-bold"
+                  : "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+              }`}
+            >
+              <Globe2 className="w-3 h-3 text-emerald-400" />
+              <span>Worldwide ({telemetry.worldwideRemote.totalCount.toLocaleString()})</span>
+            </button>
+          )}
         </div>
 
         {/* ===================================================================== */}
@@ -1478,7 +1592,7 @@ export default function JobRadarGlobe() {
       {/* SLIDE-OVER / BOTTOM-SHEET JOB DRAWER                                      */}
       {/* ========================================================================= */}
       {selectedCity && (
-        <div className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-x-auto sm:bottom-6 sm:left-auto sm:right-6 sm:w-[480px] z-40 max-h-[72dvh] sm:max-h-[78vh] flex flex-col rounded-t-3xl sm:rounded-2xl bg-slate-950/95 border-t sm:border border-cyan-500/40 backdrop-blur-2xl shadow-[0_-12px_45px_rgba(0,0,0,0.85)] sm:shadow-[0_12px_50px_rgba(6,182,212,0.3)] animate-slideUp sm:animate-pop-out overflow-hidden pb-[env(safe-area-inset-bottom,1.5rem)] sm:pb-0">
+        <div className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-x-auto sm:bottom-6 sm:left-auto sm:right-6 sm:w-[480px] z-50 max-h-[78dvh] sm:max-h-[78vh] flex flex-col rounded-t-3xl sm:rounded-2xl bg-slate-950/95 border-t sm:border border-cyan-500/40 backdrop-blur-2xl shadow-[0_-12px_45px_rgba(0,0,0,0.85)] sm:shadow-[0_12px_50px_rgba(6,182,212,0.3)] animate-slideUp sm:animate-pop-out overflow-hidden pb-[env(safe-area-inset-bottom,1.5rem)] sm:pb-0">
           {/* Mobile Drag Indicator Handle (tap or drag to close) */}
           <div
             onClick={handleCloseDrawer}
@@ -1817,13 +1931,13 @@ export default function JobRadarGlobe() {
           </div>
 
           {/* Drawer Footer Actions with Filter Synchronization */}
-          <div className="p-3 bg-slate-950 border-t border-cyan-500/20 flex items-center justify-between text-xs">
-            <span className="text-slate-400">
+          <div className="p-3 bg-slate-950 border-t border-cyan-500/20 flex items-center justify-between gap-2 text-xs">
+            <span className="text-slate-400 text-[11px] sm:text-xs truncate">
               Showing {drawerJobs.length} of {jobsTotal} roles
             </span>
             <Link
               href={exploreAllUrl}
-              className="inline-flex items-center gap-1 min-h-[38px] py-1 font-bold text-cyan-400 hover:text-cyan-300"
+              className="inline-flex items-center gap-1 min-h-[38px] py-1 font-bold text-cyan-400 hover:text-cyan-300 text-[11px] sm:text-xs shrink-0"
             >
               <span>Explore all in {selectedCity.name}</span>
               <ChevronRight className="w-3.5 h-3.5" />
