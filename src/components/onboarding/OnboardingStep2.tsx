@@ -162,24 +162,24 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
 
   const header = (
     <>
-      <div className="mb-4">
+      <div className="mb-4 md:mb-6">
         <button
           type="button"
           onClick={onBack}
           disabled={isSaving}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
+          className="inline-flex items-center gap-1.5 text-xs md:text-sm font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
         >
-          <ArrowLeft className="w-3.5 h-3.5" />
+          <ArrowLeft className="w-3.5 h-3.5 md:w-4 md:h-4" />
           <span>Back to preferences</span>
         </button>
       </div>
-      <div className="flex items-start gap-3 mb-6">
-        <div className="w-11 h-11 flex-shrink-0 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
-          <BrandIcon className="w-7 h-7" />
+      <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
+        <div className="w-11 h-11 md:w-12 md:h-12 flex-shrink-0 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
+          <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
         </div>
         <div className="flex-1">
-          <span className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-1">CareerMonke Copilot</span>
-          <div className="p-3.5 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed">
+          <span className="block text-sm md:text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">CareerMonke Copilot</span>
+          <div className="p-3.5 md:p-4 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm md:text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed">
             {isFeatureEnabled
               ? "Optional: add your LinkedIn profile and resume. You can skip either one and add them later."
               : "Profile extras are coming soon. Skip ahead to your recommendations."}
@@ -190,19 +190,19 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
   );
 
   const footer = (
-    <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 p-4">
-      <div className="max-w-lg mx-auto space-y-3">
-        <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+    <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 p-4 md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+      <div className="max-w-lg md:max-w-none mx-auto space-y-3 md:space-y-4">
+        <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
           <div className="bg-emerald-500 h-full rounded-full" style={{ width: "100%" }} />
         </div>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-xs font-semibold text-zinc-400 dark:text-zinc-500">Step 2 of 2</span>
+          <span className="text-xs md:text-sm font-semibold text-zinc-400 dark:text-zinc-500">Step 2 of 2</span>
           <button
             type="button"
             disabled={isSaving}
             onClick={onFinish}
             data-testid="btn-onboarding-finish"
-            className="px-6 sm:px-8 py-3 rounded-full text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md transition disabled:opacity-50"
+            className="px-6 sm:px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md md:hover:shadow-lg transition disabled:opacity-50"
           >
             {isSaving ? "Saving..." : linkedinSaved || resumeName ? "Finish" : "Skip for now & Finish"}
           </button>
@@ -212,13 +212,13 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
   );
 
   const cardClass =
-    "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4";
+    "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-7 shadow-sm md:shadow-md space-y-4 md:flex md:flex-col md:justify-between md:h-full";
 
   if (!isFeatureEnabled) {
     return (
-      <div className="w-full max-w-lg mx-auto flex flex-col pb-28 pt-4 px-4 sm:px-6">
+      <div className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
         {header}
-        <div className="space-y-4">
+        <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
           {[
             { title: "LinkedIn profile", icon: <LinkedInIcon className="w-5 h-5 text-[#0077b5]" /> },
             { title: "Upload resume", icon: <FileText className="w-5 h-5 text-emerald-600" /> },
@@ -238,68 +238,72 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
   }
 
   return (
-    <div className="w-full max-w-lg mx-auto flex flex-col pb-28 pt-4 px-4 sm:px-6">
+    <div className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
       {header}
 
-      <div className="space-y-5">
+      <div className="space-y-5 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
         {/* CARD 1: LinkedIn URL (validated + normalized only; never scraped) */}
         <section data-testid="card-linkedin" aria-labelledby="linkedin-card-title" className={cardClass}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#0077b5]/10 flex items-center justify-center text-[#0077b5] flex-shrink-0">
               <LinkedInIcon className="w-5 h-5" />
             </div>
-            <div className="flex-1">
-              <h3 id="linkedin-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            <div className="flex-1 md:min-w-0">
+              <h3 id="linkedin-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
                 LinkedIn profile URL
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">e.g. https://www.linkedin.com/in/yourname</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">e.g. https://www.linkedin.com/in/yourname</p>
             </div>
-            {linkedinSaved ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                <Check className="w-3 h-3" /> Saved
-              </span>
-            ) : linkedinSkipped ? (
-              <span className="text-[11px] font-semibold text-zinc-400">Skipped</span>
-            ) : (
-              <SkipLink onClick={() => setLinkedinSkipped(true)} label="Skip LinkedIn URL" testId="skip-linkedin" />
-            )}
+            <div className="md:flex-shrink-0">
+              {linkedinSaved ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <Check className="w-3 h-3" /> Saved
+                </span>
+              ) : linkedinSkipped ? (
+                <span className="text-[11px] font-semibold text-zinc-400">Skipped</span>
+              ) : (
+                <SkipLink onClick={() => setLinkedinSkipped(true)} label="Skip LinkedIn URL" testId="skip-linkedin" />
+              )}
+            </div>
           </div>
 
           {!linkedinSkipped && (
-            <form onSubmit={handleSaveLinkedIn} className="space-y-3" noValidate>
-              <input
-                type="url"
-                inputMode="url"
-                autoComplete="url"
-                data-testid="input-linkedin-url"
-                aria-label="LinkedIn profile URL"
-                aria-invalid={Boolean(linkedinError)}
-                aria-describedby={linkedinError ? "linkedin-error" : undefined}
-                value={linkedinInput}
-                onChange={(e) => {
-                  setLinkedinInput(e.target.value);
-                  setLinkedinError(null);
-                  setLinkedinSaved(false);
-                }}
-                placeholder="https://www.linkedin.com/in/your-profile"
-                className="w-full px-4 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              {linkedinError && (
-                <p
-                  id="linkedin-error"
-                  role="alert"
-                  data-testid="linkedin-error"
-                  className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5"
-                >
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {linkedinError}
-                </p>
-              )}
-              <div className="flex justify-end">
+            <form onSubmit={handleSaveLinkedIn} className="space-y-3 md:flex-1 md:flex md:flex-col md:justify-between" noValidate>
+              <div className="space-y-3 md:space-y-2">
+                <input
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
+                  data-testid="input-linkedin-url"
+                  aria-label="LinkedIn profile URL"
+                  aria-invalid={Boolean(linkedinError)}
+                  aria-describedby={linkedinError ? "linkedin-error" : undefined}
+                  value={linkedinInput}
+                  onChange={(e) => {
+                    setLinkedinInput(e.target.value);
+                    setLinkedinError(null);
+                    setLinkedinSaved(false);
+                  }}
+                  placeholder="https://www.linkedin.com/in/your-profile"
+                  className="w-full px-4 py-2.5 md:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                {linkedinError && (
+                  <p
+                    id="linkedin-error"
+                    role="alert"
+                    data-testid="linkedin-error"
+                    className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {linkedinError}
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end md:pt-2">
                 <button
                   type="submit"
                   disabled={linkedinSaving || !linkedinInput.trim() || linkedinSaved}
                   data-testid="btn-save-linkedin"
-                  className="px-5 py-2 rounded-full text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-50 inline-flex items-center gap-1.5"
+                  className="px-5 md:px-6 py-2 md:py-2.5 rounded-full text-xs md:text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-50 inline-flex items-center gap-1.5 md:shadow-sm"
                 >
                   {linkedinSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {linkedinSaved ? "Saved" : linkedinSaving ? "Saving..." : "Save"}
@@ -315,21 +319,23 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 flex-shrink-0">
               <FileText className="w-5 h-5" />
             </div>
-            <div className="flex-1">
-              <h3 id="resume-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            <div className="flex-1 md:min-w-0">
+              <h3 id="resume-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
                 Upload resume or LinkedIn PDF
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">PDF or DOCX, up to 5 MB. Stored privately.</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">PDF or DOCX, up to 5 MB. Stored privately.</p>
             </div>
-            {resumeName ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                <Check className="w-3 h-3" /> Saved
-              </span>
-            ) : resumeSkipped ? (
-              <span className="text-[11px] font-semibold text-zinc-400">Skipped</span>
-            ) : (
-              <SkipLink onClick={() => setResumeSkipped(true)} label="Skip resume upload" testId="skip-resume" />
-            )}
+            <div className="md:flex-shrink-0">
+              {resumeName ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <Check className="w-3 h-3" /> Saved
+                </span>
+              ) : resumeSkipped ? (
+                <span className="text-[11px] font-semibold text-zinc-400">Skipped</span>
+              ) : (
+                <SkipLink onClick={() => setResumeSkipped(true)} label="Skip resume upload" testId="skip-resume" />
+              )}
+            </div>
           </div>
 
           {!resumeSkipped && (
@@ -366,7 +372,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
                   const f = e.dataTransfer.files?.[0];
                   if (f) void uploadResume(f);
                 }}
-                className={`w-full border-2 border-dashed rounded-2xl p-6 text-center transition ${
+                className={`w-full md:flex-1 border-2 border-dashed rounded-2xl p-6 md:p-8 text-center transition md:flex md:flex-col md:items-center md:justify-center md:min-h-[170px] ${
                   isDragging
                     ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
                     : "border-zinc-300 dark:border-zinc-700 hover:border-emerald-500/80 bg-zinc-50/50 dark:bg-zinc-800/40"
