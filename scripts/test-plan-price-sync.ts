@@ -99,14 +99,20 @@ async function runPlanPriceSyncSuite() {
   }
 
   // Apply any subsequent price update migrations
-  const weeklyPriceMigrationPath = path.join(migrationsDir, "20261103e_weekly_price_692.sql");
-  assert.ok(fs.existsSync(weeklyPriceMigrationPath), "20261103e_weekly_price_692.sql must exist");
-  const weeklySql = fs.readFileSync(weeklyPriceMigrationPath, "utf-8");
-
-  const updateRegex = /update\s+public\.plans\s+set\s+price_paise\s*=\s*(\d+)\s+where\s+code\s*=\s*'(\w+)';/i;
-  const updateMatch = updateRegex.exec(weeklySql);
-  assert.ok(updateMatch, "20261103e_weekly_price_692.sql must contain valid update statement");
-  effectivePlanPrices[updateMatch[2]] = parseInt(updateMatch[1], 10);
+  const priceUpdateMigrations = [
+    "20261103e_weekly_price_692.sql",
+    "20261117a_update_plan_prices_399_499_2199.sql",
+  ];
+  for (const migFile of priceUpdateMigrations) {
+    const migPath = path.join(migrationsDir, migFile);
+    assert.ok(fs.existsSync(migPath), `${migFile} must exist`);
+    const sqlContent = fs.readFileSync(migPath, "utf-8");
+    const updateRegex = /^\s*update\s+public\.plans\s+set\s+price_paise\s*=\s*(\d+)[^;]*where\s+code\s*=\s*'(\w+)';/gim;
+    let uMatch: RegExpExecArray | null;
+    while ((uMatch = updateRegex.exec(sqlContent)) !== null) {
+      effectivePlanPrices[uMatch[2]] = parseInt(uMatch[1], 10);
+    }
+  }
 
   // Compare effective migration prices to PLAN_DEFINITIONS
   for (const [code, planDef] of Object.entries(PLAN_DEFINITIONS)) {

@@ -41,6 +41,19 @@ function loadBaseline() {
       );
       process.exit(1);
     }
+    if (entry.expires_on) {
+      const expiry = Date.parse(`${entry.expires_on}T23:59:59Z`);
+      if (Number.isNaN(expiry)) {
+        console.error(`[AUDIT ERROR] Baseline entry ${entry.id} has invalid 'expires_on': ${entry.expires_on}`);
+        process.exit(1);
+      }
+      if (Date.now() > expiry) {
+        console.error(
+          `[AUDIT ERROR] Baseline exception ${entry.id} expired on ${entry.expires_on}; re-review or remove it.`
+        );
+        process.exit(1);
+      }
+    }
     allowedIds.add(String(entry.id).trim().toUpperCase());
     if (entry.source) {
       allowedIds.add(String(entry.source).trim());
