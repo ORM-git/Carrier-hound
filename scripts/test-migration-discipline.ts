@@ -27,6 +27,12 @@ function stripComments(sql: string): string {
   return sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 }
 
+function stripStringLiterals(sql: string): string {
+  // Strip single-quoted string literals so privilege names (e.g. 'TRUNCATE') inside
+  // string literals are not flagged as executable statements.
+  return sql.replace(/'(?:''|[^'])*'/g, "''");
+}
+
 const FORBIDDEN: Array<{ label: string; re: RegExp }> = [
   { label: "DROP TABLE", re: /\bDROP\s+TABLE\b/i },
   { label: "DROP COLUMN", re: /\bDROP\s+COLUMN\b/i },
@@ -38,7 +44,7 @@ const FORBIDDEN: Array<{ label: string; re: RegExp }> = [
 
 const violations: string[] = [];
 for (const file of files) {
-  const stripped = stripComments(fs.readFileSync(path.join(DIR, file), "utf8"));
+  const stripped = stripStringLiterals(stripComments(fs.readFileSync(path.join(DIR, file), "utf8")));
   for (const { label, re } of FORBIDDEN) {
     if (re.test(stripped)) violations.push(`${file}: executable ${label}`);
   }

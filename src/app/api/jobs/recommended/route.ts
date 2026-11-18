@@ -5,9 +5,11 @@ import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRat
 import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
-import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers } from "@/lib/jobs/recommendations";
+import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers, hasResumeSignals } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
 import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
+import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
+import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -43,7 +45,8 @@ function formatDate(dateStr?: string | null): string {
 /**
  * GET /api/jobs/recommended
  *
- * Personalized Recommended Jobs endpoint using onboarding answers only (no resume).
+ * Personalized Recommended Jobs endpoint using onboarding answers, plus the parsed onboarding
+ * resume / LinkedIn PDF (soft boost, Step 2 flag on) when the user has one.
  * Enforces server-level Pro gating:
  * - Free users see the recommended list in the same masked listing format
  *   (company "Verified Employer", no salary, applyUrl "", description "", skills []).
@@ -145,6 +148,12 @@ export async function GET(req: Request) {
               countryCode: (prefs as any).country_code || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).codes[0] : null) || null,
             };
           }
+
+          // Parsed onboarding resume / LinkedIn PDF: soft ranking boost, behind the Step 2 flag.
+          // Read server-side for this user only; null on any error, so ranking never breaks.
+          if (isOnboardingStep2EnabledServer(cfEnv)) {
+            dbAnswers.resumeProfile = await loadResumeProfileForRanking(supabaseAdmin, user.id);
+          }
         }
       } catch (authErr) {
         log.warn("Auth check failed in /api/jobs/recommended", { error: authErr });
@@ -173,6 +182,7 @@ export async function GET(req: Request) {
       salaryCurrency: querySalaryCurrency || dbAnswers.salaryCurrency || "USD",
       country: queryCountry || dbAnswers.country || null,
       countryCode: queryCountryCode || dbAnswers.countryCode || null,
+      resumeProfile: dbAnswers.resumeProfile ?? null,
     };
 
     const isPersonalized = hasOnboardingAnswers(answers);
@@ -437,11 +447,13 @@ export async function GET(req: Request) {
     }
 
     const candidateJobs = rawJobs || [];
-    const rankedJobs = isPersonalized
+    const hasResume = hasResumeSignals(answers.resumeProfile);
+    const rankedJobs = isPersonalized || hasResume
       ? rankJobsByRecommendation(candidateJobs, answers)
       : rankJobsByRecommendation(candidateJobs, null);
 
-    // Hard preference exclusion: drop every row failing user's hard preferences or with matchScore <= 0
+    // Hard preference exclusion: drop rows failing user's hard preferences or with matchScore <= 0
+    // Resume alone never drops jobs (eligibility is independent of resume)
     const qualifyingJobs = isPersonalized && answers
       ? rankedJobs.filter((job) => {
           const score = job.matchScore ?? job._matchScore ?? 0;
@@ -545,7 +557,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       jobs: formattedJobs,
       totalCount,
-      personalized: isPersonalized,
+      personalized: isPersonalized || hasResume,
       isPro,
       page,
       pageSize,

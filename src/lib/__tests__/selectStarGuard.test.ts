@@ -25,8 +25,8 @@ function walk(dir: string): string[] {
 
 // Allowlist: exact "relative/path.ts:line" keys, mirrored in the doc.
 const ALLOWLIST = new Set([
-  "src/lib/account/exportHandler.ts:161",
-  "src/lib/account/exportHandler.ts:175",
+  "src/lib/account/exportHandler.ts:163",
+  "src/lib/account/exportHandler.ts:177",
   "src/lib/account/deleteHandler.ts:283",
   "src/lib/resume/storage.ts:155",
   "src/lib/tracker/storage.ts:133",

@@ -1,7 +1,7 @@
 /**
  * src/lib/onboarding/step2Resume.ts
  *
- * Edge-safe helpers for the onboarding resume upload (store only, no parsing).
+ * Edge-safe helpers for the onboarding resume upload (validation and storage; parsing lives in resumeParse.ts).
  * No Node Buffer / fs: Web streams and Uint8Array only, so it runs on Cloudflare Pages.
  */
 

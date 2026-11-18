@@ -779,3 +779,59 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
     });
   });
 });
+
+describe("4. Parsed onboarding resume / LinkedIn PDF ranking (behind the Step 2 flag)", () => {
+  const STEP2_FLAG = "NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED";
+  const PATH = "u_no_answers/onboarding/current.pdf";
+  const older = new Date(Date.now() - 10 * 864e5).toISOString();
+  const newer = new Date(Date.now() - 1 * 864e5).toISOString();
+  const base = { status: "active", is_active: true, remote: true, remote_scope: "worldwide", location: "Remote", job_type: "full-time", category: "data" };
+
+  beforeEach(() => {
+    const jobs = [
+      { ...base, id: "job-sales", title: "Account Executive", company_id: "co_a", posted_at: newer, created_at: newer, skills: [], description: "" },
+      { ...base, id: "job-data", title: "Data Analyst", company_id: "co_b", posted_at: older, created_at: older, skills: ["SQL", "Tableau"], description: "Dashboards" },
+    ];
+    state.tables.jobs = jobs;
+    state.tables.jobs_public = jobs;
+    state.tables.onboarding_resume_uploads = [{ user_id: "u_no_answers", storage_path: PATH }];
+    state.tables.onboarding_resume_profiles = [
+      {
+        user_id: "u_no_answers",
+        parse_status: "parsed",
+        source_storage_path: PATH,
+        profile: { jobTitles: ["Data Analyst"], skills: ["SQL", "Tableau"], preferredRoles: [], education: [], yearsOfExperience: 3, location: null },
+      },
+    ];
+  });
+  afterEach(() => {
+    delete process.env[STEP2_FLAG];
+  });
+
+  it("flag on: the user's parsed resume personalizes and reorders the list", async () => {
+    process.env[STEP2_FLAG] = "true";
+    const body = await (await recommendedRoute(req("http://localhost/api/jobs/recommended", "tok-user-no-answers"))).json();
+    expect(body.personalized).toBe(true);
+    expect(body.jobs[0].id).toBe("job-data");
+  });
+
+  it("flag off: the resume profile is ignored (latest first, not personalized)", async () => {
+    process.env[STEP2_FLAG] = "false";
+    const body = await (await recommendedRoute(req("http://localhost/api/jobs/recommended", "tok-user-no-answers"))).json();
+    expect(body.personalized).toBe(false);
+    expect(body.jobs[0].id).toBe("job-sales");
+  });
+
+  it("a profile parsed from an older upload is ignored", async () => {
+    process.env[STEP2_FLAG] = "true";
+    state.tables.onboarding_resume_uploads = [{ user_id: "u_no_answers", storage_path: "u_no_answers/onboarding/newer.pdf" }];
+    const body = await (await recommendedRoute(req("http://localhost/api/jobs/recommended", "tok-user-no-answers"))).json();
+    expect(body.personalized).toBe(false);
+  });
+
+  it("guests get no resume personalization", async () => {
+    process.env[STEP2_FLAG] = "true";
+    const body = await (await recommendedRoute(req("http://localhost/api/jobs/recommended"))).json();
+    expect(body.personalized).toBe(false);
+  });
+});

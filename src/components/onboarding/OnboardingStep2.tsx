@@ -17,6 +17,38 @@ interface OnboardingStep2Props {
 
 const ACCEPT = `.pdf,.docx,${RESUME_MIME.pdf},${RESUME_MIME.docx}`;
 
+/** `parse` from POST /api/onboarding/resume (summary of the user's own parsed profile). */
+export interface ResumeParseSummary {
+  status: "parsed" | "failed" | "unavailable";
+  reason?: "no_text" | "scanned_pdf" | "parse_error" | null;
+  jobTitle?: string | null;
+  skillsCount?: number;
+  topSkills?: string[];
+  yearsOfExperience?: number | null;
+}
+
+/** One line under "Resume saved" describing what we read. Exported for tests. */
+export function describeResumeParse(p: ResumeParseSummary | null | undefined): string | null {
+  if (!p) return null;
+  if (p.status === "parsed") {
+    const bits: string[] = [];
+    if (p.jobTitle) bits.push(p.jobTitle);
+    if (p.skillsCount) bits.push(`${p.skillsCount} skill${p.skillsCount === 1 ? "" : "s"}`);
+    if (typeof p.yearsOfExperience === "number" && p.yearsOfExperience > 0) {
+      bits.push(`${p.yearsOfExperience} yrs experience`);
+    }
+    return bits.length > 0
+      ? `We read ${bits.join(" · ")}. We'll use this to rank your recommended jobs.`
+      : "We'll use your resume to rank your recommended jobs.";
+  }
+  if (p.status === "failed") {
+    return p.reason === "scanned_pdf"
+      ? "We couldn't read text from this file (it looks like a scanned image). You can continue; recommendations will use your preferences."
+      : "We couldn't read details from this file. You can continue; recommendations will use your preferences.";
+  }
+  return null;
+}
+
 function LinkedInIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
@@ -49,6 +81,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
   const [linkedinError, setLinkedinError] = useState<string | null>(null);
 
   const [resumeName, setResumeName] = useState<string | null>(null);
+  const [resumeParse, setResumeParse] = useState<ResumeParseSummary | null>(null);
   const [resumeSkipped, setResumeSkipped] = useState(false);
   const [resumeUploading, setResumeUploading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -113,6 +146,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Couldn't upload your resume.");
       setResumeName(data.fileName || file.name);
+      setResumeParse(data?.parse && typeof data.parse === "object" ? (data.parse as ResumeParseSummary) : null);
       toast.success("Resume saved");
     } catch (err: any) {
       setResumeError(err?.message || "Couldn't upload your resume.");
@@ -275,7 +309,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
           )}
         </section>
 
-        {/* CARD 2: Resume upload (stored privately; not parsed) */}
+        {/* CARD 2: Resume or LinkedIn "Save to PDF" upload (stored privately; text parsed server-side for ranking) */}
         <section data-testid="card-resume" aria-labelledby="resume-card-title" className={cardClass}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 flex-shrink-0">
@@ -283,7 +317,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
             </div>
             <div className="flex-1">
               <h3 id="resume-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                Upload resume
+                Upload resume or LinkedIn PDF
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">PDF or DOCX, up to 5 MB. Stored privately.</p>
             </div>
@@ -340,7 +374,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
               >
                 {resumeUploading ? (
                   <span className="flex flex-col items-center gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-                    <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" /> Uploading...
+                    <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" /> Uploading and reading...
                   </span>
                 ) : resumeName ? (
                   <span className="flex flex-col items-center gap-1">
@@ -356,6 +390,11 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
                   </span>
                 )}
               </button>
+              <p data-testid="resume-linkedin-hint" className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                No resume handy? Upload your LinkedIn profile instead: on LinkedIn, open your profile, tap{" "}
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300">More</span>, then{" "}
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300">Save to PDF</span>, and add that file here.
+              </p>
               {resumeError && (
                 <p
                   id="resume-error"
@@ -369,6 +408,16 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
               {resumeName && !resumeError && (
                 <p data-testid="resume-success" className="text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Resume saved
+                </p>
+              )}
+              {resumeName && !resumeError && describeResumeParse(resumeParse) && (
+                <p
+                  data-testid="resume-parse-status"
+                  data-status={resumeParse?.status}
+                  aria-live="polite"
+                  className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
+                >
+                  {describeResumeParse(resumeParse)}
                 </p>
               )}
             </>
