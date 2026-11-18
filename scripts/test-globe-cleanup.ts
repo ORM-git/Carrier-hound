@@ -40,8 +40,9 @@ check(
   /cancelAnimationFrame\(animationFrameRef\.current\)/.test(src)
 );
 check(
-  "resize and visibility listeners removed on unmount",
-  /removeEventListener\("resize", handleResize\)/.test(src) &&
+  "resize observer and visibility listener removed on unmount",
+  /new ResizeObserver\(handleResize\)/.test(src) &&
+    /resizeObserver\.disconnect\(\)/.test(src) &&
     /removeEventListener\("visibilitychange", handleVisibilityChange\)/.test(src)
 );
 check(
