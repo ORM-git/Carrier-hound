@@ -294,7 +294,7 @@ function OnboardingPageInner() {
       <div>
         {/* Error alert banner if submission fails */}
         {processingError && (
-          <div className="max-w-lg mx-auto w-full px-4 pt-4">
+          <div className="max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pt-4">
             <div
               role="alert"
               className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300 flex items-center gap-2.5 shadow-sm"
