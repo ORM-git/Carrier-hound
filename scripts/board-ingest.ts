@@ -45,10 +45,19 @@ import {
   detectJobType,
   detectSeniority,
   detectCategory,
-  slugify,
   parseSalary,
   formatSalary,
 } from './utils/sanitizer';
+import { cleanLocationKey, dedupeKey } from '../src/lib/jobs/highVolumeEnrichment';
+
+/**
+ * Role key (company + title + full location), Unicode-safe. Null when company or title is
+ * empty/too short: such jobs are never deduped (ASCII slugs collapsed non-Latin roles together).
+ */
+function boardRoleKey(j: { company?: string | null; title?: string | null; location?: string | null }): string | null {
+  const k = dedupeKey(j.company, j.title);
+  return k && `${k}::${cleanLocationKey(j.location || 'unspecified')}`;
+}
 import { politeFetchJson, politeFetchText, isForbiddenDomain } from './utils/polite-fetch';
 import {
   loadBoardWatermarks,
@@ -898,15 +907,15 @@ export function dedupJobs(
     }
 
     // 3. Cross-source / duplicate role key: normalized company + title + location
-    const roleKey = `${slugify(job.company)}::${slugify(job.title)}::${slugify(job.location || 'unspecified')}`;
-    if (seenRoles.has(roleKey)) {
+    const roleKey = boardRoleKey(job);
+    if (roleKey && seenRoles.has(roleKey)) {
       duplicates++;
       continue;
     }
 
     seenAtsIds.add(atsKey);
     seenUrls.add(job.apply_url);
-    seenRoles.add(roleKey);
+    if (roleKey) seenRoles.add(roleKey);
     accepted.push(job);
   }
 
@@ -1355,8 +1364,8 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       if (!dbErr && Array.isArray(dbRows)) {
         for (const row of dbRows) {
-          const roleKey = `${slugify(row.company)}::${slugify(row.title)}::${slugify(row.location || 'unspecified')}`;
-          existingDbRoles.add(roleKey);
+          const roleKey = boardRoleKey(row);
+          if (roleKey) existingDbRoles.add(roleKey);
           const sourceIdKey = `${row.source}:${row.source_job_id}`;
           existingDbSourceIds.add(sourceIdKey);
           existingDbJobsMap.set(sourceIdKey, {
@@ -1371,7 +1380,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
     for (const job of allAcceptedJobs) {
       const sourceIdKey = `${job.source}:${job.source_job_id}`;
-      const roleKey = `${slugify(job.company)}::${slugify(job.title)}::${slugify(job.location || 'unspecified')}`;
+      const roleKey = boardRoleKey(job);
 
       if (existingDbSourceIds.has(sourceIdKey)) {
         // Exists with identical source + source_job_id -> UPDATE
@@ -1384,7 +1393,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           last_seen_at: nowIso,
         };
         rowsToUpdate.push(updatedJob);
-      } else if (existingDbRoles.has(roleKey) || seenLocalRoles.has(roleKey)) {
+      } else if (roleKey && (existingDbRoles.has(roleKey) || seenLocalRoles.has(roleKey))) {
         // Role (company + title + location) already exists under different ID -> DEDUP SKIP
         dedupSkipped++;
       } else {
@@ -1397,7 +1406,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           last_seen_at: nowIso,
         };
         rowsToInsert.push(newJob);
-        seenLocalRoles.add(roleKey);
+        if (roleKey) seenLocalRoles.add(roleKey);
       }
     }
   } else {

@@ -62,11 +62,12 @@ The `v2` similarity hash is computed byte-for-byte identically across PostgreSQL
 
 ### Normalization Pipeline
 Given `company`, `title`, `country`, and `location`:
-1. **Unicode NFC Normalization & Case Folding**:
-   - Python: `unicodedata.normalize('NFC', text).lower()`
-   - TypeScript: `text.normalize('NFC').toLowerCase()`
-   - PostgreSQL: `lower(COALESCE(normalize(text, NFC), ''))`
+1. **Unicode NFKC Normalization & Case Folding** (fullwidth forms and ligatures fold to plain letters; non-Latin scripts and emoji are preserved, never stripped):
+   - Python: `unicodedata.normalize('NFKC', text).lower()`
+   - TypeScript: `text.normalize('NFKC').toLowerCase()`
+   - PostgreSQL: `lower(COALESCE(normalize(text, NFKC), ''))`
 2. **Deterministic Parity Normalization**:
+   - Sharp s `ß` (U+00DF) -> `ss` (case folding, applied identically in all three)
    - Turkish dotted capital `İ` (U+0130) and combining dot `i\u0307` -> ASCII `i` (U+0069)
    - Greek final sigma `ς` (U+03C2) -> small sigma `σ` (U+03C3) matching canonical Unicode case folding
    - Next Line `U+0085` (chr(133)) -> space `' '`
@@ -178,7 +179,8 @@ SET search_path = public;
 ---
 
 ## 5. Golden Fixtures Reference
-A language-neutral JSON fixture file containing all 18 test scenarios and expected hashes is located at:
+A language-neutral JSON fixture file containing all 24 test scenarios and expected hashes is located at
+(checked against PostgreSQL via PGlite, TypeScript and Python; any byte difference fails CI):
 `scripts/fixtures/identity_golden_cases.json`
 
 Scenarios covered:
@@ -200,6 +202,21 @@ Scenarios covered:
 16. Company Inc with Japanese Kanji (`Company Inc東京` preserved without stripping)
 17. Zero Width No-Break Space (`U+FEFF` / BOM preservation)
 18. Information Separator Four (`U+001C` preservation)
+19. Hindi titles at one company stay distinct (no shared empty ASCII slug)
+20. Chinese and Arabic titles stay distinct
+21. Emoji preserved (titles differing only by emoji stay distinct)
+22. Trailing spaces, mixed case and legal suffix fold to one hash
+23. NFKC: fullwidth letters, `ﬁ` ligature and `ß`/`ss` fold to one hash
+24. Cyrillic and Greek uppercase/lowercase fold identically in PG, TS and Python
+
+### Dedupe eligibility and duplicate expiry
+- `dedupeKey()` returns `null` when the cleaned company or title has fewer than 2 code points
+  (empty, suffix-only like `Inc.`, or a single emoji). Rows with a `null` key are never deduped.
+  Used by `scripts/ingest.ts`, `scripts/utils/crossSourceDedupe.ts` and `scripts/board-ingest.ts`.
+- `scripts/backfill-job-descriptions.ts` stage 1 (duplicate expiry) is a dry run unless
+  `--expire-duplicates` is passed; it expires at most `--max-expire` rows per run (default 100,
+  hard ceiling 1000), prints every row it would expire, and refuses when duplicates exceed 1% of
+  active jobs unless `--allow-over-1pct` is passed.
 
 ---
 

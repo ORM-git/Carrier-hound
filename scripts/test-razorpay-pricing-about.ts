@@ -17,8 +17,7 @@ import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared
 import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 
 import { middleware, PUBLIC_ROUTES, PROTECTED_ROUTES } from "../src/middleware";
-import { PLANS, ADD_ON_PACKS, ADD_ON_PACKS_NOTE, PLAN_QUOTA_SUMMARY_NOTE, formatPriceINR } from "../src/config/plans";
-import { PLAN_DEFINITIONS } from "../src/lib/billing/quota";
+import { PLANS, PLAN_PRICING, formatPriceINR } from "../src/config/plans";
 import PricingPage from "../src/app/pricing/page";
 import AboutUsPage from "../src/app/about/page";
 import TermsPage from "../src/app/terms-and-conditions/page";
@@ -152,7 +151,7 @@ async function runTests() {
 
   // ---------------------------------------------------------------------------
   // 3. /pricing Page: Configured Plans, Prices, Limits, Payments OFF,
-  //    No "early access", "Payments will open soon.", Add-on Packs Section
+  //    No "early access", no "coming soon", no add-on packs
   // ---------------------------------------------------------------------------
   console.log("\n3. Verifying /pricing rendered content, plans, add-on packs, and payments OFF...");
   const pricingSrc = fs.readFileSync(path.join(rootDir, "src/app/pricing/page.tsx"), "utf-8");
@@ -167,28 +166,14 @@ async function runTests() {
       `/pricing must display configured INR price '${formatPriceINR(plan.price)}' for ${plan.name}`
     );
     assert.ok(
-      pricingText.includes(plan.subLine),
-      `/pricing must display configured usage limit '${plan.subLine}' for ${plan.name}`
+      pricingText.includes(`${PLAN_PRICING[plan.id].duration_days} days access`),
+      `/pricing must display the ${PLAN_PRICING[plan.id].duration_days}-day duration for ${plan.name}`
     );
   }
-  assert.ok(pricingText.includes("Free Plan"), "/pricing must display 'Free Plan'");
-  assert.ok(pricingText.includes("₹0.00"), "/pricing must display '₹0.00' for Free Plan");
-  assert.ok(
-    pricingText.includes("0 AI application sets"),
-    "/pricing must display Free tier usage limit ('0 AI application sets')"
-  );
-
-  // Per-feature quota summary derived directly from PLAN_DEFINITIONS in src/lib/billing/quota.ts
-  const expectedQuotaSummary = `Separate usage pools per feature: Weekly includes ${PLAN_DEFINITIONS.weekly.resume_quota} AI resume tailorings + ${PLAN_DEFINITIONS.weekly.cover_letter_quota} AI cover letters per ${PLAN_DEFINITIONS.weekly.quota_period_days} days; Monthly (${PLAN_DEFINITIONS.monthly.duration_days} days) and Quarterly (${PLAN_DEFINITIONS.quarterly.duration_days} days) include ${PLAN_DEFINITIONS.monthly.resume_quota} AI resume tailorings + ${PLAN_DEFINITIONS.monthly.cover_letter_quota} AI cover letters per ${PLAN_DEFINITIONS.monthly.quota_period_days} days.`;
-  assert.strictEqual(
-    PLAN_QUOTA_SUMMARY_NOTE,
-    expectedQuotaSummary,
-    "PLAN_QUOTA_SUMMARY_NOTE must match exact per-feature quota values in PLAN_DEFINITIONS"
-  );
-  assert.ok(
-    pricingText.includes(expectedQuotaSummary),
-    "/pricing must display the exact per-feature quota summary derived from PLAN_DEFINITIONS"
-  );
+  // Job-listing only: no Free strip, AI quota summary or usage "sets"
+  for (const removed of ["Free Plan", "AI resume", "AI cover letter", "Separate usage pools", "sets/"]) {
+    assert.strictEqual(pricingText.includes(removed), false, `/pricing must not display '${removed}'`);
+  }
   const plansSrc = fs.readFileSync(path.join(rootDir, "src/config/plans.ts"), "utf-8");
   assert.strictEqual(
     /1\s*set\s*=\s*1\s*job\s*extraction/i.test(pricingSrc) ||
@@ -217,8 +202,8 @@ async function runTests() {
   const disabledUpgradeButtons = pricingHtml.match(/<button[^>]*disabled[^>]*>Upgrade<\/button>/g) || [];
   assert.strictEqual(
     disabledUpgradeButtons.length,
-    6,
-    `Expected 6 disabled Upgrade buttons (3 desktop + 3 mobile), got ${disabledUpgradeButtons.length}`
+    3,
+    `Expected 3 disabled Upgrade buttons (one per plan card), got ${disabledUpgradeButtons.length}`
   );
 
   // No "early access" wording on /pricing, and "Payments will open soon." present
@@ -232,40 +217,20 @@ async function runTests() {
     false,
     "Rendered /pricing text must contain zero 'early access' strings"
   );
+  assert.strictEqual(
+    /coming soon|opening soon|open soon/i.test(pricingText),
+    false,
+    "/pricing must not contain any 'coming soon' wording"
+  );
   assert.ok(
-    pricingText.includes("Payments will open soon."),
-    "/pricing must include the exact note 'Payments will open soon.'"
+    pricingText.includes("Payments are currently unavailable."),
+    "/pricing must explain that payments are unavailable while billing is off"
   );
 
-  // Add-on packs section on /pricing
-  assert.ok(pricingText.includes("Add-on Packs"), "/pricing must include 'Add-on Packs' section heading");
-  for (const pack of ADD_ON_PACKS) {
-    assert.ok(
-      pricingText.includes(formatPriceINR(pack.price)) &&
-        pricingText.includes(`${pack.sets} extra generations`),
-      `/pricing must display add-on pack ${formatPriceINR(pack.price)} for ${pack.sets} extra generations`
-    );
-  }
-  const exactAddonNote =
-    "Note: add-on packs can only be added for additional usage on an active subscription.";
-  assert.ok(
-    ADD_ON_PACKS_NOTE.includes(exactAddonNote),
-    `ADD_ON_PACKS_NOTE must contain "${exactAddonNote}"`
-  );
-  assert.ok(
-    pricingText.includes(exactAddonNote),
-    `/pricing must include the exact add-on note: "${exactAddonNote}"`
-  );
-  assert.ok(
-    pricingText.includes("expire together with the subscription"),
-    "/pricing must state that add-on packs expire together with the subscription"
-  );
-  assert.strictEqual(
-    /planned add-on/i.test(pricingText) || /60[\s-]*day/i.test(pricingText),
-    false,
-    "/pricing must not contain 'Planned' add-on wording or '60 days' validity"
-  );
-  console.log("  [PASS-LOCAL] /pricing plans, prices, disabled buttons, notes, and Add-on Packs verified.");
+  // Add-on packs are no longer sold on /pricing
+  assert.strictEqual(pricingText.includes("Add-on Packs"), false, "/pricing must not include an 'Add-on Packs' section");
+  assert.strictEqual(/extra generations/i.test(pricingText), false, "/pricing must not list add-on generations");
+  console.log("  [PASS-LOCAL] /pricing job-listing plans, prices, durations and disabled buttons verified.");
 
   // ---------------------------------------------------------------------------
   // 4. Terms (/terms-and-conditions): Add-on Wording Updated, Auto-Renewal Untouched

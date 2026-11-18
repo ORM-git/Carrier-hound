@@ -50,7 +50,7 @@ def test_golden_cases_all_pass():
     assert golden_data["contract"] == "length_framed_utf8_sha256"
 
     cases = golden_data["cases"]
-    assert len(cases) == 18, f"Expected 18 golden cases, found {len(cases)}"
+    assert len(cases) == 24, f"Expected 24 golden cases, found {len(cases)}"
 
     for c in cases:
         case_id = c["id"]

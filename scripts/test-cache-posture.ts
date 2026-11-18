@@ -311,6 +311,33 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
     expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
     needsRemediation: false,
   },
+  "src/app/api/onboarding/route.ts": {
+    filePath: "src/app/api/onboarding/route.ts",
+    authRequirement: "Authenticated User (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
+    needsRemediation: false,
+  },
+  "src/app/api/onboarding/linkedin/route.ts": {
+    filePath: "src/app/api/onboarding/linkedin/route.ts",
+    authRequirement: "Authenticated User (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
+    needsRemediation: false,
+  },
+  "src/app/api/onboarding/resume/route.ts": {
+    filePath: "src/app/api/onboarding/resume/route.ts",
+    authRequirement: "Authenticated User (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
+    needsRemediation: false,
+  },
   "src/app/api/radar/route.ts": {
     filePath: "src/app/api/radar/route.ts",
     authRequirement: "Public",
@@ -624,8 +651,8 @@ const singleModePrivateMissing = sendingNoneSet.filter(
 );
 const remediationCount = routableEndpoints.filter((r) => r.needsRemediation).length;
 
-check("catalog contains 49 total files (46 endpoints + 3 helpers)", entries.length === 49 && routableEndpoints.length === 46);
-check("catalog records exact header presence counts (14 with Cache-Control, 32 none set)", sendingCacheControl.length === 14 && sendingNoneSet.length === 32);
+check("catalog contains 52 total files (49 endpoints + 3 helpers)", entries.length === 52 && routableEndpoints.length === 49);
+check("catalog records exact header presence counts (17 with Cache-Control, 32 none set)", sendingCacheControl.length === 17 && sendingNoneSet.length === 32);
 check("catalog flags 23 single-mode private/no-store routes omitting Cache-Control and 28 total needing remediation", singleModePrivateMissing.length === 23 && remediationCount === 28);
 
 // Verify dual-mode /api/jobs/search and /api/jobs/recommended split (Next and Netlify read Bearer + Pro + prefs)

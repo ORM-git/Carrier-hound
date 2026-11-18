@@ -50,6 +50,7 @@ graphify-out/
 .system_backup/
 backups/
 *.docx
+!tests/fixtures/**/*.docx
 *.txt
 !robots.txt
 deno.lock

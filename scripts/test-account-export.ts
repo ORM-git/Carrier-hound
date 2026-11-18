@@ -99,7 +99,23 @@ async function main() {
       admin.queried.some((q: any) => q.table === "subscriptions"),
       "export must include subscriptions rows"
     );
-    console.log("ok - all user-owned tables queried by user_id, subscriptions included");
+    assert.ok(
+      ACCOUNT_EXPORT_USER_ID_TABLES.includes("onboarding_resume_uploads"),
+      "export must include onboarding_resume_uploads"
+    );
+    assert.ok(
+      ACCOUNT_EXPORT_USER_ID_TABLES.includes("onboarding_resume_profiles"),
+      "export must include onboarding_resume_profiles"
+    );
+    assert.ok(
+      admin.queried.some((q: any) => q.table === "onboarding_resume_uploads" && q.column === "user_id" && q.value === USER.id),
+      "export must query onboarding_resume_uploads by user_id"
+    );
+    assert.ok(
+      admin.queried.some((q: any) => q.table === "onboarding_resume_profiles" && q.column === "user_id" && q.value === USER.id),
+      "export must query onboarding_resume_profiles by user_id"
+    );
+    console.log("ok - all user-owned tables queried by user_id, subscriptions & onboarding resume included");
   }
 
   // 4. Early-access rows matched by lowercase email

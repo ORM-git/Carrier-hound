@@ -9,7 +9,7 @@
  * every job is kept (ingest must not lose data because a check failed).
  */
 
-import { slugify } from "./sanitizer";
+import { dedupeKey } from "../../src/lib/jobs/highVolumeEnrichment";
 
 export interface DedupeJob {
   company: string;
@@ -17,9 +17,12 @@ export interface DedupeJob {
   country_code?: string | null;
 }
 
-/** Same key shape scripts/ingest.ts uses for the in-run ATS vs feed check. */
-export function roleDedupeKey(job: DedupeJob): string {
-  return `${slugify(job.company)}::${slugify(job.title)}::${job.country_code || "any"}`;
+/**
+ * Role key shared with scripts/ingest.ts's in-run ATS vs feed check. Unicode-safe (NFKC);
+ * null when company or title is empty/too short, and such jobs are never deduped.
+ */
+export function roleDedupeKey(job: DedupeJob): string | null {
+  return dedupeKey(job.company, job.title, job.country_code || "any");
 }
 
 const COMPANY_CHUNK = 50;
@@ -51,7 +54,8 @@ export async function dropFeedJobsAlreadyCoveredByAts<T extends DedupeJob>(
       if (error) return { kept: jobs.slice(), dropped: 0, checked: false };
       if (Array.isArray(data)) {
         data.forEach((row: DedupeJob) => {
-          atsKeys[roleDedupeKey(row)] = true;
+          const key = roleDedupeKey(row);
+          if (key) atsKeys[key] = true;
         });
       }
     }
@@ -59,7 +63,8 @@ export async function dropFeedJobsAlreadyCoveredByAts<T extends DedupeJob>(
     const kept: T[] = [];
     let dropped = 0;
     jobs.forEach((j) => {
-      if (atsKeys[roleDedupeKey(j)]) dropped++;
+      const key = roleDedupeKey(j);
+      if (key && atsKeys[key]) dropped++;
       else kept.push(j);
     });
     return { kept, dropped, checked: true };

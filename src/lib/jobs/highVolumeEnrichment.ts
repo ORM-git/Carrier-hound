@@ -81,9 +81,9 @@ export function buildScopedJobIdentity(
 
 export function cleanCompany(company?: string | null): string {
   if (!company || typeof company !== 'string') return '';
-  let c = company.normalize('NFC').toLowerCase();
+  let c = company.normalize('NFKC').toLowerCase();
   c = c.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
-  c = c.replace(/ς|\u03c2/g, '\u03c3');
+  c = c.replace(/ς|\u03c2/g, '\u03c3').replace(/ß/g, 'ss');
   c = c.replace(/\u0085/g, ' ');
   c = c.replace(COMPANY_SUFFIX_REGEX, ' ');
   c = c.replace(WHITESPACE_REGEX, ' ').trim();
@@ -92,9 +92,9 @@ export function cleanCompany(company?: string | null): string {
 
 export function cleanTitle(title?: string | null): string {
   if (!title || typeof title !== 'string') return '';
-  let t = title.normalize('NFC').toLowerCase();
+  let t = title.normalize('NFKC').toLowerCase();
   t = t.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
-  t = t.replace(/ς|\u03c2/g, '\u03c3');
+  t = t.replace(/ς|\u03c2/g, '\u03c3').replace(/ß/g, 'ss');
   t = t.replace(/\u0085/g, ' ');
   t = t.replace(WHITESPACE_REGEX, ' ').trim();
   return t;
@@ -102,9 +102,9 @@ export function cleanTitle(title?: string | null): string {
 
 export function cleanCountry(country?: string | null): string {
   if (!country || typeof country !== 'string') return '';
-  let co = country.normalize('NFC').toLowerCase();
+  let co = country.normalize('NFKC').toLowerCase();
   co = co.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
-  co = co.replace(/ς|\u03c2/g, '\u03c3');
+  co = co.replace(/ς|\u03c2/g, '\u03c3').replace(/ß/g, 'ss');
   co = co.replace(/\u0085/g, ' ');
   co = co.replace(WHITESPACE_REGEX, ' ').trim();
   return co;
@@ -112,9 +112,9 @@ export function cleanCountry(country?: string | null): string {
 
 export function cleanLocation(location?: string | null): string {
   if (!location || typeof location !== 'string') return '';
-  let loc = location.normalize('NFC').toLowerCase();
+  let loc = location.normalize('NFKC').toLowerCase();
   loc = loc.replace(/İ|\u0130/g, 'i').replace(/i\u0307/g, 'i');
-  loc = loc.replace(/ς|\u03c2/g, '\u03c3');
+  loc = loc.replace(/ς|\u03c2/g, '\u03c3').replace(/ß/g, 'ss');
   loc = loc.replace(/\u0085/g, ' ');
   loc = loc.split(',')[0];
   loc = loc.replace(WHITESPACE_REGEX, ' ').trim();
@@ -160,6 +160,88 @@ export function computeDedupeHash(
   location?: string | null
 ): string {
   return computeSimilarityHashV2(company, title, country, location);
+}
+
+/** Minimum code points in the cleaned company and title before a row may be deduped. */
+export const MIN_DEDUPE_FIELD_CHARS = 2;
+
+/**
+ * Dedupe key for "same role" grouping, or null when the row must never be deduped
+ * (an empty or near-empty company/title would merge unrelated jobs into one group).
+ */
+export function dedupeKey(
+  company?: string | null,
+  title?: string | null,
+  country?: string | null,
+  location?: string | null
+): string | null {
+  if (
+    Array.from(cleanCompany(company)).length < MIN_DEDUPE_FIELD_CHARS ||
+    Array.from(cleanTitle(title)).length < MIN_DEDUPE_FIELD_CHARS
+  ) {
+    return null;
+  }
+  return computeSimilarityHashV2(company, title, country, location);
+}
+
+export interface DedupeRow {
+  id: string;
+  company?: string | null;
+  title?: string | null;
+  country?: string | null;
+  location?: string | null;
+  last_seen_at?: string | null;
+  descLen: number;
+}
+
+type ExpiryItem = { id: string; keptId: string; key: string };
+
+export interface DuplicateExpiryPlan {
+  /** Every duplicate found, in expiry order. */
+  candidates: ExpiryItem[];
+  /** What this run would expire (empty when blocked). */
+  toExpire: ExpiryItem[];
+  /** Rows skipped because their key was empty or too short. */
+  ineligible: number;
+  /** 1% of the active rows scanned (floored). */
+  onePercent: number;
+  /** True when duplicates exceed 1% of active rows and the override flag was not given. */
+  blocked: boolean;
+}
+
+/**
+ * Plans duplicate expiry: groups active rows by dedupeKey, keeps the row with the longest
+ * description (then latest last_seen_at), and caps the run at maxExpire. Refuses (blocked)
+ * when duplicates exceed 1% of the active rows unless allowOverOnePercent is set.
+ */
+export function planDuplicateExpiry(
+  activeRows: DedupeRow[],
+  opts: { maxExpire: number; allowOverOnePercent: boolean }
+): DuplicateExpiryPlan {
+  const groups = new Map<string, DedupeRow[]>();
+  let ineligible = 0;
+  for (const r of activeRows) {
+    const key = dedupeKey(r.company, r.title, r.country, r.location);
+    if (!key) {
+      ineligible++;
+      continue;
+    }
+    const g = groups.get(key);
+    if (g) g.push(r);
+    else groups.set(key, [r]);
+  }
+
+  const candidates: ExpiryItem[] = [];
+  groups.forEach((group, key) => {
+    if (group.length < 2) return;
+    group.sort((a, b) => b.descLen - a.descLen || (b.last_seen_at || '').localeCompare(a.last_seen_at || ''));
+    for (let i = 1; i < group.length; i++) candidates.push({ id: group[i].id, keptId: group[0].id, key });
+  });
+
+  const onePercent = Math.floor(activeRows.length * 0.01);
+  const blocked = candidates.length > onePercent && !opts.allowOverOnePercent;
+  const toExpire = blocked ? [] : candidates.slice(0, Math.max(0, opts.maxExpire));
+  return { candidates, toExpire, ineligible, onePercent, blocked };
 }
 
 // ============================================================================

@@ -543,6 +543,208 @@
         }
       ],
       "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_19_hindi_distinct_titles",
+      "name": "Hindi titles at one company stay distinct",
+      "description": "Devanagari must not be stripped to a shared empty key (ASCII slug collision)",
+      "items": [
+        {
+          "label": "Software engineer",
+          "input": {
+            "company": "टाटा कंसल्टेंसी",
+            "title": "सॉफ्टवेयर इंजीनियर",
+            "country": "IN",
+            "location": "मुंबई, भारत"
+          },
+          "expected_payload": "v2|c:43:टाटा कंसल्टेंसी|t:52:सॉफ्टवेयर इंजीनियर|co:2:in|loc:15:मुंबई",
+          "expected_hash": "11423036003a021670a6af93889bb57f2dbdbcff08f75bd9a4591ed9cde5c04a"
+        },
+        {
+          "label": "Data analyst",
+          "input": {
+            "company": "टाटा कंसल्टेंसी",
+            "title": "डेटा विश्लेषक",
+            "country": "IN",
+            "location": "मुंबई, भारत"
+          },
+          "expected_payload": "v2|c:43:टाटा कंसल्टेंसी|t:37:डेटा विश्लेषक|co:2:in|loc:15:मुंबई",
+          "expected_hash": "cdd0848333ceeeb6bd9fd63c68c5c952b2c40af31528315237275de5fc140e40"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_20_chinese_arabic_distinct_titles",
+      "name": "Chinese and Arabic titles stay distinct",
+      "description": "CJK and Arabic script titles never collapse together",
+      "items": [
+        {
+          "label": "Chinese engineer",
+          "input": {
+            "company": "阿里巴巴",
+            "title": "软件工程师",
+            "country": "CN",
+            "location": "杭州"
+          },
+          "expected_payload": "v2|c:12:阿里巴巴|t:15:软件工程师|co:2:cn|loc:6:杭州",
+          "expected_hash": "f5990bf1c6127f9e8ad9b3245ff06df02342715d6f5d2cc6acc61f2cf0ae1291"
+        },
+        {
+          "label": "Chinese PM",
+          "input": {
+            "company": "阿里巴巴",
+            "title": "产品经理",
+            "country": "CN",
+            "location": "杭州"
+          },
+          "expected_payload": "v2|c:12:阿里巴巴|t:12:产品经理|co:2:cn|loc:6:杭州",
+          "expected_hash": "71caa1cc8138156beb9f8cd50a87c49e829fd4fb6d2c4730ca1614026917b5e2"
+        },
+        {
+          "label": "Arabic engineer",
+          "input": {
+            "company": "أرامكو",
+            "title": "مهندس برمجيات",
+            "country": "SA",
+            "location": "الظهران"
+          },
+          "expected_payload": "v2|c:12:أرامكو|t:25:مهندس برمجيات|co:2:sa|loc:14:الظهران",
+          "expected_hash": "17216c42d2c17aa1688e028e759edf36a7d13466e4cd85c44b2bea10f6e54988"
+        },
+        {
+          "label": "Arabic analyst",
+          "input": {
+            "company": "أرامكو",
+            "title": "محلل بيانات",
+            "country": "SA",
+            "location": "الظهران"
+          },
+          "expected_payload": "v2|c:12:أرامكو|t:21:محلل بيانات|co:2:sa|loc:14:الظهران",
+          "expected_hash": "4e0e7330556260d57a450f1d0ec11480646e9a5c99454bae90afc16af324e486"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_21_emoji_titles",
+      "name": "Emoji are preserved",
+      "description": "Titles differing only by emoji (incl. variation selector) stay distinct",
+      "items": [
+        {
+          "label": "Rocket",
+          "input": {
+            "company": "Acme",
+            "title": "Engineer 🚀",
+            "country": "US",
+            "location": "Austin, TX"
+          },
+          "expected_payload": "v2|c:4:acme|t:13:engineer 🚀|co:2:us|loc:6:austin",
+          "expected_hash": "7f3b8a4a8f29369da25cad384ddcd3403c710008676e5e6becc3a6f8375a1a9b"
+        },
+        {
+          "label": "Tools",
+          "input": {
+            "company": "Acme",
+            "title": "Engineer 🛠️",
+            "country": "US",
+            "location": "Austin, TX"
+          },
+          "expected_payload": "v2|c:4:acme|t:16:engineer 🛠️|co:2:us|loc:6:austin",
+          "expected_hash": "4f66be06edf8f196a926c5c6877287bdb9fda73c0be7b5586a0824624aa0a6bf"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_22_trailing_spaces_mixed_case",
+      "name": "Trailing spaces, mixed case and legal suffix fold together",
+      "description": "Same role written with different case/spacing/suffix hashes identically",
+      "items": [
+        {
+          "label": "Messy",
+          "input": {
+            "company": "  ACME Inc.  ",
+            "title": "  Senior   ENGINEER  ",
+            "country": " US ",
+            "location": "  Austin ,TX "
+          },
+          "expected_payload": "v2|c:4:acme|t:15:senior engineer|co:2:us|loc:6:austin",
+          "expected_hash": "ff27567e6083c36ae283d6b2566e592d14e8cf307b1b597c779e72a41d256413"
+        },
+        {
+          "label": "Clean",
+          "input": {
+            "company": "acme",
+            "title": "senior engineer",
+            "country": "us",
+            "location": "austin"
+          },
+          "expected_payload": "v2|c:4:acme|t:15:senior engineer|co:2:us|loc:6:austin",
+          "expected_hash": "ff27567e6083c36ae283d6b2566e592d14e8cf307b1b597c779e72a41d256413"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_23_nfkc_fullwidth_ligature_sharp_s",
+      "name": "NFKC compatibility forms and sharp s fold",
+      "description": "Fullwidth letters, the fi ligature and ß/ss normalize to the same key",
+      "items": [
+        {
+          "label": "Compat forms",
+          "input": {
+            "company": "Ｍüller GmbH",
+            "title": "ﬁnance Ｍanager Straße",
+            "country": "DE",
+            "location": "Ｂerlin"
+          },
+          "expected_payload": "v2|c:7:müller|t:23:finance manager strasse|co:2:de|loc:6:berlin",
+          "expected_hash": "e9d3414991c48ecbe320486e18e958ade8a5a96283fe8627f124f23670d45ab3"
+        },
+        {
+          "label": "Plain forms",
+          "input": {
+            "company": "müller",
+            "title": "finance manager strasse",
+            "country": "de",
+            "location": "berlin"
+          },
+          "expected_payload": "v2|c:7:müller|t:23:finance manager strasse|co:2:de|loc:6:berlin",
+          "expected_hash": "e9d3414991c48ecbe320486e18e958ade8a5a96283fe8627f124f23670d45ab3"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_24_non_latin_mixed_case",
+      "name": "Cyrillic and Greek case fold in every implementation",
+      "description": "Uppercase Cyrillic/Greek (incl. final sigma) lowercases identically in PG, TS and Python",
+      "items": [
+        {
+          "label": "Upper",
+          "input": {
+            "company": "ЯНДЕКС",
+            "title": "ΜΗΧΑΝΙΚΟΣ РАЗРАБОТЧИК",
+            "country": "RU",
+            "location": "МОСКВА"
+          },
+          "expected_payload": "v2|c:12:яндекс|t:41:μηχανικοσ разработчик|co:2:ru|loc:12:москва",
+          "expected_hash": "5f5da6cf5211a43eef48fa6d2672ca2c965d66486ceb9b68fa7c6a8a55353194"
+        },
+        {
+          "label": "Lower",
+          "input": {
+            "company": "яндекс",
+            "title": "μηχανικοσ разработчик",
+            "country": "ru",
+            "location": "москва"
+          },
+          "expected_payload": "v2|c:12:яндекс|t:41:μηχανικοσ разработчик|co:2:ru|loc:12:москва",
+          "expected_hash": "5f5da6cf5211a43eef48fa6d2672ca2c965d66486ceb9b68fa7c6a8a55353194"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
     }
   ]
 }

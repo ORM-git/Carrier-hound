@@ -7,14 +7,14 @@
  * 2. Static & Markup Conformance in src/app/pricing/page.tsx:
  *    - Uses NEXT_PUBLIC_BILLING_ENABLED gate.
  *    - When enabled, renders active Buy button with data-plan-code={plan.id} and Buy ${plan.name}.
- *    - When disabled, keeps today's disabled button with UPGRADE_BUTTON_LABEL ("Payments opening soon").
+ *    - When disabled, keeps the disabled Upgrade button with a "Payments are currently unavailable." note.
  *    - Single synchronous purchase lock (checkoutLockRef) shared across all plan & add-on checkouts.
  *    - Lock acquired synchronously before any auth await and released in finally.
  *    - Header "Payments will open soon." is flag-aware (omitted when flag is ON).
  *    - Keeps card height/spacing footprint identical between flag states (invisible badge row space).
  *    - Redirects unauthenticated visitors to /login?returnTo=%2Fpricing.
  * 3. Server-Authoritative Pricing Resolution:
- *    - resolveOrderPricing resolves approved paise amounts for weekly (69200), monthly (149900), and quarterly (399900).
+ *    - resolveOrderPricing resolves approved paise amounts for weekly (39900), monthly (49900), and quarterly (219900).
  * 4. Server-Side Ban Checks on Plan Orders (Next & Netlify routes):
  *    - Fail-closed verification runs on plan orders (not only add-ons).
  *    - Rejects blocked users (metadata or blocked_users table) with 403 USER_BLOCKED.
@@ -27,7 +27,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { PLANS, UPGRADE_BUTTON_LABEL } from "../src/config/plans";
+import { PLANS } from "../src/config/plans";
 import { resolveOrderPricing } from "../src/lib/billing/quota";
 import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
 import { createHandler as createNetlifyOrderHandler } from "../netlify/functions/billing-razorpay-order";
@@ -168,13 +168,13 @@ async function main() {
     assert.deepStrictEqual(ids, ["weekly", "monthly", "quarterly"]);
 
     const weekly = PLANS.find((p) => p.id === "weekly")!;
-    assert.strictEqual(weekly.price, 692, "Weekly price must be ₹692");
+    assert.strictEqual(weekly.price, 399, "Weekly price must be ₹399");
 
     const monthly = PLANS.find((p) => p.id === "monthly")!;
-    assert.strictEqual(monthly.price, 1499, "Monthly price must be ₹1,499");
+    assert.strictEqual(monthly.price, 499, "Monthly price must be ₹499");
 
     const quarterly = PLANS.find((p) => p.id === "quarterly")!;
-    assert.strictEqual(quarterly.price, 3999, "Quarterly price must be ₹3,999");
+    assert.strictEqual(quarterly.price, 2199, "Quarterly price must be ₹2,199");
   });
 
   // 2. Static & Markup Conformance
@@ -195,19 +195,8 @@ async function main() {
       "Pricing page must render 'Buy {plan.name}' button text when enabled"
     );
     assert.ok(
-      pricingSrc.includes("UPGRADE_BUTTON_LABEL"),
-      "Pricing page must retain UPGRADE_BUTTON_LABEL when disabled"
-    );
-  });
-
-  await check("Pricing page header badge wrapper (pt-2 block) keeps footprint with invisible placeholder when flag is ON", () => {
-    const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
-
-    assert.ok(
-      pricingSrc.includes('<div className="pt-2">') &&
-      pricingSrc.includes("isBillingEnabled ?") &&
-      pricingSrc.includes("invisible inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold border border-transparent select-none"),
-      "Header badge wrapper (pt-2 block) must keep its footprint with invisible placeholder when billing is enabled"
+      pricingSrc.includes("Payments are currently unavailable."),
+      "Pricing page must show a payments-unavailable note when disabled"
     );
   });
 
@@ -223,31 +212,25 @@ async function main() {
       "Plan buttons must be disabled when isCheckoutLocked is true"
     );
     assert.ok(
-      pricingSrc.includes("disabled={isCheckoutLocked}"),
-      "Add-on buttons must be disabled when isCheckoutLocked is true"
-    );
-    assert.ok(
       !pricingSrc.includes("finally"),
-      "handleBuyPlan and handleBuyAddon must NOT unconditionally release purchase lock in finally"
+      "handleBuyPlan must NOT unconditionally release purchase lock in finally"
     );
     assert.ok(
       pricingSrc.includes("onError:") && pricingSrc.includes("onSuccess:") && pricingSrc.includes("onDismiss:"),
-      "handleBuyPlan and handleBuyAddon must release purchase lock in terminal callbacks"
+      "handleBuyPlan must release purchase lock in terminal callbacks"
     );
     assert.ok(
       pricingSrc.includes("resetLock();\n      const loginUrl") ||
       pricingSrc.includes("resetLock();\r\n      const loginUrl"),
-      "handleBuyPlan and handleBuyAddon must release purchase lock explicitly on unauthenticated early exit"
+      "handleBuyPlan must release purchase lock explicitly on unauthenticated early exit"
     );
   });
 
-  await check("Pricing page keeps identical card footprint with invisible badge row space", () => {
+  await check("Pricing page has no invisible placeholder rows or add-on purchase UI", () => {
     const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
 
-    assert.ok(
-      pricingSrc.includes("invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none"),
-      "Plan card buy state must retain badge row space using invisible placeholder"
-    );
+    assert.ok(!pricingSrc.includes("invisible inline-flex"), "Pricing page must not keep invisible placeholder badge rows");
+    assert.ok(!pricingSrc.includes("data-addon-code") && !pricingSrc.includes("handleBuyAddon"), "Pricing page must not sell add-ons");
   });
 
   await check("Pricing page redirects unauthenticated visitors to login returning to pricing", () => {
@@ -264,19 +247,19 @@ async function main() {
   await check("resolveOrderPricing returns correct paise amounts for all subscription plans", () => {
     const weeklyOrder = resolveOrderPricing({ planCode: "weekly" });
     assert.ok(weeklyOrder, "Weekly plan must resolve");
-    assert.strictEqual(weeklyOrder.amount_paise, 69200, "Weekly order amount must be 69200 paise");
+    assert.strictEqual(weeklyOrder.amount_paise, 39900, "Weekly order amount must be 39900 paise");
     assert.strictEqual(weeklyOrder.currency, "INR");
     assert.strictEqual(weeklyOrder.code, "weekly");
 
     const monthlyOrder = resolveOrderPricing({ planCode: "monthly" });
     assert.ok(monthlyOrder, "Monthly plan must resolve");
-    assert.strictEqual(monthlyOrder.amount_paise, 149900, "Monthly order amount must be 149900 paise");
+    assert.strictEqual(monthlyOrder.amount_paise, 49900, "Monthly order amount must be 49900 paise");
     assert.strictEqual(monthlyOrder.currency, "INR");
     assert.strictEqual(monthlyOrder.code, "monthly");
 
     const quarterlyOrder = resolveOrderPricing({ planCode: "quarterly" });
     assert.ok(quarterlyOrder, "Quarterly plan must resolve");
-    assert.strictEqual(quarterlyOrder.amount_paise, 399900, "Quarterly order amount must be 399900 paise");
+    assert.strictEqual(quarterlyOrder.amount_paise, 219900, "Quarterly order amount must be 219900 paise");
     assert.strictEqual(quarterlyOrder.currency, "INR");
     assert.strictEqual(quarterlyOrder.code, "quarterly");
   });
@@ -362,7 +345,7 @@ async function main() {
     });
 
     await check("Next route creates plan order with server-resolved amounts for unblocked user", async () => {
-      for (const [code, expectedPaise] of [["weekly", 69200], ["monthly", 149900], ["quarterly", 399900]] as const) {
+      for (const [code, expectedPaise] of [["weekly", 39900], ["monthly", 49900], ["quarterly", 219900]] as const) {
         const mock = createMockSupabaseAdmin();
         const req = new Request("http://localhost:3000/api/billing/razorpay/order", {
           method: "POST",
@@ -427,7 +410,7 @@ async function main() {
     });
 
     await check("Netlify handler creates plan order with server-resolved amounts for unblocked user", async () => {
-      for (const [code, expectedPaise] of [["weekly", 69200], ["monthly", 149900], ["quarterly", 399900]] as const) {
+      for (const [code, expectedPaise] of [["weekly", 39900], ["monthly", 49900], ["quarterly", 219900]] as const) {
         const mock = createMockSupabaseAdmin();
         const handler = createNetlifyOrderHandler({
           getSupabaseAdmin: () => mock.client,

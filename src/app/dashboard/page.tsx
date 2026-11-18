@@ -8,21 +8,19 @@ import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { useSidebarMode } from "@/lib/sidebar";
-import ProOnboardingCard from "@/components/onboarding/ProOnboardingCard";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buttonClasses } from "@/components/ui/button";
-import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
+import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { CandidateProfile } from "@/lib/resume/types";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
-import { toast } from "react-toastify";
 import { TrackedApplication, STAGE_CONFIG, ApplicationStage } from "@/lib/tracker/types";
 import type { User } from "@supabase/supabase-js";
-import { isSwrStale, readSwr, swrFetch, updateSwr } from "@/lib/cache/swr";
+import { isSwrStale, readSwr, swrFetch } from "@/lib/cache/swr";
 import {
   Sparkles,
   Lock,
@@ -550,41 +548,104 @@ export default function DashboardPage() {
             </nav>
           </Card>
 
-          {/* STEP 1: ONBOARDING QUESTIONS */}
-          {activeStep === "onboarding" && user && (
-            <ProOnboardingCard
-              userId={user.id}
-              initialPreferences={preferences}
-              onComplete={() => {
-                setOnboardingCompleted(true);
-                updateSwr<any>(`dashboard:${user.id}`, (current) =>
-                  current ? { ...current, onboardingCompleted: true } : current
-                );
-                if (candidate?.confirmedAt) {
-                  setActiveStep("matches");
-                } else {
-                  setActiveStep("resume");
-                }
-              }}
-              onSkip={async () => {
-                try {
-                  if (preferences) {
-                    await saveUserPreferences({ ...preferences, onboardingCompleted: true }, user.id);
-                  }
-                  setOnboardingCompleted(true);
-                  updateSwr<any>(`dashboard:${user.id}`, (current) =>
-                    current ? { ...current, onboardingCompleted: true } : current
-                  );
-                  if (candidate?.confirmedAt) {
-                    setActiveStep("matches");
-                  } else {
-                    setActiveStep("resume");
-                  }
-                } catch (err: any) {
-                  toast.error(err?.message || "Failed to save preferences. Please try again.");
-                }
-              }}
-            />
+          {/* STEP 1: CAREER PREFERENCES */}
+          {activeStep === "onboarding" && (
+            <Card variant="surface" className="p-tk-3 sm:p-tk-2 space-y-4">
+              <div className="pb-tk-2 border-b border-line flex flex-wrap items-center justify-between gap-tk-1">
+                <div className="space-y-0.5">
+                  <span className="text-tk-caption font-semibold text-brand-700 uppercase tracking-wider">
+                    Step 1 • Career Preferences
+                  </span>
+                  <h2 className="text-tk-h3 sm:text-tk-h2 text-ink">Target Roles & Preferences</h2>
+                  <p className="text-tk-body-sm text-ink-muted">
+                    Your preferences power high-compatibility job recommendations.
+                  </p>
+                </div>
+                <Link
+                  href="/onboarding?mode=edit"
+                  className={buttonClasses({ variant: "outline", size: "sm" })}
+                >
+                  <Settings className="w-3.5 h-3.5 mr-1.5" />
+                  <span>Update Preferences</span>
+                </Link>
+              </div>
+
+              {preferences && (preferences.roles?.length || preferences.locations?.length) ? (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-ink-muted mb-2">
+                      Target Roles
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {preferences.roles?.map((r) => (
+                        <span
+                          key={r}
+                          className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-line">
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-ink-muted">
+                        Location
+                      </h4>
+                      <p className="text-sm font-medium text-ink mt-0.5">
+                        {preferences.country || preferences.locations?.[0] || "Not specified"}
+                        {preferences.remotePreference === "remote" && " • Open to Remote"}
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-ink-muted">
+                        Job Type
+                      </h4>
+                      <p className="text-sm font-medium text-ink mt-0.5 capitalize">
+                        {preferences.employmentTypes?.join(", ") || "Full-time"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-line flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (candidate?.confirmedAt) {
+                          setActiveStep("matches");
+                        } else {
+                          setActiveStep("resume");
+                        }
+                      }}
+                      className={buttonClasses({ variant: "primary", size: "sm" })}
+                    >
+                      <span>Continue to Next Step</span>
+                      <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 flex items-center justify-center mx-auto">
+                    <Briefcase className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold text-ink">Set Up Your Career Preferences</h3>
+                  <p className="text-sm text-ink-muted max-w-md mx-auto">
+                    Select your target roles and job preferences to tailor your personalized Top 10 matches.
+                  </p>
+                  <div className="pt-2">
+                    <Link
+                      href="/onboarding"
+                      className={buttonClasses({ variant: "primary", size: "md" })}
+                    >
+                      <span>Start Onboarding</span>
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </Card>
           )}
 
           {/* STEP 2: RESUME STEP (Coming Soon) */}

@@ -12,8 +12,9 @@ import {
   SourceConfig,
   SourceStats,
 } from './types';
-import { detectCategory, slugify } from './utils/sanitizer';
+import { detectCategory } from './utils/sanitizer';
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
+import { roleDedupeKey } from './utils/crossSourceDedupe';
 import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
@@ -574,7 +575,7 @@ async function main() {
   };
 
   const seenApplyUrls = new Set<string>();
-  const seenAtsRoles = new Set<string>(); // dedupeKey for Tier 1: slugify(company)::slugify(title)::(country_code || 'any')
+  const seenAtsRoles = new Set<string>(); // dedupeKey(company, title, country_code || 'any') of Tier 1 ATS roles
   let totalAccumulatedJobs = 0;
 
   async function processSource(source: SourceConfig, sourceIndex: number): Promise<void> {
@@ -621,12 +622,13 @@ async function main() {
         }
 
         // Cross-source deduplication: Tier 1 ATS direct vs Tier 2 Aggregator feeds
-        const roleDedupeKey = `${slugify(job.company)}::${slugify(job.title)}::${job.country_code || 'any'}`;
-        if (isAtsSource(source.type)) {
-          seenAtsRoles.add(roleDedupeKey);
-        } else {
+        // null => empty/too-short company or title: never dedupe (would merge unrelated non-Latin roles)
+        const roleKey = roleDedupeKey(job);
+        if (roleKey && isAtsSource(source.type)) {
+          seenAtsRoles.add(roleKey);
+        } else if (roleKey) {
           // If a verified ATS role already exists, drop the feed duplicate
-          if (seenAtsRoles.has(roleDedupeKey)) {
+          if (seenAtsRoles.has(roleKey)) {
             stats.skipped++;
             continue;
           }

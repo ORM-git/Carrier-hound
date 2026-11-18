@@ -98,7 +98,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
   }
 
   describe("Flag OFF (Payments strictly OFF)", () => {
-    it("keeps plan cards disabled with 'Upgrade' text and 'Payments opening soon' badge when flag is undefined", async () => {
+    it("keeps plan cards disabled with 'Upgrade' text and a payments-unavailable note when flag is undefined", async () => {
       delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
       mockGetSession.mockResolvedValue({
         data: {
@@ -126,9 +126,9 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
         expect(btn.getAttribute("aria-disabled")).toBe("true");
       }
 
-      // "Payments opening soon" badges must be present
-      expect(container?.textContent).toContain("Payments opening soon");
-      expect(container?.textContent).toContain("Payments will open soon.");
+      // One payments-unavailable note per card, and no "coming soon" wording anywhere
+      expect(container?.textContent?.split("Payments are currently unavailable.").length).toBe(4);
+      expect(container?.textContent).not.toMatch(/coming soon|opening soon|open soon/i);
 
       // Clicking disabled upgrade button must not invoke checkout
       if (upgradeButtons[0]) {
@@ -154,14 +154,8 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
 
       const buyButtons = container ? Array.from(container.querySelectorAll("button[data-plan-code]")) : [];
       expect(buyButtons.length).toBe(0);
-      expect(container?.textContent).toContain("Payments opening soon");
-      expect(container?.textContent).toContain("Payments will open soon.");
-
-      const pt2Wrapper = container?.querySelector("div.pt-2");
-      expect(pt2Wrapper).toBeTruthy();
-      const badge = pt2Wrapper?.querySelector("span");
-      expect(badge?.className).not.toContain("invisible");
-      expect(badge?.textContent).toContain("Payments will open soon.");
+      expect(container?.textContent).toContain("Payments are currently unavailable.");
+      expect(container?.textContent).not.toMatch(/coming soon|opening soon|open soon/i);
     });
   });
 
@@ -170,7 +164,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     });
 
-    it("renders active Buy buttons for all plans (Buy Weekly, Buy Monthly, Buy Quarterly) without 'Payments opening soon'", async () => {
+    it("renders active Buy buttons for all plans (Buy Weekly, Buy Monthly, Buy Quarterly) and only job-listing content", async () => {
       mockGetSession.mockResolvedValue({
         data: {
           session: {
@@ -182,8 +176,8 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await mountPage();
 
       const buyButtons = container ? Array.from(container.querySelectorAll("button[data-plan-code]")) : [];
-      // Both desktop and mobile buttons are rendered (3 plans * 2 views = 6 buttons)
-      expect(buyButtons.length).toBe(6);
+      // One responsive card grid: one Buy button per plan
+      expect(buyButtons.length).toBe(3);
 
       const codes = buyButtons.map((btn) => btn.getAttribute("data-plan-code"));
       expect(codes).toContain("weekly");
@@ -198,21 +192,17 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       for (const btn of monthlyBtns) expect(btn.textContent).toBe("Buy Monthly");
       for (const btn of quarterlyBtns) expect(btn.textContent).toBe("Buy Quarterly");
 
-      // None of the plan cards should have "Payments opening soon" badge, nor header phrase
-      expect(container?.textContent).not.toContain("Payments opening soon");
-      expect(container?.textContent).not.toContain("Payments will open soon.");
+      const text = container?.textContent || "";
+      expect(text).not.toContain("Payments are currently unavailable.");
+      expect(text).not.toMatch(/coming soon|opening soon|open soon/i);
 
-      // Header badge wrapper (pt-2 block) keeps its footprint with an invisible placeholder of the same size
-      const pt2Wrapper = container?.querySelector("div.pt-2");
-      expect(pt2Wrapper).toBeTruthy();
-      const placeholder = pt2Wrapper?.querySelector("span");
-      expect(placeholder?.className).toContain("invisible");
-      expect(placeholder?.className).toContain("inline-flex");
-      expect(placeholder?.className).toContain("px-3.5");
-      expect(placeholder?.className).toContain("py-1.5");
-      expect(placeholder?.className).toContain("rounded-full");
-      expect(placeholder?.className).toContain("border");
-      expect(placeholder?.getAttribute("aria-hidden")).toBe("true");
+      // Only job-listing content: no add-ons, comparison table, Free strip or AI tool rows
+      expect(container?.querySelectorAll("button[data-addon-code]").length).toBe(0);
+      for (const removed of ["Add-on Packs", "All features included in Premium", "Free Plan", "AI resume", "cover letter", "match score"]) {
+        expect(text).not.toContain(removed);
+      }
+      expect(container?.querySelectorAll("[data-plan-card]").length).toBe(3);
+      expect(text.split("Unlimited browsing of verified unindexed remote jobs").length).toBe(4);
     });
 
     it("clicking Buy Monthly calls handleProCheckout with planCode 'monthly'", async () => {
@@ -337,7 +327,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await mountPage();
 
       const planButtons = container ? Array.from(container.querySelectorAll("button[data-plan-code]")) as HTMLButtonElement[] : [];
-      expect(planButtons.length).toBe(6);
+      expect(planButtons.length).toBe(3);
       expect(planButtons.every((btn) => !btn.disabled)).toBe(true);
 
       // Click monthly plan
@@ -483,11 +473,11 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
 
       const monthlyBtn = container?.querySelector("button[data-plan-code='monthly']") as HTMLButtonElement;
       const weeklyBtn = container?.querySelector("button[data-plan-code='weekly']") as HTMLButtonElement;
-      const addon10Btn = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+      const quarterlyBtn = container?.querySelector("button[data-plan-code='quarterly']") as HTMLButtonElement;
 
       expect(monthlyBtn).toBeTruthy();
       expect(weeklyBtn).toBeTruthy();
-      expect(addon10Btn).toBeTruthy();
+      expect(quarterlyBtn).toBeTruthy();
 
       // Click 1: Buy Monthly
       await act(async () => {
@@ -498,21 +488,21 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
 
       // Even though handleProCheckout resolved, modal is still open, so lock must REMAIN held
-      // and ALL plan and add-on buy buttons must remain disabled!
+      // and ALL plan buy buttons must remain disabled!
       expect(monthlyBtn.disabled).toBe(true);
       expect(weeklyBtn.disabled).toBe(true);
-      expect(addon10Btn.disabled).toBe(true);
+      expect(quarterlyBtn.disabled).toBe(true);
 
-      // Click 2: Click add-on 10 while modal is open (after helper resolved)
+      // Click 2: Click Buy Quarterly while modal is open (after helper resolved)
       await act(async () => {
-        addon10Btn.click();
+        quarterlyBtn.click();
       });
 
       // Starts nothing! handleProCheckout still called only once
       expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
       expect(monthlyBtn.disabled).toBe(true);
       expect(weeklyBtn.disabled).toBe(true);
-      expect(addon10Btn.disabled).toBe(true);
+      expect(quarterlyBtn.disabled).toBe(true);
 
       // Click 3: Click weekly button while modal is open
       await act(async () => {
@@ -528,7 +518,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       // Lock is released and all buttons re-enable!
       expect(monthlyBtn.disabled).toBe(false);
       expect(weeklyBtn.disabled).toBe(false);
-      expect(addon10Btn.disabled).toBe(false);
+      expect(quarterlyBtn.disabled).toBe(false);
     });
 
     it("releases lock on early-exit errors (thrown exceptions before modal opens, order failures, and signed-out visitors)", async () => {
@@ -545,7 +535,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await mountPage();
 
       const monthlyBtn = container?.querySelector("button[data-plan-code='monthly']") as HTMLButtonElement;
-      const addon10Btn = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+      const quarterlyBtn = container?.querySelector("button[data-plan-code='quarterly']") as HTMLButtonElement;
 
       await act(async () => {
         monthlyBtn.click();
@@ -553,7 +543,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
 
       // Thrown exception caught in catch block -> lock is released
       expect(monthlyBtn.disabled).toBe(false);
-      expect(addon10Btn.disabled).toBe(false);
+      expect(quarterlyBtn.disabled).toBe(false);
 
       // 2. Order failure via onError callback
       mockHandleProCheckout.mockImplementationOnce(async (options: any) => {
@@ -567,7 +557,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
 
       // onError callback releases the lock
       expect(monthlyBtn.disabled).toBe(false);
-      expect(addon10Btn.disabled).toBe(false);
+      expect(quarterlyBtn.disabled).toBe(false);
 
       // 3. Signed-out visitor early exit: remount with unauthenticated session
       mockGetSession.mockResolvedValue({
@@ -577,7 +567,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await mountPage();
 
       const unauthMonthlyBtn = container?.querySelector("button[data-plan-code='monthly']") as HTMLButtonElement;
-      const unauthAddon10Btn = container?.querySelector("button[data-addon-code='addon_10']") as HTMLButtonElement;
+      const unauthQuarterlyBtn = container?.querySelector("button[data-plan-code='quarterly']") as HTMLButtonElement;
 
       await act(async () => {
         unauthMonthlyBtn.click();
@@ -585,7 +575,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
 
       // Unauthenticated early exit releases the lock
       expect(unauthMonthlyBtn.disabled).toBe(false);
-      expect(unauthAddon10Btn.disabled).toBe(false);
+      expect(unauthQuarterlyBtn.disabled).toBe(false);
     });
   });
 });

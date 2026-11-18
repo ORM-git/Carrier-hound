@@ -3,13 +3,13 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Pricing | CareerMonke",
-  description: "CareerMonke pricing: browse free, or upgrade to Pro for full job details, AI resume tailoring, and the live job radar.",
+  description: "CareerMonke pricing: one-time prepaid plans for full access to verified unindexed remote job listings.",
   alternates: {
     canonical: "/pricing",
   },
   openGraph: {
     title: "Pricing | CareerMonke",
-    description: "CareerMonke pricing: browse free, or upgrade to Pro for full job details, AI resume tailoring, and the live job radar.",
+    description: "CareerMonke pricing: one-time prepaid plans for full access to verified unindexed remote job listings.",
     url: "https://careermonke.com/pricing",
   },
 };

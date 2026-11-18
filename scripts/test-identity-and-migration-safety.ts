@@ -461,7 +461,7 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   const goldenData: GoldenFile = JSON.parse(goldenRaw);
 
   console.log(`  Evaluating ${goldenData.cases.length} Golden Cases for byte-for-byte PG/TS parity...`);
-  assert.strictEqual(goldenData.cases.length, 18, "Expected 18 golden cases including Turkish İ, Greek ς, NEL U+0085, Tokyo/Osaka, and Unicode edge cases");
+  assert.strictEqual(goldenData.cases.length, 24, "Expected 24 golden cases including Turkish İ, Greek ς, NEL U+0085, Tokyo/Osaka, Hindi/Chinese/Arabic, emoji, whitespace/case and NFKC edge cases");
 
   for (const c of goldenData.cases) {
     const hashes: string[] = [];

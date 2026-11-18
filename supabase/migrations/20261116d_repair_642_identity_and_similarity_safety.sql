@@ -8,7 +8,7 @@
 --   Phase 1 of Repair PR #642: Short Additive DDL & Trigger Safety.
 --   1. Strict preflight check that aborts if baseline constraints/tables differ.
 --   2. Authoritative write identity separation: removes harmful triggers & destructive dedupe indexes.
---   3. Versioned similarity fingerprinting (v2): Unicode-preserving, NFC normalized,
+--   3. Versioned similarity fingerprinting (v2): Unicode-preserving, NFKC normalized (sharp s -> ss),
 --      length-framed UTF-8 serialization, SHA-256 digest (byte-for-byte with TS & Python,
 --      exact normalization for Turkish 'İ', Greek 'ς'->'σ', and NEL 'U+0085').
 --   4. Strictly ADVISORY similarity: No unique constraint on similarity_hash_v2,
@@ -198,25 +198,25 @@ DECLARE
   v_loc_len integer;
   v_payload text;
 BEGIN
-  -- 1. Normalize company: NFC, lowercase, edge characters, strip legal suffixes, collapse whitespace
-  v_company := lower(COALESCE(normalize(p_company, NFC), ''));
-  v_company := replace(replace(replace(replace(v_company, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  -- 1. Normalize company: NFKC, sharp s -> ss, lowercase, edge characters, strip legal suffixes, collapse whitespace
+  v_company := lower(COALESCE(normalize(p_company, NFKC), ''));
+  v_company := replace(replace(replace(replace(replace(v_company, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
   v_company := regexp_replace(v_company, '\y(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\y\.?', ' ', 'gi');
   v_company := trim(regexp_replace(v_company, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
-  -- 2. Normalize title: NFC, lowercase, edge characters, collapse whitespace (preserves Unicode & punctuation)
-  v_title := lower(COALESCE(normalize(p_title, NFC), ''));
-  v_title := replace(replace(replace(replace(v_title, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  -- 2. Normalize title: NFKC, sharp s -> ss, lowercase, edge characters, collapse whitespace (preserves Unicode & punctuation)
+  v_title := lower(COALESCE(normalize(p_title, NFKC), ''));
+  v_title := replace(replace(replace(replace(replace(v_title, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
   v_title := trim(regexp_replace(v_title, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
-  -- 3. Normalize country: NFC, lowercase, edge characters, collapse whitespace
-  v_country := lower(COALESCE(normalize(p_country, NFC), ''));
-  v_country := replace(replace(replace(replace(v_country, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  -- 3. Normalize country: NFKC, sharp s -> ss, lowercase, edge characters, collapse whitespace
+  v_country := lower(COALESCE(normalize(p_country, NFKC), ''));
+  v_country := replace(replace(replace(replace(replace(v_country, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
   v_country := trim(regexp_replace(v_country, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 
-  -- 4. Normalize location: primary city/territory before comma, NFC, lowercase, edge characters, collapse whitespace
-  v_location := lower(COALESCE(normalize(p_location, NFC), ''));
-  v_location := replace(replace(replace(replace(v_location, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963));
+  -- 4. Normalize location: primary city/territory before comma, NFKC, sharp s -> ss, lowercase, edge characters, collapse whitespace
+  v_location := lower(COALESCE(normalize(p_location, NFKC), ''));
+  v_location := replace(replace(replace(replace(replace(v_location, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
   v_location := split_part(v_location, ',', 1);
   v_location := trim(regexp_replace(v_location, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
 

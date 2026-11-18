@@ -48,7 +48,7 @@ async function main() {
     { company: "Globex", title: "Designer", country_code: null },
   ];
   const feed = [
-    { company: "Acme, Inc", title: "Senior  Engineer", country_code: "IN", id: 1 }, // same role, punctuation/spacing differ
+    { company: "ACME Inc.", title: "Senior  Engineer ", country_code: "IN", id: 1 }, // same role, case/spacing/suffix differ
     { company: "Acme Inc", title: "Senior Engineer", country_code: "US", id: 2 },   // different country -> keep
     { company: "Globex", title: "Designer", country_code: undefined, id: 3 },        // 'any' vs 'any' -> drop
     { company: "Initech", title: "Analyst", country_code: "IN", id: 4 },             // no ATS row -> keep
@@ -59,7 +59,25 @@ async function main() {
   check("check ran", res.checked === true);
   check("query filters active + verified rows on jobs", calls.length === 1 && calls[0].table === "jobs" &&
     calls[0].eq.some(([c, v]) => c === "is_active" && v === true) && calls[0].eq.some(([c, v]) => c === "verified" && v === true));
-  check("role key shape matches in-run key", roleDedupeKey({ company: "Acme, Inc", title: "Senior  Engineer", country_code: null }) === "acme-inc::senior-engineer::any");
+  check("role key ignores case, spacing and legal suffix",
+    roleDedupeKey({ company: "ACME Inc.", title: " senior engineer", country_code: null }) ===
+      roleDedupeKey({ company: "Acme", title: "Senior  Engineer", country_code: null }));
+  check("non-Latin titles keep distinct keys (no shared empty slug)",
+    roleDedupeKey({ company: "टाटा", title: "सॉफ्टवेयर इंजीनियर", country_code: "IN" }) !==
+      roleDedupeKey({ company: "टाटा", title: "डेटा विश्लेषक", country_code: "IN" }));
+  check("empty or 1-char company/title is never deduped",
+    roleDedupeKey({ company: "Acme", title: "", country_code: "IN" }) === null &&
+      roleDedupeKey({ company: "Inc.", title: "Engineer", country_code: "IN" }) === null &&
+      roleDedupeKey({ company: "Acme", title: "😀", country_code: "IN" }) === null);
+  const hi = await dropFeedJobsAlreadyCoveredByAts(
+    fakeSupabase([{ company: "阿里巴巴", title: "软件工程师", country_code: "CN" }, { company: "Acme", title: "", country_code: "IN" }]).client,
+    [
+      { company: "阿里巴巴", title: "产品经理", country_code: "CN", id: 1 },   // different Chinese role -> keep
+      { company: "阿里巴巴", title: "软件工程师", country_code: "CN", id: 2 }, // same Chinese role -> drop
+      { company: "Acme", title: "", country_code: "IN", id: 3 },              // empty title -> never deduped
+    ]
+  );
+  check("non-Latin: only the identical role is dropped", hi.dropped === 1 && hi.kept.map((j) => j.id).join(",") === "1,3");
 
   const many = [];
   for (let i = 0; i < 120; i++) many.push({ company: `C${i}`, title: "T", country_code: "IN" });

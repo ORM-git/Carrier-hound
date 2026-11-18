@@ -2,7 +2,7 @@
 
 Contract:
 - Authoritative write identity: stable board/account source_id + provider source_job_id.
-- Similarity hashing (v2): Unicode-preserving, NFC normalized, length-framed UTF-8 payload,
+- Similarity hashing (v2): Unicode-preserving, NFKC normalized (sharp s folded to ss), length-framed UTF-8 payload,
   and SHA-256 digest, strictly advisory (no unique constraint or auto-expiry).
 - Tech skill keyword extraction via single-pass Aho-Corasick automaton.
 - 4-category company taxonomy and 5-category role taxonomy classifiers.
@@ -102,12 +102,12 @@ def build_scoped_job_identity(
 
 
 def clean_company(company: str | None) -> str:
-    """Normalizes company name: NFC, lowercased, edge chars mapped, legal suffixes stripped, whitespace collapsed."""
+    """Normalizes company name: NFKC, lowercased, edge chars mapped, legal suffixes stripped, whitespace collapsed."""
     if not company or not isinstance(company, str):
         return ""
-    c = unicodedata.normalize("NFC", company).lower()
+    c = unicodedata.normalize("NFKC", company).lower()
     c = c.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
-    c = c.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    c = c.replace("ς", "σ").replace("\u03c2", "\u03c3").replace("ß", "ss")
     c = c.replace("\u0085", " ")
     c = _COMPANY_SUFFIX_RE.sub(" ", c)
     c = _WHITESPACE_RE.sub(" ", c).strip()
@@ -115,36 +115,36 @@ def clean_company(company: str | None) -> str:
 
 
 def clean_title(title: str | None) -> str:
-    """Normalizes job title: NFC, lowercased, edge chars mapped, whitespace collapsed."""
+    """Normalizes job title: NFKC, lowercased, edge chars mapped, whitespace collapsed."""
     if not title or not isinstance(title, str):
         return ""
-    t = unicodedata.normalize("NFC", title).lower()
+    t = unicodedata.normalize("NFKC", title).lower()
     t = t.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
-    t = t.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    t = t.replace("ς", "σ").replace("\u03c2", "\u03c3").replace("ß", "ss")
     t = t.replace("\u0085", " ")
     t = _WHITESPACE_RE.sub(" ", t).strip()
     return t
 
 
 def clean_country(country: str | None) -> str:
-    """Normalizes country code: NFC, lowercased, edge chars mapped, whitespace collapsed."""
+    """Normalizes country code: NFKC, lowercased, edge chars mapped, whitespace collapsed."""
     if not country or not isinstance(country, str):
         return ""
-    co = unicodedata.normalize("NFC", country).lower()
+    co = unicodedata.normalize("NFKC", country).lower()
     co = co.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
-    co = co.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    co = co.replace("ς", "σ").replace("\u03c2", "\u03c3").replace("ß", "ss")
     co = co.replace("\u0085", " ")
     co = _WHITESPACE_RE.sub(" ", co).strip()
     return co
 
 
 def clean_location(location: str | None) -> str:
-    """Normalizes primary location/city segment before comma: NFC, lowercased, edge chars mapped, whitespace collapsed."""
+    """Normalizes primary location/city segment before comma: NFKC, lowercased, edge chars mapped, whitespace collapsed."""
     if not location or not isinstance(location, str):
         return ""
-    loc = unicodedata.normalize("NFC", location).lower()
+    loc = unicodedata.normalize("NFKC", location).lower()
     loc = loc.replace("İ", "i").replace("\u0130", "i").replace("i\u0307", "i")
-    loc = loc.replace("ς", "σ").replace("\u03c2", "\u03c3")
+    loc = loc.replace("ς", "σ").replace("\u03c2", "\u03c3").replace("ß", "ss")
     loc = loc.replace("\u0085", " ")
     loc = loc.split(",")[0]
     loc = _WHITESPACE_RE.sub(" ", loc).strip()

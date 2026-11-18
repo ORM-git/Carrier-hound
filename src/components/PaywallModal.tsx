@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { PLAN_PRICING, formatPriceINR } from "@/config/plans";
 
 interface PaywallModalProps {
   open: boolean;
@@ -130,9 +131,9 @@ export default function PaywallModal({
                       : "border-line hover:border-line-strong bg-surface"
                   }`}
                 >
-                  <div className="text-xs font-bold text-brand-900 mb-0.5">Weekly</div>
-                  <div className="text-sm font-black text-ink">₹692</div>
-                  <p className="text-[10px] text-ink-muted mt-0.5">7 days</p>
+                  <div className="text-xs font-bold text-brand-900 mb-0.5">{PLAN_PRICING.weekly.name}</div>
+                  <div className="text-sm font-black text-ink">{formatPriceINR(PLAN_PRICING.weekly.price_inr)}</div>
+                  <p className="text-[10px] text-ink-muted mt-0.5">{PLAN_PRICING.weekly.duration_days} days</p>
                 </div>
 
                 {/* Monthly Plan */}
@@ -144,9 +145,9 @@ export default function PaywallModal({
                       : "border-line hover:border-line-strong bg-surface"
                   }`}
                 >
-                  <div className="text-xs font-bold text-brand-900 mb-0.5">Monthly</div>
-                  <div className="text-sm font-black text-ink">₹1,499</div>
-                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">₹346/wk</p>
+                  <div className="text-xs font-bold text-brand-900 mb-0.5">{PLAN_PRICING.monthly.name}</div>
+                  <div className="text-sm font-black text-ink">{formatPriceINR(PLAN_PRICING.monthly.price_inr)}</div>
+                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">{PLAN_PRICING.monthly.duration_days} days</p>
                 </div>
 
                 {/* Quarterly Plan */}
@@ -158,9 +159,9 @@ export default function PaywallModal({
                       : "border-line hover:border-line-strong bg-surface"
                   }`}
                 >
-                  <div className="text-xs font-bold text-brand-900 mb-0.5">Quarterly</div>
-                  <div className="text-sm font-black text-ink">₹3,999</div>
-                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">₹308/wk</p>
+                  <div className="text-xs font-bold text-brand-900 mb-0.5">{PLAN_PRICING.quarterly.name}</div>
+                  <div className="text-sm font-black text-ink">{formatPriceINR(PLAN_PRICING.quarterly.price_inr)}</div>
+                  <p className="text-[10px] text-brand-600 font-semibold mt-0.5">{PLAN_PRICING.quarterly.duration_days} days</p>
                 </div>
               </div>
             </div>
