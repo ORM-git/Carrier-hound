@@ -7,6 +7,9 @@ import JobFunctionBottomSheet from "./JobFunctionBottomSheet";
 import CountryPickerModal from "./CountryPickerModal";
 import { JOB_TYPE_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 
+const HELP_BUTTON_CLASS =
+  "p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500";
+
 interface OnboardingStep1Props {
   roles: string[];
   onToggleRole: (role: string) => void;
@@ -49,6 +52,20 @@ export default function OnboardingStep1({
     employmentTypes.length > 0 &&
     Boolean(country && country.trim().length > 0) &&
     Boolean(workAuth && workAuth.trim().length > 0);
+
+  // Rendered twice (in-card on mobile, label row on desktop); the hidden copy is display:none so only one is focusable
+  const remoteHelpButton = (extraClass = "") => (
+    <button
+      type="button"
+      className={`${HELP_BUTTON_CLASS} ${extraClass}`}
+      onClick={() => setShowRemoteHelp(!showRemoteHelp)}
+      aria-label="Info about remote preference"
+      aria-expanded={showRemoteHelp}
+      aria-controls="remote-help"
+    >
+      <HelpCircle className="w-4 h-4" />
+    </button>
+  );
 
   return (
     <div className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
@@ -147,14 +164,14 @@ export default function OnboardingStep1({
                   key={jt.id}
                   type="button"
                   onClick={() => onToggleEmploymentType(jt.id)}
-                  className={`flex items-center gap-2.5 md:gap-3 p-3 md:p-3.5 rounded-2xl border text-left text-xs sm:text-sm font-semibold transition ${
+                  className={`flex items-center gap-3 p-3 md:p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
                     isChecked
                       ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-sm"
                       : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
                   }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
+                    className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors md:flex-shrink-0 ${
                       isChecked
                         ? "bg-emerald-600 border-emerald-600 text-white"
                         : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
@@ -170,7 +187,7 @@ export default function OnboardingStep1({
         </div>
 
         {/* 3 & 4. Location & Remote (Two-column layout on desktop) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
           {/* Location / Country */}
           <div>
             <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
@@ -180,7 +197,7 @@ export default function OnboardingStep1({
             <button
               type="button"
               onClick={() => setIsCountryPickerOpen(true)}
-              className="w-full h-[50px] md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
+              className="w-full md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
             >
               <div className="flex items-center gap-2.5 truncate">
                 <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
@@ -202,34 +219,30 @@ export default function OnboardingStep1({
 
           {/* Open to Remote */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            {/* Desktop: label row with help above the card */}
+            <div className="hidden md:flex items-center justify-between mb-2">
               <span className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
                 Remote Preference
               </span>
-              <div
-                className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowRemoteHelp(!showRemoteHelp);
-                }}
-                aria-label="Info about remote preference"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </div>
+              {remoteHelpButton()}
             </div>
 
-            <button
-              type="button"
-              onClick={onToggleOpenToRemote}
-              className={`w-full h-[50px] md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
+            {/* Card is a div so the help can be a sibling button (buttons can't nest); mobile looks as on main */}
+            <div
+              className={`w-full md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
                 openToRemote
                   ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100"
                   : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
               }`}
             >
-              <div className="flex items-center gap-3">
+              {/* Negative margin stretches the click target over the card padding */}
+              <button
+                type="button"
+                onClick={onToggleOpenToRemote}
+                className="flex-1 flex items-center gap-3 text-left -my-3.5 -ml-3.5 py-3.5 pl-3.5 md:-my-4 md:-ml-4 md:py-4 md:pl-4 rounded-l-2xl"
+              >
                 <div
-                  className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
+                  className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors md:flex-shrink-0 ${
                     openToRemote
                       ? "bg-emerald-600 border-emerald-600 text-white"
                       : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
@@ -238,11 +251,12 @@ export default function OnboardingStep1({
                   {openToRemote && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                 </div>
                 <span>Open to Remote</span>
-              </div>
-            </button>
+              </button>
+              {remoteHelpButton("md:hidden")}
+            </div>
 
             {showRemoteHelp && (
-              <p className="mt-1.5 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
+              <p id="remote-help" className="mt-1.5 px-3 md:px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
                 When checked, your recommended jobs will include remote roles alongside your preferred location.
               </p>
             )}
@@ -256,22 +270,25 @@ export default function OnboardingStep1({
               <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
               Work Authorization
             </label>
-            <div
-              className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full cursor-pointer"
+            <button
+              type="button"
+              className={HELP_BUTTON_CLASS}
               onClick={() => setShowWorkAuthHelp(!showWorkAuthHelp)}
               aria-label="Info about work authorization"
+              aria-expanded={showWorkAuthHelp}
+              aria-controls="work-auth-help"
             >
               <HelpCircle className="w-4 h-4" />
-            </div>
+            </button>
           </div>
 
           {showWorkAuthHelp && (
-            <p className="mb-2.5 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
+            <p id="work-auth-help" className="mb-2.5 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
               Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
             </p>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 md:gap-3">
+          <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
             {WORK_AUTH_OPTIONS.map((opt) => {
               const isSelected = workAuth === opt.label || workAuth === opt.id;
               return (
@@ -279,7 +296,7 @@ export default function OnboardingStep1({
                   key={opt.id}
                   type="button"
                   onClick={() => onSelectWorkAuth(opt.label)}
-                  className={`w-full h-full flex items-center gap-3 p-3.5 md:p-4 rounded-2xl border text-left text-xs sm:text-sm font-semibold transition ${
+                  className={`w-full md:h-full flex items-center gap-3 p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
                     isSelected
                       ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-sm"
                       : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
@@ -294,7 +311,7 @@ export default function OnboardingStep1({
                   >
                     {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
-                  <span>{opt.label}</span>
+                  <span className="text-xs sm:text-sm">{opt.label}</span>
                 </button>
               );
             })}

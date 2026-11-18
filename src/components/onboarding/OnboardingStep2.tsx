@@ -168,7 +168,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
             disabled={isSaving}
             onClick={onFinish}
             data-testid="btn-onboarding-finish"
-            className="px-6 sm:px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg transition disabled:opacity-50"
+            className="px-6 sm:px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md md:hover:shadow-lg transition disabled:opacity-50"
           >
             {isSaving ? "Saving..." : linkedinSaved || resumeName ? "Finish" : "Skip for now & Finish"}
           </button>
@@ -178,13 +178,13 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
   );
 
   const cardClass =
-    "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-7 shadow-sm md:shadow-md space-y-4 flex flex-col justify-between h-full";
+    "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-7 shadow-sm md:shadow-md space-y-4 md:flex md:flex-col md:justify-between md:h-full";
 
   if (!isFeatureEnabled) {
     return (
       <div className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
         {header}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 items-stretch">
+        <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
           {[
             { title: "LinkedIn profile", icon: <LinkedInIcon className="w-5 h-5 text-[#0077b5]" /> },
             { title: "Upload resume", icon: <FileText className="w-5 h-5 text-emerald-600" /> },
@@ -207,20 +207,20 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
     <div className="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
       {header}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 items-stretch">
+      <div className="space-y-5 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
         {/* CARD 1: LinkedIn URL (validated + normalized only; never scraped) */}
         <section data-testid="card-linkedin" aria-labelledby="linkedin-card-title" className={cardClass}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-[#0077b5]/10 flex items-center justify-center text-[#0077b5] flex-shrink-0">
               <LinkedInIcon className="w-5 h-5" />
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 id="linkedin-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
+            <div className="flex-1 md:min-w-0">
+              <h3 id="linkedin-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
                 LinkedIn profile URL
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">e.g. https://www.linkedin.com/in/yourname</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">e.g. https://www.linkedin.com/in/yourname</p>
             </div>
-            <div className="flex-shrink-0">
+            <div className="md:flex-shrink-0">
               {linkedinSaved ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                   <Check className="w-3 h-3" /> Saved
@@ -234,8 +234,8 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
           </div>
 
           {!linkedinSkipped && (
-            <form onSubmit={handleSaveLinkedIn} className="flex-1 flex flex-col justify-between space-y-3" noValidate>
-              <div className="space-y-2">
+            <form onSubmit={handleSaveLinkedIn} className="space-y-3 md:flex-1 md:flex md:flex-col md:justify-between" noValidate>
+              <div className="space-y-3 md:space-y-2">
                 <input
                   type="url"
                   inputMode="url"
@@ -264,12 +264,12 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
                   </p>
                 )}
               </div>
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end md:pt-2">
                 <button
                   type="submit"
                   disabled={linkedinSaving || !linkedinInput.trim() || linkedinSaved}
                   data-testid="btn-save-linkedin"
-                  className="px-5 md:px-6 py-2 md:py-2.5 rounded-full text-xs md:text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-50 inline-flex items-center gap-1.5 shadow-sm"
+                  className="px-5 md:px-6 py-2 md:py-2.5 rounded-full text-xs md:text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-50 inline-flex items-center gap-1.5 md:shadow-sm"
                 >
                   {linkedinSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {linkedinSaved ? "Saved" : linkedinSaving ? "Saving..." : "Save"}
@@ -285,13 +285,13 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 flex-shrink-0">
               <FileText className="w-5 h-5" />
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 id="resume-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate">
+            <div className="flex-1 md:min-w-0">
+              <h3 id="resume-card-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
                 Upload resume
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">PDF or DOCX, up to 5 MB. Stored privately.</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">PDF or DOCX, up to 5 MB. Stored privately.</p>
             </div>
-            <div className="flex-shrink-0">
+            <div className="md:flex-shrink-0">
               {resumeName ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                   <Check className="w-3 h-3" /> Saved
@@ -338,7 +338,7 @@ export default function OnboardingStep2({ onBack, onFinish, isSaving, authToken 
                   const f = e.dataTransfer.files?.[0];
                   if (f) void uploadResume(f);
                 }}
-                className={`w-full flex-1 border-2 border-dashed rounded-2xl p-6 md:p-8 text-center transition flex flex-col items-center justify-center min-h-[140px] md:min-h-[170px] ${
+                className={`w-full md:flex-1 border-2 border-dashed rounded-2xl p-6 md:p-8 text-center transition md:flex md:flex-col md:items-center md:justify-center md:min-h-[170px] ${
                   isDragging
                     ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
                     : "border-zinc-300 dark:border-zinc-700 hover:border-emerald-500/80 bg-zinc-50/50 dark:bg-zinc-800/40"
