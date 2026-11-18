@@ -156,7 +156,7 @@ export default function OnboardingStep1({
             <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
             Job Type
           </label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3">
             {JOB_TYPE_OPTIONS.map((jt) => {
               const isChecked = employmentTypes.includes(jt.id);
               return (
