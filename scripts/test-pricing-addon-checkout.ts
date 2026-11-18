@@ -1,16 +1,10 @@
 /**
  * scripts/test-pricing-addon-checkout.ts
  *
- * Verification suite for Add-on Pack "Buy" Buttons on /pricing:
+ * Verification suite for the Add-on Pack checkout backend (add-ons are no longer sold on /pricing):
  * 1. ADD_ON_PACKS Catalog Integrity in src/config/plans.ts:
  *    - All 3 add-on packs (addon_10, addon_30, addon_60) define exact codes, prices, and sets.
- * 2. Static & Markup Conformance:
- *    - Each add-on card renders an active "Buy" button with data-addon-code and min-h-[48px].
- *    - Plan upgrade buttons remain disabled Upgrade buttons with UPGRADE_BUTTON_LABEL.
- *    - Single unified in-flight guard across ALL add-on pack buttons (disabled={loadingAddon !== null}).
- *    - Re-entrancy guard in handleBuyAddon (if loadingAddon !== null return).
- *    - Dismiss, error, and success lifecycle handlers clear loadingAddon.
- *    - Amount is server-side authoritative only (client sends addonCode only).
+ * 2. /pricing renders no add-on purchase UI; checkout orchestrator keeps onDismiss / payment.failed handling.
  * 3. Functional Checkout & Auth Redirection:
  *    - Clicking Buy sends the exact addonCode to /api/billing/razorpay/order.
  * 4. Server-Side Pre-Charge Gating & Order Creation (Next.js route & Netlify function):
@@ -35,7 +29,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { ADD_ON_PACKS, formatPriceINR, UPGRADE_BUTTON_LABEL } from "../src/config/plans";
+import { ADD_ON_PACKS } from "../src/config/plans";
 import { resolveOrderPricing, ADDON_PACK_DEFINITIONS } from "../src/lib/billing/quota";
 import { openRazorpayCheckout } from "../src/lib/billing/razorpay";
 import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
@@ -212,82 +206,22 @@ async function runSuite() {
   // ---------------------------------------------------------------------------
   // 2. Pricing Page Source Code, Button Styling, and In-Flight Lifecycle Guards
   // ---------------------------------------------------------------------------
-  console.log("\n2. Verifying /pricing page source, button styling, and in-flight guards...");
-  await check("Pricing page renders Buy button on each add-on card with plan button styling", () => {
+  console.log("\n2. Verifying /pricing has no add-on UI and checkout lifecycle guards...");
+  await check("Pricing page no longer sells add-on packs (job-listing plans only)", () => {
     const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
 
-    // Must import handleProCheckout
-    assert.ok(
-      pricingSrc.includes("handleProCheckout"),
-      "Pricing page must import and use handleProCheckout"
-    );
-
-    // Buy button text and data attribute
-    assert.ok(
-      pricingSrc.includes("data-addon-code"),
-      "Pricing page must render data-addon-code on add-on Buy buttons"
-    );
-    assert.ok(
-      pricingSrc.includes(">Buy<") || pricingSrc.includes(">\n                      Buy\n"),
-      "Add-on cards must render 'Buy' buttons"
-    );
-
-    // Button styling matches plan buttons (w-full, min-h-[48px], h-11, rounded-lg, font-semibold, text-sm, bg-[#2563EB], text-white)
-    assert.ok(
-      pricingSrc.includes("min-h-[48px]"),
-      "Buy button must include min-h-[48px] for WCAG touch target conformity"
-    );
-    assert.ok(
-      pricingSrc.includes("bg-[#2563EB]"),
-      "Buy button must use #2563EB primary brand color"
-    );
-    assert.ok(
-      pricingSrc.includes("text-white"),
-      "Buy button must have text-white"
-    );
-
-    // Plan Upgrade buttons remain disabled
-    assert.ok(
-      pricingSrc.includes("disabled"),
-      "Plan Upgrade buttons must remain disabled"
-    );
-    assert.ok(
-      pricingSrc.includes("UPGRADE_BUTTON_LABEL"),
-      "Pricing page must retain UPGRADE_BUTTON_LABEL"
-    );
-  });
-
-  await check("Pricing page and checkout orchestrator enforce single in-flight guard across all pack buttons", () => {
-    const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
-    const checkoutSrc = fs.readFileSync(path.resolve("src/lib/billing/checkout.ts"), "utf8");
-    const razorpaySrc = fs.readFileSync(path.resolve("src/lib/billing/razorpay.ts"), "utf8");
-
-    // Unified in-flight guard on pricing page
-    assert.ok(
-      pricingSrc.includes("disabled={loadingAddon !== null}") ||
-      pricingSrc.includes("disabled={isCheckoutLocked"),
-      "All add-on pack buttons must be disabled when any checkout is in flight"
-    );
-    assert.ok(
-      (pricingSrc.includes("checkoutLockRef.current") || pricingSrc.includes("addonCheckoutLockRef.current")) &&
-      (pricingSrc.includes("loadingCheckout !== null") || pricingSrc.includes("loadingAddon !== null")),
-      "handleBuyAddon must guard synchronously with lock and loading state"
-    );
-    assert.ok(
-      (pricingSrc.includes("onDismiss") || pricingSrc.includes("finally")) &&
-      (pricingSrc.includes("setLoadingAddon(null)") || pricingSrc.includes("resetLock()")),
-      "handleBuyAddon must forward lifecycle callbacks or finally to clear loading state"
-    );
-
-    // Amount remains server-side only: client passes only addonCode
-    assert.ok(
-      pricingSrc.includes("handleSelectPlan(addonCode") && pricingSrc.includes("handleProCheckout"),
-      "Pricing page passes addonCode through handleSelectPlan to handleProCheckout"
-    );
+    assert.ok(!pricingSrc.includes("data-addon-code"), "Pricing page must not render add-on Buy buttons");
+    assert.ok(!pricingSrc.includes("ADD_ON_PACKS"), "Pricing page must not import ADD_ON_PACKS");
+    assert.ok(!pricingSrc.includes("addonCode"), "Pricing page must not pass addonCode to checkout");
     assert.ok(
       !pricingSrc.includes("amount: pack.price") && !pricingSrc.includes("amount_paise"),
       "Pricing page must NOT send client-specified amount to order creation"
     );
+  });
+
+  await check("Checkout orchestrator and Razorpay wrapper keep lifecycle callbacks for add-on orders", () => {
+    const checkoutSrc = fs.readFileSync(path.resolve("src/lib/billing/checkout.ts"), "utf8");
+    const razorpaySrc = fs.readFileSync(path.resolve("src/lib/billing/razorpay.ts"), "utf8");
 
     // Checkout orchestrator forwards onDismiss to openRazorpayCheckout
     assert.ok(

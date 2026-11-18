@@ -37,7 +37,7 @@ async function runQuotaConsumeRazorpaySuite() {
     assert.strictEqual(
       resolveOrderPricing({ planCode: "weekly" })?.amount_paise,
       999999,
-      "Negative control expected mismatch: weekly price is 69200 paise, not 999999!"
+      "Negative control expected mismatch: weekly price is 39900 paise, not 999999!"
     );
     return;
   }
@@ -138,19 +138,19 @@ async function runQuotaConsumeRazorpaySuite() {
   // ---------------------------------------------------------------------------
   console.log("\nTest 4: Verifying server-authoritative Razorpay price resolution...");
 
-  // Plans: weekly (Rs 692), monthly (Rs 1,499), quarterly (Rs 3,999)
+  // Plans: weekly (Rs 399), monthly (Rs 499), quarterly (Rs 2,199)
   const weeklyPricing = resolveOrderPricing({ planCode: "weekly" });
-  assert.strictEqual(weeklyPricing?.amount_paise, 69200);
+  assert.strictEqual(weeklyPricing?.amount_paise, 39900);
   assert.strictEqual(weeklyPricing?.type, "plan");
   assert.strictEqual(weeklyPricing?.duration_days, 7);
 
   const monthlyPricing = resolveOrderPricing({ planCode: "monthly" });
-  assert.strictEqual(monthlyPricing?.amount_paise, 149900);
+  assert.strictEqual(monthlyPricing?.amount_paise, 49900);
   assert.strictEqual(monthlyPricing?.type, "plan");
   assert.strictEqual(monthlyPricing?.duration_days, 30);
 
   const quarterlyPricing = resolveOrderPricing({ planCode: "quarterly" });
-  assert.strictEqual(quarterlyPricing?.amount_paise, 399900);
+  assert.strictEqual(quarterlyPricing?.amount_paise, 219900);
   assert.strictEqual(quarterlyPricing?.type, "plan");
   assert.strictEqual(quarterlyPricing?.duration_days, 90);
 

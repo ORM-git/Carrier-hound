@@ -1,5 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
-import { resolveOrderPricing } from "../../src/lib/billing/quota";
+import {
+  resolveOrderPricing,
+  normalizePlanCode,
+} from "../../src/lib/billing/quota";
 import { getServerEntitlement } from "../../src/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
@@ -399,7 +402,7 @@ export function createHandler(deps: BillingOrderDeps = {}) {
       const orderData: any = await rzpRes.json();
 
       // Record in payment_orders table with status 'created' and resolved server mode
-      const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
+      const insertResult = supabaseAdmin.from("payment_orders").insert({
         user_id: user.id,
         provider: "razorpay",
         provider_order_id: orderData.id,
@@ -410,6 +413,18 @@ export function createHandler(deps: BillingOrderDeps = {}) {
         status: "created",
         mode: resolvedMode,
       });
+
+      let orderRow: any = null;
+      let insertErr: any = null;
+
+      if (insertResult && typeof insertResult.select === "function") {
+        const { data, error } = await insertResult.select("id").single();
+        orderRow = data;
+        insertErr = error;
+      } else {
+        const res = await insertResult;
+        insertErr = res?.error;
+      }
 
       if (insertErr) {
         safeLog.error("[Netlify /billing-razorpay-order] payment_orders insert failed:", insertErr);

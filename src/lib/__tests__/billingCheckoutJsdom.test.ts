@@ -136,7 +136,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_fallback_1",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
             keyId: "rzp_test_fallback_from_server_env",
           }),
@@ -223,7 +223,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_123",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -292,7 +292,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_dismiss_test",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -322,7 +322,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
         new Response(
           JSON.stringify({
             orderId: "order_fail_test",
-            amount: 149900,
+            amount: 49900,
             currency: "INR",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -373,7 +373,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
           return new Response(
             JSON.stringify({
               orderId: "order_verify_test_1",
-              amount: 149900,
+              amount: 49900,
               currency: "INR",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
@@ -418,7 +418,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/order")) {
           return new Response(
-            JSON.stringify({ orderId: "order_123", amount: 149900, currency: "INR" }),
+            JSON.stringify({ orderId: "order_123", amount: 49900, currency: "INR" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -461,7 +461,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/order")) {
           return new Response(
-            JSON.stringify({ orderId: "order_123", amount: 149900, currency: "INR" }),
+            JSON.stringify({ orderId: "order_123", amount: 49900, currency: "INR" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -500,7 +500,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
     it("handles exception thrown by rzp.open()", async () => {
       const mockFetch = vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({ orderId: "order_open_throw", amount: 149900, currency: "INR" }),
+          JSON.stringify({ orderId: "order_open_throw", amount: 49900, currency: "INR" }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
       );
@@ -524,185 +524,19 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
     });
   });
 
-  describe("openGatewaySubscription (Auto-Renew Mode)", () => {
-    it("fails closed when NEXT_PUBLIC_BILLING_ENABLED is false", async () => {
-      process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+  describe("openGatewaySubscription (recurring path disabled)", () => {
+    it("fails closed without loading the SDK or calling fetch, even with AUTORENEW and BILLING on", async () => {
+      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+      const fetchSpy = vi.fn();
+      vi.stubGlobal("fetch", fetchSpy);
       const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
+      await openGatewaySubscription({ planCode: "monthly", authToken: "tok", onError });
       expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: expect.stringContaining("Auto-renew subscriptions are currently disabled"),
-        })
+        expect.objectContaining({ message: expect.stringContaining("Recurring subscriptions are disabled") })
       );
-    });
-
-    it("fails closed when keyId is missing", async () => {
-      delete process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-      delete process.env.RAZORPAY_KEY_ID;
-      const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: expect.stringContaining("Razorpay is not configured"),
-        })
-      );
-    });
-
-    it("fails closed when user is unauthenticated", async () => {
-      (globalThis as any).__mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: null },
-      });
-
-      const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: expect.stringContaining("Please sign in to proceed"),
-        })
-      );
-    });
-
-    it("handles subscription creation API error (!res.ok)", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ error: "Active subscription already exists for this account" }),
-          { status: 409, headers: { "Content-Type": "application/json" } }
-        )
-      );
-      vi.stubGlobal("fetch", mockFetch);
-
-      const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "Active subscription already exists for this account",
-        })
-      );
-    });
-
-    it("handles subscription creation network exception", async () => {
-      const mockFetch = vi.fn().mockRejectedValue(new Error("DNS lookup failure"));
-      vi.stubGlobal("fetch", mockFetch);
-
-      const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "DNS lookup failure",
-        })
-      );
-    });
-
-    it("handles Razorpay script load failure in subscription mode", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ subscriptionId: "sub_rzp_mock_123" }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
-      );
-      vi.stubGlobal("fetch", mockFetch);
-
-      vi.spyOn(document.body, "appendChild").mockImplementation((node: any) => {
-        if (node.tagName === "SCRIPT") {
-          setTimeout(() => node.onerror?.(new Event("error")), 5);
-        }
-        return node;
-      });
-
-      const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "Failed to load Razorpay payment gateway",
-        })
-      );
-    });
-
-    it("opens Razorpay in subscription mode with callbacks and handlers", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ subscriptionId: "sub_rzp_created_888" }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
-      );
-      vi.stubGlobal("fetch", mockFetch);
-
-      let capturedOptions: any = null;
-      let failedListener: any = null;
-      (window as any).Razorpay = class MockRazorpay {
-        constructor(opts: any) {
-          capturedOptions = opts;
-        }
-        on(event: string, cb: any) {
-          if (event === "payment.failed") failedListener = cb;
-        }
-        open() {}
-      };
-
-      const onSuccess = vi.fn();
-      const onDismiss = vi.fn();
-      const onError = vi.fn();
-
-      await openGatewaySubscription({
-        planCode: "quarterly",
-        userName: "Quart Member",
-        userEmail: "quart@test.com",
-        onSuccess,
-        onDismiss,
-        onError,
-      });
-
-      expect(capturedOptions.subscription_id).toBe("sub_rzp_created_888");
-      expect(capturedOptions.description).toBe("CareerMonke Pro Auto-Renew");
-      expect(capturedOptions.prefill.name).toBe("Quart Member");
-
-      // Test dismiss
-      capturedOptions.modal.ondismiss();
-      expect(onDismiss).toHaveBeenCalledTimes(1);
-
-      // Test payment failed
-      failedListener?.({ error: { description: "Insufficient mandate limit" } });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "Insufficient mandate limit",
-        })
-      );
-
-      // Test payment success handler
-      capturedOptions.handler({
-        razorpay_subscription_id: "sub_rzp_created_888",
-        razorpay_payment_id: "pay_mandate_001",
-      });
-      expect(onSuccess).toHaveBeenCalledWith({
-        subscriptionId: "sub_rzp_created_888",
-        paymentId: "pay_mandate_001",
-      });
-    });
-
-    it("handles rzp.open() throwing in subscription mode", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ subscriptionId: "sub_throw_123" }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
-      );
-      vi.stubGlobal("fetch", mockFetch);
-
-      (window as any).Razorpay = class MockRazorpay {
-        constructor(public opts: any) {}
-        on() {}
-        open() {
-          throw new Error("Subscription window failed to initialize");
-        }
-      };
-
-      const onError = vi.fn();
-      await openGatewaySubscription({ planCode: "monthly", onError });
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "Subscription window failed to initialize",
-        })
-      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
     });
   });
 
@@ -735,7 +569,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes("/order")) {
           return new Response(
-            JSON.stringify({ orderId: "order_orch_1", amount: 149900, currency: "INR" }),
+            JSON.stringify({ orderId: "order_orch_1", amount: 49900, currency: "INR" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -829,105 +663,19 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
     });
   });
 
-  describe("openCheckoutSubscription (Orchestrator in checkout.ts)", () => {
-    it("fails closed when NEXT_PUBLIC_AUTORENEW_ENABLED is false", async () => {
-      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
+  describe("openCheckoutSubscription (recurring path disabled)", () => {
+    it("fails closed without redirecting or starting checkout, even with AUTORENEW and BILLING on", async () => {
+      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+      const getSession = vi.fn();
+      (globalThis as any).__mockSupabaseClient = { auth: { getSession, getUser: vi.fn() } };
       const onError = vi.fn();
-      await openCheckoutSubscription({ onError });
-      expect(onError).toHaveBeenCalledWith("Auto-renew subscriptions are currently disabled.");
-    });
-
-    it("fails closed when NEXT_PUBLIC_BILLING_ENABLED is false", async () => {
-      process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
-      const onError = vi.fn();
-      await openCheckoutSubscription({ onError });
-      expect(onError).toHaveBeenCalledWith("Auto-renew subscriptions are currently disabled.");
-    });
-
-    it("redirects unauthenticated visitor to /login?next=... (default target)", async () => {
-      (globalThis as any).__mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: null },
-      });
-      (globalThis as any).__mockSupabaseClient.auth.getUser.mockResolvedValue({
-        data: { user: null },
-      });
-
-      await openCheckoutSubscription();
-      expect(window.location.href).toBe(`/login?next=${encodeURIComponent("/pricing")}`);
-    });
-
-    it("redirects unauthenticated visitor to /login?next=... (custom redirectTarget)", async () => {
-      (globalThis as any).__mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: null },
-      });
-      (globalThis as any).__mockSupabaseClient.auth.getUser.mockResolvedValue({
-        data: { user: null },
-      });
-
-      await openCheckoutSubscription({ redirectTarget: "/settings/subscription" });
-      expect(window.location.href).toBe(`/login?next=${encodeURIComponent("/settings/subscription")}`);
-    });
-
-    it("orchestrates auto-renew subscription checkout for signed-in user", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ subscriptionId: "sub_orch_sub_777" }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
-      );
-      vi.stubGlobal("fetch", mockFetch);
-
-      let capturedOptions: any = null;
-      (window as any).Razorpay = class MockRazorpay {
-        constructor(opts: any) {
-          capturedOptions = opts;
-        }
-        on() {}
-        open() {}
-      };
-
       const onStart = vi.fn();
-      const onSuccess = vi.fn();
-      const onError = vi.fn();
-      const onDismiss = vi.fn();
-
-      await openCheckoutSubscription({
-        planCode: "quarterly",
-        redirectTarget: "/dashboard?checkout=complete",
-        onStart,
-        onSuccess,
-        onError,
-        onDismiss,
-      });
-
-      expect(onStart).toHaveBeenCalledTimes(1);
-
-      // Trigger dismiss
-      capturedOptions.modal.ondismiss();
-      expect(onDismiss).toHaveBeenCalledTimes(1);
-
-      // Trigger success handler
-      capturedOptions.handler({
-        razorpay_subscription_id: "sub_orch_sub_777",
-        razorpay_payment_id: "pay_mandate_xyz",
-      });
-
-      expect(onSuccess).toHaveBeenCalledTimes(1);
-      expect(window.location.href).toBe("/dashboard?checkout=complete");
-    });
-
-    it("wires onError callback when subscription creation fails", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ error: "Mandate creation rejected by gateway" }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
-        )
-      );
-      vi.stubGlobal("fetch", mockFetch);
-
-      const onError = vi.fn();
-      await openCheckoutSubscription({ onError });
-      expect(onError).toHaveBeenCalledWith("Mandate creation rejected by gateway");
+      await openCheckoutSubscription({ planCode: "monthly", onError, onStart });
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining("Recurring subscriptions are disabled"));
+      expect(onStart).not.toHaveBeenCalled();
+      expect(getSession).not.toHaveBeenCalled();
+      expect(mockLocation.href).toBe("http://localhost:3000/pricing");
     });
   });
 });

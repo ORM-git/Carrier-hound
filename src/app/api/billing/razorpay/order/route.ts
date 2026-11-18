@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveOrderPricing } from "@/lib/billing/quota";
+import {
+  resolveOrderPricing,
+  normalizePlanCode,
+} from "@/lib/billing/quota";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
@@ -175,6 +178,8 @@ async function checkAddonEligibility(
   return false;
 }
 
+
+
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
@@ -295,6 +300,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+
     // Resolve server-authoritative price from plans/addon_packs catalog, ignoring any client amount
     const pricing = resolveOrderPricing({
       planCode: body.planCode,
@@ -371,7 +377,7 @@ export async function POST(req: Request) {
     const orderData = await rzpRes.json();
 
     // Record order in payment_orders table with status 'created' and resolved server mode
-    const { error: insertErr } = await supabaseAdmin.from("payment_orders").insert({
+    const insertResult = supabaseAdmin.from("payment_orders").insert({
       user_id: user.id,
       provider: "razorpay",
       provider_order_id: orderData.id,
@@ -382,6 +388,18 @@ export async function POST(req: Request) {
       status: "created",
       mode: resolvedMode,
     });
+
+    let orderRow: any = null;
+    let insertErr: any = null;
+
+    if (insertResult && typeof insertResult.select === "function") {
+      const { data, error } = await insertResult.select("id").single();
+      orderRow = data;
+      insertErr = error;
+    } else {
+      const res = await insertResult;
+      insertErr = res?.error;
+    }
 
     if (insertErr) {
       log.error("Critical: payment_orders insert failed; failing closed", {

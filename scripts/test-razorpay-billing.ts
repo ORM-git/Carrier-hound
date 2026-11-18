@@ -3,7 +3,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { PLAN_DEFINITIONS } from "../src/lib/billing/quota";
-import { PLANS, UPGRADE_BUTTON_LABEL } from "../src/config/plans";
+import { PLANS } from "../src/config/plans";
 import { openRazorpayCheckout } from "../src/lib/billing/razorpay";
 
 console.log("==================================================================================");
@@ -58,39 +58,38 @@ async function runSuite() {
 
     // Visible header
     assert(
-      content.includes("Get more interviews with CareerMonke Premium"),
-      "Pricing page must render visible title 'Get more interviews with CareerMonke Premium'"
+      content.includes("Plans and pricing"),
+      "Pricing page must render visible title 'Plans and pricing'"
     );
 
-    // Disabled Upgrade button with aria-disabled and UPGRADE_BUTTON_LABEL
+    // Disabled Upgrade button with aria-disabled and a payments-unavailable note
     assert(content.includes("disabled"), "Upgrade button must have disabled attribute");
     assert(content.includes('aria-disabled="true"'), "Upgrade button must have aria-disabled='true'");
     assert(content.includes("Upgrade"), "Upgrade button label must be 'Upgrade'");
-    assert(content.includes("UPGRADE_BUTTON_LABEL"), "Upgrade button must render UPGRADE_BUTTON_LABEL");
+    assert(content.includes("Payments are currently unavailable."), "Disabled state must explain payments are unavailable");
 
-    // Visible prices and billing intervals
-    assert(content.includes("₹0.00"), "Free plan must render ₹0.00");
-    assert(content.includes("Your current plan"), "Free plan badge must render 'Your current plan'");
-    assert(content.includes("All features included in Premium"), "Table header must be present");
+    // Job-listing only: no free strip, comparison table, add-ons or coming-soon copy
+    assert(!content.includes("All features included in Premium"), "Comparison table must be removed");
+    assert(!content.includes("Add-on Packs"), "Add-on packs must be removed");
+    assert(!/coming soon|opening soon|open soon/i.test(content), "No 'coming soon' wording on /pricing");
 
     // CI compatibility sr-only block must be removed
     assert(!content.includes("Hidden CI compatibility text"), "Hidden CI compatibility block must be removed");
   });
 
-  // 2. Plan and pricing data consistency (Weekly ₹692, Monthly ₹1,499, Quarterly ₹3,999)
+  // 2. Plan and pricing data consistency (Weekly ₹399, Monthly ₹499, Quarterly ₹2,199)
   check("Plan definitions in quota.ts and config/plans.ts match approved prices", () => {
-    assert.strictEqual(PLAN_DEFINITIONS.weekly.price_paise, 69200, "Weekly plan must be 69200 paise (₹692)");
-    assert.strictEqual(PLAN_DEFINITIONS.monthly.price_paise, 149900, "Monthly plan must be 149900 paise (₹1,499)");
-    assert.strictEqual(PLAN_DEFINITIONS.quarterly.price_paise, 399900, "Quarterly plan must be 399900 paise (₹3,999)");
+    assert.strictEqual(PLAN_DEFINITIONS.weekly.price_paise, 39900, "Weekly plan must be 39900 paise (₹399)");
+    assert.strictEqual(PLAN_DEFINITIONS.monthly.price_paise, 49900, "Monthly plan must be 49900 paise (₹499)");
+    assert.strictEqual(PLAN_DEFINITIONS.quarterly.price_paise, 219900, "Quarterly plan must be 219900 paise (₹2,199)");
 
     const weekly = PLANS.find((p) => p.id === "weekly");
     const monthly = PLANS.find((p) => p.id === "monthly");
     const quarterly = PLANS.find((p) => p.id === "quarterly");
 
-    assert.strictEqual(weekly?.price, 692, "Config weekly price must be 692");
-    assert.strictEqual(monthly?.price, 1499, "Config monthly price must be 1,499");
-    assert.strictEqual(quarterly?.price, 3999, "Config quarterly price must be 3,999");
-    assert.strictEqual(UPGRADE_BUTTON_LABEL, "Payments opening soon", "UPGRADE_BUTTON_LABEL must match");
+    assert.strictEqual(weekly?.price, 399, "Config weekly price must be 399");
+    assert.strictEqual(monthly?.price, 499, "Config monthly price must be 499");
+    assert.strictEqual(quarterly?.price, 2199, "Config quarterly price must be 2,199");
   });
 
   // 3. HMAC-SHA256 Signature verification math

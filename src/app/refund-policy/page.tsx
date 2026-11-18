@@ -3,6 +3,7 @@ import Link from "next/link";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
+import { PREPAID_PRICE_SUMMARY } from "@/config/plans";
 
 export const metadata = {
   title: "Cancellation & Refund Policy | CareerMonke",
@@ -13,8 +14,6 @@ export const metadata = {
 };
 
 export default function RefundPolicyPage() {
-  const isAutorenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
-
   return (
     <div className="min-h-screen bg-white text-[#09090B] flex flex-col font-sans">
       <GuideHeader />
@@ -27,44 +26,20 @@ export default function RefundPolicyPage() {
         <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
 
         <p className="mb-2">
-          {isAutorenewEnabled ? (
-            <>
-              CareerMonke is operated by Olive Ridley Media Private Limited. Plans auto-renew every 7/30/90 days until cancelled (renews every 7/30/90 days from purchase), alongside add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
-            </>
-          ) : (
-            <>
-              CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
-            </>
-          )}
+          CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">
-          {isAutorenewEnabled ? "1. Subscription Renewal & Cancellation" : "1. Prepaid Plans, No Auto-Renewal"}
+          1. Prepaid Plans, No Auto-Renewal
         </h2>
         <p className="mb-2">
-          {isAutorenewEnabled ? (
-            <>
-              CareerMonke plans auto-renew every 7/30/90 days until cancelled. Renewal amount: Weekly ₹692 (every 7 days), Monthly ₹1,499 (every 30 days), Quarterly ₹3,999 (every 90 days), automatically billed on the scheduled renewal date at the end of each billing cycle. You can cancel auto-renewal at any time through your account settings before the scheduled renewal date. Once cancelled, no further recurring charges are made and you retain access until the end of the current period.
-            </>
-          ) : (
-            <>
-              Every CareerMonke plan (Weekly, Monthly, Quarterly) and every add-on pack is prepaid for a fixed duration. There are no recurring charges and no automatic renewals: your plan expires at the end of its paid period unless you choose to purchase again. Because nothing renews automatically, there is no recurring billing to cancel.
-            </>
-          )}
+          Every CareerMonke plan (Weekly, Monthly, Quarterly) and every add-on pack is prepaid for a fixed duration. Plan prices are one-time, flat amounts: {PREPAID_PRICE_SUMMARY}. There are no recurring charges and no automatic renewals: your plan expires at the end of its paid period unless you choose to purchase again. Because nothing renews automatically, there is no recurring billing to cancel.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">2. Cancellation and Access After Cancellation</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            {isAutorenewEnabled ? (
-              <>
-                To cancel an auto-renewing subscription, navigate to your account settings and select cancel subscription before your upcoming renewal date. If you cancel before your paid period ends, you keep full premium access until the end of the current billing cycle, and no further payment is taken on the renewal date.
-              </>
-            ) : (
-              <>
-                If you decide to stop using CareerMonke before your paid period ends, you keep full premium access until the end of the period you already paid for. No further payment is ever taken.
-              </>
-            )}
+            If you decide to stop using CareerMonke before your paid period ends, you keep full premium access until the end of the period you already paid for. No further payment is ever taken.
           </li>
           <li>
             When a plan period ends, premium features and remaining plan quotas expire automatically. Your account, profile, resumes, and saved jobs stay available on the free tier.

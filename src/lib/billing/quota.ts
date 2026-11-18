@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "./serverEntitlement";
+import { PLAN_PRICING, getPlanPricePaise } from "@/config/plans";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -24,8 +25,8 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   weekly: {
     code: "weekly",
     name: "Weekly",
-    duration_days: 7,
-    price_paise: 69200,
+    duration_days: PLAN_PRICING.weekly.duration_days,
+    price_paise: PLAN_PRICING.weekly.price_paise,
     resume_quota: 15,
     cover_letter_quota: 15,
     quota_period_days: 7,
@@ -36,8 +37,8 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   monthly: {
     code: "monthly",
     name: "Monthly",
-    duration_days: 30,
-    price_paise: 149900,
+    duration_days: PLAN_PRICING.monthly.duration_days,
+    price_paise: PLAN_PRICING.monthly.price_paise,
     resume_quota: 60,
     cover_letter_quota: 60,
     quota_period_days: 30,
@@ -48,8 +49,8 @@ export const PLAN_DEFINITIONS: Record<PlanCode, PlanDefinition> = {
   quarterly: {
     code: "quarterly",
     name: "Quarterly",
-    duration_days: 90,
-    price_paise: 399900,
+    duration_days: PLAN_PRICING.quarterly.duration_days,
+    price_paise: PLAN_PRICING.quarterly.price_paise,
     resume_quota: 60,
     cover_letter_quota: 60,
     quota_period_days: 30,
@@ -107,7 +108,7 @@ export interface ResolvedOrderPricing {
 
 /**
  * Central plan normalization shared across order pricing and subscription derivation.
- * Ensures "3_month" maps to "quarterly" (3999), not monthly.
+ * Ensures "3_month" maps to "quarterly" (2199), not monthly.
  */
 export function normalizePlanCode(raw?: string | null): PlanCode | null {
   if (!raw || typeof raw !== "string") return null;
@@ -173,6 +174,7 @@ export function resolveOrderPricing(input: {
 
     const plan = PLAN_DEFINITIONS[code];
     if (!plan) return null;
+
     return {
       type: "plan",
       code: plan.code,
@@ -456,3 +458,5 @@ export async function getPlanQuota(
     return FREE_QUOTA_DEFAULT;
   }
 }
+
+
