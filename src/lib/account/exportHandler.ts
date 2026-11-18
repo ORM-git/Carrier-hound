@@ -18,10 +18,12 @@ export interface AccountExportRouteDeps {
   getSupabaseAdmin?: () => any;
 }
 
-/** Tables exported by auth user id (same ownership map as account deletion). */
+/** Tables exported by auth user id (same ownership map as account deletion, plus onboarding resume store). */
 export const ACCOUNT_EXPORT_USER_ID_TABLES = [
   ...ACCOUNT_DELETE_USER_ID_TABLES,
   "subscriptions",
+  "onboarding_resume_uploads",
+  "onboarding_resume_profiles",
 ] as const;
 
 /** Tables matched by the account email (early-access link). */

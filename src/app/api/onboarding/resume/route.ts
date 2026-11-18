@@ -12,6 +12,7 @@ import {
   sanitizeResumeFileName,
   validateResumeFile,
 } from "@/lib/onboarding/step2Resume";
+import { parseOnboardingResume, saveResumeProfile, summarizeOutcome } from "@/lib/onboarding/resumeParse";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { createLogger } from "@/lib/observability/logger";
@@ -77,8 +78,10 @@ async function pointerReferences(supabaseAdmin: any, userId: string, path: strin
 }
 
 /**
- * Stores an onboarding resume (PDF/DOCX, <= 5 MB) privately under <uid>/onboarding/.
- * Store only: no parsing or text extraction happens here.
+ * Stores an onboarding resume (PDF/DOCX, <= 5 MB, incl. LinkedIn "Save to PDF" exports)
+ * privately under <uid>/onboarding/, then extracts its text server-side and saves a parsed
+ * profile for ranking (src/lib/onboarding/resumeParse.ts). Parsing happens only after the
+ * upload is committed and can never turn a saved upload into an error.
  */
 export async function POST(req: Request) {
   let cfEnv: Record<string, any> | undefined;
@@ -247,7 +250,24 @@ export async function POST(req: Request) {
     if (waitUntil) waitUntil(sweep);
     else await sweep;
 
-    return json({ ok: true, fileName, sizeBytes: bytes.byteLength, kind });
+    // Post-commit parse and profile save: parser CPU/memory is hard-bounded per document,
+    // AI has an internal timeout, and saveResumeProfile bounds the RPC with a timeout so
+    // a slow or hanging database/parse can never delay the upload response.
+    let parse: ReturnType<typeof summarizeOutcome> = { status: "unavailable" };
+    try {
+      const outcome = await parseOnboardingResume(bytes, kind, {
+        clientIp: getClientIpFromRequest(req),
+        authHeader,
+        env: cfEnv,
+        supabaseAdmin,
+      });
+      const saved = await saveResumeProfile(supabaseAdmin, user.id, storagePath, outcome);
+      parse = summarizeOutcome(outcome, saved);
+    } catch (err: any) {
+      log.warn("Resume parse step threw after a committed upload", { userId, error: err?.message });
+    }
+
+    return json({ ok: true, fileName, sizeBytes: bytes.byteLength, kind, parse });
   } catch (err: any) {
     log.error("Unhandled error in resume upload", { userId, error: err?.message || String(err) });
     return json({ error: SAVE_FAILED }, 500);
