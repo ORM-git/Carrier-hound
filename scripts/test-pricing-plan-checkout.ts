@@ -7,7 +7,7 @@
  * 2. Static & Markup Conformance in src/app/pricing/page.tsx:
  *    - Uses NEXT_PUBLIC_BILLING_ENABLED gate.
  *    - When enabled, renders active Buy button with data-plan-code={plan.id} and Buy ${plan.name}.
- *    - When disabled, keeps today's disabled button with UPGRADE_BUTTON_LABEL ("Payments opening soon").
+ *    - When disabled, keeps the disabled Upgrade button with a "Payments are currently unavailable." note.
  *    - Single synchronous purchase lock (checkoutLockRef) shared across all plan & add-on checkouts.
  *    - Lock acquired synchronously before any auth await and released in finally.
  *    - Header "Payments will open soon." is flag-aware (omitted when flag is ON).
@@ -27,7 +27,7 @@
 import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
-import { PLANS, UPGRADE_BUTTON_LABEL } from "../src/config/plans";
+import { PLANS } from "../src/config/plans";
 import { resolveOrderPricing } from "../src/lib/billing/quota";
 import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
 import { createHandler as createNetlifyOrderHandler } from "../netlify/functions/billing-razorpay-order";

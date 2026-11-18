@@ -29,7 +29,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { ADD_ON_PACKS, formatPriceINR } from "../src/config/plans";
+import { ADD_ON_PACKS } from "../src/config/plans";
 import { resolveOrderPricing, ADDON_PACK_DEFINITIONS } from "../src/lib/billing/quota";
 import { openRazorpayCheckout } from "../src/lib/billing/razorpay";
 import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
