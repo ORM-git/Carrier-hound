@@ -20,6 +20,8 @@ function check(cond: boolean, label: string): void {
 // inside a role="status" container.
 const LOADING_STATES: Array<{ file: string; marker: RegExp; note: string }> = [
   { file: "src/app/jobs/loading.tsx", marker: /animate-pulse/, note: "jobs route skeleton" },
+  { file: "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx", marker: /animate-spin/, note: "skill what-if auth gate" },
+  { file: "src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx", marker: /animate-spin/, note: "interview pack auth gate" },
   { file: "src/app/job-search/all/page.tsx", marker: /animate-spin/, note: "canonical redirect spinner" },
   { file: "src/app/onboarding/page.tsx", marker: /animate-spin/, note: "onboarding auth gate" },
   { file: "src/app/auth/callback/page.tsx", marker: /animate-spin/, note: "auth callback spinner" },
@@ -38,13 +40,13 @@ for (const { file, marker, note } of LOADING_STATES) {
   check(window.includes('aria-hidden="true"'), `${note}: decorative indicator is aria-hidden (tag or wrapper)`);
 }
 
-// Shared Skeleton stays decorative; the dashboard loading block wraps its
-// skeleton group in one labelled status region.
+// Shared Skeleton stays decorative. (Dashboard was retired; its legacy URL renders only a
+// labelled role=status redirect message.)
 {
   const sk = fs.readFileSync(path.join(ROOT, "src/components/ui/skeleton.tsx"), "utf8");
   check(sk.includes('aria-hidden="true"'), "shared Skeleton component is aria-hidden (decorative)");
   const dash = fs.readFileSync(path.join(ROOT, "src/app/dashboard/page.tsx"), "utf8");
-  check(/role="status"\s+aria-label="Loading your account"/.test(dash), "dashboard skeleton group announces once via labelled role=status");
+  check(/role="status"/.test(dash), "legacy /dashboard redirect message announces via role=status");
 }
 
 // Toast announcements: react-toastify container renders role="alert" by

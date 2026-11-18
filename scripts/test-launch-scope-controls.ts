@@ -1,44 +1,18 @@
 /**
  * scripts/test-launch-scope-controls.ts
  *
- * Automated verification suite for Launch Scope controls:
- * 1. Direct GET/POST to coming-soon routes return 503 { code: "FEATURE_COMING_SOON" } with zero side effects:
- *    - Evaluated BEFORE environment checks so missing GROQ/DB keys still return 503 FEATURE_COMING_SOON.
- *    - /api/ai (POST)
- *    - /api/ai/stream (POST)
- *    - /api/jobs/interview-pack (GET)
- *    - /api/jobs/skill-what-if (GET)
- *    - /api/jobs/top10 (POST)
- *    - /api/radar (GET)
- *    - /api/me/quota (GET)
- *    - Netlify functions: ai, jobs-top10
- *    - Daily matching / digest cron workflow gated
- *    - Candidate profile / resume editing gated
- * 2. Billing verify fail-closed on both hosts (Next & Netlify):
- *    - Reject uncaptured status (status: "authorized" / "failed") with 400 PAYMENT_NOT_CAPTURED
- *    - Reject missing or mismatched payment_id with 400 PAYMENT_ID_MISMATCH
- *    - Reject missing or mismatched order_id with 400 ORDER_MISMATCH
- *    - Reject missing or mismatched currency with 400 CURRENCY_MISMATCH
- *    - Reject non-finite, zero, or tampered amount with 400 AMOUNT_MISMATCH
- *    - Reject incomplete provider responses (only status and amount) with 400
- *    - Refuse mock DB captured payment synthesis (fails closed without provider fetch mock)
- *    - Server-side captured payment successfully activates Pro
- * 3. Pro vs Free access boundary & End-to-End User Flow:
- *    - New-user login -> listing -> pay -> detail flow
- *    - Free/anonymous user cannot access restricted Pro fields
- *    - Pro user receives full job detail and direct apply URL
- * 4. Real Role-Based Database Operations via PGlite:
- *    - Runs real migration 20261116c_launch_scope_coming_soon_gates.sql
- *    - Anon: SELECT returns 0, INSERT fails
- *    - Authenticated: SELECT returns 0, direct owner DELETE deletes 0 rows (due to zero SELECT visibility)
- *    - Service-Role: bypasses RLS, SELECT finds rows, DELETE deletes rows successfully (GDPR route)
- * 5. Direct URLs of inactive features & Frontend Mounted Side Effects:
- *    - /tracker unconditionally renders ComingSoonView (no skeleton lock)
- *    - Interview Pack & Skill What-If unconditionally render ComingSoonView (no redirect away)
- *    - Dashboard does not mount ResumeUploadAndConfirm or TopTenCompatibleJobs, nor their loaders
- *    - JobDetailView does not mount TailorResumeModal or live click handlers
- *    - /jobs does not load personal/profile data nor mutate tracker on save/apply
- * 6. Negative controls included for each test section.
+ * Verification suite for the product restore after the #644 launch-scope gates:
+ * 1. Restored routes (/api/ai, /api/ai/stream, /api/jobs/top10, /api/me/quota, Netlify ai & jobs-top10)
+ *    require auth and never return FEATURE_COMING_SOON; radar / interview-pack / skill-what-if carry no gate.
+ *    The daily AI matching digest cron intentionally stays gated. Profile save is restored and keyed on
+ *    the verified session user.
+ * 2. Billing verify fail-closed on both hosts (unchanged).
+ * 3. Free vs Pro handlers: see src/lib/__tests__/launchFreeVsProHandlers.test.ts (vitest).
+ * 4. Real RLS in PGlite: 20261116c gates then the 20261120a restore proposal (idempotent): anon blocked,
+ *    owner-only access, no cross-user read/write/delete, user_id not re-pointable, tailored_resumes
+ *    still blocked, service role intact.
+ * 5. Restored pages are real, /dashboard only redirects to /jobs, and no AI tool entry points remain.
+ * 6. Negative control included.
  *
  * Run: npx tsx scripts/test-launch-scope-controls.ts
  * Negative control mode: npx tsx scripts/test-launch-scope-controls.ts --negative-control
@@ -49,16 +23,29 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { PGlite } from "@electric-sql/pglite";
+import Module from "module";
+
+// @cloudflare/next-on-pages has no Node entry; restored /api/ai routes import it statically.
+// Same in-test shim as scripts/test-env-guards.ts (registered before those routes load below).
+const originalResolve = (Module as any)._resolveFilename;
+(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+  if (request === "@cloudflare/next-on-pages") return "virtual:@cloudflare/next-on-pages";
+  return originalResolve.call(this, request, parent, isMain, options);
+};
+require.cache["virtual:@cloudflare/next-on-pages"] = {
+  id: "virtual:@cloudflare/next-on-pages",
+  filename: "virtual:@cloudflare/next-on-pages",
+  loaded: true,
+  exports: { getRequestContext: () => (globalThis as any)[Symbol.for("__cloudflare-request-context__")] },
+} as any;
 
 // Next.js API Routes under test
-import { POST as postAi } from "../src/app/api/ai/route";
-import { POST as postAiStream } from "../src/app/api/ai/stream/route";
-import { GET as getInterviewPack } from "../src/app/api/jobs/interview-pack/route";
-import { GET as getSkillWhatIf } from "../src/app/api/jobs/skill-what-if/route";
 import { POST as postTop10 } from "../src/app/api/jobs/top10/route";
-import { GET as getRadar } from "../src/app/api/radar/route";
 import { GET as getQuota } from "../src/app/api/me/quota/route";
 import { POST as verifyNextPost } from "../src/app/api/billing/razorpay/verify/route";
+type RouteHandler = (req: Request) => Promise<Response>;
+let postAi: RouteHandler;
+let postAiStream: RouteHandler;
 
 // Netlify serverless functions under test
 import { handler as netlifyAiHandler } from "../netlify/functions/ai";
@@ -67,7 +54,6 @@ import { createHandler as createNetlifyVerifyHandler } from "../netlify/function
 
 // Libs under test
 import { runDailyDigestCron } from "../src/lib/cron/dailyDigestCron";
-import { saveConfirmedCandidateProfile } from "../src/lib/resume/storage";
 
 const TEST_SECRET = "test_webhook_and_verify_secret_123456";
 const TEST_KEY_ID = "rzp_test_key_1234567890";
@@ -160,113 +146,76 @@ async function runSuite() {
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
 
     // =========================================================================
-    // SECTION 1: Gated Coming-Soon Routes & Env Check Order
+    // SECTION 1: Restored routes require auth/entitlement and are never Coming Soon
     // =========================================================================
-    console.log("--- Section 1: Gated Coming-Soon Routes & Env Check Order ---");
+    console.log("--- Section 1: Restored Routes (auth required, no Coming Soon gate) ---");
+    // In-memory limiter so the shared (Supabase) rate-limit store is not needed offline.
+    process.env.__CAREERMONKE_LEGACY_RATE_LIMIT = "true";
+    postAi = (await import("../src/app/api/ai/route")).POST;
+    postAiStream = (await import("../src/app/api/ai/stream/route")).POST;
 
-    async function assertRoute503(
+    async function assertRestoredRouteRejectsAnonymous(
       name: string,
       handler: (req: Request) => Promise<Response>,
       url: string,
       method: "GET" | "POST",
       body?: any
     ) {
-      let sideEffectCalled = false;
       const req = new Request(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer mock_token",
-        },
+        headers: { "Content-Type": "application/json" },
         body: body ? JSON.stringify(body) : undefined,
       });
-
-      (req as any).__testDeps = {
-        getSupabaseAdmin: () => {
-          sideEffectCalled = true;
-          throw new Error("Side effect triggered in gated route!");
-        },
-      };
-
       const res = await handler(req);
-      assert.strictEqual(res.status, 503, `${name} ${method} must return 503`);
-      const data = await res.json();
-      assert.strictEqual(data.code, "FEATURE_COMING_SOON", `${name} code must be FEATURE_COMING_SOON`);
-      assert.strictEqual(sideEffectCalled, false, `${name} must have zero side effects`);
-      console.log(`  [PASS] ${name} (${method}) -> 503 FEATURE_COMING_SOON with 0 side effects`);
+      const data = await res.json().catch(() => ({}));
+      assert.notStrictEqual(data?.code, "FEATURE_COMING_SOON", `${name} must no longer return FEATURE_COMING_SOON`);
+      assert.ok(res.status === 401 || res.status === 403, `${name} ${method} without a session must be 401/403, got ${res.status}`);
+      console.log(`  [PASS] ${name} (${method}) anonymous -> ${res.status} (restored, auth required)`);
     }
 
-    await assertRoute503("/api/ai", postAi, "http://localhost:3000/api/ai", "POST", { action: "tailor" });
-    await assertRoute503("/api/ai/stream", postAiStream, "http://localhost:3000/api/ai/stream", "POST", { action: "tailor" });
-    await assertRoute503("/api/jobs/interview-pack", getInterviewPack, "http://localhost:3000/api/jobs/interview-pack?jobId=1", "GET");
-    await assertRoute503("/api/jobs/skill-what-if", getSkillWhatIf, "http://localhost:3000/api/jobs/skill-what-if?jobId=1", "GET");
-    await assertRoute503("/api/jobs/top10", postTop10, "http://localhost:3000/api/jobs/top10", "POST", {});
-    await assertRoute503("/api/radar", getRadar, "http://localhost:3000/api/radar", "GET");
-    await assertRoute503("/api/me/quota", getQuota, "http://localhost:3000/api/me/quota", "GET");
+    await assertRestoredRouteRejectsAnonymous("/api/ai", postAi, "http://localhost:3000/api/ai", "POST", { action: "tailor" });
+    await assertRestoredRouteRejectsAnonymous("/api/ai/stream", postAiStream, "http://localhost:3000/api/ai/stream", "POST", { action: "tailor" });
+    await assertRestoredRouteRejectsAnonymous("/api/jobs/top10", postTop10, "http://localhost:3000/api/jobs/top10", "POST", {});
+    await assertRestoredRouteRejectsAnonymous("/api/me/quota", getQuota, "http://localhost:3000/api/me/quota", "GET");
 
-    // Netlify functions
-    const netAiRes = await netlifyAiHandler({ httpMethod: "POST", body: JSON.stringify({ action: "tailor" }) } as any);
-    assert.strictEqual(netAiRes.statusCode, 503, "Netlify ai function must return 503");
-    assert.strictEqual(JSON.parse(netAiRes.body).code, "FEATURE_COMING_SOON");
-    console.log("  [PASS] Netlify ai -> 503 FEATURE_COMING_SOON");
+    const netAiRes = await netlifyAiHandler({ httpMethod: "POST", headers: {}, body: JSON.stringify({ action: "tailor" }) } as any);
+    assert.notStrictEqual(JSON.parse(netAiRes.body || "{}").code, "FEATURE_COMING_SOON", "Netlify ai must not be Coming Soon");
+    assert.ok(netAiRes.statusCode === 401 || netAiRes.statusCode === 403, `Netlify ai anonymous must be 401/403, got ${netAiRes.statusCode}`);
+    console.log(`  [PASS] Netlify ai anonymous -> ${netAiRes.statusCode}`);
 
-    const netTop10Res = await netlifyTop10Handler({ httpMethod: "GET" } as any);
-    assert.strictEqual(netTop10Res.statusCode, 503, "Netlify jobs-top10 function must return 503");
-    assert.strictEqual(JSON.parse(netTop10Res.body).code, "FEATURE_COMING_SOON");
-    console.log("  [PASS] Netlify jobs-top10 -> 503 FEATURE_COMING_SOON");
+    const netTop10Res = await netlifyTop10Handler({ httpMethod: "GET", headers: {} } as any);
+    assert.notStrictEqual(JSON.parse(netTop10Res.body || "{}").code, "FEATURE_COMING_SOON", "Netlify jobs-top10 must not be Coming Soon");
+    assert.ok(netTop10Res.statusCode === 401 || netTop10Res.statusCode === 403, `Netlify jobs-top10 anonymous must be 401/403, got ${netTop10Res.statusCode}`);
+    console.log(`  [PASS] Netlify jobs-top10 anonymous -> ${netTop10Res.statusCode}`);
 
-    // 1.2 Env Check Order: verify routes return 503 even when GROQ/DB keys are completely missing
-    console.log("  Verifying coming-soon gate precedes environment checks (zero keys configured)...");
-    delete process.env.GROQ_API_KEY;
-    delete process.env.AI_PROVIDER_KEY;
-    delete process.env.GROQ_KEY;
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    delete process.env.SUPABASE_SERVICE_KEY;
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.SUPABASE_URL;
+    // Routes whose auth/entitlement paths are exercised by their own suites
+    // (test-interview-pack, test-skill-what-if): no Coming Soon gate may remain in source.
+    for (const rel of [
+      "src/app/api/radar/route.ts",
+      "src/app/api/jobs/interview-pack/route.ts",
+      "src/app/api/jobs/skill-what-if/route.ts",
+    ]) {
+      const src = fs.readFileSync(path.resolve(__dirname, "..", rel), "utf-8");
+      assert.ok(!src.includes("FEATURE_COMING_SOON"), `${rel} must not keep the #644 Coming Soon gate`);
+    }
+    console.log("  [PASS] radar / interview-pack / skill-what-if routes carry no Coming Soon gate");
 
-    const noEnvAiRes = await postAi(new Request("http://localhost:3000/api/ai", { method: "POST" }));
-    assert.strictEqual(noEnvAiRes.status, 503, "/api/ai must return 503 even without GROQ/DB keys");
-    assert.strictEqual((await noEnvAiRes.json()).code, "FEATURE_COMING_SOON");
-
-    const noEnvNetAiRes = await netlifyAiHandler({ httpMethod: "POST", body: "{}" } as any);
-    assert.strictEqual(noEnvNetAiRes.statusCode, 503, "Netlify ai must return 503 even without GROQ/DB keys");
-    assert.strictEqual(JSON.parse(noEnvNetAiRes.body).code, "FEATURE_COMING_SOON");
-
-    const noEnvTop10Res = await postTop10(new Request("http://localhost:3000/api/jobs/top10", { method: "POST" }));
-    assert.strictEqual(noEnvTop10Res.status, 503, "/api/jobs/top10 must return 503 even without Supabase keys");
-    assert.strictEqual((await noEnvTop10Res.json()).code, "FEATURE_COMING_SOON");
-
-    const noEnvQuotaRes = await getQuota(new Request("http://localhost:3000/api/me/quota", { method: "GET" }));
-    assert.strictEqual(noEnvQuotaRes.status, 503, "/api/me/quota must return 503 even without Supabase keys");
-    assert.strictEqual((await noEnvQuotaRes.json()).code, "FEATURE_COMING_SOON");
-    console.log("  [PASS] 1.2 Env Check Precedence: 503 returned before env checks without 500 error");
-
-    // Restore env for remaining tests
-    process.env.SUPABASE_SERVICE_ROLE_KEY = "mock_service_role_key";
-    process.env.GROQ_API_KEY = "mock_groq_api_key";
-    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
-
-    // 1.3 Daily matching/digest workflow gate
+    // 1.3 Daily matching/digest workflow stays gated (intentional exception: the AI digest is not restored)
     const digestStats = await runDailyDigestCron({ dryRun: true });
-    assert.strictEqual(digestStats.status, "coming_soon", "runDailyDigestCron must return status coming_soon");
+    assert.strictEqual(digestStats.status, "coming_soon", "runDailyDigestCron must stay gated");
     assert.strictEqual(digestStats.digestsQueuedCount, 0, "runDailyDigestCron must queue 0 digests");
-    console.log("  [PASS] 1.3 Daily matching & digest cron workflow safely gated (status: coming_soon)");
+    console.log("  [PASS] 1.3 Daily AI matching digest cron stays gated (no mail queued or sent)");
 
-    // 1.4 Profile / resume editing gate
-    let profileSaveThrew = false;
-    try {
-      await saveConfirmedCandidateProfile({
-        name: "Test User",
-        email: "test@example.com",
-        skills: ["TypeScript"],
-      } as any);
-    } catch (err: any) {
-      profileSaveThrew = true;
-      assert.ok(err.message.includes("coming soon"), "Profile save must error that feature is coming soon");
-    }
-    assert.strictEqual(profileSaveThrew, true, "saveConfirmedCandidateProfile must throw coming soon error");
-    console.log("  [PASS] 1.4 Candidate profile & resume editing mutation safely gated");
+    // 1.4 Profile save restored, write-safe: no Coming Soon throw; DB write only for the session user
+    const storageSrc = fs.readFileSync(path.resolve(__dirname, "../src/lib/resume/storage.ts"), "utf-8");
+    const saveFn = storageSrc.slice(
+      storageSrc.indexOf("export async function saveConfirmedCandidateProfile"),
+      storageSrc.indexOf("export function getScopedTailoredResumeKey")
+    );
+    assert.ok(!/coming soon/i.test(saveFn), "saveConfirmedCandidateProfile must not throw Coming Soon");
+    assert.ok(saveFn.includes("if (user)") && saveFn.includes("user_id: user.id"), "profile upsert must be keyed on the session user only");
+    assert.ok(!saveFn.includes("user_id: profile."), "profile upsert must never take user_id from the payload");
+    console.log("  [PASS] 1.4 Candidate profile save restored and keyed on the verified session user");
 
     // =========================================================================
     // SECTION 2: Billing Verify Server-Side Capture Checks (Fail Closed on Both Hosts)
@@ -677,124 +626,129 @@ async function runSuite() {
       GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
     `);
 
-    // Apply the real migration SQL file
-    const migrationFilePath = path.resolve(__dirname, "../supabase/migrations/20261116c_launch_scope_coming_soon_gates.sql");
-    assert.ok(fs.existsSync(migrationFilePath), "Migration 20261116c must exist");
-    const migrationSql = fs.readFileSync(migrationFilePath, "utf-8");
+    // Apply the real #644 gate migration, then the restore proposal on top (as production would).
+    for (const file of [
+      "20261116c_launch_scope_coming_soon_gates.sql",
+      "20261120a_restore_tracker_profile_owner_policies.sql",
+    ]) {
+      const p = path.resolve(__dirname, "../supabase/migrations", file);
+      assert.ok(fs.existsSync(p), `Migration ${file} must exist`);
+      await pg.exec(fs.readFileSync(p, "utf-8"));
+      console.log(`  Migration ${file} executed successfully in PGlite.`);
+    }
+    // Idempotent: the restore proposal must be safe to run twice.
+    await pg.exec(fs.readFileSync(path.resolve(__dirname, "../supabase/migrations/20261120a_restore_tracker_profile_owner_policies.sql"), "utf-8"));
+    console.log("  Migration 20261120a re-run (idempotent) succeeded.");
 
-    await pg.exec(migrationSql);
-    console.log("  Migration 20261116c executed successfully in PGlite.");
-
-    // Seed test user and application record
-    const testUserUuid = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d";
+    const userA = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d";
+    const userB = "b1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d";
     await pg.exec(`
-      INSERT INTO auth.users (id, email) VALUES ('${testUserUuid}', 'user@test.com')
+      INSERT INTO auth.users (id, email) VALUES ('${userA}', 'a@test.com'), ('${userB}', 'b@test.com')
       ON CONFLICT (id) DO NOTHING;
-      INSERT INTO public.applications (id, user_id, job_id, title, company)
-      VALUES ('b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', '${testUserUuid}', 'job_1', 'Software Engineer', 'Google');
+      INSERT INTO public.applications (id, user_id, job_id, title, company) VALUES
+        ('b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', '${userA}', 'job_1', 'Software Engineer', 'Google'),
+        ('c2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', '${userB}', 'job_9', 'Designer', 'Figma');
+      INSERT INTO public.tailored_resumes (user_id, job_id) VALUES ('${userA}', 'job_1');
     `);
+    const asUser = async (uid: string) => {
+      await pg.exec(`RESET ROLE;`);
+      await pg.exec(`SET ROLE authenticated;`);
+      await pg.exec(`SELECT set_config('request.jwt.claim.sub', '${uid}', false);`);
+    };
+    const fails = async (sql: string) => {
+      try {
+        await pg.exec(sql);
+        return false;
+      } catch {
+        return true;
+      }
+    };
 
-    // Test A: Role anon
-    await pg.exec(`SET ROLE anon;`);
-    const anonRes = await pg.query("SELECT * FROM public.applications;");
-    assert.strictEqual(anonRes.rows.length, 0, "Anon must see 0 application rows");
-
-    let anonInsertFailed = false;
-    try {
-      await pg.exec(`INSERT INTO public.applications (user_id, job_id) VALUES ('${testUserUuid}', 'job_2');`);
-    } catch {
-      anonInsertFailed = true;
-    }
-    assert.strictEqual(anonInsertFailed, true, "Anon INSERT must be blocked by RLS check (false)");
-    console.log("  [PASS] 4.1 Anon role: SELECT returns 0 rows, INSERT blocked");
-
-    // Test B: Role authenticated with auth.uid() set
+    // 4.1 anon: nothing visible, nothing writable
     await pg.exec(`RESET ROLE;`);
-    await pg.exec(`SET ROLE authenticated;`);
-    await pg.exec(`SELECT set_config('request.jwt.claim.sub', '${testUserUuid}', true);`);
+    await pg.exec(`SET ROLE anon;`);
+    assert.strictEqual((await pg.query("SELECT * FROM public.applications;")).rows.length, 0, "Anon must see 0 rows");
+    assert.ok(await fails(`INSERT INTO public.applications (user_id, job_id) VALUES ('${userA}', 'job_2');`), "Anon INSERT must be blocked");
+    console.log("  [PASS] 4.1 Anon: SELECT 0 rows, INSERT blocked");
 
-    const authSelectRes = await pg.query("SELECT * FROM public.applications;");
-    assert.strictEqual(authSelectRes.rows.length, 0, "Authenticated owner SELECT must return 0 rows (USING false)");
+    // 4.2 owner A: own rows only; no cross-user read/write; cannot re-point user_id
+    await asUser(userA);
+    const aRows = await pg.query<{ user_id: string }>("SELECT user_id FROM public.applications;");
+    assert.strictEqual(aRows.rows.length, 1, "Owner A must see exactly their own application");
+    assert.strictEqual(aRows.rows[0].user_id, userA, "Owner A must never see B's row");
+    assert.ok(!(await fails(`INSERT INTO public.applications (user_id, job_id) VALUES ('${userA}', 'job_3');`)), "Owner A INSERT for self must succeed");
+    assert.ok(await fails(`INSERT INTO public.applications (user_id, job_id) VALUES ('${userB}', 'job_4');`), "Owner A INSERT for B must be rejected");
+    assert.ok(
+      await fails(`UPDATE public.applications SET user_id = '${userB}' WHERE job_id = 'job_1';`),
+      "Owner A must not re-point their row to B (WITH CHECK)"
+    );
+    const crossUpdate: any = await pg.query(`UPDATE public.applications SET stage = 'offer' WHERE user_id = '${userB}';`);
+    assert.strictEqual(crossUpdate.affectedRows ?? 0, 0, "Owner A UPDATE of B's row must affect 0 rows");
+    assert.ok(!(await fails(`INSERT INTO public.candidate_profiles (user_id, name) VALUES ('${userA}', 'A');`)), "Owner A profile insert must succeed");
+    assert.ok(await fails(`INSERT INTO public.candidate_profiles (user_id, name) VALUES ('${userB}', 'B');`), "Owner A profile insert for B must be rejected");
+    // tailored_resumes stays blocked (AI tailoring is not restored)
+    assert.strictEqual((await pg.query("SELECT * FROM public.tailored_resumes;")).rows.length, 0, "tailored_resumes must stay blocked");
+    const ownDelete: any = await pg.query(`DELETE FROM public.applications WHERE job_id = 'job_3';`);
+    assert.strictEqual(ownDelete.affectedRows ?? 0, 1, "Owner A must be able to delete their own row");
+    const crossDelete: any = await pg.query(`DELETE FROM public.applications WHERE user_id = '${userB}';`);
+    assert.strictEqual(crossDelete.affectedRows ?? 0, 0, "Owner A must not delete B's row");
+    console.log("  [PASS] 4.2 Owner-only access: own rows only, no cross-user read/write/delete, user_id not re-pointable; tailored_resumes still blocked");
 
-    let authInsertFailed = false;
-    try {
-      await pg.exec(`INSERT INTO public.applications (user_id, job_id) VALUES ('${testUserUuid}', 'job_3');`);
-    } catch {
-      authInsertFailed = true;
-    }
-    assert.strictEqual(authInsertFailed, true, "Authenticated INSERT must be blocked by RLS check (false)");
-
-    // CRITICAL: Assert that direct authenticated DELETE returns 0 rows deleted due to disabled SELECT visibility
-    const directDeleteRes: any = await pg.query(`DELETE FROM public.applications WHERE user_id = auth.uid();`);
-    const affectedCount = directDeleteRes.affectedRows ?? directDeleteRes.rowCount ?? 0;
-    assert.strictEqual(affectedCount, 0, "Direct authenticated DELETE must delete 0 rows due to disabled SELECT visibility");
-    console.log("  [PASS] 4.2 Authenticated role: SELECT returns 0 rows, direct owner DELETE deletes 0 rows");
-
-    // Test C: Role service_role (Authoritative server route /api/account/delete)
+    // 4.3 service role (GDPR route) still bypasses RLS
     await pg.exec(`RESET ROLE;`);
     await pg.exec(`SET ROLE service_role;`);
-    const serviceSelectRes = await pg.query("SELECT * FROM public.applications;");
-    assert.strictEqual(serviceSelectRes.rows.length, 1, "Service role must see applications (BYPASSRLS)");
-
-    const serviceDeleteRes: any = await pg.query(`DELETE FROM public.applications WHERE user_id = '${testUserUuid}';`);
-    const serviceAffected = serviceDeleteRes.affectedRows ?? serviceDeleteRes.rowCount ?? 0;
-    assert.strictEqual(serviceAffected, 1, "Service role delete must successfully purge 1 row");
-
-    const postDeleteRes = await pg.query("SELECT * FROM public.applications;");
-    assert.strictEqual(postDeleteRes.rows.length, 0, "Applications table must be empty after service-role deletion");
-    console.log("  [PASS] 4.3 Service role (GDPR route): bypasses RLS and purges user records successfully");
+    assert.strictEqual((await pg.query("SELECT * FROM public.applications;")).rows.length, 2, "Service role must see all rows");
+    const serviceDeleteRes: any = await pg.query(`DELETE FROM public.applications WHERE user_id = '${userA}';`);
+    assert.strictEqual(serviceDeleteRes.affectedRows ?? 0, 1, "Service role delete must purge A's row");
+    console.log("  [PASS] 4.3 Service role (GDPR route): bypasses RLS and purges user records");
+    await pg.exec(`RESET ROLE;`);
 
     // =========================================================================
-    // SECTION 5: Direct URLs of Inactive Features & Frontend Side Effects
+    // SECTION 5: Restored pages are real; Dashboard retired; no AI tool entry points
     // =========================================================================
-    console.log("\n--- Section 5: Direct Inactive URLs & Frontend Side Effects ---");
+    console.log("\n--- Section 5: Restored Pages, Retired Dashboard, No AI Entry Points ---");
+    const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, "..", rel), "utf-8");
 
-    // 5.1 /tracker must render ComingSoonView unconditionally with NO skeleton lock
-    const trackerSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/tracker/page.tsx"), "utf-8");
-    assert.ok(!trackerSrc.includes("(!isPro && !isProDefinitive)"), "Tracker must NOT contain (!isPro && !isProDefinitive) skeleton trap");
-    assert.ok(trackerSrc.includes("<ComingSoonView"), "Tracker must unconditionally mount ComingSoonView");
-    console.log("  [PASS] 5.1 /tracker: Unconditional ComingSoonView verified (no skeleton lock)");
+    const trackerSrc = read("src/app/tracker/page.tsx");
+    assert.ok(!trackerSrc.includes("ComingSoonView"), "Tracker must not be a Coming Soon placeholder");
+    assert.ok(trackerSrc.includes("getTrackedApplications(") && trackerSrc.includes("updateApplicationStage"), "Tracker board must load and update applications");
+    assert.ok(!trackerSrc.includes("Run AI Scan") && !trackerSrc.includes("Daily AI Matching Digest"), "Tracker must not offer the AI digest scan");
+    console.log("  [PASS] 5.1 /tracker: real board restored, no AI digest scan");
 
-    // 5.2 Interview Pack & Skill What-If: no redirect away to /dashboard
-    const interviewSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx"), "utf-8");
-    assert.ok(!interviewSrc.includes('router.replace("/dashboard")'), "InterviewPackClient must not redirect away to /dashboard");
-    assert.ok(interviewSrc.includes("<ComingSoonView"), "InterviewPackClient must mount ComingSoonView");
+    for (const rel of ["src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx", "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx"]) {
+      const src = read(rel);
+      assert.ok(!src.includes("ComingSoonView"), `${rel} must be the restored client`);
+      assert.ok(!src.includes('"/dashboard"'), `${rel} must not redirect to the retired Dashboard`);
+      assert.ok(src.includes("getProAccessStatus"), `${rel} must keep its Pro entitlement check`);
+    }
+    console.log("  [PASS] 5.2 Interview Pack & Skill What-If clients restored with entitlement checks");
 
-    const skillSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx"), "utf-8");
-    assert.ok(!skillSrc.includes('router.replace("/dashboard")'), "SkillWhatIfClient must not redirect away to /dashboard");
-    assert.ok(skillSrc.includes("<ComingSoonView"), "SkillWhatIfClient must mount ComingSoonView");
-    console.log("  [PASS] 5.2 Interview & Skill pages: Unconditional ComingSoonView verified (no redirects away)");
+    const dashSrc = read("src/app/dashboard/page.tsx");
+    assert.ok(dashSrc.includes('router.replace("/jobs")'), "/dashboard must redirect to /jobs");
+    for (const forbidden of ["<ResumeUploadAndConfirm", "<TopTenCompatibleJobs", "getCandidateProfile", "getTrackedApplications"]) {
+      assert.ok(!dashSrc.includes(forbidden), `/dashboard must not load or render ${forbidden}`);
+    }
+    console.log("  [PASS] 5.3 /dashboard: legacy redirect only, no Dashboard UI or data loading");
 
-    // 5.3 Dashboard: do not mount ResumeUploadAndConfirm, TopTenCompatibleJobs, or their loaders
-    const dashSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/dashboard/page.tsx"), "utf-8");
-    assert.ok(!dashSrc.includes("<ResumeUploadAndConfirm"), "Dashboard must not mount ResumeUploadAndConfirm");
-    assert.ok(!dashSrc.includes("<TopTenCompatibleJobs"), "Dashboard must not mount TopTenCompatibleJobs");
-    assert.ok(!dashSrc.includes("getCandidateProfile(authUser.id)"), "Dashboard must not call getCandidateProfile loader");
-    assert.ok(!dashSrc.includes("getTrackedApplications(authUser.id)"), "Dashboard must not call getTrackedApplications loader");
-    console.log("  [PASS] 5.3 Dashboard: ResumeUploadAndConfirm & TopTenCompatibleJobs and loaders not mounted");
+    const detailSrc = read("src/components/jobs/JobDetailView.tsx");
+    for (const forbidden of ["TailorResumeModal", "setIsTailorOpen", "Open Interview Pack", "What if I add a skill?"]) {
+      assert.ok(!detailSrc.includes(forbidden), `JobDetailView must not contain ${forbidden}`);
+    }
+    console.log("  [PASS] 5.4 JobDetailView: no AI tool entry points");
 
-    // 5.4 JobDetailView: do not mount TailorResumeModal or live click handlers
-    const detailSrc = fs.readFileSync(path.resolve(__dirname, "../src/components/jobs/JobDetailView.tsx"), "utf-8");
-    assert.ok(!detailSrc.includes("<TailorResumeModal"), "JobDetailView must not mount TailorResumeModal");
-    assert.ok(!detailSrc.includes("setIsTailorOpen(true)"), "JobDetailView must not have live setIsTailorOpen handlers");
-    console.log("  [PASS] 5.4 JobDetailView: TailorResumeModal and live click handlers removed");
+    const jobsSrc = read("src/app/jobs/page.tsx");
+    assert.ok(jobsSrc.includes("getCandidateProfile()") && jobsSrc.includes("getTrackedApplications("), "/jobs must load profile and tracker state again");
+    assert.ok(jobsSrc.includes("quickTrackJob(") && jobsSrc.includes("addApplicationToTracker("), "/jobs must save/track again");
+    assert.ok(!jobsSrc.includes("Tailor resume for this job") && !jobsSrc.includes("dashboard:"), "/jobs must not offer Tailor Resume or write Dashboard caches");
+    console.log("  [PASS] 5.5 /jobs: save/applied/tracker flows restored; no Tailor Resume, no Dashboard cache writes");
 
-    // 5.5 /jobs: personal/profile data loaders and track mutations removed
-    const jobsSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/jobs/page.tsx"), "utf-8");
-    assert.ok(!jobsSrc.includes("getCandidateProfile()"), "/jobs must not call getCandidateProfile in loadInitialContext");
-    assert.ok(!jobsSrc.includes("getTrackedApplications(u.id)"), "/jobs must not call getTrackedApplications in loadInitialContext");
-    assert.ok(!jobsSrc.includes("quickTrackJob("), "/jobs must not call quickTrackJob on apply");
-    assert.ok(!jobsSrc.includes("addApplicationToTracker("), "/jobs must not call addApplicationToTracker on save");
-    console.log("  [PASS] 5.5 /jobs: Personal/profile loaders and track mutations removed");
-
-    // 5.6 Settings: privacy & account deletion preserved
-    const settingsSrc = fs.readFileSync(path.resolve(__dirname, "../src/app/settings/page.tsx"), "utf-8");
-    assert.ok(settingsSrc.includes("handleDeleteAccount"), "Settings must preserve handleDeleteAccount");
-    assert.ok(settingsSrc.includes("handleExportData"), "Settings must preserve handleExportData");
-    console.log("  [PASS] 5.6 Settings: Account security, export, and deletion controls preserved");
+    const settingsSrc = read("src/app/settings/page.tsx");
+    assert.ok(settingsSrc.includes("handleDeleteAccount") && settingsSrc.includes("handleExportData"), "Settings must keep delete/export");
+    assert.ok(!settingsSrc.includes("Daily AI Matching Digest"), "Settings must not offer the AI digest opt-in");
+    console.log("  [PASS] 5.6 Settings: delete/export preserved; no AI digest opt-in control");
 
     console.log("\n================================================================================");
-    console.log("ALL LAUNCH SCOPE TESTS & NEGATIVE CONTROLS PASSED [PASS-LOCAL]");
+    console.log("ALL RESTORE-SCOPE TESTS & NEGATIVE CONTROLS PASSED [PASS-LOCAL]");
     console.log("================================================================================");
   } finally {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = origBilling;

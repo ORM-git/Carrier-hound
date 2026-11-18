@@ -19,9 +19,8 @@
  *    - Local-only old user (refreshes local cache and dispatches event)
  *    - DB-only old user (merged without clobbering)
  * 3. Explicit edit mode vs repeat login:
- *    - Repeat login without edit mode -> redirects to /dashboard
+ *    - Repeat login without edit mode -> redirects to /jobs (Dashboard retired)
  *    - Edit mode (?mode=edit or ?edit=true) -> allowed through
- *    - Dashboard "Update Preferences" links to /onboarding?mode=edit
  * 4. Modal focus trap and Escape accessibility:
  *    - CountryPickerModal focus trap & Escape key
  *    - JobFunctionBottomSheet focus trap & Escape key
@@ -346,7 +345,7 @@ async function runMobileOnboardingSuite() {
     );
     assert.ok(
       middlewareCode.includes("if (!isEditMode)"),
-      "middleware must only redirect to /dashboard when NOT in edit mode"
+      "middleware must only redirect to /jobs when NOT in edit mode"
     );
   });
 
@@ -362,12 +361,15 @@ async function runMobileOnboardingSuite() {
     );
   });
 
-  await test("src/app/dashboard/page.tsx 'Update Preferences' link includes mode=edit", () => {
-    const dashCode = fs.readFileSync(path.resolve(__dirname, "../src/app/dashboard/page.tsx"), "utf-8");
+  await test("completed users are sent to /jobs (not the retired Dashboard) after onboarding", () => {
+    const middlewareCode = fs.readFileSync(path.resolve(__dirname, "../src/middleware.ts"), "utf-8");
     assert.ok(
-      dashCode.includes('href="/onboarding?mode=edit"'),
-      "Dashboard Update Preferences button must point to /onboarding?mode=edit"
+      middlewareCode.includes('return NextResponse.redirect(new URL("/jobs", request.url));'),
+      "completed-onboarding redirect must go to /jobs"
     );
+    assert.ok(!middlewareCode.includes('new URL("/dashboard"'), "middleware must not redirect to /dashboard");
+    const onboardingCode = fs.readFileSync(path.resolve(__dirname, "../src/app/onboarding/page.tsx"), "utf-8");
+    assert.ok(onboardingCode.includes('getValidReturnUrl(rawNext, "/jobs")'), "onboarding completion fallback must be /jobs");
   });
 
   // -----------------------------------------------------------------------------

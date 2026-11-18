@@ -763,118 +763,97 @@ async function runSuite() {
 
       // 7.1 Mount Shipped TailorResumeModal
       await modalPage.waitForSelector("button", { timeout: 10000 });
-      const dashboardState = await modalPage.evaluate(() => {
+      const opened = await modalPage.evaluate(() => {
         const btns = Array.from(document.querySelectorAll("button"));
         const aiBtn = btns.find((b) => b.textContent && b.textContent.includes("AI Resume"));
-        const clBtn = btns.find((b) => b.textContent && b.textContent.includes("Cover Letter"));
-        const text = document.body.innerText;
-        const isComingSoon = text.includes("Personalized Match Rankings Coming Soon") || text.includes("Resume Upload & Parsing Coming Soon") || text.includes("Coming soon");
-        return {
-          hasAiBtn: Boolean(aiBtn),
-          hasClBtn: Boolean(clBtn),
-          isComingSoon,
-        };
+        if (aiBtn) { aiBtn.click(); return true; }
+        return false;
+      });
+      assert.strictEqual(opened, true, "AI Resume button was clicked on dashboard");
+
+      await modalPage.waitForSelector('button[aria-label="Close modal"]', { timeout: 8000 });
+      const modalText = await modalPage.evaluate(() => document.body.innerText);
+      assert.ok(modalText.includes("ATS keyword match estimate") || modalText.includes("ATS"), "Shipped TailorResumeModal mounted");
+
+      // 7.2 In-Flight Logout on Mounted Modal
+      holdAi = true;
+      await modalPage.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        const genBtn = btns.find((b) => b.textContent && b.textContent.includes("Generate AI-tailored version"));
+        if (genBtn) genBtn.click();
       });
 
-      if (dashboardState.isComingSoon && !dashboardState.hasAiBtn) {
-        // Under launch scope controls, AI Resume / Cover Letter buttons are gated behind Coming Soon
-        assert.strictEqual(dashboardState.hasAiBtn, false, "AI Resume button is not mounted under launch scope");
-        assert.strictEqual(dashboardState.hasClBtn, false, "Cover Letter button is not mounted under launch scope");
-        assert.strictEqual(dashboardState.isComingSoon, true, "Coming soon state is rendered on dashboard");
-        console.log("  -> [PASS-LOCAL] 7.1-7.3 Dashboard AI features correctly gated under launch scope controls (Coming Soon rendered, AI buttons absent)");
-      } else {
-        const opened = await modalPage.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button"));
-          const aiBtn = btns.find((b) => b.textContent && b.textContent.includes("AI Resume"));
-          if (aiBtn) { aiBtn.click(); return true; }
-          return false;
-        });
-        assert.strictEqual(opened, true, "AI Resume button was clicked on dashboard");
+      await new Promise((r) => setTimeout(r, 800));
 
-        await modalPage.waitForSelector('button[aria-label="Close modal"]', { timeout: 8000 });
-        const modalText = await modalPage.evaluate(() => document.body.innerText);
-        assert.ok(modalText.includes("ATS keyword match estimate") || modalText.includes("ATS"), "Shipped TailorResumeModal mounted");
+      const bodyDuringGen = await modalPage.evaluate(() => document.body.innerText);
+      assert.ok(
+        bodyDuringGen.includes("Generating AI-tailored draft") || bodyDuringGen.includes("AI generating..."),
+        "Shipped modal entered generating state"
+      );
 
-        // 7.2 In-Flight Logout on Mounted Modal
-        holdAi = true;
-        await modalPage.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button"));
-          const genBtn = btns.find((b) => b.textContent && b.textContent.includes("Generate AI-tailored version"));
-          if (genBtn) genBtn.click();
-        });
-
-        await new Promise((r) => setTimeout(r, 800));
-
-        const bodyDuringGen = await modalPage.evaluate(() => document.body.innerText);
-        assert.ok(
-          bodyDuringGen.includes("Generating AI-tailored draft") || bodyDuringGen.includes("AI generating..."),
-          "Shipped modal entered generating state"
-        );
-
-        // Trigger logout while request is held
-        await modalPage.evaluate((keys: string[]) => {
-          for (const k of keys) {
-            localStorage.removeItem(k);
-          }
-          localStorage.removeItem("careermonke_auth_user");
-          window.dispatchEvent(new Event("careermonke_auth_updated"));
-        }, tokenKeys);
-
-        await new Promise((r) => setTimeout(r, 500));
-
-        // Release held AI request with stale payload
-        for (const r of pendingRequests) {
-          r.respond({
-            status: 200,
-            headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-            body: JSON.stringify({
-              success: true,
-              model: "llama-3.3-70b-versatile",
-              result: {
-                tailoredSummary: "STALE AI SUMMARY THAT MUST BE DISCARDED",
-                highlightedSkills: ["TypeScript"],
-                tailoredBullets: { exp_1: ["Stale bullet"] },
-              },
-            }),
-          });
+      // Trigger logout while request is held
+      await modalPage.evaluate((keys: string[]) => {
+        for (const k of keys) {
+          localStorage.removeItem(k);
         }
-        pendingRequests = [];
-        holdAi = false;
+        localStorage.removeItem("careermonke_auth_user");
+        window.dispatchEvent(new Event("careermonke_auth_updated"));
+      }, tokenKeys);
 
-        await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 500));
 
-        const bodyAfterLogout = await modalPage.evaluate(() => document.body.innerText);
-        assert.ok(!bodyAfterLogout.includes("STALE AI SUMMARY THAT MUST BE DISCARDED"), "Stale draft from User A NOT displayed");
-        assert.ok(!bodyAfterLogout.includes("AI draft awaiting review"), "Modal did NOT transition to reviewing state");
-
-        // Close modal
-        await modalPage.evaluate(() => {
-          const closeBtn = document.querySelector('button[aria-label="Close modal"]') as HTMLElement;
-          if (closeBtn) closeBtn.click();
+      // Release held AI request with stale payload
+      for (const r of pendingRequests) {
+        r.respond({
+          status: 200,
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            success: true,
+            model: "llama-3.3-70b-versatile",
+            result: {
+              tailoredSummary: "STALE AI SUMMARY THAT MUST BE DISCARDED",
+              highlightedSkills: ["TypeScript"],
+              tailoredBullets: { exp_1: ["Stale bullet"] },
+            },
+          }),
         });
-        await new Promise((r) => setTimeout(r, 600));
-
-        // 7.3 Mount Shipped CoverLetterModal
-        const clOpened = await modalPage.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button"));
-          const clBtn = btns.find((b) => b.textContent && b.textContent.includes("Cover Letter"));
-          if (clBtn) { clBtn.click(); return true; }
-          return false;
-        });
-        assert.strictEqual(clOpened, true, "Cover Letter button clicked on dashboard");
-
-        await modalPage.waitForSelector('button[aria-label="Close modal"]', { timeout: 8000 });
-        const clBody = await modalPage.evaluate(() => document.body.innerText);
-        assert.ok(clBody.includes("Cover Letter") || clBody.includes("Supabase"), "Shipped CoverLetterModal mounted and rendered");
-
-        // Close CoverLetterModal
-        await modalPage.evaluate(() => {
-          const closeBtn = document.querySelector('button[aria-label="Close modal"]') as HTMLElement;
-          if (closeBtn) closeBtn.click();
-        });
-
-        console.log("  -> [PASS-LOCAL] Real shipped TailorResumeModal & CoverLetterModal mounted auth and stale response handling verified.");
       }
+      pendingRequests = [];
+      holdAi = false;
+
+      await new Promise((r) => setTimeout(r, 1000));
+
+      const bodyAfterLogout = await modalPage.evaluate(() => document.body.innerText);
+      assert.ok(!bodyAfterLogout.includes("STALE AI SUMMARY THAT MUST BE DISCARDED"), "Stale draft from User A NOT displayed");
+      assert.ok(!bodyAfterLogout.includes("AI draft awaiting review"), "Modal did NOT transition to reviewing state");
+
+      // Close modal
+      await modalPage.evaluate(() => {
+        const closeBtn = document.querySelector('button[aria-label="Close modal"]') as HTMLElement;
+        if (closeBtn) closeBtn.click();
+      });
+      await new Promise((r) => setTimeout(r, 600));
+
+      // 7.3 Mount Shipped CoverLetterModal
+      const clOpened = await modalPage.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        const clBtn = btns.find((b) => b.textContent && b.textContent.includes("Cover Letter"));
+        if (clBtn) { clBtn.click(); return true; }
+        return false;
+      });
+      assert.strictEqual(clOpened, true, "Cover Letter button clicked on dashboard");
+
+      await modalPage.waitForSelector('button[aria-label="Close modal"]', { timeout: 8000 });
+      const clBody = await modalPage.evaluate(() => document.body.innerText);
+      assert.ok(clBody.includes("Cover Letter") || clBody.includes("Supabase"), "Shipped CoverLetterModal mounted and rendered");
+
+      // Close CoverLetterModal
+      await modalPage.evaluate(() => {
+        const closeBtn = document.querySelector('button[aria-label="Close modal"]') as HTMLElement;
+        if (closeBtn) closeBtn.click();
+      });
+
+      console.log("  -> [PASS-LOCAL] Real shipped TailorResumeModal & CoverLetterModal mounted auth and stale response handling verified.");
     } finally {
       await modalPage.close();
     }

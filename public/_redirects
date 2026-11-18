@@ -3,6 +3,8 @@
 /job-search /jobs 301!
 /job-search/all /jobs 301!
 /paywall /jobs 301!
+/dashboard /jobs 301!
+/dashboard/* /jobs 301!
 /applications /tracker 301!
 /privacy /privacy-policy 301!
 /terms /terms-and-conditions 301!

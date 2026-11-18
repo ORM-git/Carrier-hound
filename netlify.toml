@@ -102,6 +102,19 @@
   status = 301
   force = true
 
+# Retired Dashboard: legacy links land on Jobs, the signed-in home.
+[[redirects]]
+  from = "/dashboard"
+  to = "/jobs"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/dashboard/*"
+  to = "/jobs"
+  status = 301
+  force = true
+
 [[redirects]]
   from = "/applications"
   to = "/tracker"

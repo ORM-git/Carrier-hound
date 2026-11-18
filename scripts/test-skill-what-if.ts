@@ -131,9 +131,8 @@ async function run() {
     serverCode.includes("status: 401") &&
     !serverCode.includes("user_metadata?.is_pro") &&
     !serverCode.includes("user_metadata?.pro_granted") &&
-    // Launch scope: client page is a ComingSoonView; route is gated with 503 while the handler keeps server enforcement.
-    routeCode.includes("FEATURE_COMING_SOON") &&
-    routeCode.includes("status: 503");
+    clientCode.includes("ProUpgradeScreen") &&
+    clientCode.includes("getProAccessStatus");
   if (!hasServerProEnforcement) {
     failures.push(
       "SERVER PRO ENFORCEMENT FAIL: /api/jobs/skill-what-if must validate token and use getServerEntitlement with no user_metadata trust."
@@ -343,18 +342,16 @@ async function run() {
     console.log("  [PASS] Build Output Scan: No pre-existing bundles, checked via runtime type isolation");
   }
 
-  // 11. Entry Button in JobDetailView & Feature Flag
+  // 11. No AI entry button in JobDetailView (AI tool entry points are not offered outside the landing page;
+  //     the route itself stays reachable only by direct URL behind its feature flag and server Pro checks).
   const hasEntryButton =
-    detailCode.includes('data-testid="skill-what-if-entry-button"') &&
-    detailCode.includes("What if I add a skill?") &&
-    detailCode.includes("/skill-what-if") &&
-    detailCode.includes("NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF");
-  if (!hasEntryButton) {
-    failures.push(
-      "ENTRY BUTTON FAIL: JobDetailView must include 'What if I add a skill?' button behind feature flag."
-    );
+    detailCode.includes("skill-what-if-entry-button") ||
+    detailCode.includes("What if I add a skill?") ||
+    detailCode.includes("/skill-what-if");
+  if (hasEntryButton) {
+    failures.push("ENTRY BUTTON FAIL: JobDetailView must NOT offer a 'What if I add a skill?' AI entry control.");
   } else {
-    console.log("  [PASS] Entry Button: 'What if I add a skill?' button integrated and guarded by feature flag");
+    console.log("  [PASS] Entry Button: no Skill What-If AI entry control in JobDetailView");
   }
 
   // 12. Persistent Sample Preview Banner

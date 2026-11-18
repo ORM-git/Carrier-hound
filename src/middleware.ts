@@ -14,7 +14,6 @@ const log = createLogger({ context: { module: "middleware" } });
  * Any guest or expired session accessing these will be redirected to /login with ?returnTo=...
  */
 export const PROTECTED_ROUTES: readonly string[] = [
-  "/dashboard",
   "/resume",
   "/tracker",
   "/profile",
@@ -539,6 +538,12 @@ async function middlewareImpl(request: NextRequest) {
     return NextResponse.redirect(new URL("/signup", request.url), 301);
   }
 
+  // 1a'. Retired Dashboard: legacy /dashboard and /dashboard/* links land on Jobs, the
+  // signed-in home. /jobs is public, so no protected content is exposed and it never loops back.
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    return NextResponse.redirect(new URL("/jobs", request.url), 301);
+  }
+
   // 1b. CSRF same-origin barrier (Backend sheet rank 60): reject mutating
   // /api requests whose Origin header names a different host. Browsers always
   // send Origin on cross-site POSTs; Origin-less requests (webhooks, cron,
@@ -600,12 +605,12 @@ async function middlewareImpl(request: NextRequest) {
       const { hasValidSession, signedOutNonAllowedUser, response: authResponse, userId } =
         await verifyAuthenticatedRequest(request);
       if (hasValidSession && !signedOutNonAllowedUser) {
-        let destination = "/dashboard";
+        let destination = "/jobs";
         if (userId) {
           const adminClient = getAdminSupabaseClient();
           if (adminClient) {
             const completed = await checkAccountOnboardingCompleted(adminClient, userId);
-            destination = completed ? "/dashboard" : "/onboarding";
+            destination = completed ? "/jobs" : "/onboarding";
           }
         }
         return NextResponse.redirect(new URL(destination, request.url));
@@ -618,7 +623,7 @@ async function middlewareImpl(request: NextRequest) {
   }
 
   // 4a. Onboarding route guard: authenticated users who already completed onboarding
-  // must never see onboarding questions again; redirect them server-side to /dashboard.
+  // must never see onboarding questions again; redirect them server-side to /jobs.
   if (pathname === "/onboarding") {
     const { hasValidSession, signedOutNonAllowedUser, response, userId } =
       await verifyAuthenticatedRequest(request);
@@ -635,7 +640,7 @@ async function middlewareImpl(request: NextRequest) {
         if (adminClient) {
           const completed = await checkAccountOnboardingCompleted(adminClient, userId);
           if (completed) {
-            return NextResponse.redirect(new URL("/dashboard", request.url));
+            return NextResponse.redirect(new URL("/jobs", request.url));
           }
         }
       }

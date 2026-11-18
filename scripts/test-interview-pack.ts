@@ -119,9 +119,9 @@ async function run() {
     !serverCode.includes("user_metadata?.is_pro") &&
     !serverCode.includes("user_metadata?.pro_granted") &&
     !serverCode.includes("invalid-non-pro-token") &&
-    // Launch scope: client page is a ComingSoonView; route is gated with 503 while the handler keeps server enforcement.
-    routeCode.includes("FEATURE_COMING_SOON") &&
-    routeCode.includes("status: 503");
+    clientCode.includes("ProUpgradeScreen") &&
+    clientCode.includes("getProAccessStatus") &&
+    !clientCode.includes("user_metadata?.pro_granted");
   if (!hasServerProEnforcement) {
     failures.push("SERVER PRO ENFORCEMENT FAIL: /api/jobs/interview-pack must validate token and use getServerEntitlement with no literal shortcuts or user_metadata trust.");
   } else {
@@ -257,14 +257,16 @@ async function run() {
     failures.push(`API EXECUTION FAIL: ${err.message}`);
   }
 
-  // 5. Entry Button in JobDetailView & Feature Flag
-  const hasEntryButton = detailCode.includes("data-testid=\"interview-pack-entry-button\"") &&
-    detailCode.includes("/interview-pack") &&
-    detailCode.includes("NEXT_PUBLIC_ENABLE_INTERVIEW_PACK");
-  if (!hasEntryButton) {
-    failures.push("ENTRY BUTTON FAIL: JobDetailView must include 'Open Interview Pack' button behind feature flag.");
+  // 5. No AI entry button in JobDetailView (AI tool entry points are not offered outside the landing page;
+  //    the route itself stays reachable only by direct URL behind its feature flag and server Pro checks).
+  const hasEntryButton =
+    detailCode.includes("interview-pack-entry-button") ||
+    detailCode.includes("Open Interview Pack") ||
+    detailCode.includes("/interview-pack");
+  if (hasEntryButton) {
+    failures.push("ENTRY BUTTON FAIL: JobDetailView must NOT offer an 'Open Interview Pack' AI entry control.");
   } else {
-    console.log("  [PASS] Entry Button: Open Interview Pack button integrated and guarded by feature flag");
+    console.log("  [PASS] Entry Button: no Interview Pack AI entry control in JobDetailView");
   }
 
   // 6. Persistent Sample Preview Banner

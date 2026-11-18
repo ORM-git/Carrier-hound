@@ -44,11 +44,11 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
     expectedCount: 1,
     requiredSnippets: ["router.replace(destination)"],
   },
-  // Unauthenticated mount guard on `/dashboard` replaces protected URL to avoid a Back-button trap
+  // Retired Dashboard: legacy /dashboard replaces itself with Jobs (no Back-button trap to a dead page)
   {
     file: "src/app/dashboard/page.tsx",
     expectedCount: 1,
-    requiredSnippets: ['router.replace("/login?returnTo=/dashboard")'],
+    requiredSnippets: ['router.replace("/jobs")'],
   },
   // Legacy `/job-detail` redirect shim replaces deprecated route with canonical `/jobs` URL
   {
@@ -62,19 +62,21 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
     expectedCount: 1,
     requiredSnippets: ["router.replace(target)"],
   },
-  // Feature-flag & auth mount guards on interview-pack replace blocked URL with `/dashboard` or `/login`
+  // Feature-flag & auth mount guards on interview-pack replace blocked URL with `/jobs` or `/login`
   {
     file: "src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx",
-    expectedCount: 1,
+    expectedCount: 2,
     requiredSnippets: [
+      'router.replace("/jobs")',
       "router.replace(`/login?returnTo=/jobs/${jobId}/interview-pack`)",
     ],
   },
-  // Feature-flag & auth mount guards on skill-what-if replace blocked URL with `/dashboard` or `/login`
+  // Feature-flag & auth mount guards on skill-what-if replace blocked URL with `/jobs` or `/login`
   {
     file: "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx",
-    expectedCount: 1,
+    expectedCount: 2,
     requiredSnippets: [
+      'router.replace("/jobs")',
       "router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`)",
     ],
   },
@@ -386,7 +388,7 @@ function main() {
   check("Scanner + validator rejects an extra unreviewed router.replace( inside an allowlisted file", () => {
     const extraInJobs = findRouterReplaceInSource(
       "src/app/dashboard/page.tsx",
-      `function onCardClick(router: any) { router.replace("/jobs"); }`
+      `function onCardClick(router: any) { router.replace("/tracker"); }`
     );
     const result = validateRouterReplaceMatches([...realMatches, ...extraInJobs]);
     assert.ok(

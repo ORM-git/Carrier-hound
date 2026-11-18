@@ -2,7 +2,6 @@
 
 import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -41,7 +40,6 @@ import {
 } from "lucide-react";
 
 import JobAiToolsPanel from "@/components/jobs/JobAiToolsPanel";
-import { toast } from "react-toastify";
 
 export const VERIFIED_SUPPORT_EMAIL = "support@careermonke.com";
 
@@ -145,7 +143,6 @@ export default function JobDetailView({
 
   const [activeTab, setActiveTab] = useState<"overview" | "company">("overview");
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isTailorOpen, setIsTailorOpen] = useState(false);
   const [shareStatus, setShareStatus] = useState<"idle" | "success" | "error">("idle");
   const [shareErrorMsg, setShareErrorMsg] = useState<string>("");
 
@@ -642,7 +639,7 @@ export default function JobDetailView({
         </div>
       </div>
 
-      {/* AI TOOLS & MATCH INSIGHTS PANEL */}
+      {/* MATCH INSIGHTS & TRACKER PANEL */}
       <JobAiToolsPanel
         job={job}
         candidate={candidate}
@@ -655,10 +652,6 @@ export default function JobDetailView({
         isUpdatingApplied={isUpdatingApplied}
         onSave={onSave}
         onToggleApplied={onToggleApplied}
-        onOpenTailor={() => {
-          toast.info("Tailor Resume is coming soon.");
-        }}
-        onOpenPaywall={onApply}
       />
 
       {/* (2) HEADER BODY CARD */}
@@ -1109,94 +1102,8 @@ export default function JobDetailView({
 
         {/* (4) RIGHT RAIL (DESKTOP ONLY: STACKED CARDS REUSING CURRENT LABELS) */}
         <div className="hidden lg:block lg:col-span-5 space-y-3 min-w-0">
-          {/* Card 1: Tailor Resume Card */}
-          {hasConfirmedResume && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-[#0F172A]">Tailor Resume</h3>
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
-                  </div>
-                  <p className="text-[11px] text-[#64748B]">
-                    Customize your resume for this role
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  toast.info("Tailor Resume is coming soon.");
-                }}
-                className="w-full py-2 px-4 rounded-full text-xs font-bold transition border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#1D4ED8] flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px]"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Tailor Resume</span>
-              </button>
-            </div>
-          )}
-
-          {/* Card: Interview Pack Card (gated behind feature flag, off in production by default) */}
-          {process.env.NEXT_PUBLIC_ENABLE_INTERVIEW_PACK === "true" && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
-                  <FileText className="w-4 h-4" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-[#0F172A]">Interview Pack</h3>
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
-                  </div>
-                  <p className="text-[11px] text-[#64748B]">
-                    Dossier, questions & tailored answers
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                href={`/jobs/${job.id}/interview-pack`}
-                data-testid="interview-pack-entry-button"
-                className="w-full py-2 px-4 rounded-full text-xs font-bold transition border border-[#BFDBFE] bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px]"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                <span>Open Interview Pack</span>
-              </Link>
-            </div>
-          )}
-
-          {/* Card: Skill What-If Card (gated behind feature flag, off in production by default) */}
-          {process.env.NEXT_PUBLIC_ENABLE_SKILL_WHAT_IF === "true" && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB] shrink-0">
-                  <TrendingUp className="w-4 h-4" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-[#0F172A]">Skill What-If</h3>
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">Coming soon</span>
-                  </div>
-                  <p className="text-[11px] text-[#64748B]">
-                    Simulate match gain by adding skills
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                href={`/jobs/${job.id}/skill-what-if`}
-                data-testid="skill-what-if-entry-button"
-                className="w-full py-2 px-4 rounded-full text-xs font-bold transition border border-[#BFDBFE] bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px]"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                <span>What if I add a skill?</span>
-              </Link>
-            </div>
-          )}
+          {/* AI tool entry cards (Tailor Resume, Interview Pack, Skill What-If) are intentionally
+              not offered outside the landing page. */}
 
           {/* Card 2: Similar jobs Card (only when similar jobs exist) */}
           {similarJobs && similarJobs.length > 0 && (

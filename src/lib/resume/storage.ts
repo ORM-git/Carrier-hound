@@ -255,11 +255,6 @@ export function saveCandidateProfileLocally(
  * Saves confirmed candidate profile to both local storage and Supabase
  */
 export async function saveConfirmedCandidateProfile(profile: CandidateProfile): Promise<void> {
-  // Launch scope gate: resume and profile editing are Coming Soon
-  throw new Error("Candidate profile editing is coming soon.");
-}
-
-async function _legacySaveConfirmedCandidateProfile(profile: CandidateProfile): Promise<void> {
   const updatedProfile: CandidateProfile = {
     ...profile,
     confirmedAt: new Date().toISOString(),
