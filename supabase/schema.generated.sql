@@ -10752,6 +10752,55 @@ CREATE POLICY "onboarding_resume_profiles_owner_select"
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
+-- 3. Atomic conditional save: locks the pointer row so a newer upload wins atomically.
+CREATE OR REPLACE FUNCTION public.save_onboarding_resume_profile(
+  p_user_id             uuid,
+  p_storage_path        text,
+  p_parse_status        text,
+  p_parse_source        text,
+  p_failure_reason      text,
+  p_profile             jsonb
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_current_path text;
+BEGIN
+  -- Lock the pointer row to serialize saves for this user
+  SELECT storage_path INTO v_current_path
+    FROM public.onboarding_resume_uploads
+   WHERE user_id = p_user_id
+     FOR UPDATE;
+
+  -- Stale save: pointer moved or does not exist
+  IF v_current_path IS DISTINCT FROM p_storage_path THEN
+    RETURN false;
+  END IF;
+
+  INSERT INTO public.onboarding_resume_profiles (
+    user_id, source_storage_path, parse_status, parse_source, failure_reason, profile, parsed_at
+  ) VALUES (
+    p_user_id, p_storage_path, p_parse_status, p_parse_source, p_failure_reason, p_profile, now()
+  )
+  ON CONFLICT (user_id) DO UPDATE SET
+    source_storage_path = excluded.source_storage_path,
+    parse_status        = excluded.parse_status,
+    parse_source        = excluded.parse_source,
+    failure_reason      = excluded.failure_reason,
+    profile             = excluded.profile,
+    parsed_at           = excluded.parsed_at;
+
+  RETURN true;
+END;
+$$;
+COMMENT ON FUNCTION public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)
+  IS 'created-by:20261119_onboarding_resume_profiles';
+REVOKE ALL ON FUNCTION public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb) TO service_role;
+
 -- ----------------------------------------------------------------------------
 -- POST-CHECK (inside the transaction): clients cannot write, service_role can.
 -- ----------------------------------------------------------------------------
@@ -10760,8 +10809,8 @@ DECLARE
   r text;
   p text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-    FOREACH p IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'TRIGGER'] LOOP
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+    FOREACH p IN ARRAY ARRAY['TRUNCATE', 'INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'TRIGGER'] LOOP
       IF has_table_privilege(r, 'public.onboarding_resume_profiles', p) THEN
         RAISE EXCEPTION 'post-check: role % still holds % on public.onboarding_resume_profiles', r, p;
       END IF;
@@ -10781,6 +10830,9 @@ BEGIN
   IF has_table_privilege('anon', 'public.onboarding_resume_profiles', 'SELECT') THEN
     RAISE EXCEPTION 'post-check: anon can SELECT public.onboarding_resume_profiles';
   END IF;
+  IF has_table_privilege('public', 'public.onboarding_resume_profiles', 'SELECT') THEN
+    RAISE EXCEPTION 'post-check: public can SELECT public.onboarding_resume_profiles';
+  END IF;
   IF EXISTS (
     SELECT 1 FROM pg_policy pol
      WHERE pol.polrelid = 'public.onboarding_resume_profiles'::regclass
@@ -10788,11 +10840,23 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'post-check: unexpected extra policy on public.onboarding_resume_profiles';
   END IF;
-  FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+  FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
     IF NOT has_table_privilege('service_role', 'public.onboarding_resume_profiles', p) THEN
       RAISE EXCEPTION 'post-check: service_role lacks % on public.onboarding_resume_profiles', p;
     END IF;
   END LOOP;
+  IF has_function_privilege('anon', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: anon can EXECUTE save_onboarding_resume_profile';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: authenticated can EXECUTE save_onboarding_resume_profile';
+  END IF;
+  IF has_function_privilege('public', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: public can EXECUTE save_onboarding_resume_profile';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: service_role lacks EXECUTE on save_onboarding_resume_profile';
+  END IF;
 END $$;
 
 COMMIT;
@@ -10803,14 +10867,16 @@ COMMIT;
 -- SELECT r AS role,
 --        has_table_privilege(r, 'public.onboarding_resume_profiles', 'INSERT') AS can_insert,
 --        has_table_privilege(r, 'public.onboarding_resume_profiles', 'UPDATE') AS can_update,
---        has_table_privilege(r, 'public.onboarding_resume_profiles', 'DELETE') AS can_delete
---   FROM unnest(ARRAY['anon', 'authenticated']) AS r;
+--        has_table_privilege(r, 'public.onboarding_resume_profiles', 'DELETE') AS can_delete,
+--        has_table_privilege(r, 'public.onboarding_resume_profiles', 'TRUNCATE') AS can_truncate
+--   FROM unnest(ARRAY['anon', 'authenticated', 'public']) AS r;
 -- -- anon cannot read (expect false):
 -- SELECT has_table_privilege('anon', 'public.onboarding_resume_profiles', 'SELECT') AS anon_can_select;
 -- -- Service write is true (expect every column true):
 -- SELECT has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'INSERT') AS can_insert,
 --        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'UPDATE') AS can_update,
---        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'DELETE') AS can_delete;
+--        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'DELETE') AS can_delete,
+--        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'TRUNCATE') AS can_truncate;
 -- -- Only the owner-select policy:
 -- SELECT policyname, cmd, roles, qual FROM pg_policies WHERE tablename = 'onboarding_resume_profiles';
 -- ============================================================================
@@ -10824,6 +10890,7 @@ COMMIT;
 --   v_marker constant text := 'created-by:20261119_onboarding_resume_profiles';
 --   v_tb regclass := to_regclass('public.onboarding_resume_profiles');
 -- BEGIN
+--   DROP FUNCTION IF EXISTS public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb);
 --   IF v_tb IS NOT NULL AND obj_description(v_tb, 'pg_class') = v_marker THEN
 --     REVOKE SELECT ON TABLE public.onboarding_resume_profiles FROM authenticated;
 --     ALTER TABLE public.onboarding_resume_profiles RENAME TO onboarding_resume_profiles_rolled_back_20261119;

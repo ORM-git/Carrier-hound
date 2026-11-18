@@ -213,17 +213,49 @@ describe("parseOnboardingResume (extract + rules + existing AI operation)", () =
 });
 
 /** Table-aware fake of the service-role client for the two onboarding tables. */
-function fakeAdmin(opts: { pointer?: string | null; profileRow?: any; upsertError?: any; readError?: any; throws?: boolean } = {}) {
+function fakeAdmin(opts: {
+  pointer?: string | null;
+  profileRow?: any;
+  upsertError?: any;
+  readError?: any;
+  throws?: boolean;
+  rpcHandler?: (fn: string, args: any) => Promise<{ data: any; error: any }>;
+} = {}) {
   const upserts: any[] = [];
+  let currentPointer = opts.pointer;
   const admin = {
     upserts,
+    setPointer: (p: string) => { currentPointer = p; },
+    rpc: vi.fn(async (fn: string, args: any) => {
+      if (opts.throws) throw new Error("reset");
+      if (opts.rpcHandler) return opts.rpcHandler(fn, args);
+      if (fn === "save_onboarding_resume_profile") {
+        if (opts.readError) return { data: null, error: opts.readError };
+        if (opts.upsertError) return { data: null, error: opts.upsertError };
+        if (currentPointer !== args.p_storage_path) return { data: false, error: null };
+        upserts.push({
+          table: "onboarding_resume_profiles",
+          row: {
+            user_id: args.p_user_id,
+            source_storage_path: args.p_storage_path,
+            parse_status: args.p_parse_status,
+            parse_source: args.p_parse_source,
+            failure_reason: args.p_failure_reason,
+            profile: args.p_profile,
+          },
+          o: { onConflict: "user_id" },
+        });
+        return { data: true, error: null };
+      }
+      return { data: null, error: { message: "unknown rpc" } };
+    }),
     from: vi.fn((table: string) => ({
       select: () => ({
         eq: () => ({
           maybeSingle: async () => {
             if (opts.throws) throw new Error("reset");
             if (table === "onboarding_resume_uploads") {
-              return { data: opts.pointer ? { storage_path: opts.pointer } : null, error: opts.readError ?? null };
+              return { data: currentPointer ? { storage_path: currentPointer } : null, error: opts.readError ?? null };
             }
             return { data: opts.profileRow ?? null, error: null };
           },
@@ -277,6 +309,31 @@ describe("saveResumeProfile", () => {
   it("returns false (never throws) when the table is not migrated yet or the client throws", async () => {
     expect(await saveResumeProfile(fakeAdmin({ pointer: PATH, upsertError: { code: "42P01", message: "relation does not exist" } }), UID, PATH, parsed)).toBe(false);
     expect(await saveResumeProfile(fakeAdmin({ throws: true }), UID, PATH, parsed)).toBe(false);
+  });
+
+  it("interleaving test: newer upload replaces pointer before older save runs; older save returns false atomically", async () => {
+    const PATH_OLD = `${UID}/onboarding/old.pdf`;
+    const PATH_NEW = `${UID}/onboarding/new.pdf`;
+
+    const admin = fakeAdmin({ pointer: PATH_OLD });
+
+    // Newer upload arrives, pointer is updated to PATH_NEW, and its parse saves successfully
+    admin.setPointer(PATH_NEW);
+    const saveNew = await saveResumeProfile(admin, UID, PATH_NEW, {
+      ...parsed,
+      profile: { ...parsed.profile, jobTitles: ["Senior Engineer"] },
+    });
+    expect(saveNew).toBe(true);
+
+    // Slower parse from earlier upload finishes now with PATH_OLD and tries to save
+    const saveOld = await saveResumeProfile(admin, UID, PATH_OLD, parsed);
+    expect(saveOld).toBe(false);
+
+    // The newer profile is preserved; old profile was never saved
+    const savedProfiles = admin.upserts.filter((u) => u.table === "onboarding_resume_profiles");
+    expect(savedProfiles).toHaveLength(1);
+    expect(savedProfiles[0].row.source_storage_path).toBe(PATH_NEW);
+    expect(savedProfiles[0].row.profile.jobTitles).toEqual(["Senior Engineer"]);
   });
 });
 

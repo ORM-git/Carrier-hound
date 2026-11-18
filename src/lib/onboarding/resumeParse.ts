@@ -28,7 +28,7 @@ const log = createLogger({ context: { module: "onboarding/resumeParse" } });
 
 export const RESUME_PROFILES_TABLE = "onboarding_resume_profiles";
 /** Upper bound on the AI step so a slow provider never stalls the upload response. */
-export const AI_PARSE_TIMEOUT_MS = 15000;
+export const AI_PARSE_TIMEOUT_MS = 4000;
 
 export type ResumeParseStatus = "parsed" | "failed";
 
@@ -129,6 +129,26 @@ export async function saveResumeProfile(
   outcome: ResumeParseOutcome
 ): Promise<boolean> {
   try {
+    // 1. Atomic save via RPC with pointer lock (newer upload wins atomically)
+    if (typeof supabaseAdmin.rpc === "function") {
+      const res = await supabaseAdmin.rpc("save_onboarding_resume_profile", {
+        p_user_id: userId,
+        p_storage_path: storagePath,
+        p_parse_status: outcome.status,
+        p_parse_source: outcome.status === "parsed" ? outcome.source : null,
+        p_failure_reason: outcome.status === "failed" ? outcome.failureReason ?? "parse_error" : null,
+        p_profile: outcome.profile ?? {},
+      });
+      if (res && res.error == null && typeof res.data === "boolean") {
+        return res.data;
+      }
+      if (res?.error && (isMissingTable(res.error) || res.error.code === "42883")) {
+        log.warn("onboarding_resume_profiles not migrated yet; parse result not saved", { userId });
+        return false;
+      }
+    }
+
+    // 2. Fallback for mocks/environments without the RPC function
     const { data: pointer, error: readError } = await supabaseAdmin
       .from("onboarding_resume_uploads")
       .select("storage_path")

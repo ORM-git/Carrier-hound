@@ -5,7 +5,7 @@ import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRat
 import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
-import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers } from "@/lib/jobs/recommendations";
+import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers, hasResumeSignals } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
 import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
@@ -447,11 +447,13 @@ export async function GET(req: Request) {
     }
 
     const candidateJobs = rawJobs || [];
-    const rankedJobs = isPersonalized
+    const hasResume = hasResumeSignals(answers.resumeProfile);
+    const rankedJobs = isPersonalized || hasResume
       ? rankJobsByRecommendation(candidateJobs, answers)
       : rankJobsByRecommendation(candidateJobs, null);
 
-    // Hard preference exclusion: drop every row failing user's hard preferences or with matchScore <= 0
+    // Hard preference exclusion: drop rows failing user's hard preferences or with matchScore <= 0
+    // Resume alone never drops jobs (eligibility is independent of resume)
     const qualifyingJobs = isPersonalized && answers
       ? rankedJobs.filter((job) => {
           const score = job.matchScore ?? job._matchScore ?? 0;
@@ -555,7 +557,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       jobs: formattedJobs,
       totalCount,
-      personalized: isPersonalized,
+      personalized: isPersonalized || hasResume,
       isPro,
       page,
       pageSize,

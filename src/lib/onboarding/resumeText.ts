@@ -25,6 +25,12 @@ const MAX_TEXT_CHARS = 40000;
 /** Fewer meaningful characters than this means "no usable text". */
 const MIN_TEXT_CHARS = 40;
 
+/** Budgets for PDF parsing to bound CPU and memory on adversarial inputs. */
+export const MAX_CMAP_ENTRIES = 8192;
+export const MAX_WIDTHS_ENTRIES = 8192;
+export const MAX_PARSED_PAGES = 20;
+export const MAX_DECODED_STREAMS = 50;
+
 class OutputBudget {
   used = 0;
   take(n: number): boolean {
@@ -223,14 +229,20 @@ function parseObjects(bin: string, bytes: Uint8Array): Map<number, { dict: strin
   return objects;
 }
 
-async function resolveObjects(bin: string, bytes: Uint8Array, budget: OutputBudget): Promise<Map<number, PdfObject>> {
+async function resolveObjects(bin: string, bytes: Uint8Array, budget: OutputBudget, maxStreams = MAX_DECODED_STREAMS): Promise<Map<number, PdfObject>> {
   const parsed = parseObjects(bin, bytes);
   const out = new Map<number, PdfObject>();
+  let decodedStreams = 0;
   for (const [num, o] of Array.from(parsed)) {
     if (!o.streamRaw) {
       out.set(num, { dict: o.dict });
       continue;
     }
+    if (decodedStreams >= maxStreams) {
+      out.set(num, { dict: o.dict });
+      continue;
+    }
+    decodedStreams++;
     const decoded = await decodeStream(o.dict, o.streamRaw, budget);
     out.set(num, { dict: o.dict, stream: decoded ?? undefined });
   }
@@ -279,24 +291,29 @@ function incrementBytes(bytesStr: string, by: number): string {
 }
 
 /** Parses a ToUnicode CMap (bfchar / bfrange / codespacerange). */
-export function parseToUnicodeCMap(src: string): CMap {
+export function parseToUnicodeCMap(src: string, maxEntries = MAX_CMAP_ENTRIES): CMap {
   const map = new Map<string, string>();
   const byteLengths = new Set<number>();
+  let totalEntries = 0;
   for (const block of Array.from(src.matchAll(/begincodespacerange([\s\S]*?)endcodespacerange/g))) {
     for (const h of Array.from(block[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<[0-9a-fA-F\s]+>/g))) {
       byteLengths.add(Math.max(1, Math.ceil(h[1].replace(/\s/g, "").length / 2)));
     }
   }
   for (const block of Array.from(src.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))) {
+    if (totalEntries >= maxEntries) break;
     for (const p of Array.from(block[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]*)>/g))) {
+      if (totalEntries++ >= maxEntries) break;
       const src2 = hexToBytesStr(p[1]);
       map.set(src2, utf16beToString(hexToBytesStr(p[2])));
       byteLengths.add(src2.length);
     }
   }
   for (const block of Array.from(src.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))) {
+    if (totalEntries >= maxEntries) break;
     const re = /<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]+)>\s*(?:<([0-9a-fA-F\s]*)>|\[([^\]]*)\])/g;
     for (const r of Array.from(block[1].matchAll(re))) {
+      if (totalEntries >= maxEntries) break;
       const lo = hexToBytesStr(r[1]);
       const hi = hexToBytesStr(r[2]);
       const loN = parseInt(r[1].replace(/\s/g, ""), 16);
@@ -307,11 +324,15 @@ export function parseToUnicodeCMap(src: string): CMap {
       if (r[3] !== undefined) {
         const dst = hexToBytesStr(r[3]);
         for (let k = 0; k <= span; k++) {
+          if (totalEntries++ >= maxEntries) break;
           map.set(incrementBytes(lo, k), utf16beToString(incrementBytes(dst, k)));
         }
       } else if (r[4] !== undefined) {
         const dsts = Array.from(r[4].matchAll(/<([0-9a-fA-F\s]*)>/g)).map((d: RegExpMatchArray) => utf16beToString(hexToBytesStr(d[1])));
-        for (let k = 0; k <= span && k < dsts.length; k++) map.set(incrementBytes(lo, k), dsts[k]);
+        for (let k = 0; k <= span && k < dsts.length; k++) {
+          if (totalEntries++ >= maxEntries) break;
+          map.set(incrementBytes(lo, k), dsts[k]);
+        }
       }
       void hi;
     }
@@ -575,7 +596,8 @@ function arrayOf(objects: Map<number, PdfObject>, dict: string, key: string): st
 function fontWidths(
   objects: Map<number, PdfObject>,
   dict: string,
-  twoByte: boolean
+  twoByte: boolean,
+  maxWidths = MAX_WIDTHS_ENTRIES
 ): { widths: Map<number, number> | null; defaultWidth: number } {
   const widths = new Map<number, number>();
   if (twoByte) {
@@ -589,14 +611,22 @@ function fontWidths(
       const re = /(\d+)\s*\[([^\]]*)\]|(\d+)\s+(\d+)\s+(\d+(?:\.\d+)?)/g;
       let m: RegExpExecArray | null;
       let guard = 0;
-      while ((m = re.exec(w)) && guard++ < 70000) {
+      let totalW = 0;
+      while ((m = re.exec(w)) && guard++ < 70000 && totalW < maxWidths) {
         if (m[1] !== undefined) {
           const first = Number(m[1]);
-          m[2].trim().split(/\s+/).filter(Boolean).forEach((v, k) => widths.set(first + k, Number(v)));
+          const parts = m[2].trim().split(/\s+/).filter(Boolean);
+          for (let k = 0; k < parts.length; k++) {
+            if (totalW++ >= maxWidths) break;
+            widths.set(first + k, Number(parts[k]));
+          }
         } else {
           const lo = Number(m[3]);
           const hi = Math.min(Number(m[4]), lo + 65535);
-          for (let c = lo; c <= hi; c++) widths.set(c, Number(m[5]));
+          for (let c = lo; c <= hi; c++) {
+            if (totalW++ >= maxWidths) break;
+            widths.set(c, Number(m[5]));
+          }
         }
       }
     }
@@ -605,7 +635,12 @@ function fontWidths(
   const first = Number(dict.match(/\/FirstChar\s+(\d+)/)?.[1] ?? NaN);
   const arr = arrayOf(objects, dict, "Widths");
   if (Number.isFinite(first) && arr) {
-    arr.trim().split(/\s+/).filter(Boolean).forEach((v, k) => widths.set(first + k, Number(v)));
+    const parts = arr.trim().split(/\s+/).filter(Boolean);
+    let totalW = 0;
+    for (let k = 0; k < parts.length && totalW < maxWidths; k++) {
+      totalW++;
+      widths.set(first + k, Number(parts[k]));
+    }
     return { widths, defaultWidth: 500 };
   }
   return { widths: null, defaultWidth: 500 };
@@ -667,17 +702,20 @@ function resourcesOf(objects: Map<number, PdfObject>, pageDict: string): string 
   return "";
 }
 
-function pageOrder(objects: Map<number, PdfObject>, bin: string): number[] {
+function pageOrder(objects: Map<number, PdfObject>, bin: string, maxPages = MAX_PARSED_PAGES): number[] {
   const rootMatches = Array.from(bin.matchAll(/\/Root\s+(\d+)\s+\d+\s+R/g));
   const pages: number[] = [];
   const seen = new Set<number>();
   const walk = (num: number, depth: number) => {
-    if (seen.has(num) || depth > 32 || pages.length > 500) return;
+    if (seen.has(num) || depth > 32 || pages.length >= maxPages) return;
     seen.add(num);
     const dict = objects.get(num)?.dict || "";
     if (/\/Type\s*\/Pages\b/.test(dict)) {
       const kids = dict.match(/\/Kids\s*\[([^\]]*)\]/);
-      for (const k of refsIn(kids ? kids[1] : "")) walk(k, depth + 1);
+      for (const k of refsIn(kids ? kids[1] : "")) {
+        walk(k, depth + 1);
+        if (pages.length >= maxPages) break;
+      }
     } else if (/\/Type\s*\/Page\b/.test(dict)) {
       pages.push(num);
     }
@@ -688,9 +726,12 @@ function pageOrder(objects: Map<number, PdfObject>, bin: string): number[] {
     if (pagesRef !== null) walk(pagesRef, 0);
   }
   if (pages.length === 0) {
-    for (const [num, o] of Array.from(objects)) if (/\/Type\s*\/Page\b/.test(o.dict)) pages.push(num);
+    for (const [num, o] of Array.from(objects)) {
+      if (pages.length >= maxPages) break;
+      if (/\/Type\s*\/Page\b/.test(o.dict)) pages.push(num);
+    }
   }
-  return pages;
+  return pages.slice(0, maxPages);
 }
 
 export async function extractPdfText(bytes: Uint8Array): Promise<ResumeTextResult> {

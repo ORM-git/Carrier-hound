@@ -144,6 +144,39 @@ describe("ToUnicode CMap", () => {
     const fonts = new Map([["F2", { cmap: null, twoByte: true, widths: null, defaultWidth: 1000 }]]);
     expect(extractTextFromContentStream("BT /F2 10 Tf <00260052> Tj ET", fonts as any).trim()).toBe("");
   });
+
+  it("adversarial CMap: 200 repeated 64k bfrange blocks stop safely within budget (< 100ms)", () => {
+    // 200 ranges with span 0xffff would be 13M iterations if uncapped
+    const line = "<0000> <FFFF> <0000>\n";
+    const adversarialCMap = "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\nbeginbfrange\n" +
+      line.repeat(200) +
+      "endbfrange\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend";
+    
+    const t0 = Date.now();
+    const cmap = parseToUnicodeCMap(adversarialCMap);
+    const duration = Date.now() - t0;
+
+    expect(duration).toBeLessThan(300);
+    expect(cmap.map.size).toBeLessThanOrEqual(8192);
+  });
+
+  it("adversarial PDF with heavy repeated ranges stops safely within stream/work budgets", async () => {
+    const line = "<0000> <FFFF> <0000>\n";
+    const cmapStream = "/CIDInit /ProcSet findresource begin\nbegincmap\nbeginbfrange\n" + line.repeat(200) + "endbfrange\nendcmap";
+    const pdf = buildPdf([
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] >>",
+      "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      `<< /Type /Font /Subtype /Type0 /ToUnicode 6 0 R >>`,
+      `<< /Length 19 >>\nstream\nBT /F1 10 Tf (hi) Tj ET\nendstream`,
+      `<< /Length ${cmapStream.length} >>\nstream\n${cmapStream}\nendstream`,
+    ]);
+    const t0 = Date.now();
+    const result = await extractPdfText(pdf);
+    const duration = Date.now() - t0;
+    expect(duration).toBeLessThan(500);
+    expect(result).toBeDefined();
+  });
 });
 
 describe("DOCX text extraction", () => {

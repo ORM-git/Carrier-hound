@@ -58,7 +58,7 @@ export const RESUME_TITLE_MAX = 8;
 export const RESUME_SKILL_MAX = 7;
 const RESUME_DESCRIPTION_SCAN_CHARS = 4000;
 
-function hasResumeSignals(r?: ResumeRankingSignals | null): boolean {
+export function hasResumeSignals(r?: ResumeRankingSignals | null): boolean {
   if (!r) return false;
   const any = (a?: string[]) => Array.isArray(a) && a.some((x) => typeof x === "string" && x.trim().length > 0);
   return any(r.jobTitles) || any(r.skills) || any(r.preferredRoles);
@@ -157,7 +157,7 @@ export function hasOnboardingAnswers(answers?: OnboardingAnswers | null): boolea
     (answers.countryCode && answers.countryCode.trim().length > 0)
   );
 
-  return hasRoles || hasExp || hasRemote || hasLocs || hasTypes || hasCats || hasMinSalary || hasCountry || hasResumeSignals(answers.resumeProfile);
+  return hasRoles || hasExp || hasRemote || hasLocs || hasTypes || hasCats || hasMinSalary || hasCountry;
 }
 
 /**
@@ -609,18 +609,44 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     return [];
   }
 
-  // Fallback when a user has no answers: latest jobs with deterministic tie-breaks
+  // Fallback when a user has no answers: return all jobs, optionally boosted by resume
   if (!hasOnboardingAnswers(answers)) {
-    return [...jobs].sort((a, b) => {
-      const timeA = new Date(a.posted_at || a.created_at || a.first_seen_at || 0).getTime();
-      const timeB = new Date(b.posted_at || b.created_at || b.first_seen_at || 0).getTime();
-      if (timeB !== timeA) {
-        return timeB - timeA;
-      }
-      const idA = String(a.id ?? "");
-      const idB = String(b.id ?? "");
+    const hasResume = hasResumeSignals(answers?.resumeProfile);
+    if (!hasResume) {
+      return [...jobs].sort((a, b) => {
+        const timeA = new Date(a.posted_at || a.created_at || a.first_seen_at || 0).getTime();
+        const timeB = new Date(b.posted_at || b.created_at || b.first_seen_at || 0).getTime();
+        if (timeB !== timeA) {
+          return timeB - timeA;
+        }
+        const idA = String(a.id ?? "");
+        const idB = String(b.id ?? "");
+        return idB.localeCompare(idA);
+      });
+    }
+
+    // With resume but no other onboarding answers: ALL jobs remain eligible (none dropped).
+    // Resume match provides a soft score boost for ranking order.
+    const scored = jobs.map((job) => {
+      const resume = scoreResumeMatch(job, answers!.resumeProfile);
+      return { job, score: resume.score };
+    });
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const timeA = new Date(a.job.posted_at || a.job.created_at || a.job.first_seen_at || 0).getTime();
+      const timeB = new Date(b.job.posted_at || b.job.created_at || b.job.first_seen_at || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      const idA = String(a.job.id ?? "");
+      const idB = String(b.job.id ?? "");
       return idB.localeCompare(idA);
     });
+
+    return scored.map((s) => ({
+      ...s.job,
+      _matchScore: s.score,
+      matchScore: s.score,
+    }));
   }
 
   const userRemote = (answers!.remotePreference || "").toLowerCase().trim();
@@ -631,14 +657,19 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     ...(answers!.countryCode ? [answers!.countryCode] : []),
   ].filter((l): l is string => Boolean(l && l.trim().length > 0));
 
-  // Drop every row that fails the user's hard preferences (remote, experience, country) or scores 0
-  const qualifyingScored = jobs
-    .map((job) => scoreJobRecommendation(job, answers!))
-    .filter((s) => {
-      // Must have positive score (not scored 0 / disqualified)
-      if (s.score <= 0) return false;
+  // Determine eligibility solely from base onboarding answers (resume is a soft score boost only)
+  const baseAnswers: OnboardingAnswers = { ...answers!, resumeProfile: undefined };
 
-      const job = s.job;
+  const qualifyingScored = jobs
+    .map((job) => ({
+      job,
+      base: scoreJobRecommendation(job, baseAnswers),
+      full: scoreJobRecommendation(job, answers!),
+    }))
+    .filter(({ job, base }) => {
+      // Must have positive score from base onboarding answers (resume never qualifies or drops)
+      if (base.score <= 0) return false;
+
       const title = (job.title || "").toLowerCase();
       const location = (job.location || "").toLowerCase();
       const isRemote =
@@ -673,7 +704,8 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
       }
 
       return true;
-    });
+    })
+    .map(({ full }) => full);
 
   qualifyingScored.sort((a, b) => {
     // 1. Primary sort: recommendation score DESC

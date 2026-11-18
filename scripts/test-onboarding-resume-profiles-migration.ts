@@ -132,13 +132,14 @@ async function main() {
         has_table_privilege(r, 'public.onboarding_resume_profiles', 'SELECT') AS sel,
         has_table_privilege(r, 'public.onboarding_resume_profiles', 'INSERT') AS ins,
         has_table_privilege(r, 'public.onboarding_resume_profiles', 'UPDATE') AS upd,
-        has_table_privilege(r, 'public.onboarding_resume_profiles', 'DELETE') AS del
+        has_table_privilege(r, 'public.onboarding_resume_profiles', 'DELETE') AS del,
+        has_table_privilege(r, 'public.onboarding_resume_profiles', 'TRUNCATE') AS trn
       FROM unnest(ARRAY['anon','authenticated','service_role']) r ORDER BY r`);
     const by = Object.fromEntries(priv.rows.map((r: any) => [r.r, r]));
-    assert.deepEqual([by.anon.sel, by.anon.ins, by.anon.upd, by.anon.del], [false, false, false, false]);
-    assert.deepEqual([by.authenticated.sel, by.authenticated.ins, by.authenticated.upd, by.authenticated.del], [true, false, false, false]);
-    assert.deepEqual([by.service_role.ins, by.service_role.upd, by.service_role.del], [true, true, true]);
-    ok("verify query: anon nothing, authenticated SELECT only, service_role writes");
+    assert.deepEqual([by.anon.sel, by.anon.ins, by.anon.upd, by.anon.del, by.anon.trn], [false, false, false, false, false]);
+    assert.deepEqual([by.authenticated.sel, by.authenticated.ins, by.authenticated.upd, by.authenticated.del, by.authenticated.trn], [true, false, false, false, false]);
+    assert.deepEqual([by.service_role.ins, by.service_role.upd, by.service_role.del, by.service_role.trn], [true, true, true, true]);
+    ok("verify query: anon nothing, authenticated SELECT only, service_role writes and truncates");
 
     await pg.exec(`INSERT INTO auth.users(id,email) VALUES ('${U1}','a@x.dev'),('${U2}','b@x.dev')`);
     await asRole(pg, "service_role", null, `INSERT INTO public.onboarding_resume_uploads(user_id,storage_path,file_name,mime_type,size_bytes)
@@ -149,6 +150,32 @@ async function main() {
       VALUES ('${U2}','${U2}/onboarding/b.pdf','failed','scanned_pdf')
       ON CONFLICT (user_id) DO UPDATE SET parse_status = excluded.parse_status`);
     ok("service_role can insert and upsert parsed and failed rows");
+
+    // Atomic RPC: save_onboarding_resume_profile
+    const rpcOk = await asRole(pg, "service_role", null, `SELECT public.save_onboarding_resume_profile(
+      '${U1}'::uuid, '${U1}/onboarding/a.pdf', 'parsed', 'rules', NULL, ${PROFILE}
+    ) AS ok`);
+    assert.equal(rpcOk.rows[0].ok, true);
+
+    // Stale path returns false atomically
+    const rpcStale = await asRole(pg, "service_role", null, `SELECT public.save_onboarding_resume_profile(
+      '${U1}'::uuid, '${U1}/onboarding/stale.pdf', 'parsed', 'rules', NULL, ${PROFILE}
+    ) AS ok`);
+    assert.equal(rpcStale.rows[0].ok, false);
+
+    await denied(
+      asRole(pg, "authenticated", U1, `SELECT public.save_onboarding_resume_profile(
+        '${U1}'::uuid, '${U1}/onboarding/a.pdf', 'parsed', 'rules', NULL, ${PROFILE}
+      )`),
+      "authenticated execute save_onboarding_resume_profile"
+    );
+    await denied(
+      asRole(pg, "anon", null, `SELECT public.save_onboarding_resume_profile(
+        '${U1}'::uuid, '${U1}/onboarding/a.pdf', 'parsed', 'rules', NULL, ${PROFILE}
+      )`),
+      "anon execute save_onboarding_resume_profile"
+    );
+    ok("atomic save_onboarding_resume_profile: service_role can execute, checks pointer, anon/auth denied");
 
     await denied(
       asRole(pg, "authenticated", U1, `INSERT INTO public.onboarding_resume_profiles(user_id,source_storage_path,parse_status,parse_source)
@@ -226,6 +253,16 @@ async function main() {
     await pg.exec(`CREATE TABLE public.onboarding_resume_profiles (user_id uuid primary key)`);
     await refuses(pg, /not created by this migration/, "foreign table");
     ok("preflight refuses a foreign pre-existing table");
+  });
+
+  await withFixture("inherited truncate helper role", { withParent: true }, async (pg) => {
+    await pg.exec(`
+      CREATE ROLE truncator_helper NOLOGIN;
+      GRANT truncator_helper TO authenticated;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT TRUNCATE ON TABLES TO truncator_helper;
+    `);
+    await refuses(pg, /post-check: role authenticated still holds TRUNCATE/i, "inherited truncate");
+    ok("post-check catches TRUNCATE privilege inherited through another role");
   });
 
   console.log(`\nAll ${passed} checks passed.`);

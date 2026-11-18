@@ -59,9 +59,33 @@ describe("resume boost (soft ranking only)", () => {
     expect(r.score).toBeLessThanOrEqual(15);
   });
 
-  it("a resume alone personalizes the list", () => {
-    expect(hasOnboardingAnswers({ resumeProfile: resume })).toBe(true);
+  it("hasOnboardingAnswers is false for resume alone (eligibility independent of resume)", () => {
+    expect(hasOnboardingAnswers({ resumeProfile: resume })).toBe(false);
     expect(hasOnboardingAnswers({ resumeProfile: { skills: [], jobTitles: [" "] } })).toBe(false);
+  });
+
+  it("the job ID set is unchanged with and without a resume, keeping existing hard preferences", () => {
+    const jobsList = [
+      job("j1", "Frontend Engineer", { skills: ["React"] }),
+      job("j2", "Data Analyst", { skills: ["SQL", "Tableau"] }),
+      job("j3", "DevOps Engineer", { skills: ["AWS", "Docker"] }),
+      job("j4", "Senior Architect", { skills: ["System Design"] }),
+      job("j5", "Onsite Sales", { remote: false, remote_scope: "onsite", location: "Pune" }),
+    ];
+
+    // Case 1: No onboarding answers - all jobs returned with or without resume
+    const withoutResume1 = rankJobsByRecommendation(jobsList, {});
+    const withResume1 = rankJobsByRecommendation(jobsList, { resumeProfile: resume });
+    expect(withResume1.map((j) => j.id).sort()).toEqual(withoutResume1.map((j) => j.id).sort());
+
+    // Case 2: With onboarding answers and hard preferences (entry level hard-excludes senior/lead)
+    const baseAnswers = { roles: ["Engineer"], remotePreference: "remote", experienceLevel: "entry" };
+    const withoutResume2 = rankJobsByRecommendation(jobsList, baseAnswers);
+    const withResume2 = rankJobsByRecommendation(jobsList, { ...baseAnswers, resumeProfile: resume });
+    expect(withResume2.map((j) => j.id).sort()).toEqual(withoutResume2.map((j) => j.id).sort());
+    // Ensure onsite and senior architect are still excluded by hard preferences
+    expect(withResume2.map((j) => j.id)).not.toContain("j4"); // Senior excluded for entry
+    expect(withResume2.map((j) => j.id)).not.toContain("j5"); // Onsite excluded for remote
   });
 
   it("ranks resume-matching jobs above equal jobs that don't match", () => {
