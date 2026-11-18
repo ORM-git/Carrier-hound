@@ -341,6 +341,7 @@ function OnboardingPageInner() {
             }}
             onFinish={handleFinishOnboarding}
             isSaving={isSaving}
+            authToken={authToken}
           />
         )}
       </div>

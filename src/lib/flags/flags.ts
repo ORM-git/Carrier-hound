@@ -38,6 +38,8 @@ export const FLAGS: readonly FlagDefinition[] = [
     description: "Shows the skill what-if entry on job detail." },
   { envVar: "NEXT_PUBLIC_ONBOARDING_FLOW_ENABLED", rule: "strict_true", defaultEnabled: false, scope: "public-build",
     description: "Enables new mobile-first onboarding flow for new users." },
+  { envVar: "NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED", rule: "strict_true", defaultEnabled: false, scope: "public-build",
+    description: "Enables onboarding step 2 profile enrichment (LinkedIn URL and resume upload)." },
   { envVar: "ALLOW_LOCALHOST_CORS", rule: "strict_true", defaultEnabled: false, scope: "server",
     description: "Allows localhost origins in the Netlify functions CORS list outside development." },
   { envVar: "AI_GLOBAL_DISABLE", rule: "truthy_words", defaultEnabled: false, scope: "server",
