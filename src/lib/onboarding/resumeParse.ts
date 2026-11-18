@@ -119,8 +119,11 @@ function isMissingTable(error: any): boolean {
 }
 
 /**
- * Saves the outcome for `userId`, but only while the user's upload pointer still references
- * `storagePath` (a newer upload wins). Returns false on any failure. Never throws.
+ * Saves the outcome for `userId` atomically via save_onboarding_resume_profile RPC,
+ * which takes a row lock on the user's upload pointer row. If a newer upload arrives,
+ * the RPC detects the pointer mismatch and returns false. Fails closed on every RPC error
+ * or unexpected response shape (the upload still succeeds, but the profile is not saved).
+ * Returns false on any failure. Never throws.
  */
 export async function saveResumeProfile(
   supabaseAdmin: any,
@@ -129,53 +132,31 @@ export async function saveResumeProfile(
   outcome: ResumeParseOutcome
 ): Promise<boolean> {
   try {
-    // 1. Atomic save via RPC with pointer lock (newer upload wins atomically)
-    if (typeof supabaseAdmin.rpc === "function") {
-      const res = await supabaseAdmin.rpc("save_onboarding_resume_profile", {
-        p_user_id: userId,
-        p_storage_path: storagePath,
-        p_parse_status: outcome.status,
-        p_parse_source: outcome.status === "parsed" ? outcome.source : null,
-        p_failure_reason: outcome.status === "failed" ? outcome.failureReason ?? "parse_error" : null,
-        p_profile: outcome.profile ?? {},
-      });
-      if (res && res.error == null && typeof res.data === "boolean") {
-        return res.data;
-      }
-      if (res?.error && (isMissingTable(res.error) || res.error.code === "42883")) {
+    if (typeof supabaseAdmin?.rpc !== "function") {
+      log.warn("RPC client unavailable; parse result not saved", { userId });
+      return false;
+    }
+    const res = await supabaseAdmin.rpc("save_onboarding_resume_profile", {
+      p_user_id: userId,
+      p_storage_path: storagePath,
+      p_parse_status: outcome.status,
+      p_parse_source: outcome.status === "parsed" ? outcome.source : null,
+      p_failure_reason: outcome.status === "failed" ? outcome.failureReason ?? "parse_error" : null,
+      p_profile: outcome.profile ?? {},
+    });
+    if (res?.error) {
+      if (isMissingTable(res.error) || res.error.code === "42883") {
         log.warn("onboarding_resume_profiles not migrated yet; parse result not saved", { userId });
-        return false;
+      } else {
+        log.error("save_onboarding_resume_profile RPC error", { userId, error: res.error.message, code: res.error.code });
       }
-    }
-
-    // 2. Fallback for mocks/environments without the RPC function
-    const { data: pointer, error: readError } = await supabaseAdmin
-      .from("onboarding_resume_uploads")
-      .select("storage_path")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (readError || pointer?.storage_path !== storagePath) {
-      if (readError) log.warn("Pointer re-read before profile save failed", { userId, error: readError.message });
       return false;
     }
-    const { error } = await supabaseAdmin.from(RESUME_PROFILES_TABLE).upsert(
-      {
-        user_id: userId,
-        source_storage_path: storagePath,
-        parse_status: outcome.status,
-        parse_source: outcome.status === "parsed" ? outcome.source : null,
-        failure_reason: outcome.status === "failed" ? outcome.failureReason ?? "parse_error" : null,
-        profile: outcome.profile,
-        parsed_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }
-    );
-    if (error) {
-      if (isMissingTable(error)) log.warn("onboarding_resume_profiles not migrated yet; parse result not saved", { userId });
-      else log.error("Saving parsed resume profile failed", { userId, error: error.message });
-      return false;
+    if (typeof res?.data === "boolean") {
+      return res.data;
     }
-    return true;
+    log.warn("Unexpected RPC response shape; parse result not saved", { userId, data: res?.data });
+    return false;
   } catch (err: any) {
     log.error("Saving parsed resume profile threw", { userId, error: err?.message });
     return false;

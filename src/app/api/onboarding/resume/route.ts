@@ -250,27 +250,18 @@ export async function POST(req: Request) {
     if (waitUntil) waitUntil(sweep);
     else await sweep;
 
-    // Parse after commit. parseOnboardingResume / saveResumeProfile never throw; hard-bounded
-    // so it can never delay or fail the upload response.
+    // Parse after commit. parseOnboardingResume / saveResumeProfile are hard-bounded inside
+    // the parser itself and never throw, so the upload response is never delayed or failed.
     let parse: ReturnType<typeof summarizeOutcome> = { status: "unavailable" };
     try {
-      const parsePromise = (async () => {
-        const outcome = await parseOnboardingResume(bytes, kind, {
-          clientIp: getClientIpFromRequest(req),
-          authHeader,
-          env: cfEnv,
-          supabaseAdmin,
-        });
-        const saved = await saveResumeProfile(supabaseAdmin, user.id, storagePath, outcome);
-        return summarizeOutcome(outcome, saved);
-      })();
-      let parseTimer: ReturnType<typeof setTimeout> | undefined;
-      const timeoutPromise = new Promise<null>((resolve) => {
-        parseTimer = setTimeout(() => resolve(null), 5000);
+      const outcome = await parseOnboardingResume(bytes, kind, {
+        clientIp: getClientIpFromRequest(req),
+        authHeader,
+        env: cfEnv,
+        supabaseAdmin,
       });
-      const res = await Promise.race([parsePromise, timeoutPromise]);
-      if (parseTimer) clearTimeout(parseTimer);
-      if (res) parse = res;
+      const saved = await saveResumeProfile(supabaseAdmin, user.id, storagePath, outcome);
+      parse = summarizeOutcome(outcome, saved);
     } catch (err: any) {
       log.warn("Resume parse step threw after a committed upload", { userId, error: err?.message });
     }

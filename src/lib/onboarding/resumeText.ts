@@ -30,6 +30,55 @@ export const MAX_CMAP_ENTRIES = 8192;
 export const MAX_WIDTHS_ENTRIES = 8192;
 export const MAX_PARSED_PAGES = 20;
 export const MAX_DECODED_STREAMS = 50;
+export const MAX_DOC_FONTS = 128;
+export const MAX_DOC_CMAP_ENTRIES = 8192;
+export const MAX_DOC_WIDTH_ENTRIES = 8192;
+export const MAX_DOC_PARSE_WORK = 65536;
+
+export class DocParseBudget {
+  fontsCount = 0;
+  cmapEntries = 0;
+  widthEntries = 0;
+  workUnits = 0;
+
+  constructor(
+    public readonly maxFonts = MAX_DOC_FONTS,
+    public readonly maxCmapEntries = MAX_DOC_CMAP_ENTRIES,
+    public readonly maxWidthEntries = MAX_DOC_WIDTH_ENTRIES,
+    public readonly maxWork = MAX_DOC_PARSE_WORK
+  ) {}
+
+  canParseFont(): boolean {
+    return this.fontsCount < this.maxFonts && this.workUnits < this.maxWork;
+  }
+
+  recordFont(): boolean {
+    if (!this.canParseFont()) return false;
+    this.fontsCount++;
+    this.workUnits++;
+    return true;
+  }
+
+  remainingCmapEntries(): number {
+    if (this.workUnits >= this.maxWork) return 0;
+    return Math.max(0, this.maxCmapEntries - this.cmapEntries);
+  }
+
+  recordCmapEntries(n: number) {
+    this.cmapEntries += n;
+    this.workUnits += n;
+  }
+
+  remainingWidthEntries(): number {
+    if (this.workUnits >= this.maxWork) return 0;
+    return Math.max(0, this.maxWidthEntries - this.widthEntries);
+  }
+
+  recordWidthEntries(n: number) {
+    this.widthEntries += n;
+    this.workUnits += n;
+  }
+}
 
 class OutputBudget {
   used = 0;
@@ -291,9 +340,16 @@ function incrementBytes(bytesStr: string, by: number): string {
 }
 
 /** Parses a ToUnicode CMap (bfchar / bfrange / codespacerange). */
-export function parseToUnicodeCMap(src: string, maxEntries = MAX_CMAP_ENTRIES): CMap {
+export function parseToUnicodeCMap(
+  src: string,
+  maxEntries = MAX_CMAP_ENTRIES,
+  budget?: DocParseBudget
+): CMap {
+  const allowed = budget ? Math.min(maxEntries, budget.remainingCmapEntries()) : maxEntries;
   const map = new Map<string, string>();
   const byteLengths = new Set<number>();
+  if (allowed <= 0) return { map, byteLengths: [] };
+
   let totalEntries = 0;
   for (const block of Array.from(src.matchAll(/begincodespacerange([\s\S]*?)endcodespacerange/g))) {
     for (const h of Array.from(block[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<[0-9a-fA-F\s]+>/g))) {
@@ -301,19 +357,19 @@ export function parseToUnicodeCMap(src: string, maxEntries = MAX_CMAP_ENTRIES): 
     }
   }
   for (const block of Array.from(src.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))) {
-    if (totalEntries >= maxEntries) break;
+    if (totalEntries >= allowed) break;
     for (const p of Array.from(block[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]*)>/g))) {
-      if (totalEntries++ >= maxEntries) break;
+      if (totalEntries++ >= allowed) break;
       const src2 = hexToBytesStr(p[1]);
       map.set(src2, utf16beToString(hexToBytesStr(p[2])));
       byteLengths.add(src2.length);
     }
   }
   for (const block of Array.from(src.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))) {
-    if (totalEntries >= maxEntries) break;
+    if (totalEntries >= allowed) break;
     const re = /<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]+)>\s*(?:<([0-9a-fA-F\s]*)>|\[([^\]]*)\])/g;
     for (const r of Array.from(block[1].matchAll(re))) {
-      if (totalEntries >= maxEntries) break;
+      if (totalEntries >= allowed) break;
       const lo = hexToBytesStr(r[1]);
       const hi = hexToBytesStr(r[2]);
       const loN = parseInt(r[1].replace(/\s/g, ""), 16);
@@ -324,19 +380,20 @@ export function parseToUnicodeCMap(src: string, maxEntries = MAX_CMAP_ENTRIES): 
       if (r[3] !== undefined) {
         const dst = hexToBytesStr(r[3]);
         for (let k = 0; k <= span; k++) {
-          if (totalEntries++ >= maxEntries) break;
+          if (totalEntries++ >= allowed) break;
           map.set(incrementBytes(lo, k), utf16beToString(incrementBytes(dst, k)));
         }
       } else if (r[4] !== undefined) {
         const dsts = Array.from(r[4].matchAll(/<([0-9a-fA-F\s]*)>/g)).map((d: RegExpMatchArray) => utf16beToString(hexToBytesStr(d[1])));
         for (let k = 0; k <= span && k < dsts.length; k++) {
-          if (totalEntries++ >= maxEntries) break;
+          if (totalEntries++ >= allowed) break;
           map.set(incrementBytes(lo, k), dsts[k]);
         }
       }
       void hi;
     }
   }
+  if (budget) budget.recordCmapEntries(totalEntries);
   return { map, byteLengths: Array.from(byteLengths).sort((a, b) => b - a) };
 }
 
@@ -597,9 +654,13 @@ function fontWidths(
   objects: Map<number, PdfObject>,
   dict: string,
   twoByte: boolean,
-  maxWidths = MAX_WIDTHS_ENTRIES
+  maxWidths = MAX_WIDTHS_ENTRIES,
+  budget?: DocParseBudget
 ): { widths: Map<number, number> | null; defaultWidth: number } {
+  const allowed = budget ? Math.min(maxWidths, budget.remainingWidthEntries()) : maxWidths;
+  if (allowed <= 0) return { widths: null, defaultWidth: 500 };
   const widths = new Map<number, number>();
+  let totalW = 0;
   if (twoByte) {
     const desc = arrayOf(objects, dict, "DescendantFonts");
     const cidRef = desc ? refsIn(desc)[0] : undefined;
@@ -611,36 +672,36 @@ function fontWidths(
       const re = /(\d+)\s*\[([^\]]*)\]|(\d+)\s+(\d+)\s+(\d+(?:\.\d+)?)/g;
       let m: RegExpExecArray | null;
       let guard = 0;
-      let totalW = 0;
-      while ((m = re.exec(w)) && guard++ < 70000 && totalW < maxWidths) {
+      while ((m = re.exec(w)) && guard++ < 70000 && totalW < allowed) {
         if (m[1] !== undefined) {
           const first = Number(m[1]);
           const parts = m[2].trim().split(/\s+/).filter(Boolean);
           for (let k = 0; k < parts.length; k++) {
-            if (totalW++ >= maxWidths) break;
+            if (totalW++ >= allowed) break;
             widths.set(first + k, Number(parts[k]));
           }
         } else {
           const lo = Number(m[3]);
           const hi = Math.min(Number(m[4]), lo + 65535);
           for (let c = lo; c <= hi; c++) {
-            if (totalW++ >= maxWidths) break;
+            if (totalW++ >= allowed) break;
             widths.set(c, Number(m[5]));
           }
         }
       }
     }
+    if (budget) budget.recordWidthEntries(totalW);
     return { widths, defaultWidth: dw };
   }
   const first = Number(dict.match(/\/FirstChar\s+(\d+)/)?.[1] ?? NaN);
   const arr = arrayOf(objects, dict, "Widths");
   if (Number.isFinite(first) && arr) {
     const parts = arr.trim().split(/\s+/).filter(Boolean);
-    let totalW = 0;
-    for (let k = 0; k < parts.length && totalW < maxWidths; k++) {
+    for (let k = 0; k < parts.length && totalW < allowed; k++) {
       totalW++;
       widths.set(first + k, Number(parts[k]));
     }
+    if (budget) budget.recordWidthEntries(totalW);
     return { widths, defaultWidth: 500 };
   }
   return { widths: null, defaultWidth: 500 };
@@ -657,24 +718,49 @@ function advanceOf(raw: string, font: PdfFont | undefined, size: number): number
   return (total / 1000) * size;
 }
 
-function fontFrom(objects: Map<number, PdfObject>, fontObjNum: number, cache: Map<number, PdfFont>): PdfFont {
+function fontFrom(
+  objects: Map<number, PdfObject>,
+  fontObjNum: number,
+  cache: Map<number, PdfFont>,
+  cmapCache: Map<number, CMap>,
+  budget?: DocParseBudget
+): PdfFont {
   const cached = cache.get(fontObjNum);
   if (cached) return cached;
+  if (budget && !budget.recordFont()) {
+    const fallback: PdfFont = { cmap: null, twoByte: false, widths: null, defaultWidth: 500 };
+    cache.set(fontObjNum, fallback);
+    return fallback;
+  }
   const dict = objects.get(fontObjNum)?.dict || "";
   const twoByte = /\/Subtype\s*\/Type0/.test(dict);
   const tuRef = refOf(dict, "ToUnicode");
   let cmap: CMap | null = null;
   if (tuRef !== null) {
-    const s = objects.get(tuRef)?.stream;
-    if (s) cmap = parseToUnicodeCMap(latin1(s));
+    const cachedCmap = cmapCache.get(tuRef);
+    if (cachedCmap) {
+      cmap = cachedCmap;
+    } else {
+      const s = objects.get(tuRef)?.stream;
+      if (s) {
+        cmap = parseToUnicodeCMap(latin1(s), MAX_CMAP_ENTRIES, budget);
+        cmapCache.set(tuRef, cmap);
+      }
+    }
   }
-  const { widths, defaultWidth } = fontWidths(objects, dict, twoByte);
+  const { widths, defaultWidth } = fontWidths(objects, dict, twoByte, MAX_WIDTHS_ENTRIES, budget);
   const f: PdfFont = { cmap, twoByte, widths, defaultWidth };
   cache.set(fontObjNum, f);
   return f;
 }
 
-function fontsForResources(objects: Map<number, PdfObject>, resources: string, cache: Map<number, PdfFont>): Map<string, PdfFont> {
+function fontsForResources(
+  objects: Map<number, PdfObject>,
+  resources: string,
+  cache: Map<number, PdfFont>,
+  cmapCache: Map<number, CMap>,
+  budget?: DocParseBudget
+): Map<string, PdfFont> {
   const fonts = new Map<string, PdfFont>();
   let fontDict = inlineDictOf(resources, "Font");
   if (!fontDict) {
@@ -683,7 +769,8 @@ function fontsForResources(objects: Map<number, PdfObject>, resources: string, c
   }
   if (!fontDict) return fonts;
   for (const m of Array.from(fontDict.matchAll(/\/([^\s/<>[\]()]+)\s+(\d+)\s+\d+\s+R/g))) {
-    fonts.set(m[1], fontFrom(objects, Number(m[2]), cache));
+    if (budget && !budget.canParseFont()) break;
+    fonts.set(m[1], fontFrom(objects, Number(m[2]), cache, cmapCache, budget));
   }
   return fonts;
 }
@@ -741,13 +828,15 @@ export async function extractPdfText(bytes: Uint8Array): Promise<ResumeTextResul
       return { text: "", failure: "parse_error" };
     }
     const budget = new OutputBudget();
+    const docBudget = new DocParseBudget();
     const objects = await resolveObjects(bin, bytes, budget);
     const fontCache = new Map<number, PdfFont>();
+    const cmapCache = new Map<number, CMap>();
     const parts: string[] = [];
 
     for (const pageNum of pageOrder(objects, bin)) {
       const pageDict = objects.get(pageNum)?.dict || "";
-      const fonts = fontsForResources(objects, resourcesOf(objects, pageDict), fontCache);
+      const fonts = fontsForResources(objects, resourcesOf(objects, pageDict), fontCache, cmapCache, docBudget);
       const contentsArr = pageDict.match(/\/Contents\s*\[([^\]]*)\]/);
       const contentRefs = contentsArr ? refsIn(contentsArr[1]) : [refOf(pageDict, "Contents")].filter((x): x is number => x !== null);
       // Content arrays are one logical stream split in pieces.
@@ -770,7 +859,7 @@ export async function extractPdfText(bytes: Uint8Array): Promise<ResumeTextResul
           if (!form?.stream || !/\/Subtype\s*\/Form/.test(form.dict)) continue;
           if (!new RegExp(`/${m[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+Do\\b`).test(src)) continue;
           const formRes = inlineDictOf(form.dict, "Resources") || (refOf(form.dict, "Resources") !== null ? objects.get(refOf(form.dict, "Resources")!)?.dict || "" : "");
-          const formFonts = formRes ? fontsForResources(objects, formRes, fontCache) : fonts;
+          const formFonts = formRes ? fontsForResources(objects, formRes, fontCache, cmapCache, docBudget) : fonts;
           parts.push(extractTextFromContentStream(latin1(form.stream), formFonts));
         }
       }

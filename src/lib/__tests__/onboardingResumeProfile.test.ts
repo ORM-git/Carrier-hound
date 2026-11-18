@@ -335,6 +335,44 @@ describe("saveResumeProfile", () => {
     expect(savedProfiles[0].row.source_storage_path).toBe(PATH_NEW);
     expect(savedProfiles[0].row.profile.jobTitles).toEqual(["Senior Engineer"]);
   });
+
+  it("fails closed on RPC 57014 (statement timeout / cancel) without non-atomic fallback; interleaved newer upload is preserved", async () => {
+    const PATH_OLD = `${UID}/onboarding/old.pdf`;
+    const PATH_NEW = `${UID}/onboarding/new.pdf`;
+
+    const admin = fakeAdmin({ pointer: PATH_OLD });
+
+    // Newer upload arrives, pointer is updated to PATH_NEW, and its parse saves successfully
+    admin.setPointer(PATH_NEW);
+    const saveNew = await saveResumeProfile(admin, UID, PATH_NEW, {
+      ...parsed,
+      profile: { ...parsed.profile, jobTitles: ["Staff Engineer"] },
+    });
+    expect(saveNew).toBe(true);
+
+    // Slower parse from earlier upload finishes now with PATH_OLD and tries to save,
+    // but encounters RPC error 57014 (canceling statement due to statement timeout)
+    let rpcCalledWithOld = false;
+    const originalRpc = admin.rpc;
+    admin.rpc = vi.fn(async (fn: string, args: any) => {
+      if (fn === "save_onboarding_resume_profile" && args.p_storage_path === PATH_OLD) {
+        rpcCalledWithOld = true;
+        return { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } };
+      }
+      return originalRpc(fn, args);
+    });
+
+    const saveOld = await saveResumeProfile(admin, UID, PATH_OLD, parsed);
+    expect(rpcCalledWithOld).toBe(true);
+    // Fails closed: returns false, does NOT fall back to non-atomic upsert
+    expect(saveOld).toBe(false);
+
+    // Only the newer profile is in upserts; old profile never overwrote it
+    const savedProfiles = admin.upserts.filter((u) => u.table === "onboarding_resume_profiles");
+    expect(savedProfiles).toHaveLength(1);
+    expect(savedProfiles[0].row.source_storage_path).toBe(PATH_NEW);
+    expect(savedProfiles[0].row.profile.jobTitles).toEqual(["Staff Engineer"]);
+  });
 });
 
 describe("loadResumeProfileForRanking", () => {

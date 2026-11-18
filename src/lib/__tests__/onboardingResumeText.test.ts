@@ -177,6 +177,48 @@ describe("ToUnicode CMap", () => {
     expect(duration).toBeLessThan(500);
     expect(result).toBeDefined();
   });
+
+  it("regression: 82 KB PDF with 1,000 font objects sharing one CMap finishes in well under 1 second", async () => {
+    // 1 shared CMap
+    const cmapBody =
+      "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> def\n" +
+      "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n" +
+      "1 beginbfrange\n<0001> <0005> <0041>\nendbfrange\n" +
+      "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend";
+    const cmapStream = `<< /Length ${cmapBody.length} >>\nstream\n${cmapBody}\nendstream`;
+
+    const FONT_COUNT = 1000;
+    const fontNames: string[] = [];
+    const fontObjects: string[] = [];
+    // Obj 1: Catalog, Obj 2: Pages, Obj 3: Page, Obj 4: CMap stream
+    // Fonts are Obj 5 to 1004. Content stream is Obj 1005.
+    for (let i = 0; i < FONT_COUNT; i++) {
+      const objNum = 5 + i;
+      fontNames.push(`/F${i} ${objNum} 0 R`);
+      fontObjects.push(`<< /Type /Font /Subtype /Type0 /BaseFont /Font${i} /Encoding /Identity-H /ToUnicode 4 0 R >>`);
+    }
+
+    const contentStream = "<< /Length 20 >>\nstream\nBT /F0 10 Tf (AB) Tj ET\nendstream";
+
+    const pdf = buildPdf([
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << ${fontNames.join(" ")} >> >> /Contents ${5 + FONT_COUNT} 0 R >>`,
+      cmapStream,
+      ...fontObjects,
+      contentStream,
+    ]);
+
+    expect(pdf.byteLength).toBeGreaterThanOrEqual(75000); // ~82 KB
+
+    const t0 = Date.now();
+    const result = await extractPdfText(pdf);
+    const duration = Date.now() - t0;
+
+    // Must finish in well under 1 second (without caching/budget, this took ~6.8s)
+    expect(duration).toBeLessThan(1000);
+    expect(result).toBeDefined();
+  });
 });
 
 describe("DOCX text extraction", () => {

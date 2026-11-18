@@ -59,7 +59,24 @@ function makeAdmin(opts: { profileUpsertError?: any } = {}) {
         remove: vi.fn(async () => ({ error: null })),
       }),
     },
-    rpc: vi.fn(async () => ({ data: [], error: null })),
+    rpc: vi.fn(async (fn: string, args: any) => {
+      if (fn === "save_onboarding_resume_profile") {
+        if (opts.profileUpsertError) return { data: null, error: opts.profileUpsertError };
+        const pointer = tables.onboarding_resume_uploads.get(args.p_user_id);
+        if (pointer?.storage_path !== args.p_storage_path) return { data: false, error: null };
+        tables.onboarding_resume_profiles.set(args.p_user_id, {
+          user_id: args.p_user_id,
+          source_storage_path: args.p_storage_path,
+          parse_status: args.p_parse_status,
+          parse_source: args.p_parse_source,
+          failure_reason: args.p_failure_reason,
+          profile: args.p_profile,
+        });
+        return { data: true, error: null };
+      }
+      if (fn === "find_orphan_onboarding_resumes") return { data: [], error: null };
+      return { data: null, error: { message: "unknown rpc" } };
+    }),
   };
   return admin;
 }
