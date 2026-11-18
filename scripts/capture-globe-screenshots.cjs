@@ -5,11 +5,14 @@ const puppeteer = require("puppeteer-core");
 
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const OUT_DIR = path.resolve(__dirname, "..", "out");
-const ARTIFACT_DIR = "C:\\Users\\ASUS\\.gemini\\antigravity\\brain\\059c9c1e-6c07-4697-a424-b2281efb19eb";
+const ARTIFACT_DIR = process.env.ARTIFACT_DIR || "C:\\Users\\ASUS\\.gemini\\antigravity\\brain\\b394cb45-691f-4617-abee-cf5da55fdbd5";
 const REPORTS_DIR = path.resolve(__dirname, "..", "reports", "landing-globe");
 
 if (!fs.existsSync(REPORTS_DIR)) {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });
+}
+if (!fs.existsSync(ARTIFACT_DIR)) {
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 }
 
 let mockStatsMode = "normal"; // "normal" | "zero" | "error"
@@ -99,9 +102,9 @@ async function run() {
       localStorage.setItem("cm_cookie_notice", "dismissed");
     });
 
-    // 1. Desktop 1440px - Tour Active State (San Francisco pin & tooltip)
-    console.log("Capturing Desktop 1440px Tour Active...");
-    await page.setViewport({ width: 1440, height: 1100, deviceScaleFactor: 2 });
+    // 1. Desktop 1280px Laptop Viewport (San Francisco pin & tooltip)
+    console.log("Capturing Laptop 1280px Tour Active...");
+    await page.setViewport({ width: 1280, height: 950, deviceScaleFactor: 2 });
     mockStatsMode = "normal";
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle0" });
     await page.waitForSelector('[data-testid="landing-globe-feature-section"]');
@@ -114,7 +117,21 @@ async function run() {
     });
     await new Promise((r) => setTimeout(r, 2200));
 
-    const globeSection = await page.$('[data-testid="landing-globe-feature-section"]');
+    let globeSection = await page.$('[data-testid="landing-globe-feature-section"]');
+    const laptop1280Path = path.join(REPORTS_DIR, "globe-desktop-1280px.png");
+    const laptop1280Artifact = path.join(ARTIFACT_DIR, "globe-desktop-1280px.png");
+    await globeSection.screenshot({ path: laptop1280Path });
+    fs.copyFileSync(laptop1280Path, laptop1280Artifact);
+    console.log(`Saved: ${laptop1280Path}`);
+
+    // 1b. Desktop 1440px - Tour Active State (San Francisco pin & tooltip)
+    console.log("Capturing Desktop 1440px Tour Active...");
+    await page.setViewport({ width: 1440, height: 1100, deviceScaleFactor: 2 });
+    await page.evaluate(() => {
+      document.querySelector('[data-testid="landing-globe-feature-section"]').scrollIntoView({ behavior: "instant" });
+    });
+    await new Promise((r) => setTimeout(r, 1000));
+    globeSection = await page.$('[data-testid="landing-globe-feature-section"]');
     const desktopPath = path.join(REPORTS_DIR, "globe-desktop-1440px.png");
     const desktopArtifact = path.join(ARTIFACT_DIR, "globe-desktop-1440px.png");
     await globeSection.screenshot({ path: desktopPath });

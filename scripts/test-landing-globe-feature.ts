@@ -74,18 +74,22 @@ check("src/app/page.tsx contains exactly ONE globe section using LandingGlobeFea
 });
 
 // 1b. Placement: directly below Features section and directly above Testimonials section
-check("LandingGlobeFeatureSection sits directly below LandingFeaturesSection and directly above Testimonials", () => {
-  const featuresIdx = pageCode.indexOf("<LandingFeaturesSection />");
+check("LandingGlobeFeatureSection sits directly below Features section and directly above Testimonials", () => {
+  const featuresIdx = pageCode.indexOf("<LandingFeaturesSection />") !== -1
+    ? pageCode.indexOf("<LandingFeaturesSection />")
+    : pageCode.indexOf('id="feat-h"');
   const globeIdx = pageCode.indexOf("<LandingGlobeFeatureSection />");
-  const testimonialsIdx = pageCode.indexOf("<Testimonials />");
+  const testimonialsIdx = pageCode.indexOf("<Testimonials />") !== -1
+    ? pageCode.indexOf("<Testimonials />")
+    : pageCode.indexOf('id="t-h"');
 
-  assert.ok(featuresIdx > -1, "LandingFeaturesSection must exist in page.tsx");
+  assert.ok(featuresIdx > -1, "Features section must exist in page.tsx");
   assert.ok(globeIdx > -1, "LandingGlobeFeatureSection must exist in page.tsx");
-  assert.ok(testimonialsIdx > -1, "First Testimonials must exist in page.tsx");
+  assert.ok(testimonialsIdx > -1, "Testimonials section must exist in page.tsx");
 
   assert.ok(
     featuresIdx < globeIdx && globeIdx < testimonialsIdx,
-    "LandingGlobeFeatureSection must sit directly below LandingFeaturesSection and directly above Testimonials"
+    "LandingGlobeFeatureSection must sit directly below Features section and directly above Testimonials"
   );
 });
 

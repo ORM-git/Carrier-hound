@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import Link from "next/link";
 import { ArrowRight, Compass, Play, RotateCcw } from "lucide-react";
 import * as d3 from "d3";
 
@@ -783,19 +782,19 @@ export default function LandingGlobeFeatureSection() {
 
       {/* 4. Dark Pill CTA Button + Descriptive Caption */}
       <div className="mt-5 sm:mt-7 flex flex-col items-center justify-center gap-2 sm:gap-2.5">
-        <Link
+        <a
           href="/jobs"
           className="inline-flex items-center justify-center gap-2 bg-[#090E34] hover:bg-[#1E293B] text-white font-semibold text-sm sm:text-base px-7 py-3 sm:px-8 sm:py-3.5 rounded-full shadow-md hover:shadow-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
         >
           <span>View jobs</span>
           <ArrowRight className="w-4 h-4 ml-0.5" />
-        </Link>
-        <Link
+        </a>
+        <a
           href="/radar"
           className="text-xs text-slate-500 hover:text-slate-800 transition-colors underline-offset-2 hover:underline"
         >
           Open interactive map · sign-in required
-        </Link>
+        </a>
       </div>
     </section>
   );

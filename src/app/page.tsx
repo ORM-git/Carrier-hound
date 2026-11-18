@@ -5,6 +5,7 @@ import React, { useEffect } from "react";
 import "@/styles/careermonke-landing.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 import LandingJobsTickerStrip from "@/components/LandingJobsTickerStrip";
+import LandingGlobeFeatureSection from "@/components/LandingGlobeFeatureSection";
 
 export default function HomePage() {
   useEffect(() => {
@@ -223,6 +224,9 @@ export default function HomePage() {
       </li>
     </ol>
   </section>
+
+  {/* (5) GLOBAL COVERAGE SECTION (Interactive Tour Globe + Stats) */}
+  <LandingGlobeFeatureSection />
 
   {/* TESTIMONIALS */}
   <section className="wrap s band" aria-labelledby="t-h">
