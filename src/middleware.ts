@@ -628,11 +628,15 @@ async function middlewareImpl(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
     if (userId) {
-      const adminClient = getAdminSupabaseClient();
-      if (adminClient) {
-        const completed = await checkAccountOnboardingCompleted(adminClient, userId);
-        if (completed) {
-          return NextResponse.redirect(new URL("/dashboard", request.url));
+      const modeParam = request.nextUrl.searchParams.get("mode") || request.nextUrl.searchParams.get("edit");
+      const isEditMode = modeParam === "edit" || modeParam === "true";
+      if (!isEditMode) {
+        const adminClient = getAdminSupabaseClient();
+        if (adminClient) {
+          const completed = await checkAccountOnboardingCompleted(adminClient, userId);
+          if (completed) {
+            return NextResponse.redirect(new URL("/dashboard", request.url));
+          }
         }
       }
     }

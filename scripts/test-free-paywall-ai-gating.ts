@@ -368,17 +368,28 @@ async function run() {
   if (/dailyDigestOptIn.*useState<boolean>\(true\)/.test(onboardingCode)) {
     failures.push("onboarding/page.tsx must NOT default dailyDigestOptIn to true (daily digest is Coming Soon).");
   }
-  if (!onboardingCode.includes("Saving your preferences")) {
-    failures.push("onboarding/page.tsx processing step 4 must be titled 'Saving your preferences'.");
-  }
   if (onboardingCode.includes("Matching you with jobs")) {
     failures.push("onboarding/page.tsx must NOT title processing step 4 'Matching you with jobs'.");
   }
   if (onboardingCode.includes("Resume parsed and matches computed!")) {
     failures.push("onboarding/page.tsx toast must not claim matches computed for free users.");
   }
-  if (!onboardingCode.includes('toast.success("Resume saved")')) {
-    failures.push("onboarding/page.tsx must show truthful toast 'Resume saved'.");
+  if (!onboardingCode.includes("Saving your preferences")) {
+    failures.push("onboarding/page.tsx saving state must be announced as 'Saving your preferences'.");
+  }
+  // Resume-save truthfulness: onboarding moved the resume card into OnboardingStep2. Whichever onboarding
+  // file performs a resume upload must toast exactly "Resume saved"; if none uploads, none may claim it.
+  const onboardingStep2Path = path.resolve(process.cwd(), "src/components/onboarding/OnboardingStep2.tsx");
+  const onboardingFlowCode = onboardingCode + fs.readFileSync(onboardingStep2Path, "utf-8");
+  const onboardingUploadsResume = /\/api\/onboarding\/resume|\.upload\(/.test(onboardingFlowCode);
+  if (onboardingUploadsResume && !onboardingFlowCode.includes('toast.success("Resume saved")')) {
+    failures.push("onboarding resume upload must show truthful toast 'Resume saved'.");
+  }
+  if (!onboardingUploadsResume && onboardingFlowCode.includes("Resume saved")) {
+    failures.push("onboarding must NOT claim 'Resume saved' when no resume upload exists.");
+  }
+  if (/Resume parsed|matches computed/.test(onboardingFlowCode)) {
+    failures.push("onboarding flow must not claim resume parsing or computed matches.");
   }
 
   // Entitlement propagation assertions
@@ -457,8 +468,6 @@ async function run() {
   const requiredTruthfulCopy = [
     "Unlock your Top 10 jobs ranked by fit",
     "Unlock to see your match score and fit analysis",
-    "Resume saved",
-    "Saving your preferences",
   ];
 
   for (const copy of requiredTruthfulCopy) {

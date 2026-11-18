@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
--- Freshness Header: Generated on 2026-11-17
--- Migrations Count: 79
+-- Freshness Header: Generated on 2026-11-18
+-- Migrations Count: 80
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
 
@@ -10197,6 +10197,25 @@ COMMIT;
 -- CREATE POLICY "Users can manage own resumes" ON public.resumes
 --   FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 -- COMMIT;
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261117_user_preferences_country.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: Add country and country_code to user_preferences
+-- Description: Supports explicit user country persistence from mobile onboarding.
+-- ============================================================================
+
+ALTER TABLE public.user_preferences
+ADD COLUMN IF NOT EXISTS country TEXT,
+ADD COLUMN IF NOT EXISTS country_code VARCHAR(2);
+
+-- ============================================================================
+-- ROLLBACK:
+--   ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS country_code;
+--   ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS country;
+-- ============================================================================
 
 
 -- ------------------------------------------------------------------------------

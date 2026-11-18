@@ -7,7 +7,7 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
-import { getCountryFilterClause } from "@/lib/countries";
+import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -141,6 +141,8 @@ export async function GET(req: Request) {
               categories: Array.isArray(prefs.categories) ? prefs.categories : [],
               minSalary: prefs.min_salary != null ? Number(prefs.min_salary) : null,
               salaryCurrency: prefs.salary_currency || null,
+              country: (prefs as any).country || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).names[0] : null) || null,
+              countryCode: (prefs as any).country_code || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).codes[0] : null) || null,
             };
           }
         }
