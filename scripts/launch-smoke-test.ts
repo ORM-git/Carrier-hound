@@ -8,13 +8,15 @@
  *  (2) The www host redirects to the apex with a 301.
  *  (3) The security headers are present (HSTS, X-Content-Type-Options, a frame protection header, CSP).
  *  (4) The jobs API returns JSON with a non-empty list, and returns 401 or 403 without auth where it should.
- *  (5) The pricing page text contains 399, 499 and 2,199 and does NOT contain 692, 799, "auto-renew" or "first month".
+ *  (5) The VISIBLE text of /pricing (scripts, styles and hidden elements stripped) contains ₹399, ₹499 and ₹2,199
+ *      as whole numbers, does NOT contain 692 or 799 as whole numbers or "first month", and every auto-renew
+ *      mention is a denial ("do not auto-renew").
  *  (6) The robots.txt and sitemap.xml respond.
  *  (7) The Razorpay order endpoint rejects an unauthenticated request.
  *
  * Guarantees:
  *  - STRICTLY READ-ONLY: No payments, no database writes, no logins, no secrets.
- *  - 10s timeout per HTTP request.
+ *  - 10s timeout per HTTP request, covering both headers and body read.
  *
  * Usage:
  *   npx tsx scripts/launch-smoke-test.ts [baseUrl] [--json]
@@ -33,7 +35,8 @@ interface CheckResult {
 }
 
 /**
- * Robust fetch wrapper enforcing a strict per-request timeout.
+ * Robust fetch wrapper enforcing a strict per-request timeout (headers only; body is not read).
+ * Use timedFetchText whenever the body is needed.
  */
 async function timedFetch(
   url: string,
@@ -50,6 +53,150 @@ async function timedFetch(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Fetch and read the full body as text under ONE timeout, so a server that sends headers
+ * and then stalls the body still fails within timeoutMs.
+ */
+export async function timedFetchText(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<{ res: Response; text: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    const text = await res.text();
+    return { res, text };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const RAW_TEXT_TAGS = new Set(["script", "style", "template", "noscript", "head", "svg"]);
+const VOID_TAGS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr",
+]);
+const RESPONSIVE_DISPLAY_CLASS = /^(sm|md|lg|xl|2xl):(block|inline|inline-block|flex|inline-flex|grid|table|contents)$/;
+
+function isHiddenElement(attrs: string): boolean {
+  if (/(^|\s)hidden(\s|=|\/|$)/i.test(attrs)) return true;
+  if (/aria-hidden\s*=\s*["']?true/i.test(attrs)) return true;
+  const style = attrs.match(/style\s*=\s*"([^"]*)"|style\s*=\s*'([^']*)'/i);
+  if (style && /display\s*:\s*none|visibility\s*:\s*hidden/i.test(style[1] ?? style[2] ?? "")) return true;
+  const cls = attrs.match(/class\s*=\s*"([^"]*)"|class\s*=\s*'([^']*)'/i);
+  if (cls) {
+    const tokens = (cls[1] ?? cls[2] ?? "").split(/\s+/);
+    if (tokens.includes("sr-only") || tokens.includes("invisible")) return true;
+    // Bare `hidden` hides the element unless a responsive class shows it again (e.g. "hidden sm:block")
+    if (tokens.includes("hidden") && !tokens.some((t) => RESPONSIVE_DISPLAY_CLASS.test(t))) return true;
+  }
+  return false;
+}
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Returns only the text a visitor can see: drops <head>, <script>, <style>, <template>, <noscript>,
+ * <svg>, comments, and any element marked hidden (hidden attribute, aria-hidden="true",
+ * display:none / visibility:hidden, or the sr-only / invisible / bare hidden classes) with all of
+ * its descendants. Attribute values (src, href, class) are never part of the result.
+ */
+export function extractVisibleText(html: string): string {
+  const parts: string[] = [];
+  const token =
+    /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<!doctype[^>]*>|<\/?([a-zA-Z][\w:-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>|([^<]+)|</gi;
+  let skipTag: string | null = null;
+  let skipDepth = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = token.exec(html)) !== null) {
+    const [whole, rawName, attrs = "", text] = m;
+    if (text !== undefined || whole === "<") {
+      if (!skipTag) parts.push(text ?? whole);
+      continue;
+    }
+    if (!rawName) continue; // comment / doctype / CDATA
+    const name = rawName.toLowerCase();
+    const isClose = whole.startsWith("</");
+    const selfClosing = VOID_TAGS.has(name) || /\/\s*$/.test(attrs);
+
+    if (!isClose && RAW_TEXT_TAGS.has(name) && !selfClosing) {
+      // Raw-text element: jump past its matching close tag without tokenising its contents
+      const close = new RegExp(`</${name}\\s*>`, "ig");
+      close.lastIndex = token.lastIndex;
+      const end = close.exec(html);
+      token.lastIndex = end ? close.lastIndex : html.length;
+      continue;
+    }
+
+    if (skipTag) {
+      if (name === skipTag && !selfClosing) skipDepth += isClose ? -1 : 1;
+      if (skipDepth === 0) skipTag = null;
+      continue;
+    }
+
+    if (!isClose && !selfClosing && isHiddenElement(attrs)) {
+      skipTag = name;
+      skipDepth = 1;
+      continue;
+    }
+
+    // Element boundaries separate words ("₹399" + "one-time" must not merge)
+    parts.push(" ");
+  }
+
+  return decodeEntities(parts.join("")).replace(/\s+/g, " ").trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whole-number match: "799" must not match inside "1799", "7990", "2,799" or "799.5". */
+function wholeNumberPattern(value: string, requireRupee: boolean): RegExp {
+  const prefix = requireRupee ? "₹\\s?" : "(?<![\\d.,])";
+  return new RegExp(`${prefix}${escapeRegExp(value)}(?![\\d]|[.,]\\d)`);
+}
+
+export const REQUIRED_PRICES = ["399", "499", "2,199"] as const;
+export const FORBIDDEN_PRICES = ["692", "799"] as const;
+
+export interface PricingEvaluation {
+  passed: boolean;
+  missing: string[];
+  forbidden: string[];
+}
+
+/** Evaluates already-extracted visible text against the pricing rules. */
+export function evaluatePricingText(visibleText: string): PricingEvaluation {
+  const missing = REQUIRED_PRICES.filter((p) => !wholeNumberPattern(p, true).test(visibleText)).map((p) => `₹${p}`);
+
+  const forbidden: string[] = FORBIDDEN_PRICES.filter((p) => wholeNumberPattern(p, false).test(visibleText));
+  if (/first\s+month/i.test(visibleText)) forbidden.push('"first month"');
+
+  // Any sentence mentioning auto-renew or recurring billing must be a denial (e.g. "do not auto-renew")
+  const affirmativeAutoRenew = visibleText
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => /auto[\s-]?renew|renews?\s+automatically|recurring\s+charge/i.test(sentence))
+    // A question ("Does my plan renew automatically?") is not a claim; denials are expected
+    .filter((sentence) => !sentence.trim().endsWith("?"))
+    .filter((sentence) => !/\b(no|not|never|nothing|non-?renewing)\b/i.test(sentence));
+  if (affirmativeAutoRenew.length > 0) forbidden.push('affirmative "auto-renew"');
+
+  return { passed: missing.length === 0 && forbidden.length === 0, missing, forbidden };
 }
 
 /**
@@ -253,7 +400,7 @@ async function checkJobsApi(apexOrigin: string): Promise<CheckResult> {
 
   // 1. Public jobs feed: /api/jobs/search
   try {
-    const searchRes = await timedFetch(`${apexOrigin}/api/jobs/search?pageSize=10`, {
+    const { res: searchRes, text: searchBody } = await timedFetchText(`${apexOrigin}/api/jobs/search?pageSize=10`, {
       method: "GET",
       headers: { Accept: "application/json" },
     });
@@ -263,7 +410,12 @@ async function checkJobsApi(apexOrigin: string): Promise<CheckResult> {
         `/api/jobs/search returned HTTP ${searchRes.status} (expected 200)`
       );
     } else {
-      const data: any = await searchRes.json().catch(() => null);
+      let data: any = null;
+      try {
+        data = JSON.parse(searchBody);
+      } catch {
+        data = null;
+      }
       const jobsList = Array.isArray(data?.jobs)
         ? data.jobs
         : Array.isArray(data)
@@ -320,16 +472,21 @@ async function checkJobsApi(apexOrigin: string): Promise<CheckResult> {
 }
 
 /**
- * Check (5): The pricing page text contains 399, 499 and 2,199 (or 2199)
- * and does NOT contain 692, 799, affirmative "auto-renew" or "first month".
+ * Check (5): The VISIBLE text of /pricing contains ₹399, ₹499 and ₹2,199 as whole numbers and does NOT
+ * contain 692, 799 (whole numbers), "first month" or an affirmative auto-renew claim.
+ * Scripts, styles and hidden elements are stripped first, so asset URLs such as /_next/692-abcd.js
+ * cannot fail a correct page and hidden copy cannot pass a wrong one.
  * Note: Sentences explicitly stating plans do not auto-renew (denials) are valid and expected.
  */
-async function checkPricingCopy(apexOrigin: string): Promise<CheckResult> {
+export async function checkPricingCopy(
+  apexOrigin: string,
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<CheckResult> {
   const start = Date.now();
   const details: string[] = [];
 
   try {
-    const res = await timedFetch(`${apexOrigin}/pricing`, { method: "GET" });
+    const { res, text: html } = await timedFetchText(`${apexOrigin}/pricing`, { method: "GET" }, timeoutMs);
     if (res.status !== 200) {
       return {
         id: 5,
@@ -341,48 +498,18 @@ async function checkPricingCopy(apexOrigin: string): Promise<CheckResult> {
       };
     }
 
-    const html = await res.text();
-
-    // Required price points: 399, 499, and 2199 (accepts either "2,199" or "2199")
-    const missing: string[] = [];
-    if (!html.includes("399")) missing.push("399");
-    if (!html.includes("499")) missing.push("499");
-    if (!html.includes("2,199") && !html.includes("2199")) missing.push("2,199 or 2199");
-
-    // Forbidden patterns:
-    // - 692 and 799 legacy prices
-    // - "first month" introductory copy
-    const forbiddenChecks: { label: string; test: (t: string) => boolean }[] = [
-      { label: "692", test: (t) => t.includes("692") },
-      { label: "799", test: (t) => t.includes("799") },
-      { label: '"first month"', test: (t) => /first\s+month/i.test(t) },
-    ];
-
-    const foundForbidden = forbiddenChecks
-      .filter((check) => check.test(html))
-      .map((check) => check.label);
-
-    // Any sentence containing auto-renew or recurring billing must be a denial (e.g. "do not auto-renew", "no recurring charges")
-    const autoRenewMentions = html
-      .split(/(?<=[.!?<>\n])\s+/)
-      .filter((sentence) => /auto[\s-]?renew|renews?\s+automatically|recurring\s+charge/i.test(sentence));
-    const affirmativeAutoRenew = autoRenewMentions.filter(
-      (sentence) => !/\b(no|not|never|nothing|non-?renewing)\b/i.test(sentence)
-    );
-    if (affirmativeAutoRenew.length > 0) {
-      foundForbidden.push('affirmative "auto-renew"');
-    }
+    const { missing, forbidden: foundForbidden } = evaluatePricingText(extractVisibleText(html));
 
     if (missing.length > 0) {
-      details.push(`Missing required price strings: ${missing.join(", ")}`);
+      details.push(`Missing required visible prices: ${missing.join(", ")}`);
     }
     if (foundForbidden.length > 0) {
-      details.push(`Found forbidden pricing terms: ${foundForbidden.join(", ")}`);
+      details.push(`Found forbidden visible pricing terms: ${foundForbidden.join(", ")}`);
     }
 
     const passed = missing.length === 0 && foundForbidden.length === 0;
     const summary = passed
-      ? 'Pricing text contains 399, 499, 2199/2,199 and excludes 692, 799, "first month", with verified non-auto-renew prepaid policy'
+      ? 'Visible pricing text shows ₹399, ₹499, ₹2,199, excludes 692, 799 and "first month", and only denies auto-renewal'
       : details.join(" | ");
 
     return {
@@ -583,7 +710,10 @@ async function main() {
   process.exit(allPassed ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error("Fatal error running launch smoke test:", err);
-  process.exit(1);
-});
+// Run only when executed directly, so tests can import the pure helpers without hitting the network
+if (/launch-smoke-test\.[cm]?[jt]s$/.test(process.argv[1] ?? "")) {
+  main().catch((err) => {
+    console.error("Fatal error running launch smoke test:", err);
+    process.exit(1);
+  });
+}
