@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { X, Search, Check, Globe } from "lucide-react";
 import { SUPPORTED_COUNTRIES, COUNTRY_CODE_TO_NAME, CountryOption } from "@/lib/countries";
 
@@ -9,6 +9,7 @@ interface CountryPickerModalProps {
   onClose: () => void;
   selectedCountry: string;
   onSelectCountry: (country: { code: string; name: string }) => void;
+  openerElement?: HTMLElement | null;
 }
 
 const POPULAR_COUNTRY_CODES = ["IN", "US", "GB", "CA", "DE", "AU", "SG", "FR", "AE", "NL"];
@@ -18,10 +19,28 @@ export default function CountryPickerModal({
   onClose,
   selectedCountry,
   onSelectCountry,
+  openerElement,
 }: CountryPickerModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const handleClose = useCallback(() => {
+    onClose();
+    const target = openerElement || openerRef.current;
+    if (target && typeof target.focus === "function") {
+      setTimeout(() => {
+        target.focus();
+      }, 50);
+    }
+  }, [onClose, openerElement]);
+
+  useEffect(() => {
+    if (isOpen && document.activeElement instanceof HTMLElement) {
+      openerRef.current = document.activeElement;
+    }
+  }, [isOpen]);
 
   // Build full sorted country list
   const allCountries = useMemo(() => {
@@ -77,7 +96,7 @@ export default function CountryPickerModal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        handleClose();
         return;
       }
 
@@ -110,13 +129,13 @@ export default function CountryPickerModal({
       clearTimeout(timer);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
   if (!isOpen) return null;
 
   const handleSelect = (c: CountryOption) => {
     onSelectCountry({ code: c.code, name: c.name });
-    onClose();
+    handleClose();
   };
 
   return (
@@ -132,7 +151,7 @@ export default function CountryPickerModal({
         aria-label="Close country picker backdrop"
         tabIndex={-1}
         className="fixed inset-0 cursor-default bg-transparent border-0"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       {/* Modal dialog */}
@@ -156,7 +175,7 @@ export default function CountryPickerModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close dialog"
             className="p-1.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
           >

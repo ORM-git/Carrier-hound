@@ -64,7 +64,7 @@ describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
       "We read Senior Data Analyst · 4 skills · 8.4 yrs experience. We'll use this to rank your recommended jobs."
     );
     expect(screen.getByTestId("resume-success").textContent).toMatch(/Resume saved/);
-    expect(screen.getByTestId("btn-onboarding-finish").textContent).toBe("Finish");
+    expect(screen.getByTestId("btn-onboarding-finish").textContent).toBe("Continue to Jobs");
   });
 
   it("a scanned PDF is saved, explained without an error, and the user can finish", async () => {
