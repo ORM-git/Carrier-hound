@@ -29,10 +29,6 @@ import {
   PLAN_DEFINITIONS,
   resolveOrderPricing,
 } from "../src/lib/billing/quota";
-import {
-  ADD_ON_PACKS_NOTE,
-  PLAN_COMPARISON_ROWS,
-} from "../src/config/plans";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
@@ -201,39 +197,13 @@ async function runMoneyPathTests() {
     );
   }
 
-  // 2B: Config note in plans.ts
-  assert.ok(
-    ADD_ON_PACKS_NOTE.toLowerCase().includes("extra generations"),
-    `ADD_ON_PACKS_NOTE must contain "extra generations": ${ADD_ON_PACKS_NOTE}`
-  );
-  assert.ok(
-    !ADD_ON_PACKS_NOTE.toLowerCase().includes("sets"),
-    `ADD_ON_PACKS_NOTE must NOT contain "sets": ${ADD_ON_PACKS_NOTE}`
-  );
-
-  // 2C: Comparison rows in plans.ts
-  const addonRow = PLAN_COMPARISON_ROWS.find((r) =>
-    r.feature.toLowerCase().includes("add-on")
-  );
-  assert.ok(addonRow, "Add-on comparison row must exist in PLAN_COMPARISON_ROWS");
-  if (addonRow.description) {
-    assert.ok(
-      addonRow.description.toLowerCase().includes("extra generations"),
-      "Add-on row description must contain 'extra generations'"
-    );
-    assert.ok(
-      !addonRow.description.toLowerCase().includes("sets"),
-      "Add-on row description must NOT contain 'sets'"
-    );
-  }
-
   // 2D: Pricing page copy in pricing/page.tsx
   const pricingPagePath = path.resolve(__dirname, "../src/app/pricing/page.tsx");
   const pricingPageContent = fs.readFileSync(pricingPagePath, "utf-8");
+  // /pricing is job-listing only: add-on packs are no longer sold from this page
   assert.ok(
-    pricingPageContent.includes("10/30/60 extra generations") ||
-      pricingPageContent.includes("10 / 30 / 60 extra generations"),
-    "Pricing page must describe add-ons with 'extra generations'"
+    !pricingPageContent.includes("data-addon-code") && !/add-on/i.test(pricingPageContent),
+    "Pricing page must not render add-on packs"
   );
   // Ensure no "extra sets" appears anywhere in pricing/page.tsx
   assert.ok(
@@ -241,7 +211,7 @@ async function runMoneyPathTests() {
     "Pricing page must NOT contain 'extra set' or 'extra sets'"
   );
 
-  console.log("  -> [PASS-LOCAL] Add-on catalog and UI strictly use 'extra generations' with zero 'sets' wording.");
+  console.log("  -> [PASS-LOCAL] Add-on catalog uses 'extra generations'; /pricing shows no add-ons or 'sets' wording.");
 
   // ---------------------------------------------------------------------------
   // TEST 3: Add-on Order Active-Pro Precheck Parity

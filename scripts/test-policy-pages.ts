@@ -125,7 +125,6 @@ async function main() {
   }
   assert.ok(!termsHtml.includes("Stripe"), "/terms-and-conditions must NOT contain Stripe (Razorpay only)");
   console.log('  [PASS-LOCAL] /terms-and-conditions excludes Stripe (Razorpay only)');
-
   // Prepaid flat prices: Terms and Refund render PREPAID_PRICE_SUMMARY (built from PLAN_PRICING)
   // with the exact flat prices and durations, and no legacy, first-month or recurring billing copy.
   const EXPECTED_PRICE_LINES = [
@@ -165,6 +164,17 @@ async function main() {
     }
     console.log(`  [PASS-LOCAL] ${route} has no 799, no "first month", no recurring/auto-renew billing text`);
   }
+
+  // Plan prices are final and rendered from the central config (PREPAID_PRICE_SUMMARY in src/config/plans.ts).
+  assert.ok(
+    termsHtml.includes(PREPAID_PRICE_SUMMARY),
+    "/terms-and-conditions must show plan prices only via PREPAID_PRICE_SUMMARY from src/config/plans.ts"
+  );
+  // Old plan prices and add-on-only prices must never appear on Terms.
+  for (const stalePrice of ["₹692", "₹1,499", "₹3,999", "₹799", "₹149", "₹699"]) {
+    assert.ok(!termsHtml.includes(stalePrice), `/terms-and-conditions must NOT contain stale or add-on price "${stalePrice}"`);
+  }
+  console.log('  [PASS-LOCAL] /terms-and-conditions shows plan prices from PREPAID_PRICE_SUMMARY and no stale INR amounts');
 
   // 3. /privacy-policy Key Phrases (Google Doc Tab 2)
   console.log("\n3. Verifying /privacy-policy key phrases (Google Doc Tab 2)...");

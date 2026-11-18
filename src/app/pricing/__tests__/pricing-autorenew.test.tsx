@@ -201,8 +201,8 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     const weeklyButton = container?.querySelector(
       'button[data-plan-code="weekly"]'
     ) as HTMLButtonElement | null;
-    const addonButton = container?.querySelector(
-      'button[data-addon-code="addon10"]'
+    const quarterlyButton = container?.querySelector(
+      'button[data-plan-code="quarterly"]'
     ) as HTMLButtonElement | null;
 
     // First click initiates prepaid checkout
@@ -213,9 +213,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
     expect(monthlyButton?.disabled).toBe(true);
     expect(weeklyButton?.disabled).toBe(true);
-    if (addonButton) {
-      expect(addonButton.disabled).toBe(true);
-    }
+    expect(quarterlyButton?.disabled).toBe(true);
 
     // Second click on any button while locked must do nothing
     await act(async () => {
@@ -230,9 +228,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     expect(monthlyButton?.disabled).toBe(false);
     expect(weeklyButton?.disabled).toBe(false);
-    if (addonButton) {
-      expect(addonButton.disabled).toBe(false);
-    }
+    expect(quarterlyButton?.disabled).toBe(false);
   });
 
   it("redirects signed-out visitor to login before opening subscription modal", async () => {
@@ -264,7 +260,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     const textContent = container?.textContent || "";
     expect(textContent).toContain(
-      "Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days). Premium access ends automatically when the plan period expires."
+      "Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days). Access ends automatically when the plan period expires."
     );
     expect(textContent).toContain("7 days access");
     expect(textContent).toContain("30 days access");

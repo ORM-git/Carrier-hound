@@ -135,9 +135,10 @@ function runAudit(corruptions: {
   const hasProfileMobileBase = profileCode.includes("py-6 sm:py-5") &&
     profileCode.includes("space-y-6 sm:space-y-4") &&
     profileCode.includes("p-6 sm:p-5");
-  const hasPricingMobileBase = pricingCode.includes("p-tk-4 sm:p-tk-3") &&
-    pricingCode.includes("gap-tk-4 sm:gap-tk-3") &&
-    pricingCode.includes("space-y-tk-4 sm:space-y-tk-3");
+  // /pricing uses one consistent section rhythm (py + flex gap), no stacked space-y/gap/padding tokens
+  const hasPricingMobileBase = pricingCode.includes("py-12 sm:py-20") &&
+    pricingCode.includes("gap-16 sm:gap-20") &&
+    !pricingCode.includes("space-y-tk-4 sm:space-y-tk-3");
   const hasDetailMobileBase = detailCode.includes("space-y-4 sm:space-y-3 md:pb-12") &&
     detailCode.includes("p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3");
   const hasTrackerMobileBase = trackerCode.includes("py-5 sm:py-4 space-y-5 sm:space-y-3.5");

@@ -142,12 +142,12 @@ async function runPricingHeaderFirstRenderSuite() {
   
   const markup = renderWithRouter(React.createElement(PricingPage));
   assert.ok(
-    markup.includes("Get more interviews with CareerMonke Premium"),
-    "Pricing page must include the heading 'Get more interviews with CareerMonke Premium'"
+    markup.includes("Plans and pricing"),
+    "Pricing page must include the heading 'Plans and pricing'"
   );
   assert.ok(
-    markup.includes("Payments opening soon"),
-    "Pricing page must retain the Upgrade CTA with 'Payments opening soon'"
+    markup.includes("Payments are currently unavailable.") && !/coming soon|opening soon|open soon/i.test(markup),
+    "Pricing page must show the payments-unavailable note and no 'coming soon' wording"
   );
   assert.ok(
     markup.includes('href="/login"'),
@@ -178,8 +178,8 @@ async function runPricingHeaderFirstRenderSuite() {
     "Pricing page must include the Quarterly price ₹2,199"
   );
   assert.ok(
-    markup.includes("Free Plan") && markup.includes("₹0.00"),
-    "Pricing page must include the Free Plan row"
+    !markup.includes("Free Plan") && !markup.includes("Add-on Packs"),
+    "Pricing page must show only the three job-listing plans (no Free strip or add-ons)"
   );
   console.log("  -> [PASS-LOCAL] All visible plan picker plans, copy, and CTAs intact.");
 
