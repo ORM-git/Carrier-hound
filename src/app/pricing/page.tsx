@@ -183,7 +183,8 @@ export default function PricingPage() {
           Plans and pricing
         </h1>
         <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
-          Full access to verified unindexed remote job listings. One-time payment, no auto-renewal.
+          <span className="sm:block">Full access to verified unindexed remote job listings.</span>{" "}
+          <span className="sm:block whitespace-nowrap">One-time payment, no auto-renewal.</span>
         </p>
       </header>
 
