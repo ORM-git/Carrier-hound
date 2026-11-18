@@ -218,6 +218,13 @@ export default function JobRadarGlobe() {
   const selectedCityRef = useRef<ActiveSelection | null>(null);
   selectedCityRef.current = selectedCity;
 
+  // Single source of truth for drawer <-> shell nav: the mobile nav hides exactly while the
+  // drawer is open, however it was opened or closed (click, URL ?city=, filters, reset).
+  const isDrawerOpen = Boolean(selectedCity);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: isDrawerOpen } }));
+  }, [isDrawerOpen]);
+
   const telemetryRef = useRef<RadarTelemetryPayload | null>(null);
   telemetryRef.current = telemetry;
 
@@ -583,7 +590,8 @@ export default function JobRadarGlobe() {
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight - 64;
 
-    const isMobile = width < 640;
+    // Updated by handleResize when the viewport crosses the 640px breakpoint.
+    let isMobile = width < 640;
     const dpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2);
 
     const prefersReducedMotion =
@@ -741,11 +749,32 @@ export default function JobRadarGlobe() {
       if (!containerRef.current || !renderer || !camera) return;
       const w = containerRef.current.clientWidth;
       const h = containerRef.current.clientHeight;
+      if (!w || !h) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+
+      // Crossing the mobile/desktop breakpoint: re-apply that mode's zoom limits and framing
+      // (otherwise the globe stays at the old mode's distance: tiny on desktop, clipped on mobile).
+      const nowMobile = w < 640;
+      if (nowMobile === isMobile) return;
+      isMobile = nowMobile;
+      controls.minDistance = isMobile ? 8.0 : 6.8;
+      controls.maxDistance = isMobile ? 38 : 32;
+      const city = selectedCityRef.current;
+      if (city?.coordinates) {
+        const { x, y, z } = latLngToVector3(city.coordinates[1], city.coordinates[0], 5);
+        targetCameraPosRef.current = new THREE.Vector3(x, y, z).normalize().multiplyScalar(isMobile ? 10.2 : 8.2);
+      } else {
+        targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.0 : 4, isMobile ? 28 : 14);
+      }
+      targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
+      isTransitioningRef.current = true;
     };
-    window.addEventListener("resize", handleResize);
+    // Observe the container, not the window: the shell re-lays out (sidebar <-> bottom nav at md)
+    // after the window resize event, so a window listener measures the old width.
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(container);
 
     // Visibility change handler
     const handleVisibilityChange = () => {
@@ -874,7 +903,7 @@ export default function JobRadarGlobe() {
     return () => {
       isCancelled = true;
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
 
       disposablesRef.current.forEach((d) => {
@@ -985,10 +1014,6 @@ export default function JobRadarGlobe() {
     setSelectedCity(city);
     setIsSpinning(false);
 
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: true } }));
-    }
-
     if (!cameraRef.current || !controlsRef.current || !city.coordinates) return;
 
     const { x, y, z } = latLngToVector3(city.coordinates[1], city.coordinates[0], 5);
@@ -1008,10 +1033,6 @@ export default function JobRadarGlobe() {
     setRadarProUnlockError(false);
     setSelectedCity(null);
 
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
-    }
-
     if (!cameraRef.current || !controlsRef.current) return;
 
     const isMobile = window.innerWidth < 640;
@@ -1028,10 +1049,6 @@ export default function JobRadarGlobe() {
     setCountryFilter("all");
     setSelectedCity(null);
     updateUrlFilters({ country: "all" });
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
-    }
 
     if (!cameraRef.current || !controlsRef.current) return;
 
@@ -1102,10 +1119,6 @@ export default function JobRadarGlobe() {
     setSelectedCity(null);
     setRegionFilter("all");
     setIsSpinning(true);
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } }));
-    }
 
     if (!cameraRef.current || !controlsRef.current) return;
     const isMobile = window.innerWidth < 640;
