@@ -195,19 +195,8 @@ async function main() {
       "Pricing page must render 'Buy {plan.name}' button text when enabled"
     );
     assert.ok(
-      pricingSrc.includes("UPGRADE_BUTTON_LABEL"),
-      "Pricing page must retain UPGRADE_BUTTON_LABEL when disabled"
-    );
-  });
-
-  await check("Pricing page header badge wrapper (pt-2 block) keeps footprint with invisible placeholder when flag is ON", () => {
-    const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
-
-    assert.ok(
-      pricingSrc.includes('<div className="pt-2">') &&
-      pricingSrc.includes("isBillingEnabled ?") &&
-      pricingSrc.includes("invisible inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold border border-transparent select-none"),
-      "Header badge wrapper (pt-2 block) must keep its footprint with invisible placeholder when billing is enabled"
+      pricingSrc.includes("Payments are currently unavailable."),
+      "Pricing page must show a payments-unavailable note when disabled"
     );
   });
 
@@ -223,31 +212,25 @@ async function main() {
       "Plan buttons must be disabled when isCheckoutLocked is true"
     );
     assert.ok(
-      pricingSrc.includes("disabled={isCheckoutLocked}"),
-      "Add-on buttons must be disabled when isCheckoutLocked is true"
-    );
-    assert.ok(
       !pricingSrc.includes("finally"),
-      "handleBuyPlan and handleBuyAddon must NOT unconditionally release purchase lock in finally"
+      "handleBuyPlan must NOT unconditionally release purchase lock in finally"
     );
     assert.ok(
       pricingSrc.includes("onError:") && pricingSrc.includes("onSuccess:") && pricingSrc.includes("onDismiss:"),
-      "handleBuyPlan and handleBuyAddon must release purchase lock in terminal callbacks"
+      "handleBuyPlan must release purchase lock in terminal callbacks"
     );
     assert.ok(
       pricingSrc.includes("resetLock();\n      const loginUrl") ||
       pricingSrc.includes("resetLock();\r\n      const loginUrl"),
-      "handleBuyPlan and handleBuyAddon must release purchase lock explicitly on unauthenticated early exit"
+      "handleBuyPlan must release purchase lock explicitly on unauthenticated early exit"
     );
   });
 
-  await check("Pricing page keeps identical card footprint with invisible badge row space", () => {
+  await check("Pricing page has no invisible placeholder rows or add-on purchase UI", () => {
     const pricingSrc = fs.readFileSync(path.resolve("src/app/pricing/page.tsx"), "utf8");
 
-    assert.ok(
-      pricingSrc.includes("invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none"),
-      "Plan card buy state must retain badge row space using invisible placeholder"
-    );
+    assert.ok(!pricingSrc.includes("invisible inline-flex"), "Pricing page must not keep invisible placeholder badge rows");
+    assert.ok(!pricingSrc.includes("data-addon-code") && !pricingSrc.includes("handleBuyAddon"), "Pricing page must not sell add-ons");
   });
 
   await check("Pricing page redirects unauthenticated visitors to login returning to pricing", () => {
