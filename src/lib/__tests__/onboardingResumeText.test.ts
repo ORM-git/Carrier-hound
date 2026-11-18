@@ -219,6 +219,60 @@ describe("ToUnicode CMap", () => {
     expect(duration).toBeLessThan(1000);
     expect(result).toBeDefined();
   });
+
+  it("regression: 40KB PDF with CMap range 0000-1fff and 20,000-byte destination returns safe failure under 100ms", async () => {
+    // 20,000 bytes = 40,000 hex characters
+    const bigDest = "0041".repeat(10000);
+    const cmapBody =
+      "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n" +
+      "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n" +
+      `1 beginbfrange\n<0000> <1FFF> <${bigDest}>\nendbfrange\n` +
+      "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend";
+
+    const pdf = buildPdf([
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      "<< /Type /Font /Subtype /Type0 /ToUnicode 6 0 R >>",
+      "<< /Length 20 >>\nstream\nBT /F1 10 Tf (hi) Tj ET\nendstream",
+      `<< /Length ${cmapBody.length} >>\nstream\n${cmapBody}\nendstream`,
+    ]);
+
+    expect(pdf.byteLength).toBeGreaterThanOrEqual(40000); // ~40 KB
+
+    const t0 = Date.now();
+    const result = await extractPdfText(pdf);
+    const duration = Date.now() - t0;
+
+    // Must return safe parse failure in well under 100ms (previously took >8 seconds)
+    expect(duration).toBeLessThan(100);
+    expect(result.failure).toBe("parse_error");
+  });
+
+  it("regression: CMap with array-form destination exceeding code width returns safe parse failure under 100ms", async () => {
+    const bigDest = "0041".repeat(10000);
+    const cmapBody =
+      "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n" +
+      "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n" +
+      `1 beginbfrange\n<0000> <0001> [<${bigDest}>]\nendbfrange\n` +
+      "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend";
+
+    const pdf = buildPdf([
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+      "<< /Type /Font /Subtype /Type0 /ToUnicode 6 0 R >>",
+      "<< /Length 20 >>\nstream\nBT /F1 10 Tf (hi) Tj ET\nendstream",
+      `<< /Length ${cmapBody.length} >>\nstream\n${cmapBody}\nendstream`,
+    ]);
+
+    const t0 = Date.now();
+    const result = await extractPdfText(pdf);
+    const duration = Date.now() - t0;
+
+    expect(duration).toBeLessThan(100);
+    expect(result.failure).toBe("parse_error");
+  });
 });
 
 describe("DOCX text extraction", () => {

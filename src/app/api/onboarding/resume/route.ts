@@ -250,8 +250,9 @@ export async function POST(req: Request) {
     if (waitUntil) waitUntil(sweep);
     else await sweep;
 
-    // Parse after commit. parseOnboardingResume / saveResumeProfile are hard-bounded inside
-    // the parser itself and never throw, so the upload response is never delayed or failed.
+    // Post-commit parse and profile save: parser CPU/memory is hard-bounded per document,
+    // AI has an internal timeout, and saveResumeProfile bounds the RPC with a timeout so
+    // a slow or hanging database/parse can never delay the upload response.
     let parse: ReturnType<typeof summarizeOutcome> = { status: "unavailable" };
     try {
       const outcome = await parseOnboardingResume(bytes, kind, {

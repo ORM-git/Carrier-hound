@@ -373,6 +373,17 @@ describe("saveResumeProfile", () => {
     expect(savedProfiles[0].row.source_storage_path).toBe(PATH_NEW);
     expect(savedProfiles[0].row.profile.jobTitles).toEqual(["Staff Engineer"]);
   });
+
+  it("fails closed when the RPC call hangs past timeout without blocking the upload response", async () => {
+    const hangingAdmin = {
+      rpc: vi.fn(() => new Promise(() => {})), // never settles
+    };
+    const t0 = Date.now();
+    const saved = await saveResumeProfile(hangingAdmin, UID, PATH, parsed, 50);
+    const duration = Date.now() - t0;
+    expect(saved).toBe(false);
+    expect(duration).toBeLessThan(200);
+  });
 });
 
 describe("loadResumeProfileForRanking", () => {

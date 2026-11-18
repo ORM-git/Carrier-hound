@@ -34,22 +34,35 @@ export const MAX_DOC_FONTS = 128;
 export const MAX_DOC_CMAP_ENTRIES = 8192;
 export const MAX_DOC_WIDTH_ENTRIES = 8192;
 export const MAX_DOC_PARSE_WORK = 65536;
+export const MAX_DOC_CMAP_DEST_BYTES = 131072;
+export const MAX_CMAP_CODE_BYTES = 4;
+export const MAX_CMAP_DEST_BYTES = 64;
+
+export class CmapBudgetExhaustedError extends Error {
+  constructor(message = "CMap budget exhausted") {
+    super(message);
+    this.name = "CmapBudgetExhaustedError";
+  }
+}
 
 export class DocParseBudget {
   fontsCount = 0;
   cmapEntries = 0;
+  cmapDestBytes = 0;
   widthEntries = 0;
   workUnits = 0;
+  exhausted = false;
 
   constructor(
     public readonly maxFonts = MAX_DOC_FONTS,
     public readonly maxCmapEntries = MAX_DOC_CMAP_ENTRIES,
     public readonly maxWidthEntries = MAX_DOC_WIDTH_ENTRIES,
-    public readonly maxWork = MAX_DOC_PARSE_WORK
+    public readonly maxWork = MAX_DOC_PARSE_WORK,
+    public readonly maxCmapDestBytes = MAX_DOC_CMAP_DEST_BYTES
   ) {}
 
   canParseFont(): boolean {
-    return this.fontsCount < this.maxFonts && this.workUnits < this.maxWork;
+    return !this.exhausted && this.fontsCount < this.maxFonts && this.workUnits < this.maxWork;
   }
 
   recordFont(): boolean {
@@ -60,17 +73,28 @@ export class DocParseBudget {
   }
 
   remainingCmapEntries(): number {
-    if (this.workUnits >= this.maxWork) return 0;
+    if (this.exhausted || this.workUnits >= this.maxWork) return 0;
     return Math.max(0, this.maxCmapEntries - this.cmapEntries);
   }
 
-  recordCmapEntries(n: number) {
-    this.cmapEntries += n;
-    this.workUnits += n;
+  chargeCmapWork(entries: number, destBytes: number): boolean {
+    if (this.exhausted) return false;
+    if (
+      this.cmapEntries + entries > this.maxCmapEntries ||
+      this.cmapDestBytes + destBytes > this.maxCmapDestBytes ||
+      this.workUnits + entries + Math.ceil(destBytes / 16) > this.maxWork
+    ) {
+      this.exhausted = true;
+      return false;
+    }
+    this.cmapEntries += entries;
+    this.cmapDestBytes += destBytes;
+    this.workUnits += entries + Math.ceil(destBytes / 16);
+    return true;
   }
 
   remainingWidthEntries(): number {
-    if (this.workUnits >= this.maxWork) return 0;
+    if (this.exhausted || this.workUnits >= this.maxWork) return 0;
     return Math.max(0, this.maxWidthEntries - this.widthEntries);
   }
 
@@ -359,7 +383,19 @@ export function parseToUnicodeCMap(
   for (const block of Array.from(src.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))) {
     if (totalEntries >= allowed) break;
     for (const p of Array.from(block[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]*)>/g))) {
-      if (totalEntries++ >= allowed) break;
+      if (totalEntries >= allowed) break;
+      const srcHexClean = p[1].replace(/\s/g, "");
+      const dstHexClean = p[2].replace(/\s/g, "");
+      const srcByteLen = Math.ceil(srcHexClean.length / 2);
+      const dstByteLen = Math.ceil(dstHexClean.length / 2);
+      if (srcByteLen > MAX_CMAP_CODE_BYTES || dstByteLen > MAX_CMAP_DEST_BYTES) {
+        if (budget) budget.exhausted = true;
+        throw new CmapBudgetExhaustedError("bfchar code width exceeded");
+      }
+      if (budget && !budget.chargeCmapWork(1, dstByteLen)) {
+        throw new CmapBudgetExhaustedError("bfchar budget exhausted");
+      }
+      totalEntries++;
       const src2 = hexToBytesStr(p[1]);
       map.set(src2, utf16beToString(hexToBytesStr(p[2])));
       byteLengths.add(src2.length);
@@ -370,30 +406,62 @@ export function parseToUnicodeCMap(
     const re = /<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]+)>\s*(?:<([0-9a-fA-F\s]*)>|\[([^\]]*)\])/g;
     for (const r of Array.from(block[1].matchAll(re))) {
       if (totalEntries >= allowed) break;
-      const lo = hexToBytesStr(r[1]);
-      const hi = hexToBytesStr(r[2]);
-      const loN = parseInt(r[1].replace(/\s/g, ""), 16);
-      const hiN = parseInt(r[2].replace(/\s/g, ""), 16);
+      const loHexClean = r[1].replace(/\s/g, "");
+      const hiHexClean = r[2].replace(/\s/g, "");
+      const loByteLen = Math.ceil(loHexClean.length / 2);
+      const hiByteLen = Math.ceil(hiHexClean.length / 2);
+      if (loByteLen > MAX_CMAP_CODE_BYTES || hiByteLen > MAX_CMAP_CODE_BYTES || loByteLen === 0) {
+        if (budget) budget.exhausted = true;
+        throw new CmapBudgetExhaustedError("bfrange source code width exceeded");
+      }
+      const loN = parseInt(loHexClean, 16);
+      const hiN = parseInt(hiHexClean, 16);
       const span = Math.min(hiN - loN, 0xffff);
       if (!(span >= 0)) continue;
+
+      const lo = hexToBytesStr(r[1]);
       byteLengths.add(lo.length);
+
       if (r[3] !== undefined) {
+        const dstHexClean = r[3].replace(/\s/g, "");
+        const dstByteLen = Math.ceil(dstHexClean.length / 2);
+        if (dstByteLen > MAX_CMAP_DEST_BYTES) {
+          if (budget) budget.exhausted = true;
+          throw new CmapBudgetExhaustedError("bfrange destination code width exceeded");
+        }
+        const numEntries = Math.min(span + 1, allowed - totalEntries);
+        const projectedBytes = numEntries * dstByteLen;
+        if (budget && !budget.chargeCmapWork(numEntries, projectedBytes)) {
+          throw new CmapBudgetExhaustedError("bfrange budget exhausted");
+        }
         const dst = hexToBytesStr(r[3]);
-        for (let k = 0; k <= span; k++) {
-          if (totalEntries++ >= allowed) break;
+        for (let k = 0; k < numEntries; k++) {
+          totalEntries++;
           map.set(incrementBytes(lo, k), utf16beToString(incrementBytes(dst, k)));
         }
       } else if (r[4] !== undefined) {
-        const dsts = Array.from(r[4].matchAll(/<([0-9a-fA-F\s]*)>/g)).map((d: RegExpMatchArray) => utf16beToString(hexToBytesStr(d[1])));
-        for (let k = 0; k <= span && k < dsts.length; k++) {
-          if (totalEntries++ >= allowed) break;
-          map.set(incrementBytes(lo, k), dsts[k]);
+        const rawMatches = Array.from(r[4].matchAll(/<([0-9a-fA-F\s]*)>/g));
+        const numEntries = Math.min(span + 1, rawMatches.length, allowed - totalEntries);
+        let projectedBytes = 0;
+        for (let k = 0; k < numEntries; k++) {
+          const dHexClean = rawMatches[k][1].replace(/\s/g, "");
+          const dByteLen = Math.ceil(dHexClean.length / 2);
+          if (dByteLen > MAX_CMAP_DEST_BYTES) {
+            if (budget) budget.exhausted = true;
+            throw new CmapBudgetExhaustedError("bfrange array destination code width exceeded");
+          }
+          projectedBytes += dByteLen;
+        }
+        if (budget && !budget.chargeCmapWork(numEntries, projectedBytes)) {
+          throw new CmapBudgetExhaustedError("bfrange array budget exhausted");
+        }
+        for (let k = 0; k < numEntries; k++) {
+          totalEntries++;
+          map.set(incrementBytes(lo, k), utf16beToString(hexToBytesStr(rawMatches[k][1])));
         }
       }
-      void hi;
     }
   }
-  if (budget) budget.recordCmapEntries(totalEntries);
   return { map, byteLengths: Array.from(byteLengths).sort((a, b) => b - a) };
 }
 

@@ -118,25 +118,35 @@ function isMissingTable(error: any): boolean {
   return code === "42P01" || code === "PGRST205" || /does not exist|could not find the table/i.test(String(error?.message || ""));
 }
 
+export const SAVE_PROFILE_RPC_TIMEOUT_MS = 3000;
+
 /**
  * Saves the outcome for `userId` atomically via save_onboarding_resume_profile RPC,
  * which takes a row lock on the user's upload pointer row. If a newer upload arrives,
- * the RPC detects the pointer mismatch and returns false. Fails closed on every RPC error
- * or unexpected response shape (the upload still succeeds, but the profile is not saved).
+ * the RPC detects the pointer mismatch and returns false. Fails closed on every RPC error,
+ * timeout, or unexpected response shape (the upload still succeeds, but the profile is not saved).
  * Returns false on any failure. Never throws.
  */
 export async function saveResumeProfile(
   supabaseAdmin: any,
   userId: string,
   storagePath: string,
-  outcome: ResumeParseOutcome
+  outcome: ResumeParseOutcome,
+  timeoutMs = SAVE_PROFILE_RPC_TIMEOUT_MS
 ): Promise<boolean> {
   try {
     if (typeof supabaseAdmin?.rpc !== "function") {
       log.warn("RPC client unavailable; parse result not saved", { userId });
       return false;
     }
-    const res = await supabaseAdmin.rpc("save_onboarding_resume_profile", {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<{ data: null; error: { message: string; code: string } }>((resolve) => {
+      timer = setTimeout(
+        () => resolve({ data: null, error: { message: "save_onboarding_resume_profile RPC timed out", code: "57014" } }),
+        timeoutMs
+      );
+    });
+    const rpcPromise = supabaseAdmin.rpc("save_onboarding_resume_profile", {
       p_user_id: userId,
       p_storage_path: storagePath,
       p_parse_status: outcome.status,
@@ -144,6 +154,9 @@ export async function saveResumeProfile(
       p_failure_reason: outcome.status === "failed" ? outcome.failureReason ?? "parse_error" : null,
       p_profile: outcome.profile ?? {},
     });
+    const res = await Promise.race([rpcPromise, timeoutPromise]);
+    if (timer) clearTimeout(timer);
+
     if (res?.error) {
       if (isMissingTable(res.error) || res.error.code === "42883") {
         log.warn("onboarding_resume_profiles not migrated yet; parse result not saved", { userId });
