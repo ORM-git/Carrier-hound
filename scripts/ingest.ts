@@ -419,43 +419,47 @@ export async function updateExistingJobs(
   toUpdate: Array<{ id: string; item: any; original: NormalizedJob }>,
   stats: SourceStats,
   hasJobDescriptionsTable: boolean,
-  retryDelayMs: number = UPDATE_RETRY_DELAY_MS
+  retryDelayMs: number = UPDATE_RETRY_DELAY_MS,
+  chunkSize: number = 5
 ): Promise<string | null> {
   let firstError: string | null = null;
-  await Promise.all(
-    toUpdate.map(async ({ id, item, original }) => {
-      const doUpdate = () =>
-        supabase
-          .from('jobs')
-          .update({
-            ...item,
-            last_seen_at: new Date().toISOString(),
-            is_active: true,
-            status: 'active',
-          })
-          .eq('id', id);
+  for (let i = 0; i < toUpdate.length; i += chunkSize) {
+    const chunk = toUpdate.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async ({ id, item, original }) => {
+        const doUpdate = () =>
+          supabase
+            .from('jobs')
+            .update({
+              ...item,
+              last_seen_at: new Date().toISOString(),
+              is_active: true,
+              status: 'active',
+            })
+            .eq('id', id);
 
-      let { error: updErr } = await doUpdate();
-      if (updErr) {
-        await new Promise((r) => setTimeout(r, retryDelayMs));
-        ({ error: updErr } = await doUpdate());
-      }
-
-      if (!updErr) {
-        stats.updated++;
-        if (hasJobDescriptionsTable && original?.description) {
-          await supabase.from('job_descriptions').upsert({
-            job_id: id,
-            description_text: original.description,
-            updated_at: new Date().toISOString(),
-          });
+        let { error: updErr } = await doUpdate();
+        if (updErr) {
+          await new Promise((r) => setTimeout(r, retryDelayMs));
+          ({ error: updErr } = await doUpdate());
         }
-      } else {
-        stats.failed++;
-        if (!firstError) firstError = updErr.message || String(updErr);
-      }
-    })
-  );
+
+        if (!updErr) {
+          stats.updated++;
+          if (hasJobDescriptionsTable && original?.description) {
+            await supabase.from('job_descriptions').upsert({
+              job_id: id,
+              description_text: original.description,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        } else {
+          stats.failed++;
+          if (!firstError) firstError = updErr.message || String(updErr);
+        }
+      })
+    );
+  }
   return firstError;
 }
 
