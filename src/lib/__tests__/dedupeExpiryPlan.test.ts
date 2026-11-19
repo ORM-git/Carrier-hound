@@ -90,12 +90,21 @@ describe("planDuplicateExpiry", () => {
     expect(planDuplicateExpiry([a, b], { maxExpire: 100, allowOverOnePercent: true }).candidates).toEqual([]);
   });
 
-  it("still expires a cross-source copy of the same apply URL (fragment/trailing slash ignored, query kept)", () => {
+  it("still expires a cross-source copy of the same apply URL (trailing slash ignored; query and fragment kept)", () => {
     const a = row("a", "Acme", "Engineer", 500, { apply_url: "https://x.com/jobs/1/?gh_jid=9" });
-    const b = row("b", "Acme", "Engineer", 10, { apply_url: "https://x.com/jobs/1?gh_jid=9#apply" });
+    const b = row("b", "Acme", "Engineer", 10, { apply_url: "https://x.com/jobs/1?gh_jid=9" });
     const c = row("c", "Acme", "Engineer", 10, { apply_url: "https://x.com/jobs/1?gh_jid=10" });
-    const plan = planDuplicateExpiry([a, b, c], { maxExpire: 100, allowOverOnePercent: true });
+    const d = row("d", "Acme", "Engineer", 10, { apply_url: "https://x.com/jobs/1?gh_jid=9#/req/2" });
+    const plan = planDuplicateExpiry([a, b, c, d], { maxExpire: 100, allowOverOnePercent: true });
     expect(plan.candidates).toEqual([{ id: "b", keptId: "a", key: expect.any(String) }]);
+  });
+
+  it("never expires cross-source rows that have no apply URL (missing identity keeps the row)", () => {
+    const req1 = row("req1", "Acme", "Engineer", 500, { source: "greenhouse", source_job_id: "acme-REQ-1", apply_url: null });
+    const req2 = row("req2", "Acme", "Engineer", 10, { source: "lever", source_job_id: "acme-REQ-2", apply_url: "" });
+    const plan = planDuplicateExpiry([req1, req2], { maxExpire: 100, allowOverOnePercent: true });
+    expect(plan.candidates).toEqual([]);
+    expect(plan.ineligible).toBe(2);
   });
 
   it("caps each run at maxExpire", () => {

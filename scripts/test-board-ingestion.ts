@@ -52,6 +52,7 @@ import {
 } from './board-ingest';
 import { isAtsJob, runJobCleanup } from './cleanup';
 import { cleanAndTruncateDescription } from './utils/sanitizer';
+import { findExistingJobs, probeJobsColumn, writeJobsByCanonicalIdentity } from './utils/canonicalJobWrite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +68,7 @@ export function createMockSupabase(
 ) {
   const dbJobs = [...initialDbJobs];
   const upsertCalls: Array<{ payload: any[]; options: any }> = [];
+  const insertCalls: Array<{ payload: any[] }> = [];
   const updateCalls: Array<{ payload: any; ids: string[] }> = [];
   const deleteCalls: Array<{ ids: string[] }> = [];
 
@@ -74,6 +76,7 @@ export function createMockSupabase(
     _url: 'https://szakevhxhwpeskidvtfs.supabase.co',
     _dbJobs: dbJobs,
     _upsertCalls: upsertCalls,
+    _insertCalls: insertCalls,
     _updateCalls: updateCalls,
     _deleteCalls: deleteCalls,
     from: (table: string) => {
@@ -134,9 +137,43 @@ export function createMockSupabase(
           }
           return Promise.resolve({ data: res.slice(0, n), error: null });
         },
+        insert: (payload: any[]) => {
+          insertCalls.push({ payload });
+          if (mockOptions.failOnUpsertCall && upsertCalls.length + insertCalls.length === mockOptions.failOnUpsertCall) {
+            return Promise.resolve({
+              data: null,
+              error: { message: `Simulated database write error on batch ${mockOptions.failOnUpsertCall}` },
+            });
+          }
+          // Same unique keys as Postgres: canonical (source_id, source_job_id) partial index + legacy (source, source_job_id)
+          const clash = payload.find((item) =>
+            dbJobs.some(
+              (j) =>
+                (j.source === item.source && j.source_job_id === item.source_job_id) ||
+                (item.source_id && j.source_id === item.source_id && j.source_job_id === item.source_job_id)
+            )
+          );
+          if (clash) {
+            return Promise.resolve({
+              data: null,
+              error: { code: '23505', message: `duplicate key value violates unique constraint (${clash.source_job_id})` },
+            });
+          }
+          for (const item of payload) dbJobs.push({ id: `mock-${dbJobs.length + 1}`, ...item });
+          return Promise.resolve({ data: payload, error: null });
+        },
         upsert: (payload: any[], options: any) => {
           upsertCalls.push({ payload, options });
-          // Live DB has only a partial unique index, so any onConflict option fails in Postgres
+          // Primary key conflict target always works: update existing rows by id
+          if (options?.onConflict === 'id') {
+            for (const item of payload) {
+              const idx = dbJobs.findIndex((j) => j.id === item.id);
+              if (idx >= 0) dbJobs[idx] = { ...dbJobs[idx], ...item };
+              else dbJobs.push({ ...item });
+            }
+            return Promise.resolve({ data: payload, error: null });
+          }
+          // Live DB has only a partial unique index, so any other onConflict option fails in Postgres
           if (options?.onConflict && !mockOptions.allowOnConflict) {
             return Promise.resolve({
               data: null,
@@ -455,6 +492,71 @@ async function runTests() {
   // distinct requisition and must never be skipped (PR #645 review blocker 1).
   assert(dedupResult.accepted.length === 4, `Deduplication reduces 5 items (with 1 duplicate) to 4 jobs (got: ${dedupResult.accepted.length})`);
   assert(dedupResult.duplicates === 1, `Duplicates dropped count is 1 (got: ${dedupResult.duplicates})`);
+
+  // Same-source distinct requisitions are always kept (identical text, shared or fragment-only-different URL).
+  const sameSource = dedupJobs([
+    { ...ghJob!, source_job_id: 'acme-REQ-1' },
+    { ...ghJob!, source_job_id: 'acme-REQ-2' },
+    { ...ghJob!, source_job_id: 'acme-REQ-3', apply_url: ghJob!.apply_url + '#req-3' },
+  ]);
+  assert(
+    sameSource.accepted.length === 3 && sameSource.duplicates === 0,
+    `greenhouse-board acme-REQ-1/2/3 with identical text and a shared URL are all kept (got: ${sameSource.accepted.length})`
+  );
+  const crossFragment = dedupJobs([{ ...ghJob! }, { ...ghJob!, source: 'lever-board', apply_url: ghJob!.apply_url + '#other' }]);
+  assert(crossFragment.accepted.length === 2, `Fragment-only apply URL difference is a different identity, both kept (got: ${crossFragment.accepted.length})`);
+  const crossSameUrl = dedupJobs([{ ...ghJob! }, { ...ghJob!, source: 'lever-board', source_job_id: 'lever-copy' }]);
+  assert(crossSameUrl.duplicates === 1, `Cross-source copy with the exact same apply URL is dropped (got: ${crossSameUrl.duplicates})`);
+
+  // Canonical write identity: a greenhouse row and its greenhouse-board twin share (source_id, source_job_id).
+  const twinDb = createMockSupabase([
+    { id: 'gh-1', source: 'greenhouse', source_id: 'greenhouse:acme', source_job_id: 'acme-1', title: 'Old', is_active: true },
+    // Legacy row of ANOTHER canonical identity under the same legacy key must never be picked
+    { id: 'other-1', source: 'lever-board', source_id: 'lever:other', source_job_id: 'acme-9', title: 'Other', is_active: true },
+  ]);
+  const boardTwin = { source: 'greenhouse-board', source_id: 'greenhouse:acme', source_job_id: 'acme-1', title: 'New', is_active: true };
+  const twinRes = await writeJobsByCanonicalIdentity(twinDb, [boardTwin], { allowUpdates: true });
+  const twinRow = twinDb._dbJobs.find((j: any) => j.id === 'gh-1');
+  assert(
+    twinRes.updated === 1 && twinRes.inserted === 0 && twinDb._dbJobs.length === 2 && twinRow.title === 'New' && twinRow.source === 'greenhouse',
+    'greenhouse-board write for an existing greenhouse canonical id updates that row (keeps its source) instead of failing the unique index'
+  );
+  const twinInsertOnly = await writeJobsByCanonicalIdentity(twinDb, [boardTwin], { allowUpdates: false });
+  assert(twinInsertOnly.skippedExisting === 1 && twinInsertOnly.inserted === 0, 'Insert-only mode skips an existing canonical twin without error');
+  const scoped = await findExistingJobs(
+    twinDb,
+    [{ source: 'lever-board', source_id: 'lever:acme', source_job_id: 'acme-9' }],
+    { canonical: true }
+  );
+  assert(scoped[0] === undefined, 'Fallback lookup never picks a legacy-key row that belongs to another canonical identity');
+  let nullSourceIdRejected = false;
+  try {
+    await writeJobsByCanonicalIdentity(twinDb, [{ ...boardTwin, source_id: null }], { allowUpdates: true });
+  } catch {
+    nullSourceIdRejected = true;
+  }
+  assert(nullSourceIdRejected, 'Canonical writer rejects a row with a null source_id');
+
+  // Schema probe: only a real "column does not exist" omits source_id; a transient error never does.
+  const probeClient = (results: any[]) => {
+    let call = 0;
+    return { from: () => ({ select: () => ({ limit: async () => results[Math.min(call++, results.length - 1)] }) }) };
+  };
+  let transientThrew = false;
+  try {
+    await probeJobsColumn(probeClient([{ error: { code: '08006', message: 'connection reset' } }]), 'source_id', { delayMs: 0 });
+  } catch {
+    transientThrew = true;
+  }
+  assert(transientThrew, 'Transient probe error is retried then thrown (never reported as a missing source_id column)');
+  assert(
+    (await probeJobsColumn(probeClient([{ error: { message: 'timeout' } }, { error: null }]), 'source_id', { delayMs: 0 })) === true,
+    'Transient probe error then success reports the column present (source_id is written)'
+  );
+  assert(
+    (await probeJobsColumn(probeClient([{ error: { code: '42703', message: 'column jobs.source_id does not exist' } }]), 'source_id', { delayMs: 0 })) === false,
+    'Only a real undefined-column error reports source_id missing'
+  );
 
   // ---------------------------------------------------------------------------
   // 6. Closed-Job Handling: Non-Empty Fetch Check, source+company_slug scope, 2 misses
@@ -775,26 +877,19 @@ async function runTests() {
       manifestPath: tempManifestPath1,
     });
 
-    assert(mockSupabase._upsertCalls.length > 0, 'Live write executed upsert calls on Supabase client');
+    assert(mockSupabase._insertCalls.length > 0, 'Live write executed insert calls on Supabase client');
     assert(liveStats1.liveWriteStats !== undefined, 'Live-write stats recorded written rows and batch count');
     assert(liveStats1.liveWriteStats.rowsInserted > 0, 'First run inserted new job rows');
     assert(liveStats1.liveWriteStats.rowsUpdated === 0, 'First run is insert-only: 0 updates performed');
     assert(liveStats1.liveWriteStats.updatesSkipped === 1, 'Existing row (10alabs-1001) skipped from updates in insert-only mode');
 
-    // Confirm that upsert used ignoreDuplicates: true with NO onConflict
-    const firstUpsertCall = mockSupabase._upsertCalls[0];
-    assert(firstUpsertCall.options.ignoreDuplicates === true, 'Insert-only mode uses ignoreDuplicates: true');
-    assert(firstUpsertCall.options.onConflict === undefined, 'Insert-only mode asserts options.onConflict is undefined');
+    // Insert-only mode never updates: no upsert calls at all, only plain inserts of new canonical identities
+    assert(mockSupabase._upsertCalls.length === 0, 'Insert-only mode issues no upsert (existing rows are never updated)');
 
-    for (const call of mockSupabase._upsertCalls) {
-      assert(call.options.ignoreDuplicates === true, 'All insert-only calls have ignoreDuplicates: true');
-      assert(call.options.onConflict === undefined, 'All insert-only calls have options.onConflict === undefined');
-    }
-
-    // Verify batch chunk size and distinct board labels
+    // Verify batch chunk size, distinct board labels and canonical source_id on every written row
     let allUpsertedRowsRun1: any[] = [];
     let allSourcesHaveBoardSuffix = true;
-    for (const call of mockSupabase._upsertCalls) {
+    for (const call of mockSupabase._insertCalls) {
       assert(call.payload.length <= 500, `Batch chunk size <= 500 (actual: ${call.payload.length})`);
       allUpsertedRowsRun1 = allUpsertedRowsRun1.concat(call.payload);
     }
@@ -804,6 +899,10 @@ async function runTests() {
       }
     }
     assert(allSourcesHaveBoardSuffix, 'All upserted board rows use distinct source labels ending with "-board" (e.g. greenhouse-board)');
+    assert(
+      allUpsertedRowsRun1.every((r) => typeof r.source_id === 'string' && /^[a-z]+:[^:]+$/.test(r.source_id)),
+      'Every written board row carries a canonical <vendor>:<board_token> source_id'
+    );
 
     // Ensure 10alabs-1001 was NOT in the write payload
     const skippedRowInPayload = allUpsertedRowsRun1.find((r) => r.source_job_id === '10alabs-1001');
@@ -896,8 +995,8 @@ async function runTests() {
     assert(liveStats3.liveWriteStats !== undefined, 'Run 3 recorded liveWriteStats');
     assert(liveStats3.liveWriteStats.rowsUpdated > 0, 'Opt-in updates writes existing rows to database');
 
-    const updateCalls = updateMockSupabase._upsertCalls.filter((c: any) => !c.options?.ignoreDuplicates);
-    assert(updateCalls.length > 0, 'Opt-in update mode executed standard upsert without ignoreDuplicates');
+    const updateCalls = updateMockSupabase._upsertCalls.filter((c: any) => c.options?.onConflict === 'id');
+    assert(updateCalls.length > 0, 'Opt-in update mode updates existing canonical rows by primary key');
 
     let allUpdatedRows: any[] = [];
     for (const c of updateCalls) {

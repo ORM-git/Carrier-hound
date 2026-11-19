@@ -196,15 +196,14 @@ export function dedupeKey(
 }
 
 /**
- * Apply URL as a requisition identity: drops the fragment and a trailing slash, keeps the
- * query (it often carries the requisition id, e.g. ?gh_jid=123). '' when absent.
+ * Apply URL as a requisition identity: drops a trailing path slash, keeps the query and the
+ * fragment (either can carry the requisition id, e.g. ?gh_jid=123 or #/jobs/123). '' when absent.
  */
 export function normalizeApplyUrl(url?: string | null): string {
   const raw = (url || '').trim();
   if (!raw) return '';
   try {
     const u = new URL(raw);
-    u.hash = '';
     u.pathname = u.pathname.replace(/\/+$/, '');
     return u.toString();
   } catch {
@@ -214,10 +213,33 @@ export function normalizeApplyUrl(url?: string | null): string {
 
 /**
  * Same-role key that also carries requisition identity (apply URL). Two postings with
- * identical listing text but different apply URLs never share a key.
+ * identical listing text but different apply URLs never share a key. Null when the apply URL
+ * is missing: without an identity the row is kept, never inferred to match another.
  */
 export function requisitionDedupeKey(textKey: string | null, applyUrl?: string | null): string | null {
-  return textKey && `${textKey}|${normalizeApplyUrl(applyUrl)}`;
+  const url = normalizeApplyUrl(applyUrl);
+  return textKey && url ? `${textKey}|${url}` : null;
+}
+
+/**
+ * Run-scoped dedupe by requisition identity, shared by board-ingest and ingest. A job is a
+ * duplicate only when it repeats a seen (source, source_job_id), or its apply URL is already held
+ * by a DIFFERENT source. Same-source jobs with different ids are distinct requisitions and are
+ * always kept, even with identical text or a shared apply URL. Listing text alone never matches.
+ */
+export class RequisitionTracker {
+  private readonly ids = new Set<string>();
+  private readonly urlSources = new Map<string, Set<string>>();
+
+  isDuplicate(job: { source: string; source_job_id: string; apply_url?: string | null }): boolean {
+    if (this.ids.has(`${job.source}\u0000${job.source_job_id}`)) return true;
+    return isCrossRoleDuplicate(this.urlSources, normalizeApplyUrl(job.apply_url) || null, job.source);
+  }
+
+  add(job: { source: string; source_job_id: string; apply_url?: string | null }): void {
+    this.ids.add(`${job.source}\u0000${job.source_job_id}`);
+    addRoleSource(this.urlSources, normalizeApplyUrl(job.apply_url) || null, job.source);
+  }
 }
 
 /**
