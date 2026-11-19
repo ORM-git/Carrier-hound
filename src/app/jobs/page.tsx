@@ -26,6 +26,7 @@ import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
+import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
@@ -142,17 +143,6 @@ function inferJobLevel(title: string): string {
   if (t.includes("senior") || t.includes("sr.")) return "Senior Level";
   if (t.includes("junior") || t.includes("entry") || t.includes("associate")) return "Entry Level";
   return "";
-}
-
-function formatJobType(type?: string | null): string | null {
-  if (!type) return null;
-  const lower = type.trim().toLowerCase();
-  if (lower === "job" || lower === "unknown" || lower === "other") return "Full-time";
-  if (lower === "internship" || lower === "intern") return "Internship";
-  if (lower === "full-time" || lower === "full_time" || lower === "fulltime") return "Full-time";
-  if (lower === "part-time" || lower === "part_time" || lower === "parttime") return "Part-time";
-  if (lower === "contract" || lower === "contractor") return "Contract";
-  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 function formatRelativeTime(dateStr?: string): string {

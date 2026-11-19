@@ -269,8 +269,8 @@ export default function JobFilterBar({
             group absorbs any width deficit via its own min-w-0 + internal flex-wrap instead of
             pushing Sort to a new row. Tablet (768-1023px) keeps the original flex-wrap/items-center
             behavior unchanged. */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2 md:flex-wrap md:items-center lg:flex-nowrap lg:items-center">
-          <div className="flex items-center gap-1.5 lg:gap-2 min-w-0 flex-nowrap overflow-x-auto no-scrollbar py-0.5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2">
+          <div className="flex items-center gap-1.5 lg:gap-2 min-w-0 flex-wrap">
             {/* 1. LOCATION CHIP & POPOVER */}
             <div className="relative">
               <button
@@ -279,14 +279,14 @@ export default function JobFilterBar({
                 onClick={() => handleOpenPopover("location")}
                 aria-expanded={activePopover === "location"}
                 aria-label={`Location filter: ${filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || "All")}`}
-                className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.location || filters.countryCode
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>{filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || "Location / Country")}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+                <span className="whitespace-nowrap">{filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || "Location / Country")}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
               {activePopover === "location" && (
@@ -376,14 +376,14 @@ export default function JobFilterBar({
                 onClick={() => handleOpenPopover("role")}
                 aria-expanded={activePopover === "role"}
                 aria-label={`Job category filter: ${filters.category || "All"}`}
-                className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.category
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>{filters.category ? (filters.category.charAt(0).toUpperCase() + filters.category.slice(1)) : "Category"}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+                <span className="whitespace-nowrap">{filters.category ? (filters.category.charAt(0).toUpperCase() + filters.category.slice(1)) : "Category"}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
               {activePopover === "role" && (
@@ -479,18 +479,18 @@ export default function JobFilterBar({
                 onClick={() => handleOpenPopover("level")}
                 aria-expanded={activePopover === "level"}
                 aria-label={`Level filter: ${filters.level || "All"}`}
-                className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.level
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>
+                <span className="whitespace-nowrap">
                   {levelInfo.extra > 0
                     ? `${levelInfo.label} (+${levelInfo.extra})`
                     : levelInfo.label}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
               {activePopover === "level" && (
@@ -566,18 +566,18 @@ export default function JobFilterBar({
                 onClick={() => handleOpenPopover("jobType")}
                 aria-expanded={activePopover === "jobType"}
                 aria-label={`Job type filter: ${filters.jobType || "All"}`}
-                className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.jobType
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>
+                <span className="whitespace-nowrap">
                   {jobTypeInfo.extra > 0
                     ? `${jobTypeInfo.label} (+${jobTypeInfo.extra})`
                     : jobTypeInfo.label}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
               {activePopover === "jobType" && (
@@ -652,18 +652,18 @@ export default function JobFilterBar({
                 onClick={() => handleOpenPopover("workModel")}
                 aria-expanded={activePopover === "workModel"}
                 aria-label={`Work model filter: ${filters.workModel || "All"}`}
-                className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.workModel
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>
+                <span className="whitespace-nowrap">
                   {workModelInfo.extra > 0
                     ? `${workModelInfo.label} (+${workModelInfo.extra})`
                     : workModelInfo.label}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
               {activePopover === "workModel" && (
@@ -737,14 +737,14 @@ export default function JobFilterBar({
                 onClick={() => handleOpenPopover("date")}
                 aria-expanded={activePopover === "date"}
                 aria-label={`Date posted filter: ${filters.datePosted || "Any time"}`}
-                className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                   filters.datePosted && filters.datePosted !== "all"
                     ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span>{filters.datePosted && filters.datePosted !== "all" ? filters.datePosted : "Date Posted"}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+                <span className="whitespace-nowrap">{filters.datePosted && filters.datePosted !== "all" ? filters.datePosted : "Date Posted"}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
               {activePopover === "date" && (
@@ -882,14 +882,14 @@ export default function JobFilterBar({
               onClick={() => handleOpenPopover("experience")}
               aria-expanded={activePopover === "experience"}
               aria-label={`Experience filter: ${filters.experience || "All"}`}
-              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+              className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                 filters.experience && filters.experience !== "all"
                   ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                   : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
               }`}
             >
-              <span>{filters.experience && filters.experience !== "all" ? filters.experience : "Years of Experience"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              <span className="whitespace-nowrap">{filters.experience && filters.experience !== "all" ? filters.experience : "Years of Experience"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
             </button>
 
             {activePopover === "experience" && (
@@ -955,14 +955,14 @@ export default function JobFilterBar({
               onClick={() => handleOpenPopover("salaryMin")}
               aria-expanded={activePopover === "salaryMin"}
               aria-label={`Min Salary filter: ${filters.salaryMin ? `${parseInt(String(filters.salaryMin), 10) / 1000}k+` : "All"}`}
-              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+              className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                 filters.salaryMin
                   ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                   : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
               }`}
             >
-              <span>{filters.salaryMin ? `${parseInt(String(filters.salaryMin), 10) / 1000}k+` : "Min Salary"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              <span className="whitespace-nowrap">{filters.salaryMin ? `${parseInt(String(filters.salaryMin), 10) / 1000}k+` : "Min Salary"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
             </button>
 
             {activePopover === "salaryMin" && (
@@ -1036,14 +1036,14 @@ export default function JobFilterBar({
               onClick={() => handleOpenPopover("sourceType")}
               aria-expanded={activePopover === "sourceType"}
               aria-label={`Source filter: ${filters.sourceType || "All"}`}
-              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+              className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                 filters.sourceType && filters.sourceType !== "all"
                   ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                   : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
               }`}
             >
-              <span>{filters.sourceType && filters.sourceType !== "all" ? filters.sourceType.toUpperCase() : "Source"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              <span className="whitespace-nowrap">{filters.sourceType && filters.sourceType !== "all" ? filters.sourceType.toUpperCase() : "Source"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
             </button>
 
             {activePopover === "sourceType" && (
@@ -1114,14 +1114,14 @@ export default function JobFilterBar({
               onClick={() => handleOpenPopover("company")}
               aria-expanded={activePopover === "company"}
               aria-label={`Company filter: ${filters.company || "All"}`}
-              className={`h-8 px-3 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+              className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
                 filters.company && filters.company !== "all"
                   ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
                   : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
               }`}
             >
-              <span>{filters.company && filters.company !== "all" ? `Company: ${filters.company}` : "Company"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              <span className="whitespace-nowrap">{filters.company && filters.company !== "all" ? `Company: ${filters.company}` : "Company"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
             </button>
 
             {activePopover === "company" && (
@@ -1178,16 +1178,16 @@ export default function JobFilterBar({
             type="button"
             onClick={() => onChange({ hidden: !filters.hidden })}
             aria-label="Toggle Hidden Jobs"
-            className={`h-8 px-3 rounded-lg border text-[13px] font-semibold transition inline-flex items-center gap-1.5 cursor-pointer shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+            className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-semibold transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
               filters.hidden
                 ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]"
                 : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
             }`}
           >
-            <Lock className="w-3.5 h-3.5 text-[#64748B]" />
-            <span>Hidden Jobs</span>
+            <Lock className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
+            <span className="whitespace-nowrap">Hidden Jobs</span>
             {hiddenCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-slate-700">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-slate-200 text-slate-700 shrink-0">
                 {hiddenCount}
               </span>
             )}
@@ -1200,12 +1200,12 @@ export default function JobFilterBar({
             data-tour="tour-filters"
             onClick={onOpenAllFilters}
             aria-label="Open all filters drawer"
-            className="h-8 px-3.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"
+            className="h-8 px-3 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>All Filters</span>
+            <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+            <span className="whitespace-nowrap">All Filters</span>
             {activeCount > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-white text-[#2563EB] text-[10px] font-bold">
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-white text-[#2563EB] text-[10px] font-bold shrink-0">
                 {activeCount}
               </span>
             )}
