@@ -451,13 +451,6 @@ export function detectRemoteStatus(
   return false;
 }
 
-const COMMON_TECH_SKILLS = [
-  'Python', 'TypeScript', 'JavaScript', 'Java', 'Go', 'Rust', 'C++', 'C#',
-  'React', 'Next.js', 'Node.js', 'Vue.js', 'Angular', 'GraphQL', 'REST API',
-  'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Kafka', 'Elasticsearch',
-  'AWS', 'GCP', 'Azure', 'Docker', 'Kubernetes', 'Terraform', 'CI/CD',
-  'PyTorch', 'TensorFlow', 'LLM', 'GenAI', 'Spark', 'Snowflake', 'Airflow',
-];
 
 const MNC_BIGTECH_SLUGS = new Set([
   'google', 'alphabet', 'meta', 'facebook', 'apple', 'amazon', 'aws', 'microsoft',
