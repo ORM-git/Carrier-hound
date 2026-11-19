@@ -104,7 +104,7 @@ function runAudit(corruptions: {
   }
 
   // Check 5: Right sidebar card padding 16px (p-4), gap between widgets 12px (space-y-3)
-  const hasSidebarGap12 = jobsCode.includes("w-[316px] shrink-0 space-y-3 sticky top-20");
+  const hasSidebarGap12 = jobsCode.includes("sticky top-14 p-4 space-y-3");
   const hasSidebarCardPadding = jobsCode.includes("p-4 space-y-3");
   if (!hasSidebarGap12 || !hasSidebarCardPadding) {
     failures.push("SIDEBAR FAIL: Right sidebar must have 12px gap between widgets (space-y-3) and 16px card padding (p-4).");

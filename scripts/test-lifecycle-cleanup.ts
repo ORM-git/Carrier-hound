@@ -219,18 +219,6 @@ export const LIFECYCLE_ALLOWLIST: LifecycleAllowlistEntry[] = [
     snippetMatch: "setCopied(false)",
     reason: "Transient 2s copy-button badge reset inside click handler (separate from effect cleanup)",
   },
-  {
-    file: "src/components/onboarding/CountryPickerModal.tsx",
-    kind: "timeout",
-    snippetMatch: "target.focus()",
-    reason: "One-shot 50ms post-unmount focus restore to opener element after modal close",
-  },
-  {
-    file: "src/components/onboarding/JobFunctionBottomSheet.tsx",
-    kind: "timeout",
-    snippetMatch: "target.focus()",
-    reason: "One-shot 50ms post-unmount focus restore to opener element after bottom sheet close",
-  },
 ];
 
 const LANDING_EXCLUDED_FILES = new Set<string>([

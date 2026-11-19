@@ -2468,7 +2468,7 @@ function JobsPageInner() {
                 data-testid="jobs-right-panel"
                 className="hidden lg:block lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-stretch bg-white border-l border-[#E2E8F0] lg:-mr-8 lg:!-mt-4 lg:-mb-12 lg:min-h-[calc(100vh-56px)]"
               >
-                <div className="sticky top-14 p-4 space-y-4 max-h-[calc(100vh-56px)] overflow-y-auto">
+                <div className="sticky top-14 p-4 space-y-3 max-h-[calc(100vh-56px)] overflow-y-auto">
                   {/* User Profile & Subscription Card (signed-in only) */}
                   {user && (
                     <div className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 space-y-3" data-testid="sidebar-user-card">
@@ -2593,7 +2593,7 @@ function JobsPageInner() {
             isOpen={welcomeOpen}
             onClose={() => finishWelcome(null)}
             onConfirm={(levels) => finishWelcome(levels)}
-            recommendedCount={isDegraded ? null : totalCount || liveJobs.length}
+            recommendedCount={isDegraded ? null : Math.min(totalCount || liveJobs.length, 30)}
             initialLevels={selectedLevel}
             savedExperienceLevel={preferences?.experienceLevel}
           />
