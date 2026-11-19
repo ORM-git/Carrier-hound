@@ -19,11 +19,11 @@ import path from "path";
 const ROOT = path.join(__dirname, "..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
-// Baseline href multisets captured from origin/main (5a2c84d) before the redesign.
+// Baseline href multisets captured from origin/main (5a2c84d) before the redesign, updated for the
+// product restore (#665): Dashboard is retired (/dashboard redirects to /jobs) and the Resume nav link
+// was removed, so neither href may come back in the header or footer.
 const BASELINE_HEADER_HREFS: Record<string, number> = {
-  "/dashboard": 2,
   "/jobs": 4,
-  "/resume": 2,
   "/applications": 2,
   "/remote": 4,
   "/pricing": 4,
@@ -52,10 +52,8 @@ const BASELINE_FOOTER_HREFS: Record<string, number> = {
   "/jobs": 2,
   "/radar": 1,
   "/remote": 1,
-  "/resume": 1,
   "/tracker": 1,
   "/signup": 1,
-  "/dashboard": 1,
   "/privacy": 1,
 };
 
@@ -194,7 +192,8 @@ function run(neg: boolean) {
   const headerDiff = diffCounts(hrefCounts(header), BASELINE_HEADER_HREFS);
   if (headerDiff.length) failures.push(`NAV FAIL: GuideHeader hrefs changed -> ${headerDiff.join("; ")}`);
   else console.log("  [PASS] GuideHeader href multiset identical to baseline");
-  if (!header.includes('href={user ? "/dashboard" : "/"}')) failures.push("NAV FAIL: brand logo conditional href missing");
+  // Signed-in brand logo lands on Jobs (the signed-in home after the Dashboard was retired).
+  if (!header.includes('href={user ? "/jobs" : "/"}')) failures.push("NAV FAIL: brand logo conditional href missing");
   const footerDiff = diffCounts(hrefCounts(footer), BASELINE_FOOTER_HREFS);
   if (footerDiff.length) failures.push(`NAV FAIL: Footer hrefs changed -> ${footerDiff.join("; ")}`);
   else console.log("  [PASS] Footer href multiset identical to baseline");

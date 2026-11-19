@@ -151,7 +151,12 @@ export default function ProfilePage() {
 
   // Drawer open handler (captures opener button for accessibility focus return)
   const handleOpenDrawer = (section: ProfileSection, e?: React.MouseEvent<HTMLElement>) => {
-    toast.info("Profile and resume editing is coming soon.");
+    if (e && e.currentTarget) {
+      setOpenerElement(e.currentTarget);
+    } else {
+      setOpenerElement(null);
+    }
+    setActiveDrawer(section);
   };
 
   const handleCloseDrawer = () => {
@@ -160,7 +165,12 @@ export default function ProfilePage() {
 
   // Profile save action
   const handleSaveProfile = async (updated: CandidateProfile) => {
-    toast.info("Profile and resume editing is coming soon.");
+    if (typeof window !== "undefined" && (window as any).__MOCK_PROFILE_SAVE_ERROR__) {
+      throw new Error((window as any).__MOCK_PROFILE_SAVE_ERROR__);
+    }
+    await saveConfirmedCandidateProfile(updated);
+    setCandidate(updated);
+    toast.success("Profile saved successfully.");
   };
 
   // Compute real profile completion statistics
@@ -238,16 +248,6 @@ export default function ProfilePage() {
               );
             })}
           </nav>
-        </div>
-
-        <div className="flex items-center justify-between p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 text-amber-900">Coming soon</span>
-            <span>Profile editing and resume parsing features are currently being upgraded. Account security and export controls remain active.</span>
-          </div>
-          <Link href="/settings?tab=privacy" className="text-xs font-bold text-amber-800 underline hover:text-amber-950 shrink-0">
-            Privacy & Security →
-          </Link>
         </div>
 
         {/* ================================================================= */}

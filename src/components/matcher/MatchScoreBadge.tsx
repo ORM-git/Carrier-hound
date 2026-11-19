@@ -9,7 +9,6 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { useSharedCandidateProfile } from "@/lib/resume/useCandidateProfile";
 
 const FitDiagnosticsModal = dynamic(() => import("./FitDiagnosticsModal"), { ssr: false });
-const CoverLetterModal = dynamic(() => import("../resume/CoverLetterModal"), { ssr: false });
 
 interface MatchScoreBadgeProps {
   job: StandardJobScoringInput;
@@ -44,7 +43,6 @@ export default function MatchScoreBadge({
   ]);
 
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
-  const [isCoverLetterOpen, setIsCoverLetterOpen] = useState(false);
 
   if (!candidate || !candidate.confirmedAt || !diagnostics) {
     return (
@@ -109,23 +107,6 @@ export default function MatchScoreBadge({
           open={isDiagnosticsOpen}
           onOpenChange={setIsDiagnosticsOpen}
           diagnostics={diagnostics}
-          candidate={candidate}
-          job={{
-            ...job,
-            company: job.company || "Verified Employer",
-          }}
-          onOpenCoverLetter={() => {
-            setIsDiagnosticsOpen(false);
-            setIsCoverLetterOpen(true);
-          }}
-        />
-      )}
-
-      {/* Cover Letter Modal */}
-      {isCoverLetterOpen && (
-        <CoverLetterModal
-          open={isCoverLetterOpen}
-          onOpenChange={setIsCoverLetterOpen}
           candidate={candidate}
           job={{
             ...job,

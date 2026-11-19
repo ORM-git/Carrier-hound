@@ -55,6 +55,17 @@ describe("Mobile Navigation Drawer A11y", () => {
       expect(drawer.className).toContain("pointer-events-none");
     });
 
+    it("is positioned as a left-opening drawer (left-0, slides in from left)", () => {
+      render(<AppTopBar pageLabel="Jobs" />);
+      const drawer = screen.getByLabelText("Mobile Navigation");
+      expect(drawer.className).toContain("left-0");
+      expect(drawer.className).toContain("-translate-x-full");
+
+      const menuButton = screen.getByLabelText("Open navigation menu");
+      fireEvent.click(menuButton);
+      expect(drawer.className).toContain("translate-x-0");
+    });
+
     it("moves focus into drawer on open and exposes accessible state", async () => {
       vi.useFakeTimers();
       render(<AppTopBar pageLabel="Jobs" />);
@@ -150,6 +161,19 @@ describe("Mobile Navigation Drawer A11y", () => {
       expect(drawer.hasAttribute("inert") || drawer.getAttribute("inert") === "").toBe(true);
       expect(drawer.className).toContain("invisible");
       expect(drawer.className).toContain("pointer-events-none");
+    });
+
+    it("is positioned as a left-opening drawer (left-0, slides in from left)", async () => {
+      await act(async () => {
+        render(<GuideHeader />);
+      });
+      const drawer = screen.getByLabelText("Mobile Navigation");
+      expect(drawer.className).toContain("left-0");
+      expect(drawer.className).toContain("-translate-x-full");
+
+      const menuButton = screen.getByLabelText("Open navigation menu");
+      fireEvent.click(menuButton);
+      expect(drawer.className).toContain("translate-x-0");
     });
 
     it("moves focus into drawer on open and exposes accessible state", async () => {

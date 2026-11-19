@@ -167,7 +167,7 @@ export async function POST(req: Request) {
   try {
     const { data: dbData, error: readError } = await supabaseAdmin
       .from("user_preferences")
-      .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, eligibility_filter")
+      .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, eligibility_filter, daily_digest_opt_in")
       .eq("user_id", user.id)
       .maybeSingle();
     if (readError) {
@@ -230,6 +230,8 @@ export async function POST(req: Request) {
     const experienceLevel = existingDbPrefs?.experience_level || null;
     const minSalary = existingDbPrefs?.min_salary ?? null;
     const salaryCurrency = existingDbPrefs?.salary_currency || null;
+    // Keep a recorded digest choice; a new row gets false, never the column default (true).
+    const dailyDigestOptIn = existingDbPrefs?.daily_digest_opt_in === true;
     const updatedAt = new Date().toISOString();
 
     // The validated preferences exactly as written, returned so the client caches what the DB holds.
@@ -245,7 +247,7 @@ export async function POST(req: Request) {
       experienceLevel: experienceLevel || undefined,
       minSalary: minSalary ?? undefined,
       salaryCurrency: salaryCurrency || undefined,
-      dailyDigestOptIn: false,
+      dailyDigestOptIn,
       onboardingCompleted: true,
       eligibilityFilter: existingDbPrefs?.eligibility_filter ?? true,
       updatedAt,
@@ -266,8 +268,7 @@ export async function POST(req: Request) {
         experience_level: experienceLevel,
         min_salary: minSalary,
         salary_currency: salaryCurrency,
-        // Launch scope: daily digest is Coming Soon; never opt in (the column defaults to true on insert).
-        daily_digest_opt_in: false,
+        daily_digest_opt_in: dailyDigestOptIn,
         onboarding_completed: true,
         updated_at: updatedAt,
       },

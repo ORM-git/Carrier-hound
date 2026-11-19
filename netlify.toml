@@ -102,6 +102,19 @@
   status = 301
   force = true
 
+# Retired Dashboard: legacy links land on Jobs, the signed-in home.
+[[redirects]]
+  from = "/dashboard"
+  to = "/jobs"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/dashboard/*"
+  to = "/jobs"
+  status = 301
+  force = true
+
 [[redirects]]
   from = "/applications"
   to = "/tracker"
@@ -114,11 +127,18 @@
   status = 301
   force = true
 
+# Retired Interview Pack & Skill What-If: legacy URLs land on /jobs.
 [[redirects]]
   from = "/jobs/:id/interview-pack"
-  to = "/jobs/sample/interview-pack.html"
-  status = 200
-  force = false
+  to = "/jobs"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/jobs/:id/skill-what-if"
+  to = "/jobs"
+  status = 301
+  force = true
 
 [[redirects]]
   from = "/jobs/detail"

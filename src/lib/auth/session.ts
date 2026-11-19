@@ -19,8 +19,9 @@ const CANDIDATE_PROFILE_KEY = "careermonke_candidate_profile";
  * Validates a return URL to ensure it is a safe relative same-site path.
  * Disallows absolute URLs, protocol-relative '//', backslashes, encoded exploits,
  * or loop-inducing auth paths (/login, /signup, /auth).
+ * Retired Dashboard destinations (/dashboard, /dashboard/*) normalize to /jobs, the signed-in home.
  */
-export function getValidReturnUrl(targetUrl: string | null | undefined, fallback: string = "/dashboard"): string {
+export function getValidReturnUrl(targetUrl: string | null | undefined, fallback: string = "/jobs"): string {
   if (!targetUrl) return fallback;
   const trimmed = targetUrl.trim();
   
@@ -57,13 +58,24 @@ export function getValidReturnUrl(targetUrl: string | null | undefined, fallback
   }
 
   // Prevent redirect loops back to authentication screens
-  const pathOnly = trimmed.split("?")[0].toLowerCase();
+  const pathOnly = trimmed.split(/[?#]/)[0].toLowerCase();
   if (
     pathOnly === "/login" ||
     pathOnly === "/signup" ||
     pathOnly.startsWith("/auth")
   ) {
     return fallback;
+  }
+
+  if (pathOnly === "/dashboard" || pathOnly.startsWith("/dashboard/")) {
+    return "/jobs";
+  }
+
+  if (
+    pathOnly.includes("/interview-pack") ||
+    pathOnly.includes("/skill-what-if")
+  ) {
+    return "/jobs";
   }
 
   return trimmed;
@@ -236,8 +248,9 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       work_auth: updatedPrefs.workAuth || null,
       min_salary: updatedPrefs.minSalary ?? null,
       salary_currency: updatedPrefs.salaryCurrency || null,
-      // Launch scope: daily digest is Coming Soon; the client never writes an opt-in.
-      daily_digest_opt_in: false,
+      // Write back the caller's loaded value so a recorded choice is preserved; absent => false,
+      // never the DB default (true). The digest opt-in UI and sending remain disabled.
+      daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? false,
       onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
       updated_at: updatedPrefs.updatedAt,

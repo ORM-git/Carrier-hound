@@ -767,21 +767,22 @@ async function runSuite() {
         const btns = Array.from(document.querySelectorAll("button"));
         const aiBtn = btns.find((b) => b.textContent && b.textContent.includes("AI Resume"));
         const clBtn = btns.find((b) => b.textContent && b.textContent.includes("Cover Letter"));
+        const url = window.location.pathname;
         const text = document.body.innerText;
-        const isComingSoon = text.includes("Personalized Match Rankings Coming Soon") || text.includes("Resume Upload & Parsing Coming Soon") || text.includes("Coming soon");
         return {
           hasAiBtn: Boolean(aiBtn),
           hasClBtn: Boolean(clBtn),
-          isComingSoon,
+          isRedirectedToJobs: url === "/jobs",
+          isComingSoon: text.includes("Coming soon") || text.includes("Redirecting to Jobs"),
         };
       });
 
-      if (dashboardState.isComingSoon && !dashboardState.hasAiBtn) {
-        // Under launch scope controls, AI Resume / Cover Letter buttons are gated behind Coming Soon
-        assert.strictEqual(dashboardState.hasAiBtn, false, "AI Resume button is not mounted under launch scope");
-        assert.strictEqual(dashboardState.hasClBtn, false, "Cover Letter button is not mounted under launch scope");
-        assert.strictEqual(dashboardState.isComingSoon, true, "Coming soon state is rendered on dashboard");
-        console.log("  -> [PASS-LOCAL] 7.1-7.3 Dashboard AI features correctly gated under launch scope controls (Coming Soon rendered, AI buttons absent)");
+      if (!dashboardState.hasAiBtn) {
+        // Under restore-product-no-ai, /dashboard redirects to /jobs and AI tool entry points are removed
+        assert.strictEqual(dashboardState.hasAiBtn, false, "AI Resume button is absent under restore-product-no-ai");
+        assert.strictEqual(dashboardState.hasClBtn, false, "Cover Letter button is absent under restore-product-no-ai");
+        assert.ok(dashboardState.isRedirectedToJobs || dashboardState.isComingSoon, "/dashboard redirected to /jobs or handled cleanly");
+        console.log("  -> [PASS-LOCAL] 7.1-7.3 Dashboard cleanly retired/redirected to /jobs and AI entry points absent (no-ai restore scope).");
       } else {
         const opened = await modalPage.evaluate(() => {
           const btns = Array.from(document.querySelectorAll("button"));

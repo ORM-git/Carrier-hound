@@ -183,7 +183,6 @@ async function runRateLimitTests() {
 
   const mockDbAi = createMockSupabaseForAi();
   const aiHandler = createAiHandler({
-    bypassComingSoon: true,
     getSupabaseAdmin: () => mockDbAi,
     getServerEntitlement: async () => ({ isPro: true }),
     callGroq: async () => "Simulated AI generated output",
@@ -244,7 +243,6 @@ async function runRateLimitTests() {
     },
   };
   const unapprovedAiHandler = createAiHandler({
-    bypassComingSoon: true,
     getSupabaseAdmin: () => unapprovedDb,
     getServerEntitlement: async () => ({ isPro: true }),
     callGroq: async () => "output",

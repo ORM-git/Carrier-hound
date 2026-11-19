@@ -223,13 +223,6 @@ paths:
       responses:
         "200": { description: Ready }
         "503": { description: Not ready }
-  /api/jobs/interview-pack:
-    get:
-      tags: [jobs]
-      summary: Generate an interview pack for a job
-      description: Delegates to handleInterviewPackRequest.
-      responses:
-        "200": { description: Interview pack }
   /api/jobs/pro:
     get:
       tags: [jobs]
@@ -254,13 +247,6 @@ paths:
       summary: Search jobs
       responses:
         "200": { description: Search results }
-  /api/jobs/skill-what-if:
-    get:
-      tags: [jobs]
-      summary: Skill what-if analysis
-      description: Delegates to handleSkillWhatIfRequest.
-      responses:
-        "200": { description: Analysis result }
   /api/jobs/suggest:
     get:
       tags: [jobs]
