@@ -9905,6 +9905,23 @@ COMMIT;
 
 BEGIN;
 
+-- REPAIR (docs/10m-schema-step1-rehearsal.md, deadlock): take every pre-existing table lock this migration
+-- needs up front, children before parents (saved_jobs, job_descriptions -> jobs -> companies), the same
+-- order live writers take them (a row lock on the referencing table, then a foreign-key check on the
+-- referenced one). A live writer can then only wait for this migration, never deadlock with it; the real
+-- PostgreSQL rehearsal reproduced that deadlock with the previous statement-by-statement lock order.
+-- Run with lock_timeout set: on contention this fails fast and rolls back. Missing tables are skipped.
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['public.saved_jobs', 'public.job_descriptions', 'public.jobs', 'public.companies'] LOOP
+    IF to_regclass(t) IS NOT NULL THEN
+      EXECUTE format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE', t);
+    END IF;
+  END LOOP;
+END $$;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ============================================================================
@@ -10179,7 +10196,12 @@ ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS top_keywords text[] DEFAULT '{}
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS country text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS country_code text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_type text;
-ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id uuid REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL;
+-- REPAIR (docs/10m-schema-step1-rehearsal.md, blocker 2): jobs.source_id is the LIVE text board key
+-- (e.g. 'greenhouse:stripe'), the same type #645 (20261116d) uses, so every migration order yields text.
+-- It is never cast to uuid. The registry link is a SEPARATE nullable uuid, mapped by
+-- internal_ingestion.ingestion_sources.slug = jobs.source_id (slug is UNIQUE NOT NULL). Not backfilled here.
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_registry_id uuid REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_job_id text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text;
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_remote boolean DEFAULT false;
@@ -10314,7 +10336,8 @@ CREATE TABLE IF NOT EXISTS public.job_descriptions (
   updated_at       timestamptz DEFAULT now()
 );
 
-ALTER TABLE public.job_descriptions ADD COLUMN IF NOT EXISTS posting_id uuid REFERENCES public.job_postings(id) ON DELETE CASCADE;
+-- REPAIR: SET NULL, not CASCADE: deleting a posting must not delete a legacy job's description row.
+ALTER TABLE public.job_descriptions ADD COLUMN IF NOT EXISTS posting_id uuid REFERENCES public.job_postings(id) ON DELETE SET NULL;
 ALTER TABLE public.job_descriptions ADD COLUMN IF NOT EXISTS skills text[] DEFAULT '{}'::text[];
 ALTER TABLE public.job_descriptions ADD COLUMN IF NOT EXISTS requirements text[] DEFAULT '{}'::text[];
 ALTER TABLE public.job_descriptions ADD COLUMN IF NOT EXISTS responsibilities text[] DEFAULT '{}'::text[];
@@ -10405,7 +10428,11 @@ CREATE INDEX IF NOT EXISTS idx_job_postings_active_company
   ON public.job_postings (company_id, posted_at DESC)
   WHERE is_active = TRUE;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_active_dedupe_hash_uniq
+-- job_postings IDENTITY: one row per (source_id -> internal_ingestion.ingestion_sources.id, external_id),
+-- enforced by idx_job_postings_source_id_external_id_uniq below (writers upsert ON CONFLICT on it).
+-- dedupe_hash is an ADVISORY cross-source similarity hash: two boards with the same hash coexist, so its
+-- index is NOT unique (REPAIR, same rule #645 applies to public.jobs). Nothing is merged or expired here.
+CREATE INDEX IF NOT EXISTS idx_job_postings_active_dedupe_hash
   ON public.job_postings (dedupe_hash)
   WHERE is_active = TRUE AND dedupe_hash IS NOT NULL;
 
@@ -10413,6 +10440,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_active_dedupe_hash_uniq
 CREATE UNIQUE INDEX IF NOT EXISTS idx_job_postings_source_id_external_id_uniq
   ON public.job_postings (source_id, external_id)
   WHERE source_id IS NOT NULL AND external_id IS NOT NULL;
+
+-- FK lookup index for jobs.source_registry_id (ON DELETE SET NULL on ingestion_sources)
+CREATE INDEX IF NOT EXISTS idx_jobs_source_registry_id
+  ON public.jobs (source_registry_id)
+  WHERE source_registry_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_job_postings_top_keywords_gin
   ON public.job_postings USING gin (top_keywords)
@@ -10431,7 +10463,8 @@ CREATE TABLE IF NOT EXISTS public.saved_jobs (
   CONSTRAINT saved_jobs_user_id_job_id_key UNIQUE (user_id, job_id)
 );
 
-ALTER TABLE public.saved_jobs ADD COLUMN IF NOT EXISTS job_posting_id uuid REFERENCES public.job_postings(id) ON DELETE CASCADE;
+-- REPAIR: SET NULL, not CASCADE: deleting a posting must not delete a user's saved_jobs row (job_id stays).
+ALTER TABLE public.saved_jobs ADD COLUMN IF NOT EXISTS job_posting_id uuid REFERENCES public.job_postings(id) ON DELETE SET NULL;
 ALTER TABLE public.saved_jobs ADD COLUMN IF NOT EXISTS notes text;
 ALTER TABLE public.saved_jobs ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 ALTER TABLE public.saved_jobs ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
@@ -10846,26 +10879,25 @@ COMMIT;
 --   ALTER TABLE public.job_descriptions DROP COLUMN IF EXISTS posting_id;
 --
 --   DROP INDEX IF EXISTS public.idx_jobs_source_vendor_source_job_id_uniq;
---   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
---   DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
+--   DROP INDEX IF EXISTS public.idx_jobs_source_registry_id;
+--   -- NOT dropped: idx_jobs_source_id_source_job_id_uniq, idx_jobs_active_role_category,
+--   -- idx_jobs_active_category, idx_companies_category, idx_companies_slug_uniq are owned by #645 (16e)
+--   -- or pre-existed in production; IF NOT EXISTS here never created them on the post-#645 schema.
 --   DROP INDEX IF EXISTS public.idx_jobs_top_keywords_gin;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_is_remote;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_role_category_posted_at;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category_country_posted_at;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_posted_at_desc;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_country;
---   DROP INDEX IF EXISTS public.idx_jobs_active_role_category;
---   DROP INDEX IF EXISTS public.idx_jobs_active_category;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_company_category_check;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
---   ALTER TABLE public.jobs DROP COLUMN IF EXISTS source_id;
+--   -- jobs.source_id is the LIVE text board key (#645 / ingestion): never dropped by this rollback.
+--   ALTER TABLE public.jobs DROP COLUMN IF EXISTS source_registry_id;
 --   ALTER TABLE public.jobs DROP COLUMN IF EXISTS company_category;
 --
 --   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
 --   DROP INDEX IF EXISTS public.idx_companies_canonical_domain;
---   DROP INDEX IF EXISTS public.idx_companies_category;
---   DROP INDEX IF EXISTS public.idx_companies_slug_uniq;
 --
 --   -- 3. DROP INTERNAL INGESTION SCHEMA & TABLES
 --   DROP TABLE IF EXISTS internal_ingestion.category_overrides;

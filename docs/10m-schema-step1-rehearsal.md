@@ -1,168 +1,174 @@
-# PR #643 rehearsal: 10M schema step 1 on a populated post-#645 schema
+# PR #643 repair and rehearsal: 10M schema step 1 on populated post-#645 schemas
 
-**Verdict: HOLD.** One blocker was proven and repaired in this PR. A second blocker, the `jobs.source_id`
-type conflict between #643 and #645, needs an owner decision and is **not** repaired here. Python10M stays
-OFF. No production SQL was run; nothing here authorizes applying 20261116b.
+**Merge: GO** (after review). The repaired migration passes every rehearsal on PGlite and on real
+PostgreSQL 17, including the original #643 failures used as a control.
+**Production apply: HOLD.** The migration is not zero-downtime. Running it needs a planned window, or a staged
+plan (below), plus a comparison against a real production schema snapshot. Python10M stays OFF.
+Nothing here was run against production.
 
-## What was rehearsed
+## What changed in `20261116b` (the minimal repair)
 
-| Item | Value |
-|---|---|
-| PR under test | #643, head `f8280087cfeebe0c665459246d73c408647b0511` |
-| Rehearsal branch | `rehearsal/643-schema-step1` = #643 head + merge of `main` @ `44503a70` |
-| Database | PostgreSQL 18.6 (PGlite 0.5.16, WASM, in-process, disposable). No network DB, no credentials. |
-| Base schema | `supabase/schema.sql` + all 86 other repo migrations incl. #645 D/E/F, applied in production order |
-| Fixture | `scripts/fixtures/10m-schema-step1-populated.sql`: 240 jobs (198 active), 12 companies, 120 job_descriptions, 9 saved_jobs, 3 synthetic users |
-| Migration md5 (repaired) | `e8f382ec0327c4a55d202b045dc14264` |
+| # | Change | Why (proven failure) |
+|---|---|---|
+| 1 | `jobs.source_id` stays **`text`** (the live board key, e.g. `greenhouse:stripe`) instead of `uuid REFERENCES ingestion_sources` | **Production order:** #645 already made it `text`, so the uuid FK was silently skipped. **Filename order:** it became `uuid` and the same data failed (`column "source_id" is of type uuid but expression is of type text`). |
+| 2 | New nullable **`jobs.source_registry_id uuid REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL`**, plus a partial FK index | A separate, nullable registry link. **Mapping:** `ingestion_sources.slug = jobs.source_id` (slug is `UNIQUE NOT NULL`). Not backfilled by the migration. |
+| 3 | `idx_jobs_active_dedupe_hash_uniq` is **not created** | #645 drops it as destructive. On populated data: `could not create unique index`, aborting the migration. On data without pairs it would reject legitimate cross-source rows at ingest. |
+| 4 | `job_postings` dedupe index is **non-unique** (`idx_job_postings_active_dedupe_hash`). Identity is explicit: **one row per `(source_id → ingestion_sources.id, external_id)`**, enforced by the existing unique index | Two boards posting the same job got `duplicate key value violates unique constraint "idx_job_postings_active_dedupe_hash_uniq"`. |
+| 5 | `saved_jobs.job_posting_id` and `job_descriptions.posting_id`: `ON DELETE SET NULL` instead of `CASCADE` | Deleting a posting would have silently deleted users' saved-job rows and job descriptions, even though they still reference a live legacy job. |
+| 6 | **Lock prelude:** `LOCK TABLE` saved_jobs → job_descriptions → jobs → companies up front (`ACCESS EXCLUSIVE`, missing tables skipped) | The real-PG rehearsal reproduced **deadlocks** with live writers. The old statement order locked a referenced table before `jobs` (and `jobs` before `saved_jobs`), the opposite of writers. |
+| 7 | Rollback notes: never drop live `jobs.source_id` or the #645-owned indexes; drop only `source_registry_id` and `idx_jobs_source_registry_id` | The old notes would have dropped live production data and #645's canonical-identity index. |
 
-The fixture is synthetic and deterministic. It contains Unicode titles and company names, the same external
-id on 4 vendors (60 cross-vendor ids), active and inactive rows, NULL salary/country/category, fixed
-historical `last_seen_at` values, text `source_id` values (the post-#645 type), and **16 cross-source active
-pairs sharing one `dedupe_hash`**, which #645 explicitly allows (the same posting seen on two vendors).
-It holds no customer data.
+Untouched:
+
+- #645's `20261116d`, `e` and `f`;
+- `merge_job_by_dedupe_priority`, which is never recreated;
+- canonical `UNIQUE (source_id, source_job_id)`, kept;
+- UI, billing, workflows, flags, ingestion, and the TS pipeline.
+
+There are no forward `DROP`, `TRUNCATE`, `DELETE` or `UPDATE` statements.
+
+## Baselines (all labelled; none is a live snapshot)
+
+- **`recon-incomplete`: the owner-reported post-#645 state, reconstructed.**
+  - Repo chain without D/E/F, plus a 3-object drift shim (`jobs.category`, `jobs.country`, a `jobs_public` placeholder that no migration creates early enough).
+  - Live `jobs.source_id text` and `companies.category`.
+  - **Scoped D:** the exact D statements for `touch_job_last_seen` (function and trigger), `compute_job_similarity_hash_v2`, and the `similarity_hash_v2` column.
+  - **E:** the canonical identity index, built exactly as `20261116e` builds it.
+  - **Indexes:** a valid **partial** `idx_companies_category … WHERE category IS NOT NULL`.
+  - **F:** installed (progress table and procedure). F's phase 3 was run on active rows, so active jobs missing a hash = **0**, but progress is recorded **only for the hash phase**. Full F completion is not assumed.
+- **`recon-complete`:** same, with all three F phases recorded and every row hashed.
+- **`full`** (extra): every repo migration including D/E/F in full. `dedupe_hash` = similarity hash, as `compute_job_dedupe_hash` produces after D.
+- **`filename`:** a fresh database with 16b in its sorted slot, before D/E/F.
+
+**Small fixture** (`scripts/fixtures/10m-schema-step1-populated.sql`, synthetic, deterministic):
+
+- 240 jobs (198 active), 12 companies, 120 descriptions, 9 saved jobs and 3 synthetic users;
+- Unicode titles and names, the same external IDs on 4 vendors, NULLs, fixed `last_seen_at` values, and text board keys;
+- **16 cross-source active pairs**: same company, title, country and location, so they get the same `compute_job_similarity_hash_v2`.
 
 ## Commands
 
 ```sh
 npm ci
-npx tsx scripts/test-10m-schema-step1-fixtures.ts                      # toy-schema fixtures, exit 0
-npx tsx scripts/test-10m-schema-step1-fixtures.ts --negative-control   # must exit 1
-npm run test:10m-rehearsal                                             # = npx tsx scripts/test-10m-schema-step1-rehearsal.ts
-npx tsx scripts/test-10m-schema-step1-rehearsal.ts --negative-control  # must exit 1
-npx tsx scripts/test-10m-schema-step1-rehearsal.ts --migration=<file>  # rehearse another 16b, e.g. the #643 original
-npx tsx scripts/test-10m-schema-step1-rehearsal.ts --probe-chain       # only check that the base chain loads
+npx tsx scripts/test-10m-schema-step1-fixtures.ts                       # toy-schema fixtures
+npx tsx scripts/test-10m-schema-step1-fixtures.ts --negative-control    # must exit 1
+npm run test:10m-rehearsal                                              # PGlite, all baselines + both orders
+npm run test:10m-rehearsal -- --negative-control                        # must exit 1
+npm run test:10m-rehearsal -- --migration=<original 16b>                # control: must reproduce the old failure
+# Real PostgreSQL (local disposable cluster only; refuses URLs, foreign servers and non-empty databases):
+npm install --no-save pg@8                                              # client only, package.json untouched
+PG_BIN=<dir with initdb/pg_ctl/postgres> npm run test:10m-postgres      # default --jobs=200000
+PG_BIN=... npm run test:10m-postgres -- --negative-control              # must exit 1
+PG_BIN=... npm run test:10m-postgres -- --skip-correctness --jobs=20000 --migration=<original 16b>
 ```
 
-The rehearsal exits **1** while blocker 2 is open. That is intended: it reports the real state.
-
-## Scenarios
-
-- **A. Production order.** Load the base chain (everything except 16b), populate, snapshot, apply 16b, compare, run behavior checks, apply 16b a second time and compare again.
-- **B. Filename order.** Apply 16b in its sorted slot, before #645 D/E/F, then the rest. Load the same fixture and compare the final schema with A.
-- **C. Failure and retry.** On a fresh populated DB, apply 16b with `SELECT 1/0` injected before its `COMMIT`. Check the DB is byte-for-byte unchanged, then retry.
-- **D. Negative control** (`--negative-control`). After A, tamper (rewrite one `last_seen_at`, grant anon USAGE on `internal_ingestion`, disable RLS on `saved_jobs`). The checks must catch every tamper, and the run exits 1.
-
-Snapshots compare:
-
-- row counts, and checksums over each table's original columns;
-- every `jobs.last_seen_at`;
-- column order and types of every public relation;
-- every pre-existing index definition and `indisvalid`;
-- triggers on `public.jobs`;
-- five app query results;
-- owner, ACL and RLS of every relation and function in `public` and `internal_ingestion`.
+The real-PG runner refuses to start without binaries or `pg` (exit 2). It ignores `DATABASE_URL`/`PG*`, and it
+verifies the connected server's `data_directory` is the temp cluster it created on `127.0.0.1` before every use.
 
 ## Results
 
-| Check group | 16b original (`f8280087`) | 16b repaired (this PR) |
+| Run | Engine | Result |
 |---|---|---|
-| A. applies on populated post-#645 schema | **FAIL**: `could not create unique index "idx_jobs_active_dedupe_hash_uniq"` | PASS (424 ms) |
-| A. row counts / checksums / `last_seen_at` / column order+types / index defs / app queries / grants+RLS unchanged | not reached | PASS (all) |
-| A. every index valid (incl. #645 canonical `idx_jobs_source_id_source_job_id_uniq`) | not reached | PASS |
-| A. no new triggers on `public.jobs` (no automatic merge/expiry) | not reached | PASS |
-| A. #645 containment kept, cross-source duplicate inserts, nothing merged | not reached | PASS (2 -> 3 active rows) |
-| A. same-vendor duplicate external id rejected; cross-vendor ids coexist | not reached | PASS (60 ids) |
-| A. `internal_ingestion` isolated (anon/authenticated denied, service_role allowed) | not reached | PASS |
-| A. raw `job_postings` denied to anon/authenticated; `job_postings_public` masks company/salary/apply url | not reached | PASS |
-| A. `saved_jobs` RLS (own rows only; anon none) | not reached | PASS |
-| A. `jobs.source_id` is the uuid FK #643 declares | not reached | **FAIL**: `text`, no FK |
-| A. second run succeeds and changes nothing | not reached | PASS (51 ms, identical snapshot) |
-| B. filename order applies (chain + 16b + #645 D/E/F) | PASS | PASS |
-| B. same fixture loads in filename order | **FAIL**: `source_id` is uuid | **FAIL**: `source_id` is uuid |
-| B. both orders converge to one schema | **FAIL**: 9 tables, 44 indexes differ | **FAIL**: 1 table (`jobs.source_id`), 0 indexes |
-| C. injected failure aborts; DB unchanged; no partial objects; retry matches first run | PASS (failure was the unique index) | PASS (failure was the injection) |
-| D. negative control | n/a | exit 1; 5 checks caught all 3 tampers |
-| **Total** | **5 passed, 3 failed** | **91 passed, 3 failed** |
+| `test:10m-rehearsal` (repaired) | PGlite (PostgreSQL 18.6 WASM) | **171 passed, 0 failed** (exit 0) |
+| `test:10m-rehearsal -- --negative-control` | PGlite | exit 1, 8 checks caught the tampering |
+| `test:10m-rehearsal -- --migration=<#643 original f8280087>` | PGlite | exit 1, 80 passed, 21 failed (old failures reproduced) |
+| `test:10m-postgres` (repaired, 200,000 jobs) | **PostgreSQL 17.12**, real server | **183 passed, 0 failed** (exit 0) |
+| `test:10m-postgres -- --negative-control` | PostgreSQL 17.12 | exit 1, the same 8 checks caught it |
+| `test:10m-postgres -- --migration=<original>` (20,000 jobs) | PostgreSQL 17.12 | exit 1, 89 passed, 22 failed; lock-order probes: **deadlock detected** (both) |
+| `test-10m-schema-step1-fixtures.ts` / `--negative-control` | PGlite | exit 0 / exit 1 |
 
-The fixture test (`scripts/test-10m-schema-step1-fixtures.ts`, extended here) gives the following results:
+**Original #643 as control.** The populated full-migration baseline gives `could not create unique index
+"idx_jobs_active_dedupe_hash_uniq"`, and filename order gives `source_id is of type uuid`. On the reconstructed
+baseline it *applies*, because `dedupe_hash` does not exist yet there, but then:
 
-- **Repaired migration:** exits 0, including the new TEST 8 (#645 containment).
-- **`--negative-control`:** exits 1. Its sabotage grants anon SELECT on `internal_ingestion`, and the existing TEST 3 isolation assertion catches it.
-- **Original 16b:** exits 1 at TEST 8, so the test guards the repair.
+- it recreates the destructive index;
+- it rejects two boards with the same hash in `job_postings`;
+- it lacks the registry FK;
+- it deadlocks with live writers.
 
-## Blocker 1 (repaired): 16b re-creates the destructive dedupe index #645 removed
+**Repaired, each populated baseline.**
 
-#645 `20261116d` drops `idx_jobs_active_dedupe_hash_uniq` as a destructive index. After #645, `dedupe_hash`
-is an advisory similarity hash (`compute_job_dedupe_hash` delegates to `compute_job_similarity_hash_v2`), so the
-same posting can be active from two sources. 16b recreates it as `UNIQUE (dedupe_hash) WHERE is_active`.
+- **Unchanged by 16b:** row counts, checksums over original columns, every `last_seen_at`, F progress and similarity hashes, column order and types, existing index definitions (incl. E and the partial `idx_companies_category`), triggers, app queries (feed, categories, `saved_jobs` join, descriptions join, cross-vendor ids), and owners/grants/RLS of every pre-existing schema, relation and function.
+- **Identity:** canonical `(source_id, source_job_id)` unique and valid. A duplicate canonical key and a same-vendor duplicate are rejected; the same posting from another board inserts with nothing merged or expired.
+- **`job_postings`:** boards with the same hash coexist, a duplicate canonical key is rejected, the `ON CONFLICT` upsert is idempotent, and nothing expires. Deleting a posting keeps the saved job and the description.
+- **Registry link:** the `slug = source_id` mapping maps exactly that board's jobs, deleting the source clears only the link, and an unknown uuid is rejected by the FK.
+- **Isolation, masking and RLS:** `internal_ingestion` is isolated (anon/authenticated denied, service_role allowed), raw `job_postings` is denied, `job_postings_public` masks company, salary, apply URL and raw payload as anon, and `saved_jobs` RLS limits users to their own rows (anon sees none).
+- **Re-runs:** the second apply is safe and changes nothing. An injected failure rolls back atomically with no partial objects, and the retry succeeds.
 
-On populated data that contains such pairs, the index build fails and the whole 16b transaction aborts.
-On data without pairs it would succeed and then reject legitimate cross-source rows at ingest time, the same
-class of failure as the ingest shard incident fixed in #676.
+**Both orders (16b contract, 203 columns and constraints).**
 
-**Repair:** that one `CREATE UNIQUE INDEX` is removed from 16b and replaced by a comment explaining why. It is
-the only change to the migration. `idx_jobs_source_id_source_job_id_uniq` (#645's canonical identity) and the
-other indexes are untouched.
-
-## Blocker 2 (NOT repaired, needs a decision): `jobs.source_id` type depends on migration order
-
-- **#645 (`20261116d`)** adds `jobs.source_id text`, and production already has it.
-- **16b** declares `ADD COLUMN IF NOT EXISTS source_id uuid REFERENCES internal_ingestion.ingestion_sources(id)`.
-
-What that produces depends on the order:
-
-- **Production order** (16b after #645): the line is a silent no-op. `source_id` stays `text` and the FK #643's design relies on does not exist.
-- **Filename order** (fresh environments, CI): 16b creates `source_id uuid` with the FK first, and #645's `ADD COLUMN IF NOT EXISTS` is then skipped. The same data then fails with `column "source_id" is of type uuid but expression is of type text`.
-
-Fresh databases and production would therefore have different identity schemas.
-
-Choosing the canonical type (text vendor key, or uuid FK to `internal_ingestion.ingestion_sources`, with a
-migration path for existing text values) is a design decision for the #642/#643/#645 owners. It is out of
-scope for a rehearsal repair, so it is reported here and left open.
-
-## Non-blocking findings
-
-- **Redundant unique index.** After 16b, `public.jobs` has two unique structures on `(source, source_job_id)`: the existing `jobs_source_source_job_id_key` and the new `idx_jobs_source_vendor_source_job_id_uniq`. That means two index updates on every job write. Suggest dropping the new one from 16b.
-- **`job_postings` dedupe index.** `idx_job_postings_active_dedupe_hash_uniq` puts the same UNIQUE-on-`dedupe_hash` semantics on the new, empty `job_postings` table. It cannot fail at apply time, but once ingestion writes there it would reject cross-source duplicates for the same reason as blocker 1.
-- **`idx_companies_category`.** In production order 16b's partial definition is skipped by `IF NOT EXISTS`, so #645's non-partial `(category)` index stays. The two orders converge (0 index differences after the repair). The brief describes a *partial* `companies(category)` index in production; the repo's #645 expects a non-partial one. Which one production really has is UNVERIFIED.
-
-## Runtime and locks (small fixture only)
-
-| Measurement | Value |
+| Comparison | Result |
 |---|---|
-| Base chain + fixture setup | about 6.0 s |
-| 16b first run (repaired) | 424 ms |
-| 16b second run | 51 ms |
-| Locks held until COMMIT | `AccessExclusiveLock` on `jobs`, `companies`, `job_descriptions`, `saved_jobs` (from `ALTER TABLE … ADD COLUMN/CONSTRAINT`), plus `ShareLock` and `ShareRowExclusiveLock` (plain `CREATE INDEX`, FK and constraint DDL) |
+| `recon-incomplete` vs `filename` | **identical types, constraints and FKs** (0 differences, 0 missing) |
+| `recon-incomplete` vs `recon-complete` | identical |
+| `recon-incomplete` vs `full` (extra) | 1 difference: `jobs.is_remote` default `false` vs `NULL`. Full D creates the column first without a default, so 16b's `IF NOT EXISTS … DEFAULT false` is skipped. Reported, not repaired: D is out of scope. |
 
-16b runs as **one transaction** with plain `CREATE INDEX` (not `CONCURRENTLY`). The `AccessExclusiveLock`s
-block **reads and writes** on `jobs`, `companies`, `job_descriptions` and `saved_jobs` until COMMIT, so the
-live feed, saved jobs and ingestion wait for the whole migration. **This is not zero-downtime.**
+Three CHECKs (`role_category`, `company_category`, `source_priority`) differ only in their text,
+`(x IS NULL OR <check>)` versus `<check>`. These are the same constraint, because a CHECK that evaluates to NULL
+passes, and the comparison normalizes them. `jobs_source_type_check` differs between scoped and full D. 16b does
+not touch it, so it is outside 16b's contract.
 
-At production scale, the production-order transaction builds 7 new indexes on `public.jobs`. These are 5 partial b-trees, the `top_keywords` GIN index and the vendor-key unique index. Three other `jobs` indexes already exist from #645 and are skipped by `IF NOT EXISTS`.
-Its duration was **not measured**: 240 rows says nothing about a 10M-row build time.
+## Real PostgreSQL: scale and concurrency (measured)
 
-## Platform stubs and drift shim (UNVERIFIED against production)
+**Hardware and settings.** 13th Gen Intel Core i5-13420H, 12 logical cores, 16 GB RAM, Windows 11. PostgreSQL
+17.12 with defaults (`shared_buffers` 128 MB, `maintenance_work_mem` 64 MB, `fsync` on, `synchronous_commit`
+on), on a local SSD temp directory. **Fixture:** 200,000 jobs (160,000 active, 504 MB with indexes), 2,000
+companies, 100,000 descriptions and 5,000 saved jobs, populated in 284 s.
 
-**Supabase stubs.** The rehearsal provides:
+The sessions are independent connections: the migration, a held reader, a live writer (INSERT every 25 ms), a
+feed reader (`jobs_public`, every 25 ms) and a lock observer (`pg_locks` + `pg_stat_activity` every 50 ms).
 
-- the roles `anon`, `authenticated`, `service_role` (BYPASSRLS), `authenticator` and `supabase_admin`;
-- `auth.users`, `auth.uid()`, `auth.role()` and `auth.jwt()`;
-- the storage schema with a `resumes` bucket and `storage.foldername()`;
-- Supabase's default privileges on `public`.
+| Phase | Measured |
+|---|---|
+| a. A reader holds `ACCESS SHARE` on `jobs`; 16b runs with `lock_timeout = 3s` | 16b waited 2,950 ms, then aborted (`canceling statement due to lock timeout`). **The writer and feed reader queued behind 16b's pending `ACCESS EXCLUSIVE` request for 2,576 ms** (worst write 2,690 ms, worst read 2,663 ms). Afterwards data, schema, grants and #645 state were unchanged, with no partial objects. |
+| b. `statement_timeout = 250ms` fires mid-migration (injected 1 s statement before COMMIT) | Aborted (`canceling statement due to statement timeout`) in 704 ms; everything unchanged. |
+| c. Retry under live writes and reads (`lock_timeout = 3s`) | Committed in **5,399 ms**. `ACCESS EXCLUSIVE` on jobs, companies, job_descriptions and saved_jobs was held for **~5.3 s**; all traffic was blocked for that window. Steady state: write p50 5 ms, read p50 2 ms. During the migration: **worst write 5,395 ms, worst read 5,388 ms**, no errors. Counts, checksums, `last_seen_at`, #645 state and app queries were unchanged at scale. |
+| d. Second apply | No-op in 1,100 ms, but it **still takes `ACCESS EXCLUSIVE` on all four tables**. |
+| Lock-order probes | A writer holding `jobs` (INSERT) then FK-checking `companies`, or holding `saved_jobs` then reading `jobs`: no deadlock, the writer committed first and 16b followed about 1.1 s later. **Original 16b: `deadlock detected` in both.** |
 
-**Extensions.** `pg_trgm`, `pgcrypto` and `unaccent` are real (PGlite contrib). `pg_cron` and `pg_stat_statements` cannot load in WASM. Only their `CREATE EXTENSION` lines are skipped (`20261105c`, `20261108a`), and `cron.schedule` is a recording stub. Cron behavior is unverified.
+**Timeline of the retry (phase c), ms from the start of the observation:**
 
-**Drift shim.** No repo migration creates `jobs.category`, `jobs.country` or the `jobs_public` view before the migrations that use them. Production has them, created outside the migration history. The shim adds exactly those three objects (the view as a prefix-compatible placeholder that `20261010` replaces). There is **no production-shaped schema snapshot in the repo**, so differences between this rebuilt schema and production are unverified.
+| ms | Event |
+|---|---|
+| 0 | Live writes and reads running (p50 5 ms / 2 ms) |
+| 506 | 16b starts and the prelude takes every lock |
+| 539 | First sample with 16b holding `ACCESS EXCLUSIVE` on jobs; writer and reader queued |
+| 5,869 | Last sample with the lock held |
+| 5,905 | 16b commits; queued traffic resumes (worst wait about 5.4 s) |
 
-**PGlite is single-connection.** Lock modes are observed in the migrating session's own `pg_locks` before COMMIT. Concurrent-session blocking and lock-wait timeouts were not exercised.
+### What this means for production (honest limits)
 
-## Stop conditions (do not apply 20261116b to production while any holds)
+- **Not zero-downtime.** One transaction holds `ACCESS EXCLUSIVE` on `jobs`, `companies`, `job_descriptions` and `saved_jobs` while building 7 or more indexes on `jobs` with plain `CREATE INDEX`. At 200k rows on this laptop that blocked the feed, saved jobs and ingestion for about 5.4 s. **Duration at production size is unmeasured**; it grows with rows and indexes, and these numbers support no 10M capacity claim.
+- While 16b *waits* for its locks, every new reader and writer queues behind it, so `lock_timeout` must always be set (3 s was used here).
+- A second apply also locks everything.
 
-1. Blocker 2 is open: `jobs.source_id` type and FK not decided and not consistent across migration orders.
-2. The populated-data rehearsal exits non-zero.
-3. A production schema snapshot has not been compared against this rebuilt base (drift shim unverified).
-4. There is no measured runtime and lock-hold window at production row counts, and no maintenance window or `CONCURRENTLY` plan for the index builds.
-5. Any check in scenarios A, C or D regresses (data, `last_seen_at`, grants, RLS, isolation, masking).
+**Suggested staged plan for production** (not implemented here):
 
-## Unresolved gaps
+1. **Phase 1, short transaction, `lock_timeout` 3 s, retry:** the lock prelude, enums, `internal_ingestion`, new tables and views, `ADD COLUMN`s (catalog-only on PG 11+), `NOT VALID` constraints, grants and RLS. No index builds on existing big tables.
+2. **Phase 2, outside a transaction, one statement at a time:** `CREATE INDEX CONCURRENTLY` for each `jobs` / `companies` / `job_descriptions` / `saved_jobs` index, then check `indisvalid` (#645 E's pattern).
+3. **Phase 3, optional:** `VALIDATE CONSTRAINT` (`SHARE UPDATE EXCLUSIVE`, which doesn't block reads or writes).
 
-- The blocker 2 decision.
-- Index build time and lock duration at 10M rows (unmeasured).
-- Production schema snapshot comparison.
-- Behavior with real `pg_cron` and `pg_stat_statements`.
-- Concurrent-session blocking.
-- The redundant `(source, source_job_id)` unique index.
-- The `job_postings` dedupe unique index semantics.
+## Platform stubs (UNVERIFIED against production)
 
-None of these were exercised against production.
+- **Supabase:** roles anon, authenticated, service_role (BYPASSRLS), authenticator and supabase_admin, with migrations running as `postgres`; `auth.users` and `auth.uid()`/`role()`/`jwt()`; the storage schema with a `resumes` bucket and `foldername()`; and Supabase's default privileges on `public`.
+- **`pg_cron`:** not installed on either engine. The `CREATE EXTENSION` line is skipped and `cron.schedule` is recorded only.
+- **`pg_stat_statements`:** created on real PG and skipped on PGlite.
+- **No production schema snapshot is in the repo.** The reconstruction follows the owner's description and has not been checked against the live schema.
+
+## Stop conditions (do not apply to production while any holds)
+
+1. Any rehearsal or real-PG check fails, or a negative control exits 0.
+2. No comparison with a real production schema snapshot (e.g. `pg_dump --schema-only`) against the reconstruction.
+3. No maintenance window sized from a measurement on production-size data, or the staged plan is not adopted.
+4. `lock_timeout` is not set for the apply, or no retry policy exists for a lock-timeout abort.
+5. Anything writes `jobs.source_registry_id` without the `slug = source_id` mapping.
+
+## Known gaps
+
+- Production-scale lock duration (unmeasured).
+- Behavior under real `pg_cron`.
+- The reconstruction versus the live schema.
+- The redundant `idx_jobs_source_vendor_source_job_id_uniq` (duplicates `jobs_source_source_job_id_key`), kept to keep the diff minimal.
+- `jobs.is_remote` default divergence in the full-D baseline only.
+- `job_postings.company_id ON DELETE CASCADE` (new table only) left as designed.
+- No backfill of `source_registry_id`.

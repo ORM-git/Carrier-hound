@@ -1,57 +1,61 @@
 /**
  * scripts/test-10m-schema-step1-rehearsal.ts
  *
- * Disposable rehearsal of PR #643 (20261116b_ten_million_system_design_schema.sql) on a POPULATED schema
- * built from this repo's own migration chain (supabase/schema.sql + every migration, incl. the #645
- * D/E/F repair), inside an in-process PGlite (real PostgreSQL compiled to WASM). Never touches a network
- * database and never reads credentials.
+ * Disposable rehearsal of PR #643 (20261116b_ten_million_system_design_schema.sql) on POPULATED schemas
+ * rebuilt from this repo's own migration chain. Engine-neutral core (also used by the real-PostgreSQL
+ * runner scripts/test-10m-schema-step1-postgres.ts); this file's CLI runs it on in-process PGlite.
+ * Never touches a network database and never reads credentials.
  *
- * Scenarios
- *   A. production order   : baseline + all migrations except 16b, populate, apply 16b, apply 16b again
- *   B. filename order     : 16b applied in its sorted slot (before #645 D/E/F), populated before 16b
- *   C. failure / retry    : 16b with an injected error before COMMIT -> must leave the DB untouched; retry
- *   D. negative control   : --negative-control tampers with the post-migration DB; the checks must catch it
+ * Baselines (production order = everything except 16b, then 16b):
+ *   recon-incomplete  RECONSTRUCTED owner-reported post-#645 state (NOT a live snapshot): live text
+ *                     jobs.source_id + companies.category, scoped D (touch_job_last_seen, similarity hash v2
+ *                     function + column only), E canonical identity index, valid PARTIAL idx_companies_category,
+ *                     F installed; active rows hashed, progress only for the hash phase (NOT complete)
+ *   recon-complete    same, every F phase recorded and every row hashed
+ *   full              every repo migration incl. #645 D/E/F in full (extra scenario)
+ *   filename          fresh database, 16b in its sorted slot before #645 D/E/F
  *
- * Flags
- *   --negative-control     exit non-zero if the tamper is detected (expected), zero would mean blind checks
- *   --migration=<path>     rehearse a different 16b file (e.g. the unrepaired original from PR #643 head)
- *   --json=<path>          also write the machine-readable results
- *
- * Exit code: 0 = every check passed; 1 = at least one check failed (details printed).
+ * Flags: --negative-control (tamper after migrating; must exit non-zero), --migration=<path> (rehearse another
+ * 16b file, e.g. the original from PR #643 as a control), --json=<path> (machine-readable results).
+ * Exit code: 0 = every check passed; 1 = at least one check failed.
  */
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { PGlite } from "@electric-sql/pglite";
-import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
-import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
-import { unaccent } from "@electric-sql/pglite/contrib/unaccent";
 
-const ROOT = path.resolve(__dirname, "..");
-const MIG_DIR = path.join(ROOT, "supabase/migrations");
-const TARGET = "20261116b_ten_million_system_design_schema.sql";
-const FIXTURE = path.join(ROOT, "scripts/fixtures/10m-schema-step1-populated.sql");
+export const ROOT = path.resolve(__dirname, "..");
+export const MIG_DIR = path.join(ROOT, "supabase/migrations");
+export const TARGET = "20261116b_ten_million_system_design_schema.sql";
+const D_FILE = "20261116d_repair_642_identity_and_similarity_safety.sql";
+const E_FILE = "20261116e_repair_642_concurrent_indexes.sql";
+const F_FILE = "20261116f_repair_642_batch_backfill.sql";
+export const FIXTURE = path.join(ROOT, "scripts/fixtures/10m-schema-step1-populated.sql");
 
-const args = process.argv.slice(2);
-const NEGATIVE = args.includes("--negative-control");
-const migrationArg = args.find((a) => a.startsWith("--migration="));
-const jsonArg = args.find((a) => a.startsWith("--json="));
-const TARGET_PATH = migrationArg ? path.resolve(migrationArg.slice("--migration=".length)) : path.join(MIG_DIR, TARGET);
+/** Minimal engine interface: PGlite and node-postgres both satisfy it through tiny adapters. */
+export interface Db {
+  exec(sql: string): Promise<void>;
+  query<T = any>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
+}
 
-type Check = { scenario: string; name: string; ok: boolean; detail?: string };
-const checks: Check[] = [];
-const notes: Record<string, unknown> = {};
-const check = (scenario: string, name: string, ok: boolean, detail?: string) => {
+export type Check = { scenario: string; name: string; ok: boolean; detail?: string };
+export const checks: Check[] = [];
+export const notes: Record<string, any> = {};
+export function check(scenario: string, name: string, ok: boolean, detail?: string) {
   checks.push({ scenario, name, ok, detail });
   console.log(`  ${ok ? "PASS" : "FAIL"} [${scenario}] ${name}${detail ? ` :: ${detail}` : ""}`);
-};
+}
 
 // ---------------------------------------------------------------------------------------------------
-// Supabase platform stubs. Only what the repo's migrations reference; recorded as UNVERIFIED in the doc.
+// Supabase platform stubs (UNVERIFIED against production; documented in docs/10m-schema-step1-rehearsal.md)
 // ---------------------------------------------------------------------------------------------------
-const PLATFORM_STUBS = `
-  CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;
-  CREATE ROLE authenticator NOLOGIN; CREATE ROLE supabase_admin NOLOGIN;
+export const PLATFORM_STUBS = `
+  DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN CREATE ROLE authenticator NOLOGIN; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN CREATE ROLE supabase_admin NOLOGIN; END IF;
+  END $$;
   GRANT anon, authenticated, service_role TO authenticator;
   CREATE SCHEMA auth;
   CREATE TABLE auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text, raw_user_meta_data jsonb DEFAULT '{}'::jsonb,
@@ -69,7 +73,7 @@ const PLATFORM_STUBS = `
   ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
   CREATE FUNCTION storage.foldername(name text) RETURNS text[] LANGUAGE sql IMMUTABLE AS $$ SELECT (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] $$;
   INSERT INTO storage.buckets (id, name, public) VALUES ('resumes', 'resumes', false);
-  -- pg_cron is not available in WASM: record schedule calls only (UNVERIFIED)
+  -- pg_cron is not available here: record schedule calls only (UNVERIFIED)
   CREATE SCHEMA cron;
   CREATE TABLE cron.job (jobid bigserial PRIMARY KEY, jobname text UNIQUE, schedule text, command text);
   CREATE FUNCTION cron.schedule(job_name text, schedule text, command text) RETURNS bigint LANGUAGE sql AS $$
@@ -77,7 +81,6 @@ const PLATFORM_STUBS = `
     ON CONFLICT (jobname) DO UPDATE SET schedule = EXCLUDED.schedule, command = EXCLUDED.command RETURNING jobid $$;
   CREATE FUNCTION cron.unschedule(job_name text) RETURNS boolean LANGUAGE sql AS $$ DELETE FROM cron.job WHERE jobname = job_name RETURNING true $$;
   CREATE SCHEMA extensions;
-  -- Supabase default privileges on public (what the platform grants to API roles on new objects)
   GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
@@ -85,10 +88,10 @@ const PLATFORM_STUBS = `
 `;
 
 /**
- * Production columns that NO repo migration creates (added out of band; no production schema snapshot
- * exists in the repo). Only what the migration chain itself references. UNVERIFIED against production.
+ * Production objects that NO repo migration creates before they are used (added out of band; there is no
+ * production schema snapshot in the repo). UNVERIFIED against production.
  */
-const DRIFT_SHIM = `
+export const DRIFT_SHIM = `
   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS category text;
   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS country text;
   -- 20261001_filter_upgrades grants on jobs_public, which the repo only creates later (20261010, CREATE OR
@@ -96,11 +99,14 @@ const DRIFT_SHIM = `
   CREATE VIEW public.jobs_public AS SELECT id FROM public.jobs;
 `;
 
-/** Migrations that pg_cron owns entirely are skipped (UNVERIFIED); the rest must apply cleanly. */
-const CRON_ONLY = new Set<string>([]);
+/** Live columns the owner-reported production has without #645 D section 4 (RECONSTRUCTED). */
+const RECON_LIVE_COLUMNS = `
+  ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;      -- live text board key, e.g. 'greenhouse:stripe'
+  ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS category text;  -- backs the owner-reported partial index
+`;
 
-/** Split SQL into statements for files that must run outside a transaction (CONCURRENTLY). */
-function splitStatements(sql: string): string[] {
+/** Split SQL into statements (dollar quotes, strings and comments aware). */
+export function splitStatements(sql: string): string[] {
   const out: string[] = [];
   let cur = "", i = 0, dollar: string | null = null, inLine = false, inBlock = false, inStr = false;
   while (i < sql.length) {
@@ -119,42 +125,36 @@ function splitStatements(sql: string): string[] {
   if (cur.replace(/--.*$/gm, "").trim()) out.push(cur.trim());
   return out.filter((s) => s.replace(/--.*$/gm, "").trim().length > 0);
 }
+const stripComments = (s: string) => s.replace(/--.*$/gm, "").trim();
 
-/** Extensions WASM PostgreSQL cannot load. Only their CREATE EXTENSION line is skipped (UNVERIFIED). */
-const UNAVAILABLE_EXTENSIONS = ["pg_cron", "pg_stat_statements"];
-const skippedExtensionLines: string[] = [];
+export const skippedExtensionLines: string[] = [];
+/** Extensions the engine cannot load: only their CREATE EXTENSION line is skipped (UNVERIFIED). */
+export let unavailableExtensions = ["pg_cron", "pg_stat_statements"];
+export function setUnavailableExtensions(list: string[]) { unavailableExtensions = list; }
 
-async function applyFile(db: PGlite, file: string, sql: string) {
-  for (const ext of UNAVAILABLE_EXTENSIONS) {
+export async function applySql(db: Db, label: string, sql: string) {
+  for (const ext of unavailableExtensions) {
     const re = new RegExp(`CREATE\\s+EXTENSION\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${ext}"?[^;]*;`, "gi");
     if (re.test(sql)) {
-      skippedExtensionLines.push(`${file}: CREATE EXTENSION ${ext}`);
-      sql = sql.replace(re, `-- [rehearsal] skipped CREATE EXTENSION ${ext} (not available in WASM PostgreSQL)`);
+      if (!skippedExtensionLines.includes(`${label}: ${ext}`)) skippedExtensionLines.push(`${label}: ${ext}`);
+      sql = sql.replace(re, `-- [rehearsal] skipped CREATE EXTENSION ${ext}`);
     }
   }
-  if (/\bCONCURRENTLY\b/i.test(sql.replace(/--.*$/gm, ""))) {
+  if (/\bCONCURRENTLY\b/i.test(stripComments(sql))) {
     for (const stmt of splitStatements(sql)) await db.exec(stmt);
   } else {
     await db.exec(sql);
   }
 }
 
-async function freshDb(): Promise<PGlite> {
-  const db = new PGlite({ extensions: { pg_trgm, pgcrypto, unaccent } });
-  await db.exec(PLATFORM_STUBS);
-  await db.exec(fs.readFileSync(path.join(ROOT, "supabase/schema.sql"), "utf8"));
-  await db.exec(DRIFT_SHIM);
-  return db;
-}
+export const allMigrations = () => fs.readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort();
+const readMig = (f: string) => fs.readFileSync(path.join(MIG_DIR, f), "utf8");
 
-const allMigrations = () => fs.readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort();
-
-async function applyChain(db: PGlite, files: string[], label: string): Promise<string[]> {
+export async function applyChain(db: Db, files: string[], label: string, target?: string): Promise<string[]> {
   const failed: string[] = [];
   for (const f of files) {
-    if (CRON_ONLY.has(f)) continue;
     try {
-      await applyFile(db, f, fs.readFileSync(path.join(MIG_DIR, f), "utf8"));
+      await applySql(db, f, f === TARGET && target !== undefined ? target : readMig(f));
     } catch (e: any) {
       failed.push(`${f}: ${String(e?.message || e).slice(0, 200)}`);
       try { await db.exec("ROLLBACK"); } catch {}
@@ -164,109 +164,195 @@ async function applyChain(db: PGlite, files: string[], label: string): Promise<s
   return failed;
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Baselines
+// ---------------------------------------------------------------------------------------------------
+export type Baseline = "recon-incomplete" | "recon-complete" | "full";
+export const BASELINES: Baseline[] = ["recon-incomplete", "recon-complete", "full"];
 
-// ===================================================================================================
-// Snapshot: everything that must survive 20261116b unchanged
-// ===================================================================================================
+/** Scoped D: only the touch_job_last_seen replacement, the v2 similarity function and its column. */
+function scopedDStatements(): string[] {
+  // Anchored at the statement start so D's preflight DO block (which mentions these names) is not picked up
+  const keep = [/^CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.touch_job_last_seen\s*\(/i, /^(DROP|CREATE)\s+TRIGGER\s+(IF\s+EXISTS\s+)?jobs_touch_last_seen\b/i,
+    /^CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.compute_job_similarity_hash_v2\s*\(/i, /^ALTER\s+TABLE\s+public\.jobs\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+similarity_hash_v2\b/i];
+  const stmts = splitStatements(readMig(D_FILE)).filter((s) => keep.some((re) => re.test(stripComments(s))));
+  if (stmts.length !== 5) throw new Error(`scoped D extraction expected 5 statements, got ${stmts.length}`);
+  return stmts;
+}
+
+/** Schema for a baseline, before the fixture. Returns chain failures (must be empty). */
+export async function buildBaselineSchema(db: Db, kind: Baseline): Promise<string[]> {
+  if (kind === "full") return applyChain(db, allMigrations().filter((f) => f !== TARGET), kind);
+  const failed = await applyChain(db, allMigrations().filter((f) => ![TARGET, D_FILE, E_FILE, F_FILE].includes(f)), kind);
+  try {
+    await db.exec(RECON_LIVE_COLUMNS);
+    for (const s of scopedDStatements()) await db.exec(s);
+    // E: the valid canonical identity index, built exactly as 20261116e builds it
+    const eIdx = splitStatements(readMig(E_FILE)).find((s) => /CREATE\s+UNIQUE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+idx_jobs_source_id_source_job_id_uniq/i.test(stripComments(s)));
+    if (!eIdx) throw new Error("E canonical index statement not found");
+    await db.exec(eIdx);
+    // Owner-reported valid PARTIAL companies(category) index
+    await db.exec(`CREATE INDEX idx_companies_category ON public.companies (category) WHERE category IS NOT NULL`);
+    // F installed (progress table + procedure); its CALL is modelled per baseline after the fixture
+    await db.exec(readMig(F_FILE).replace(/^\s*CALL\s+public\.repair_645_run_resumable_backfill\s*\([^)]*\)\s*;/im, "-- [rehearsal] CALL modelled separately"));
+  } catch (e: any) {
+    failed.push(`reconstruction: ${String(e?.message || e).slice(0, 200)}`);
+  }
+  return failed;
+}
+
+/** Data-dependent post-#645 state, after the fixture is loaded. */
+export async function applyBaselineState(db: Db, kind: Baseline | "filename") {
+  if (kind === "full" || kind === "filename") {
+    await db.exec(`CALL public.repair_645_run_resumable_backfill(500)`);
+    // With D in full, compute_job_dedupe_hash delegates to the v2 similarity hash, so a fully migrated DB
+    // carries dedupe_hash = similarity hash; the 16 cross-source pairs therefore share one dedupe_hash.
+    await db.exec(`BEGIN; SET LOCAL careermonke.skip_touch_last_seen = 'on';
+                   UPDATE public.jobs SET dedupe_hash = similarity_hash_v2 WHERE dedupe_hash IS NULL AND similarity_hash_v2 IS NOT NULL; COMMIT;`);
+    return;
+  }
+  // F phase 3 exactly as 20261116f runs it: active rows only, liveness untouched
+  const fill = (where: string) => `
+    BEGIN;
+    SET LOCAL careermonke.skip_touch_last_seen = 'on';
+    UPDATE public.jobs SET similarity_hash_v2 = public.compute_job_similarity_hash_v2(company, title, COALESCE(country_code, country), location)
+     WHERE ${where} AND similarity_hash_v2 IS NULL;
+    COMMIT;`;
+  await db.exec(fill("is_active = TRUE"));
+  const activeRows = Number((await db.query<{ n: string }>(`SELECT count(*) n FROM public.jobs WHERE is_active`)).rows[0].n);
+  if (kind === "recon-incomplete") {
+    // Active missing hashes = 0, but the other F phases never completed: full progress NOT assumed
+    await db.exec(`INSERT INTO public.repair_645_backfill_progress (phase, total_rows_updated, last_batch_rows, updated_at)
+                   VALUES ('jobs_similarity_hash_v2', ${activeRows}, ${activeRows % 500}, timestamptz '2026-11-17 00:00:00+00')`);
+  } else {
+    await db.exec(fill("TRUE"));
+    await db.exec(`INSERT INTO public.repair_645_backfill_progress (phase, total_rows_updated, last_batch_rows, updated_at) VALUES
+      ('companies_canonical_domain', 0, 0, timestamptz '2026-11-17 00:00:00+00'),
+      ('jobs_source_priority', 0, 0, timestamptz '2026-11-17 00:00:00+00'),
+      ('jobs_similarity_hash_v2', ${activeRows}, ${activeRows % 500}, timestamptz '2026-11-17 00:00:00+00')`);
+  }
+}
+
+export async function loadFixture(db: Db) {
+  await db.exec(fs.readFileSync(FIXTURE, "utf8"));
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Snapshots
+// ---------------------------------------------------------------------------------------------------
 const BASE_TABLES = ["jobs", "companies", "job_descriptions", "saved_jobs"] as const;
 const md5 = (s: string) => crypto.createHash("md5").update(s).digest("hex");
 
-type Snapshot = {
+export type Snapshot = {
   counts: Record<string, number>;
-  checksums: Record<string, string>; // over the ORIGINAL column list only
+  checksums: Record<string, string>;
   lastSeen: string;
-  columns: Record<string, string[]>; // public tables/views: ordered name:type
+  fState: string;
+  columns: Record<string, string[]>;
   indexes: Record<string, { def: string; valid: boolean }>;
   jobTriggers: string[];
   queries: Record<string, string>;
-  acl: Record<string, string>; // relation / function -> owner + acl
+  acl: Record<string, string>;
 };
 
-async function originalColumns(db: PGlite): Promise<Record<string, string[]>> {
+export async function originalColumns(db: Db): Promise<Record<string, string[]>> {
   const out: Record<string, string[]> = {};
   for (const t of BASE_TABLES) {
     const r = await db.query<{ c: string }>(
-      `select column_name c from information_schema.columns where table_schema='public' and table_name=$1 order by ordinal_position`, [t]);
+      `SELECT column_name c FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 ORDER BY ordinal_position`, [t]);
     out[t] = r.rows.map((x) => x.c);
   }
   return out;
 }
 
-async function snapshot(db: PGlite, cols: Record<string, string[]>): Promise<Snapshot> {
+export async function snapshot(db: Db, cols: Record<string, string[]>): Promise<Snapshot> {
   const counts: Record<string, number> = {};
   const checksums: Record<string, string> = {};
   for (const t of BASE_TABLES) {
-    counts[t] = Number((await db.query<{ n: string }>(`select count(*) n from public.${t}`)).rows[0].n);
+    counts[t] = Number((await db.query<{ n: string }>(`SELECT count(*) n FROM public.${t}`)).rows[0].n);
     const list = cols[t].map((c) => `"${c}"`).join(", ");
     const key = t === "job_descriptions" ? "job_id" : "id";
-    const r = await db.query<{ j: string }>(`select coalesce(string_agg(row_to_json(x)::text, '|' order by x.${key}), '') j from (select ${list} from public.${t}) x`);
+    const r = await db.query<{ j: string }>(`SELECT coalesce(string_agg(row_to_json(x)::text, '|' ORDER BY x.${key}), '') j FROM (SELECT ${list} FROM public.${t}) x`);
     checksums[t] = md5(r.rows[0].j);
   }
-  const ls = await db.query<{ j: string }>(`select coalesce(string_agg(id::text || '=' || coalesce(last_seen_at::text, 'null'), ',' order by id), '') j from public.jobs`);
+  const ls = await db.query<{ j: string }>(`SELECT coalesce(string_agg(id::text || '=' || coalesce(last_seen_at::text, 'null'), ',' ORDER BY id), '') j FROM public.jobs`);
+  const hasF = (await db.query(`SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='repair_645_backfill_progress'`)).rows.length > 0;
+  const hasHash = (await db.query(`SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs' AND column_name='similarity_hash_v2'`)).rows.length > 0;
+  const fRows = hasF ? (await db.query(`SELECT phase, total_rows_updated, last_batch_rows, updated_at::text u FROM public.repair_645_backfill_progress ORDER BY phase`)).rows : [];
+  const hashes = hasHash ? (await db.query<{ j: string }>(`SELECT coalesce(string_agg(id::text || '=' || coalesce(similarity_hash_v2, 'null'), ',' ORDER BY id), '') j FROM public.jobs`)).rows[0].j : "";
   const columns: Record<string, string[]> = {};
   const c = await db.query<{ t: string; c: string; ty: string }>(
-    `select table_name t, column_name c, data_type ty from information_schema.columns where table_schema='public' order by table_name, ordinal_position`);
+    `SELECT table_name t, column_name c, data_type ty FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position`);
   for (const r of c.rows) (columns[r.t] ||= []).push(`${r.c}:${r.ty}`);
   const indexes: Record<string, { def: string; valid: boolean }> = {};
   const ix = await db.query<{ n: string; d: string; v: boolean }>(
-    `select c.relname n, pg_get_indexdef(i.indexrelid) d, i.indisvalid v from pg_index i join pg_class c on c.oid = i.indexrelid
-       join pg_namespace s on s.oid = c.relnamespace where s.nspname in ('public', 'internal_ingestion')`);
+    `SELECT c.relname n, pg_get_indexdef(i.indexrelid) d, i.indisvalid v FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+       JOIN pg_namespace s ON s.oid = c.relnamespace WHERE s.nspname IN ('public', 'internal_ingestion') ORDER BY 1`);
   for (const r of ix.rows) indexes[r.n] = { def: r.d, valid: r.v };
-  const tr = await db.query<{ n: string }>(`select tgname n from pg_trigger where tgrelid = 'public.jobs'::regclass and not tgisinternal order by 1`);
+  const tr = await db.query<{ n: string }>(`SELECT tgname n FROM pg_trigger WHERE tgrelid = 'public.jobs'::regclass AND NOT tgisinternal ORDER BY 1`);
   const q = async (sql: string) => md5(JSON.stringify((await db.query(sql)).rows));
   const queries = {
-    jobs_public_feed: await q(`select id, title, location, remote from public.jobs_public order by id`),
-    active_by_category: await q(`select category, count(*) n from public.jobs where is_active group by 1 order by 1 nulls first`),
-    saved_join: await q(`select s.user_id, j.title from public.saved_jobs s join public.jobs j on j.id = s.job_id order by 1, 2`),
-    descriptions_join: await q(`select j.id, d.description_text from public.jobs j join public.job_descriptions d on d.job_id = j.id order by 1`),
-    cross_vendor_ids: await q(`select source_job_id, count(distinct source) n from public.jobs group by 1 having count(distinct source) > 1 order by 1`),
+    jobs_public_feed: await q(`SELECT id, title, location, remote FROM public.jobs_public ORDER BY id`),
+    active_by_category: await q(`SELECT category, count(*) n FROM public.jobs WHERE is_active GROUP BY 1 ORDER BY 1 NULLS FIRST`),
+    saved_join: await q(`SELECT s.user_id, j.title FROM public.saved_jobs s JOIN public.jobs j ON j.id = s.job_id ORDER BY 1, 2`),
+    descriptions_join: await q(`SELECT j.id, d.description_text FROM public.jobs j JOIN public.job_descriptions d ON d.job_id = j.id ORDER BY 1`),
+    cross_vendor_ids: await q(`SELECT source_job_id, count(DISTINCT source) n FROM public.jobs GROUP BY 1 HAVING count(DISTINCT source) > 1 ORDER BY 1`),
   };
   const acl: Record<string, string> = {};
   const rel = await db.query<{ n: string; o: string; a: string | null; rls: boolean }>(
-    `select n.nspname || '.' || c.relname n, pg_get_userbyid(c.relowner) o, c.relacl::text a, c.relrowsecurity rls from pg_class c
-       join pg_namespace n on n.oid = c.relnamespace where n.nspname in ('public', 'internal_ingestion') and c.relkind in ('r', 'v', 'm')`);
+    `SELECT n.nspname || '.' || c.relname n, pg_get_userbyid(c.relowner) o, c.relacl::text a, c.relrowsecurity rls FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname IN ('public', 'internal_ingestion') AND c.relkind IN ('r', 'v', 'm')`);
   for (const r of rel.rows) acl[r.n] = `${r.o}|${r.a}|rls=${r.rls}`;
+  const nsp = await db.query<{ n: string; a: string | null }>(`SELECT nspname n, nspacl::text a FROM pg_namespace WHERE nspname IN ('public', 'internal_ingestion')`);
+  for (const r of nsp.rows) acl[`schema:${r.n}`] = String(r.a);
   const fn = await db.query<{ n: string; o: string; a: string | null; sd: boolean; cfg: string | null }>(
-    `select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' n, pg_get_userbyid(p.proowner) o,
-       p.proacl::text a, p.prosecdef sd, p.proconfig::text cfg from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-       where n.nspname in ('public', 'internal_ingestion')`);
+    `SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' n, pg_get_userbyid(p.proowner) o,
+       p.proacl::text a, p.prosecdef sd, p.proconfig::text cfg FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname IN ('public', 'internal_ingestion')`);
   for (const r of fn.rows) acl[r.n] = `${r.o}|${r.a}|secdef=${r.sd}|cfg=${r.cfg}`;
-  return { counts, checksums, lastSeen: md5(ls.rows[0].j), columns, indexes, jobTriggers: tr.rows.map((r) => r.n), queries, acl };
+  return { counts, checksums, lastSeen: md5(ls.rows[0].j), fState: md5(JSON.stringify(fRows) + hashes), columns, indexes,
+    jobTriggers: tr.rows.map((r) => r.n), queries, acl };
 }
 
-/** Human-readable list of what differs between two snapshots (empty = identical). */
-function diffSnapshots(a: Snapshot, b: Snapshot): string[] {
+/** What differs between two snapshots (empty = identical). Compares key by key, never by serialization order. */
+export function diffSnapshots(a: Snapshot, b: Snapshot): string[] {
   const out: string[] = [];
   for (const sect of ["counts", "checksums", "queries"] as const)
     for (const k of new Set([...Object.keys(a[sect]), ...Object.keys(b[sect])]))
       if ((a[sect] as any)[k] !== (b[sect] as any)[k]) out.push(`${sect}.${k}`);
   if (a.lastSeen !== b.lastSeen) out.push("last_seen_at");
+  if (a.fState !== b.fState) out.push("#645 F state (progress rows / similarity hashes)");
   for (const t of new Set([...Object.keys(a.columns), ...Object.keys(b.columns)]))
     if (JSON.stringify(a.columns[t]) !== JSON.stringify(b.columns[t])) out.push(`columns.${t}`);
   for (const n of new Set([...Object.keys(a.indexes), ...Object.keys(b.indexes)]))
     if (JSON.stringify(a.indexes[n]) !== JSON.stringify(b.indexes[n])) out.push(`index.${n}`);
   if (JSON.stringify(a.jobTriggers) !== JSON.stringify(b.jobTriggers)) out.push("jobs triggers");
   for (const n of new Set([...Object.keys(a.acl), ...Object.keys(b.acl)]))
-    if (a.acl[n] !== b.acl[n]) out.push(`acl.${n}: ${a.acl[n]} -> ${b.acl[n]}`);
+    if (a.acl[n] !== b.acl[n]) out.push(`acl.${n}`);
   return out;
 }
 
-// ===================================================================================================
-// Applying 20261116b with timing and a lock capture before COMMIT
-// ===================================================================================================
-type ApplyResult = { ok: boolean; ms: number; error?: string; locks: string[] };
+// ---------------------------------------------------------------------------------------------------
+// Applying 16b (timing + own lock capture before COMMIT)
+// ---------------------------------------------------------------------------------------------------
+export type ApplyResult = { ok: boolean; ms: number; error?: string; locks: string[] };
 
-async function applyTarget(db: PGlite, sql: string, inject?: string): Promise<ApplyResult> {
-  const lastCommit = sql.search(/COMMIT;\s*(--[^\n]*\n|\s)*$/i) >= 0 ? sql.lastIndexOf("COMMIT;") : -1;
-  const body = lastCommit >= 0 ? sql.slice(0, lastCommit) : sql;
+export function splitFinalCommit(sql: string): { body: string; hasCommit: boolean } {
+  const i = sql.lastIndexOf("COMMIT;");
+  const tail = i >= 0 ? stripComments(sql.slice(i + "COMMIT;".length)) : "x";
+  return i >= 0 && tail === "" ? { body: sql.slice(0, i), hasCommit: true } : { body: sql, hasCommit: false };
+}
+
+export async function applyTarget(db: Db, sql: string, inject?: string): Promise<ApplyResult> {
+  const { body, hasCommit } = splitFinalCommit(sql);
   const t0 = performance.now();
   try {
-    await db.exec(body + (inject ? `\n${inject}\n` : ""));
+    await applySql(db, TARGET, body + (inject ? `\n${inject}\n` : ""));
     const locks = await db.query<{ r: string; m: string }>(
-      `select coalesce(c.relname, l.locktype) r, l.mode m from pg_locks l left join pg_class c on c.oid = l.relation
-        where l.pid = pg_backend_pid() and l.granted and (c.relname is null or c.relname in ('jobs', 'companies', 'job_descriptions', 'saved_jobs'))
-        and l.locktype = 'relation' order by 1, 2`);
-    if (lastCommit >= 0) await db.exec("COMMIT");
+      `SELECT coalesce(c.relname, l.locktype) r, l.mode m FROM pg_locks l LEFT JOIN pg_class c ON c.oid = l.relation
+        WHERE l.pid = pg_backend_pid() AND l.granted AND l.locktype = 'relation'
+          AND c.relname IN ('jobs', 'companies', 'job_descriptions', 'saved_jobs') ORDER BY 1, 2`);
+    if (hasCommit) await db.exec("COMMIT");
     return { ok: true, ms: Math.round(performance.now() - t0), locks: locks.rows.map((r) => `${r.r}:${r.m}`) };
   } catch (e: any) {
     try { await db.exec("ROLLBACK"); } catch {}
@@ -274,32 +360,31 @@ async function applyTarget(db: PGlite, sql: string, inject?: string): Promise<Ap
   }
 }
 
-// ===================================================================================================
-// Comparisons and behavioral checks
-// ===================================================================================================
-function compareUnchanged(scn: string, before: Snapshot, after: Snapshot) {
+// ---------------------------------------------------------------------------------------------------
+// Checks
+// ---------------------------------------------------------------------------------------------------
+export function compareUnchanged(scn: string, before: Snapshot, after: Snapshot) {
   for (const t of BASE_TABLES) {
     check(scn, `row count unchanged: ${t}`, before.counts[t] === after.counts[t], `${before.counts[t]} -> ${after.counts[t]}`);
     check(scn, `checksum of original columns unchanged: ${t}`, before.checksums[t] === after.checksums[t]);
   }
   check(scn, "jobs.last_seen_at preserved for every row", before.lastSeen === after.lastSeen);
-  for (const [t, cols] of Object.entries(before.columns)) {
-    const now = after.columns[t] || [];
-    check(scn, `column order/types preserved: ${t}`, cols.every((c, i) => now[i] === c),
-      cols.find((c, i) => now[i] !== c) ? `first diff ${cols.find((c, i) => now[i] !== c)} vs ${now[cols.findIndex((c, i) => now[i] !== c)]}` : undefined);
-  }
-  const changedIdx = Object.entries(before.indexes).filter(([n, v]) => !after.indexes[n] || after.indexes[n].def !== v.def);
-  check(scn, "pre-existing index definitions unchanged", changedIdx.length === 0, changedIdx.map(([n]) => n).join(", ") || undefined);
+  check(scn, "#645 F state unchanged (progress rows, similarity hashes)", before.fState === after.fState);
+  const colDiff = Object.entries(before.columns).filter(([t, cols]) => !cols.every((c, i) => (after.columns[t] || [])[i] === c)).map(([t]) => t);
+  check(scn, "column order/types of every pre-existing public relation preserved", colDiff.length === 0, colDiff.join(", ") || undefined);
+  const changedIdx = Object.entries(before.indexes).filter(([n, v]) => !after.indexes[n] || after.indexes[n].def !== v.def).map(([n]) => n);
+  check(scn, "pre-existing index definitions unchanged (incl. #645 E and partial idx_companies_category)", changedIdx.length === 0, changedIdx.join(", ") || undefined);
   const invalid = Object.entries(after.indexes).filter(([, v]) => !v.valid).map(([n]) => n);
   check(scn, "every index is valid (indisvalid)", invalid.length === 0, invalid.join(", ") || undefined);
   const newTriggers = after.jobTriggers.filter((t) => !before.jobTriggers.includes(t));
   check(scn, "no new triggers on public.jobs (no automatic merge/expiry)", newTriggers.length === 0, newTriggers.join(", ") || undefined);
-  for (const [k, v] of Object.entries(before.queries)) check(scn, `app query result unchanged: ${k}`, after.queries[k] === v);
+  const qDiff = Object.keys(before.queries).filter((k) => after.queries[k] !== before.queries[k]);
+  check(scn, "app query results unchanged (feed, categories, saved_jobs join, descriptions join, cross-vendor ids)", qDiff.length === 0, qDiff.join(", ") || undefined);
   const aclChanged = Object.entries(before.acl).filter(([n, v]) => after.acl[n] !== undefined && after.acl[n] !== v).map(([n]) => n);
-  check(scn, "owners/grants/RLS of pre-existing relations & functions unchanged", aclChanged.length === 0, aclChanged.join(", ") || undefined);
+  check(scn, "owners/grants/RLS of pre-existing schemas, relations and functions unchanged", aclChanged.length === 0, aclChanged.join(", ") || undefined);
 }
 
-async function asRole<T>(db: PGlite, role: string, sub: string | null, fn: () => Promise<T>): Promise<{ ok: boolean; value?: T; error?: string }> {
+async function asRole<T>(db: Db, role: string, sub: string | null, fn: () => Promise<T>): Promise<{ ok: boolean; value?: T; error?: string }> {
   await db.exec(`BEGIN; SET LOCAL ROLE ${role}; SELECT set_config('request.jwt.claim.sub', '${sub ?? ""}', true), set_config('request.jwt.claim.role', '${role}', true);`);
   try {
     const value = await fn();
@@ -311,227 +396,346 @@ async function asRole<T>(db: PGlite, role: string, sub: string | null, fn: () =>
   }
 }
 
-async function behaviorChecks(scn: string, db: PGlite) {
-  // Destructive dedupe: #645 dropped this UNIQUE index on purpose (advisory similarity hash, never unique)
-  const destructive = await db.query(`select 1 from pg_indexes where schemaname='public' and indexname='idx_jobs_active_dedupe_hash_uniq'`);
-  check(scn, "#645 containment kept: no UNIQUE idx_jobs_active_dedupe_hash_uniq on public.jobs", destructive.rows.length === 0);
-
-  // Same posting arriving from another vendor must insert (no unique failure) and must not merge/expire anything
+/** Runs fn inside a transaction that is always rolled back; returns fn's value or the error. */
+async function inRollback<T>(db: Db, fn: () => Promise<T>): Promise<{ ok: boolean; value?: T; error?: string }> {
   await db.exec("BEGIN");
   try {
-    const before = Number((await db.query<{ n: string }>(`select count(*) n from public.jobs where is_active and dedupe_hash = 'simhash-pair-1'`)).rows[0].n);
-    await db.exec(`INSERT INTO public.jobs (company, title, location, source, source_job_id, source_id, dedupe_hash, is_active, status, apply_url)
-                   VALUES ('Acme Corp', 'Software Engineer #1', 'Remote (Worldwide)', 'workable', '1', 'src-workable', 'simhash-pair-1', true, 'active', 'https://apply.example.invalid/workable/1')`);
-    const after = Number((await db.query<{ n: string }>(`select count(*) n from public.jobs where is_active and dedupe_hash = 'simhash-pair-1'`)).rows[0].n);
-    check(scn, "cross-source duplicate posting inserts and nothing is merged/expired", after === before + 1, `${before} -> ${after}`);
+    const value = await fn();
+    return { ok: true, value };
   } catch (e: any) {
-    check(scn, "cross-source duplicate posting inserts and nothing is merged/expired", false, String(e.message).slice(0, 160));
+    return { ok: false, error: String(e?.message || e).slice(0, 200) };
   } finally {
-    await db.exec("ROLLBACK");
+    try { await db.exec("ROLLBACK"); } catch {}
   }
-
-  // Source-key uniqueness: same vendor + same external id rejected; same id on another vendor allowed (fixture)
-  await db.exec("BEGIN");
-  let rejected = false;
-  try {
-    await db.exec(`INSERT INTO public.jobs (company, title, location, source, source_job_id) VALUES ('X', 'dup', 'Remote', 'greenhouse', '1')`);
-  } catch { rejected = true; }
-  await db.exec("ROLLBACK");
-  check(scn, "same-vendor duplicate external id rejected", rejected);
-  const cross = await db.query<{ n: string }>(`select count(*) n from (select source_job_id from public.jobs group by 1 having count(distinct source) > 1) x`);
-  check(scn, "cross-vendor identical external ids coexist", Number(cross.rows[0].n) > 0, `${cross.rows[0].n} ids`);
-
-  // internal_ingestion isolation
-  const priv = await db.query<{ a: boolean; u: boolean; s: boolean }>(
-    `select has_schema_privilege('anon', 'internal_ingestion', 'USAGE') a, has_schema_privilege('authenticated', 'internal_ingestion', 'USAGE') u,
-            has_schema_privilege('service_role', 'internal_ingestion', 'USAGE') s`);
-  check(scn, "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
-    !priv.rows[0].a && !priv.rows[0].u && priv.rows[0].s, JSON.stringify(priv.rows[0]));
-  for (const role of ["anon", "authenticated"]) {
-    const r = await asRole(db, role, "00000000-0000-4000-8000-0000000000a1", () => db.query(`select * from internal_ingestion.ingestion_sources limit 1`));
-    check(scn, `internal_ingestion.ingestion_sources denied to ${role}`, !r.ok, r.error);
-  }
-  const svc = await asRole(db, "service_role", null, () => db.query(`select count(*) from internal_ingestion.ingestion_sources`));
-  check(scn, "internal_ingestion.ingestion_sources readable by service_role", svc.ok, svc.error);
-
-  // Paid-field masking on job_postings_public + raw job_postings blocked for API roles
-  await db.exec(`BEGIN`);
-  try {
-    const cols = (await db.query<{ c: string }>(`select column_name c from information_schema.columns where table_schema='public' and table_name='job_postings'`)).rows.map((r) => r.c);
-    notes["job_postings_columns"] = cols;
-    const need = ["company_name", "title"].filter((c) => !cols.includes(c));
-    if (need.length) throw new Error(`job_postings missing ${need.join(",")}`);
-    await db.exec(`SAVEPOINT p; INSERT INTO public.job_postings (title, company_name, salary_min, salary_max, direct_apply_url, status)
-                   SELECT 'Masking probe', 'Real Employer Ltd', 100, 200, 'https://apply.example.invalid/x', 'active'
-                   WHERE false`); // shape probe only (column names)
-  } catch (e: any) {
-    notes["job_postings_shape"] = String(e.message).slice(0, 200);
-  } finally {
-    await db.exec(`ROLLBACK`);
-  }
-  for (const role of ["anon", "authenticated"]) {
-    const raw = await asRole(db, role, "00000000-0000-4000-8000-0000000000a1", async () =>
-      (await db.query<{ n: string }>(`select count(*) n from public.job_postings`)).rows[0].n);
-    check(scn, `raw public.job_postings not readable by ${role}`, !raw.ok || raw.value === "0", raw.error || `rows=${raw.value}`);
-  }
-  const view = await db.query<{ c: string }>(`select column_name c from information_schema.columns where table_schema='public' and table_name='job_postings_public'`);
-  notes["job_postings_public_columns"] = view.rows.map((r) => r.c);
-  const viewDef = await db.query<{ d: string }>(`select pg_get_viewdef('public.job_postings_public'::regclass, true) d`).catch(() => ({ rows: [{ d: "" }] }));
-  const def = viewDef.rows[0]?.d || "";
-  check(scn, "job_postings_public masks company/salary/apply url (view definition)",
-    /Verified Employer/i.test(def) && !/\bdirect_apply_url\b(?!\s*,?\s*NULL)/i.test(def.replace(/NULL::text AS direct_apply_url/gi, "")),
-    def ? undefined : "view missing");
-
-  // saved_jobs RLS: a user sees only their own rows
-  const own = await asRole(db, "authenticated", "00000000-0000-4000-8000-0000000000a1", async () =>
-    (await db.query<{ u: string }>(`select distinct user_id::text u from public.saved_jobs`)).rows.map((r) => r.u));
-  check(scn, "saved_jobs RLS: authenticated user sees only own rows",
-    own.ok && (own.value || []).every((u) => u === "00000000-0000-4000-8000-0000000000a1"), own.error || JSON.stringify(own.value));
-  const anonSaved = await asRole(db, "anon", null, async () => (await db.query<{ n: string }>(`select count(*) n from public.saved_jobs`)).rows[0].n);
-  check(scn, "saved_jobs RLS: anon sees no rows", !anonSaved.ok || anonSaved.value === "0", anonSaved.error || `rows=${anonSaved.value}`);
-
-  // Canonical identity type: #643 declares jobs.source_id uuid FK -> internal_ingestion.ingestion_sources
-  const sid = await db.query<{ t: string }>(`select data_type t from information_schema.columns where table_schema='public' and table_name='jobs' and column_name='source_id'`);
-  const fk = await db.query(`select 1 from pg_constraint where conrelid='public.jobs'::regclass and contype='f' and pg_get_constraintdef(oid) like '%internal_ingestion.ingestion_sources%'`);
-  notes[`${scn}:jobs.source_id`] = { type: sid.rows[0]?.t, fkToIngestionSources: fk.rows.length > 0 };
-  check(scn, "jobs.source_id is the uuid FK to internal_ingestion.ingestion_sources that #643 declares",
-    sid.rows[0]?.t === "uuid" && fk.rows.length > 0, `type=${sid.rows[0]?.t}, fk=${fk.rows.length > 0}`);
-
-  // Redundant unique structures on (source, source_job_id)
-  const dupKeys = await db.query<{ n: string }>(
-    `select c.relname n from pg_index i join pg_class c on c.oid = i.indexrelid where i.indrelid = 'public.jobs'::regclass and i.indisunique
-       and pg_get_indexdef(i.indexrelid) ~ '\\(source, source_job_id\\)'`);
-  notes[`${scn}:unique_on_source_source_job_id`] = dupKeys.rows.map((r) => r.n);
 }
 
-// ===================================================================================================
-// Scenarios
-// ===================================================================================================
-async function populatedProductionOrder(): Promise<PGlite> {
-  const db = await freshDb();
-  const failed = await applyChain(db, allMigrations().filter((f) => f !== TARGET), "base");
-  if (failed.length) throw new Error(`base chain failed: ${failed.join("; ")}`);
-  await db.exec(fs.readFileSync(FIXTURE, "utf8"));
+const n = async (db: Db, sql: string) => Number((await db.query<{ n: string }>(sql)).rows[0].n);
+
+export async function behaviorChecks(scn: string, db: Db) {
+  // --- jobs identity: canonical key unique, similarity advisory, no merge machinery ---------------------
+  check(scn, "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+    (await db.query(`SELECT 1 FROM pg_indexes WHERE indexname = 'idx_jobs_active_dedupe_hash_uniq'`)).rows.length === 0);
+  check(scn, "no merge_job_by_dedupe_priority function or trigger",
+    (await db.query(`SELECT 1 FROM pg_proc WHERE proname = 'merge_job_by_dedupe_priority' UNION ALL SELECT 1 FROM pg_trigger WHERE tgname ILIKE '%merge%dedupe%'`)).rows.length === 0);
+  const canon = await db.query<{ d: string; v: boolean }>(
+    `SELECT pg_get_indexdef(i.indexrelid) d, i.indisvalid v FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_jobs_source_id_source_job_id_uniq'`);
+  check(scn, "canonical UNIQUE (source_id, source_job_id) present and valid",
+    canon.rows.length === 1 && canon.rows[0].v && /UNIQUE/.test(canon.rows[0].d), canon.rows[0]?.d);
+
+  const pair = await inRollback(db, async () => {
+    const hash = (await db.query<{ h: string | null }>(`SELECT similarity_hash_v2 h FROM public.jobs WHERE id = '00000000-0000-4000-8000-000000000001'`)).rows[0]?.h;
+    const before = await n(db, `SELECT count(*) n FROM public.jobs WHERE is_active AND similarity_hash_v2 = '${hash}'`);
+    await db.exec(`INSERT INTO public.jobs (company, title, location, source, source_job_id, source_id, similarity_hash_v2, dedupe_hash, is_active, status, apply_url)
+                   SELECT company, title, location, 'workable', 'wk-1', 'workable:fixture-company-x', similarity_hash_v2, similarity_hash_v2, true, 'active', 'https://apply.example.invalid/workable/1'
+                   FROM public.jobs WHERE id = '00000000-0000-4000-8000-000000000001'`);
+    const after = await n(db, `SELECT count(*) n FROM public.jobs WHERE is_active AND similarity_hash_v2 = '${hash}'`);
+    return { hash, before, after };
+  });
+  check(scn, "same posting from another board inserts; nothing merged or expired",
+    pair.ok && !!pair.value?.hash && pair.value.before >= 2 && pair.value.after === pair.value.before + 1,
+    pair.error || `hash ${pair.value?.hash ? "set" : "MISSING"}, active same-hash ${pair.value?.before} -> ${pair.value?.after}`);
+  const dupCanon = await inRollback(db, () => db.exec(
+    `INSERT INTO public.jobs (company, title, location, source, source_job_id, source_id) SELECT company, title, location, 'other-vendor', source_job_id, source_id FROM public.jobs WHERE id = '00000000-0000-4000-8000-000000000001'`));
+  check(scn, "duplicate canonical (source_id, source_job_id) rejected", !dupCanon.ok, dupCanon.error?.slice(0, 90));
+  check(scn, "same-vendor duplicate external id rejected (legacy key)",
+    !(await inRollback(db, () => db.exec(`INSERT INTO public.jobs (company, title, location, source, source_job_id) VALUES ('X', 'dup', 'Remote', 'greenhouse', '1')`))).ok);
+  check(scn, "cross-vendor identical external ids coexist",
+    (await n(db, `SELECT count(*) n FROM (SELECT source_job_id FROM public.jobs GROUP BY 1 HAVING count(DISTINCT source) > 1) x`)) > 0);
+
+  // --- jobs.source_id stays the text board key; registry link is a separate uuid FK ------------------
+  const sid = (await db.query<{ t: string }>(`SELECT data_type t FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs' AND column_name='source_id'`)).rows[0]?.t;
+  const reg = (await db.query<{ t: string }>(`SELECT data_type t FROM information_schema.columns WHERE table_schema='public' AND table_name='jobs' AND column_name='source_registry_id'`)).rows[0]?.t;
+  const regFk = (await db.query<{ d: string }>(`SELECT pg_get_constraintdef(oid) d FROM pg_constraint WHERE conrelid='public.jobs'::regclass AND contype='f' AND pg_get_constraintdef(oid) LIKE '%source_registry_id%'`)).rows[0]?.d;
+  const sidFk = (await db.query(`SELECT 1 FROM pg_constraint WHERE conrelid='public.jobs'::regclass AND contype='f' AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (source_id)%'`)).rows.length;
+  check(scn, "jobs.source_id is text with no FK (live board key, never cast)", sid === "text" && sidFk === 0, `type=${sid}, fk=${sidFk}`);
+  check(scn, "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+    reg === "uuid" && !!regFk && /internal_ingestion\.ingestion_sources\(id\)/.test(regFk) && /ON DELETE SET NULL/.test(regFk), `type=${reg}, fk=${regFk}`);
+  const map = await inRollback(db, async () => {
+    // register the board key of an existing job (e.g. 'greenhouse:fixture-company-5') as an ingestion source
+    const key = (await db.query<{ k: string }>(`SELECT source_id k FROM public.jobs WHERE id = '00000000-0000-4000-8000-000000000004'`)).rows[0].k;
+    await db.exec(`INSERT INTO internal_ingestion.ingestion_sources (id, name, slug, source_type)
+                   VALUES ('00000000-0000-4000-8000-00000000f001', 'Registered board', '${key}', 'ats')`);
+    await db.exec(`UPDATE public.jobs j SET source_registry_id = s.id FROM internal_ingestion.ingestion_sources s WHERE s.slug = j.source_id`);
+    const expected = await n(db, `SELECT count(*) n FROM public.jobs WHERE source_id = '${key}'`);
+    const mapped = await n(db, `SELECT count(*) n FROM public.jobs WHERE source_registry_id = '00000000-0000-4000-8000-00000000f001'`);
+    const wrong = await n(db, `SELECT count(*) n FROM public.jobs WHERE source_registry_id IS NOT NULL AND source_id <> '${key}'`);
+    await db.exec(`DELETE FROM internal_ingestion.ingestion_sources WHERE id = '00000000-0000-4000-8000-00000000f001'`);
+    const afterDelete = await n(db, `SELECT count(*) n FROM public.jobs WHERE source_registry_id IS NOT NULL`);
+    const jobsAfterDelete = await n(db, `SELECT count(*) n FROM public.jobs WHERE source_id = '${key}'`);
+    return { key, expected, mapped, wrong, afterDelete, jobsAfterDelete };
+  });
+  const mv = map.value;
+  check(scn, "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+    map.ok && !!mv && mv.expected > 0 && mv.mapped === mv.expected && mv.wrong === 0 && mv.afterDelete === 0 && mv.jobsAfterDelete === mv.expected,
+    map.error || JSON.stringify(mv));
+  const bogus = await inRollback(db, () => db.exec(`UPDATE public.jobs SET source_registry_id = '00000000-0000-4000-8000-0000000000ff' WHERE id = '00000000-0000-4000-8000-000000000002'`));
+  check(scn, "unknown registry uuid rejected by the FK", !bogus.ok, bogus.error?.slice(0, 90));
+
+  // --- job_postings identity ------------------------------------------------------------------------
+  const jp = await inRollback(db, async () => {
+    await db.exec(`INSERT INTO internal_ingestion.ingestion_sources (id, name, slug, source_type) VALUES
+      ('00000000-0000-4000-8000-00000000f0a1', 'Board A', 'greenhouse:board-a', 'ats'),
+      ('00000000-0000-4000-8000-00000000f0b2', 'Board B', 'lever:board-b', 'ats')`);
+    await db.exec(`INSERT INTO public.job_postings (source_id, external_id, title, company_name, dedupe_hash, is_active) VALUES
+      ('00000000-0000-4000-8000-00000000f0a1', 'ext-1', 'Same Posting', 'Same Co', 'simhash-same', true),
+      ('00000000-0000-4000-8000-00000000f0b2', 'ext-1', 'Same Posting', 'Same Co', 'simhash-same', true)`);
+    const sameHash = await n(db, `SELECT count(*) n FROM public.job_postings WHERE dedupe_hash = 'simhash-same' AND is_active`);
+    let dupRejected = false;
+    await db.exec(`SAVEPOINT d`);
+    try { await db.exec(`INSERT INTO public.job_postings (source_id, external_id, title, company_name) VALUES ('00000000-0000-4000-8000-00000000f0a1', 'ext-1', 'Dup', 'Same Co')`); }
+    catch { dupRejected = true; }
+    await db.exec(`ROLLBACK TO SAVEPOINT d`);
+    const upsert = `INSERT INTO public.job_postings (source_id, external_id, title, company_name) VALUES ('00000000-0000-4000-8000-00000000f0a1', 'ext-1', 'Same Posting (updated)', 'Same Co')
+      ON CONFLICT (source_id, external_id) WHERE source_id IS NOT NULL AND external_id IS NOT NULL DO UPDATE SET title = EXCLUDED.title`;
+    await db.exec(upsert);
+    await db.exec(upsert);
+    const afterUpsert = await n(db, `SELECT count(*) n FROM public.job_postings WHERE source_id = '00000000-0000-4000-8000-00000000f0a1' AND external_id = 'ext-1'`);
+    const title = (await db.query<{ t: string }>(`SELECT title t FROM public.job_postings WHERE source_id = '00000000-0000-4000-8000-00000000f0a1' AND external_id = 'ext-1'`)).rows[0].t;
+    const stillActive = await n(db, `SELECT count(*) n FROM public.job_postings WHERE is_active`);
+    // deleting a posting must not delete a user's saved job or a job description (SET NULL, not CASCADE)
+    const pid = (await db.query<{ id: string }>(`SELECT id FROM public.job_postings WHERE source_id = '00000000-0000-4000-8000-00000000f0b2'`)).rows[0].id;
+    const saved = (await db.query<{ id: string; job: string }>(`SELECT id, job_id job FROM public.saved_jobs ORDER BY id LIMIT 1`)).rows[0];
+    await db.exec(`UPDATE public.saved_jobs SET job_posting_id = '${pid}' WHERE id = '${saved.id}'`);
+    await db.exec(`UPDATE public.job_descriptions SET posting_id = '${pid}' WHERE job_id = (SELECT job_id FROM public.job_descriptions ORDER BY job_id LIMIT 1)`);
+    const descBefore = await n(db, `SELECT count(*) n FROM public.job_descriptions`);
+    await db.exec(`DELETE FROM public.job_postings WHERE id = '${pid}'`);
+    const savedKept = await n(db, `SELECT count(*) n FROM public.saved_jobs WHERE id = '${saved.id}' AND job_posting_id IS NULL AND job_id = '${saved.job}'`);
+    const descAfter = await n(db, `SELECT count(*) n FROM public.job_descriptions`);
+    return { sameHash, dupRejected, afterUpsert, title, stillActive, savedKept, descKept: descAfter === descBefore && descBefore > 0 };
+  });
+  const jv = jp.value;
+  check(scn, "job_postings: two boards with the same similarity hash coexist", jp.ok && jv?.sameHash === 2, jp.error || `rows=${jv?.sameHash}`);
+  check(scn, "job_postings: duplicate canonical (source_id, external_id) rejected", jp.ok && jv?.dupRejected === true, jp.error);
+  check(scn, "job_postings: ON CONFLICT upsert on the canonical key is idempotent", jp.ok && jv?.afterUpsert === 1 && jv?.title === "Same Posting (updated)", jp.error || JSON.stringify(jv));
+  check(scn, "job_postings: nothing silently expired", jp.ok && jv?.stillActive === 2, jp.error || `active=${jv?.stillActive}`);
+  check(scn, "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)", jp.ok && jv?.savedKept === 1 && jv?.descKept === true, jp.error || JSON.stringify(jv));
+  check(scn, "no UNIQUE index on job_postings.dedupe_hash",
+    (await db.query(`SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE i.indrelid = 'public.job_postings'::regclass AND i.indisunique AND pg_get_indexdef(i.indexrelid) LIKE '%(dedupe_hash)%'`)).rows.length === 0);
+
+  // --- isolation, masking, RLS ----------------------------------------------------------------------
+  const priv = (await db.query<{ a: boolean; u: boolean; s: boolean }>(
+    `SELECT has_schema_privilege('anon', 'internal_ingestion', 'USAGE') a, has_schema_privilege('authenticated', 'internal_ingestion', 'USAGE') u,
+            has_schema_privilege('service_role', 'internal_ingestion', 'USAGE') s`)).rows[0];
+  check(scn, "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role", !priv.a && !priv.u && priv.s, JSON.stringify(priv));
+  for (const role of ["anon", "authenticated"]) {
+    const r = await asRole(db, role, "00000000-0000-4000-8000-0000000000a1", () => db.query(`SELECT * FROM internal_ingestion.ingestion_sources LIMIT 1`));
+    check(scn, `internal_ingestion.ingestion_sources denied to ${role}`, !r.ok, r.error);
+    const raw = await asRole(db, role, "00000000-0000-4000-8000-0000000000a1", async () => n(db, `SELECT count(*) n FROM public.job_postings`));
+    check(scn, `raw public.job_postings not readable by ${role}`, !raw.ok || raw.value === 0, raw.error || `rows=${raw.value}`);
+  }
+  check(scn, "internal_ingestion.ingestion_sources readable by service_role", (await asRole(db, "service_role", null, () => db.query(`SELECT count(*) FROM internal_ingestion.ingestion_sources`))).ok);
+  const masked = await inRollback(db, async () => {
+    await db.exec(`INSERT INTO public.job_postings (title, company_name, company_slug, salary_min, salary_max, salary_text, direct_apply_url, raw_payload, is_active)
+                   VALUES ('Masking probe', 'Real Employer Ltd', 'real-employer', 100, 200, '₹100-200', 'https://apply.example.invalid/x', '{"k":"v"}', true)`);
+    await db.exec(`SET LOCAL ROLE anon`);
+    return (await db.query<any>(`SELECT company_name, company_slug, salary_min, salary_max, direct_apply_url, raw_payload FROM public.job_postings_public WHERE title = 'Masking probe'`)).rows[0];
+  });
+  const m = masked.value;
+  check(scn, "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+    masked.ok && !!m && m.company_name === "Verified Employer" && m.company_slug === null && m.salary_min === null && m.salary_max === null && m.direct_apply_url === null && m.raw_payload === null,
+    masked.error || JSON.stringify(m));
+  const own = await asRole(db, "authenticated", "00000000-0000-4000-8000-0000000000a1", async () =>
+    (await db.query<{ u: string }>(`SELECT DISTINCT user_id::text u FROM public.saved_jobs`)).rows.map((r) => r.u));
+  check(scn, "saved_jobs RLS: authenticated user sees only own rows",
+    own.ok && (own.value || []).length > 0 && (own.value || []).every((u) => u === "00000000-0000-4000-8000-0000000000a1"), own.error || JSON.stringify(own.value));
+  const anonSaved = await asRole(db, "anon", null, async () => n(db, `SELECT count(*) n FROM public.saved_jobs`));
+  check(scn, "saved_jobs RLS: anon sees no rows", !anonSaved.ok || anonSaved.value === 0, anonSaved.error || `rows=${anonSaved.value}`);
+
+  // --- recorded, not asserted ---------------------------------------------------------------------------
+  notes[`${scn}:unique_on_source_source_job_id`] = (await db.query<{ n: string }>(
+    `SELECT c.relname n FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE i.indrelid = 'public.jobs'::regclass AND i.indisunique
+       AND pg_get_indexdef(i.indexrelid) ~ '\\(source, source_job_id\\)' ORDER BY 1`)).rows.map((r) => r.n);
+  notes[`${scn}:idx_companies_category`] = (await db.query<{ d: string }>(`SELECT indexdef d FROM pg_indexes WHERE indexname = 'idx_companies_category'`)).rows[0]?.d;
+}
+
+/** Types, constraints and FKs of the relations 16b creates or extends: the cross-order contract. */
+export async function structureOf(db: Db): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const tables = ["jobs", "companies", "job_postings", "job_descriptions", "saved_jobs", "ai_generations", "consent_logs", "user_age_attestations"];
+  const cols = await db.query<{ s: string; t: string; c: string; ty: string; nul: string; def: string | null }>(
+    `SELECT table_schema s, table_name t, column_name c, data_type ty, is_nullable nul, column_default def FROM information_schema.columns
+      WHERE (table_schema = 'public' AND table_name = ANY($1)) OR table_schema = 'internal_ingestion'`, [tables]);
+  for (const r of cols.rows) out[`col ${r.s}.${r.t}.${r.c}`] = `${r.ty} null=${r.nul} default=${r.def}`;
+  const cons = await db.query<{ s: string; t: string; n: string; d: string }>(
+    `SELECT n.nspname s, c.relname t, k.conname n, pg_get_constraintdef(k.oid) d FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace WHERE (n.nspname = 'public' AND c.relname = ANY($1)) OR n.nspname = 'internal_ingestion'`, [tables]);
+  for (const r of cons.rows) out[`con ${r.s}.${r.t}.${r.n}`] = r.d;
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Scenario driver (engine-neutral)
+// ---------------------------------------------------------------------------------------------------
+export type Engine = { name: string; newDb: (label: string) => Promise<Db>; close: (db: Db) => Promise<void> };
+
+export async function populatedProductionOrder(engine: Engine, kind: Baseline, label: string, fixture?: (db: Db) => Promise<void>): Promise<Db> {
+  const db = await engine.newDb(label);
+  await db.exec(PLATFORM_STUBS);
+  await db.exec(fs.readFileSync(path.join(ROOT, "supabase/schema.sql"), "utf8"));
+  await db.exec(DRIFT_SHIM);
+  const failed = await buildBaselineSchema(db, kind);
+  if (failed.length) throw new Error(`${kind} baseline failed: ${failed.join("; ")}`);
+  await (fixture ?? loadFixture)(db);
+  await applyBaselineState(db, kind);
   return db;
 }
 
-async function main() {
-  const targetSql = fs.readFileSync(TARGET_PATH, "utf8");
-  const t0 = performance.now();
-  const db = await populatedProductionOrder();
-  notes.db_version = (await db.query<{ v: string }>("select version() v")).rows[0].v;
-  notes.migration_file = path.relative(ROOT, TARGET_PATH);
-  notes.migration_md5 = md5(targetSql);
-  notes.base_setup_ms = Math.round(performance.now() - t0);
-  const cols = await originalColumns(db);
-  const before = await snapshot(db, cols);
-  notes.fixture_counts = before.counts;
-  notes.skipped_extension_lines = skippedExtensionLines;
+export async function runScenarios(engine: Engine, targetSql: string, opts: { negative: boolean }) {
+  notes.engine = engine.name;
+  notes.migration_md5 = crypto.createHash("md5").update(targetSql).digest("hex");
+  const finals: Record<string, Record<string, string>> = {};
+  let structBefore: Record<string, string> = {};
 
-  // ---- A. production order: run once, then twice -----------------------------------------------
-  console.log("\n=== A. production order (post-#645), populated, apply 20261116b ===");
-  const first = await applyTarget(db, targetSql);
-  notes.A_first_run = { ok: first.ok, ms: first.ms, error: first.error, locks: first.locks };
-  check("A", "20261116b applies on the populated post-#645 schema", first.ok, first.error ?? `${first.ms} ms`);
-  if (first.ok) {
+  for (const kind of BASELINES) {
+    const scn = `A:${kind}`;
+    console.log(`\n=== ${scn}: populated production order, apply 20261116b ===`);
+    const t0 = performance.now();
+    const db = await populatedProductionOrder(engine, kind, kind);
+    notes[`${scn}:setup_ms`] = Math.round(performance.now() - t0);
+    if (!notes.db_version) notes.db_version = (await db.query<{ v: string }>("SELECT version() v")).rows[0].v;
+    const cols = await originalColumns(db);
+    const before = await snapshot(db, cols);
+    notes[`${scn}:fixture_counts`] = before.counts;
+    notes[`${scn}:active_missing_similarity_hash`] = await n(db, `SELECT count(*) n FROM public.jobs WHERE is_active AND similarity_hash_v2 IS NULL`);
+    notes[`${scn}:f_progress_phases`] = (await db.query<{ p: string }>(`SELECT phase p FROM public.repair_645_backfill_progress ORDER BY 1`)).rows.map((r) => r.p);
+    if (kind === "recon-incomplete") structBefore = await structureOf(db);
+    const first = await applyTarget(db, targetSql);
+    notes[`${scn}:first_run`] = first;
+    check(scn, "20261116b applies on the populated baseline", first.ok, first.error ?? `${first.ms} ms`);
+    if (!first.ok) { await engine.close(db); continue; }
     const after1 = await snapshot(db, cols);
-    compareUnchanged("A", before, after1);
-    await behaviorChecks("A", db);
+    compareUnchanged(scn, before, after1);
+    await behaviorChecks(scn, db);
     const second = await applyTarget(db, targetSql);
-    notes.A_second_run = { ok: second.ok, ms: second.ms, error: second.error };
-    check("A", "second run of 20261116b succeeds (idempotent)", second.ok, second.error ?? `${second.ms} ms`);
-    const after2 = await snapshot(db, cols);
-    const drift = diffSnapshots(after1, after2);
-    notes.A_second_run_drift = drift;
-    check("A", "second run changes nothing (snapshot identical)", drift.length === 0, drift.slice(0, 6).join("; ") || undefined);
+    notes[`${scn}:second_run`] = { ok: second.ok, ms: second.ms, error: second.error };
+    check(scn, "second apply succeeds", second.ok, second.error ?? `${second.ms} ms`);
+    const drift = diffSnapshots(after1, await snapshot(db, cols));
+    check(scn, "second apply changes nothing", drift.length === 0, drift.slice(0, 6).join("; ") || undefined);
+    finals[kind] = await structureOf(db);
 
-    if (NEGATIVE) {
-      console.log("\n=== D. negative control: tamper after migration, checks must catch it ===");
-      await db.exec(`UPDATE public.jobs SET last_seen_at = timestamptz '2020-01-01' WHERE id = '00000000-0000-4000-8000-000000000001';
+    if (opts.negative && kind === "recon-incomplete") {
+      console.log(`\n=== D: negative control (real row / freshness / ACL tampering after the migration) ===`);
+      const base = await snapshot(db, cols);
+      await db.exec(`UPDATE public.companies SET name = name || ' (tampered)' WHERE slug = 'fixture-company-1';
+                     BEGIN; SET LOCAL careermonke.skip_touch_last_seen = 'off';
+                     UPDATE public.jobs SET last_seen_at = timestamptz '2020-01-01' WHERE id = '00000000-0000-4000-8000-000000000003'; COMMIT;
+                     DELETE FROM public.saved_jobs WHERE user_id = '00000000-0000-4000-8000-0000000000a3' AND job_id = '00000000-0000-4000-8000-000000000031';
                      GRANT USAGE ON SCHEMA internal_ingestion TO anon;
-                     ALTER TABLE public.saved_jobs DISABLE ROW LEVEL SECURITY;`);
-      const before2 = checks.length;
-      compareUnchanged("D", after2, await snapshot(db, cols));
+                     GRANT SELECT ON public.job_postings TO anon;`);
+      const mark = checks.length;
+      compareUnchanged("D", base, await snapshot(db, cols));
       await behaviorChecks("D", db);
-      // Only failures the tamper caused count: a D check that also failed in A is a pre-existing finding.
-      const failedInA = new Set(checks.slice(0, before2).filter((c) => c.scenario === "A" && !c.ok).map((c) => c.name));
-      const caught = checks.slice(before2).filter((c) => !c.ok && !failedInA.has(c.name)).map((c) => c.name);
-      console.log(`\nNEGATIVE CONTROL: ${caught.length} check(s) caught the tamper: ${caught.join("; ")}`);
-      finish(caught.length > 0 ? 1 : 0, caught.length > 0 ? "negative control detected (expected non-zero exit)" : "NEGATIVE CONTROL NOT DETECTED: checks are blind");
-      return;
+      const failedInA = new Set(checks.slice(0, mark).filter((c) => c.scenario === scn && !c.ok).map((c) => c.name));
+      const caught = checks.slice(mark).filter((c) => !c.ok && !failedInA.has(c.name)).map((c) => c.name);
+      notes.negative_control_caught = caught;
+      console.log(`\nNEGATIVE CONTROL: ${caught.length} check(s) caught the tampering:\n  - ${caught.join("\n  - ")}`);
+      await engine.close(db);
+      return { negativeCaught: caught.length };
     }
+    await engine.close(db);
   }
 
-  // ---- C. intentional failure, then retry ------------------------------------------------------
-  console.log("\n=== C. intentional failure before COMMIT, then retry ===");
-  const dbC = await populatedProductionOrder();
+  // ---- C. intentional failure then retry ---------------------------------------------------------
+  console.log("\n=== C: intentional failure before COMMIT, then retry (recon-incomplete) ===");
+  const dbC = await populatedProductionOrder(engine, "recon-incomplete", "failure");
   const colsC = await originalColumns(dbC);
   const beforeC = await snapshot(dbC, colsC);
-  const failed = await applyTarget(dbC, targetSql, "SELECT 1 / 0; -- rehearsal: injected failure");
-  check("C", "injected failure aborts the migration", !failed.ok, failed.error);
-  const afterFail = await snapshot(dbC, colsC);
-  const driftC = diffSnapshots(beforeC, afterFail);
+  const failedRun = await applyTarget(dbC, targetSql, "SELECT 1 / 0; -- rehearsal: injected failure");
+  check("C", "injected failure aborts the migration", !failedRun.ok, failedRun.error);
+  const driftC = diffSnapshots(beforeC, await snapshot(dbC, colsC));
   check("C", "failed run leaves the database exactly as before (atomic rollback)", driftC.length === 0, driftC.slice(0, 6).join("; ") || undefined);
-  const noSchema = await dbC.query(`select 1 from information_schema.schemata where schema_name = 'internal_ingestion'`);
-  check("C", "no partial objects after failure (internal_ingestion absent)", noSchema.rows.length === 0);
+  check("C", "no partial objects after failure (internal_ingestion absent)",
+    (await dbC.query(`SELECT 1 FROM information_schema.schemata WHERE schema_name = 'internal_ingestion'`)).rows.length === 0);
   const retry = await applyTarget(dbC, targetSql);
-  check("C", "retry after failure has the same outcome as a first run", retry.ok === first.ok, retry.error ?? `${retry.ms} ms`);
+  check("C", "retry after the failure succeeds", retry.ok, retry.error ?? `${retry.ms} ms`);
+  await engine.close(dbC);
 
-  // ---- B. filename order: 16b in its sorted slot, before #645 D/E/F ----------------------------
-  console.log("\n=== B. filename order (16b before #645 16d/e/f) ===");
-  const dbB = await freshDb();
-  const all = allMigrations();
-  const idx = all.indexOf(TARGET);
-  const preFail = await applyChain(dbB, all.slice(0, idx), "B-pre");
-  const midB = await applyTarget(dbB, targetSql);
-  const postFail = await applyChain(dbB, all.slice(idx + 1), "B-post");
-  notes.B = { pre_failures: preFail, target_ok: midB.ok, target_error: midB.error, post_failures: postFail };
-  check("B", "filename order: chain + 20261116b + #645 D/E/F all apply", preFail.length === 0 && midB.ok && postFail.length === 0,
-    [...preFail, midB.error, ...postFail].filter(Boolean).join(" | ") || undefined);
-  if (preFail.length === 0 && midB.ok && postFail.length === 0) {
-    try {
-      await dbB.exec(fs.readFileSync(FIXTURE, "utf8"));
-      check("B", "same fixture loads in filename order", true);
-    } catch (e: any) {
-      try { await dbB.exec("ROLLBACK"); } catch {}
-      check("B", "same fixture loads in filename order", false, String(e.message).slice(0, 160));
-    }
-    const finalA = await snapshot(db, cols);
-    const finalB = await snapshot(dbB, cols);
-    const diffCols = Object.keys({ ...finalA.columns, ...finalB.columns })
-      .filter((t) => JSON.stringify(finalA.columns[t]) !== JSON.stringify(finalB.columns[t]));
-    const diffIdx = Object.keys({ ...finalA.indexes, ...finalB.indexes })
-      .filter((n) => finalA.indexes[n]?.def !== finalB.indexes[n]?.def);
-    notes.order_dependent_differences = { columns: diffCols.map((t) => ({ table: t, production: finalA.columns[t]?.filter((c) => !finalB.columns[t]?.includes(c)), filename: finalB.columns[t]?.filter((c) => !finalA.columns[t]?.includes(c)) })), indexes: diffIdx.map((n) => ({ index: n, production: finalA.indexes[n]?.def ?? null, filename: finalB.indexes[n]?.def ?? null })) };
-    check("B", "production order and filename order converge to the same schema", diffCols.length === 0 && diffIdx.length === 0,
-      `${diffCols.length} table(s) and ${diffIdx.length} index(es) differ`);
+  // ---- B. filename order ---------------------------------------------------------------------------
+  console.log("\n=== B: filename order (16b before #645 D/E/F), fresh database ===");
+  const dbB = await engine.newDb("filename");
+  await dbB.exec(PLATFORM_STUBS);
+  await dbB.exec(fs.readFileSync(path.join(ROOT, "supabase/schema.sql"), "utf8"));
+  await dbB.exec(DRIFT_SHIM);
+  const fails = await applyChain(dbB, allMigrations(), "filename", targetSql);
+  check("B", "filename order: every migration incl. 16b and #645 D/E/F applies", fails.length === 0, fails.join(" | ") || undefined);
+  let fixtureOk = false;
+  try { await loadFixture(dbB); await applyBaselineState(dbB, "filename"); fixtureOk = true; }
+  catch (e: any) { try { await dbB.exec("ROLLBACK"); } catch {} check("B", "same fixture loads in filename order", false, String(e.message).slice(0, 160)); }
+  if (fixtureOk) {
+    check("B", "same fixture loads in filename order", true);
+    await behaviorChecks("B", dbB);
   }
+  finals.filename = await structureOf(dbB);
+  await engine.close(dbB);
 
-  finish(checks.some((c) => !c.ok) ? 1 : 0);
+  // ---- Cross-order contract: identical types / constraints / FKs ----------------------------------
+  // 16b's contract = every column/constraint 16b adds or changes on the reconstructed baseline, plus
+  // jobs.source_id. "(x IS NULL OR <check>)" and "<check>" are the same CHECK (a NULL result passes).
+  const norm = (v: string | undefined) => v?.replace(/^CHECK \(\(\((\w+) IS NULL\) OR \((.+)\)\)\)/, "CHECK (($2))");
+  const ref = finals["recon-incomplete"];
+  const comparison: Record<string, any> = {};
+  if (ref) {
+    const contract = Object.keys(ref).filter((k) => ref[k] !== structBefore[k] || k === "col public.jobs.source_id");
+    notes.contract_size = contract.length;
+    for (const other of Object.keys(finals).filter((k) => k !== "recon-incomplete")) {
+      const o = finals[other];
+      const missing = contract.filter((k) => !(k in o));
+      const differ = contract.filter((k) => k in o && norm(ref[k]) !== norm(o[k]));
+      comparison[other] = { contract: contract.length, missing, differ: differ.map((k) => `${k}: ${ref[k]} | ${o[k]}`) };
+      if (other === "full") {
+        // extra scenario: #645 D in full defines some of these columns/constraints first; reported, not failed
+        console.log(`  INFO [X] recon-incomplete vs full: ${differ.length} contract difference(s), ${missing.length} missing${differ.length ? ": " + differ.join("; ") : ""}`);
+        continue;
+      }
+      check("X", `recon-incomplete vs ${other}: every 16b column/constraint/FK present`, missing.length === 0, missing.slice(0, 4).join("; ") || `${contract.length} contract entries`);
+      check("X", `recon-incomplete vs ${other}: identical types, constraints and FKs`, differ.length === 0, differ.slice(0, 3).join("; ") || undefined);
+    }
+  }
+  notes.cross_order = comparison;
+  return { negativeCaught: -1 };
 }
 
-function finish(code: number, message?: string) {
-  const failedChecks = checks.filter((c) => !c.ok);
+export function finish(code: number, message?: string, jsonPath?: string) {
+  const failed = checks.filter((c) => !c.ok);
   console.log("\n=== RESULT ===");
-  console.log(JSON.stringify({ notes }, null, 2));
-  console.log(`${checks.length - failedChecks.length} passed, ${failedChecks.length} failed${message ? ` (${message})` : ""}`);
-  if (jsonArg) fs.writeFileSync(path.resolve(jsonArg.slice("--json=".length)), JSON.stringify({ checks, notes }, null, 2));
+  console.log(`${checks.length - failed.length} passed, ${failed.length} failed${message ? ` (${message})` : ""}`);
+  if (jsonPath) fs.writeFileSync(path.resolve(jsonPath), JSON.stringify({ checks, notes, skippedExtensionLines }, null, 2));
   process.exit(code);
 }
 
-if (args.includes("--probe-chain")) {
-  (async () => {
-    const db = await freshDb();
-    console.log((await db.query<{ v: string }>("select version() v")).rows[0].v);
-    const failed = await applyChain(db, allMigrations().filter((f) => f !== TARGET), "probe");
-    console.log(`probe: ${allMigrations().length - 1 - failed.length} applied, ${failed.length} failed`);
-    process.exit(failed.length ? 1 : 0);
-  })();
-} else if (require.main === module) {
-  main().catch((e) => {
+// ---------------------------------------------------------------------------------------------------
+// PGlite CLI
+// ---------------------------------------------------------------------------------------------------
+async function pgliteMain() {
+  const args = process.argv.slice(2);
+  const migrationArg = args.find((a) => a.startsWith("--migration="));
+  const jsonArg = args.find((a) => a.startsWith("--json="));
+  const negative = args.includes("--negative-control");
+  const targetPath = migrationArg ? path.resolve(migrationArg.slice("--migration=".length)) : path.join(MIG_DIR, TARGET);
+  notes.migration_file = path.relative(ROOT, targetPath);
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { pg_trgm } = await import("@electric-sql/pglite/contrib/pg_trgm");
+  const { pgcrypto } = await import("@electric-sql/pglite/contrib/pgcrypto");
+  const { unaccent } = await import("@electric-sql/pglite/contrib/unaccent");
+  setUnavailableExtensions(["pg_cron", "pg_stat_statements"]);
+  const engine: Engine = {
+    name: "PGlite (in-process WASM PostgreSQL, single connection)",
+    newDb: async () => {
+      const raw = new PGlite({ extensions: { pg_trgm, pgcrypto, unaccent } });
+      return { exec: async (s: string) => { await raw.exec(s); }, query: (s: string, p?: unknown[]) => raw.query(s, p as any[]) as any, _raw: raw } as Db;
+    },
+    close: async (db) => { await (db as any)._raw.close(); },
+  };
+  const { negativeCaught } = await runScenarios(engine, fs.readFileSync(targetPath, "utf8"), { negative });
+  if (negative) {
+    finish(negativeCaught > 0 ? 1 : 0, negativeCaught > 0 ? "negative control detected (expected non-zero exit)" : "NEGATIVE CONTROL NOT DETECTED: checks are blind", jsonArg?.slice("--json=".length));
+  }
+  finish(checks.some((c) => !c.ok) ? 1 : 0, undefined, jsonArg?.slice("--json=".length));
+}
+
+if (require.main === module) {
+  pgliteMain().catch((e) => {
     console.error("REHEARSAL ERROR:", e?.message || e);
     process.exit(1);
   });
 }
-
-export { freshDb, applyChain, allMigrations, TARGET, FIXTURE };

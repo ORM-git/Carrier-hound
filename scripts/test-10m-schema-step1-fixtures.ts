@@ -338,6 +338,37 @@ async function runFixtures() {
   assert.strictEqual(Number(sameHash.rows[0].n), 2, "Both cross-source rows must stay active (no unique failure, no merge)");
   console.log("  -> [PASS] Cross-source rows sharing a dedupe_hash both insert and stay active.");
 
+  // 11. Assertion Suite 9: source identity (text board key + separate registry FK) and job_postings identity
+  console.log("\n[TEST 9] Verifying jobs.source_id / source_registry_id and job_postings canonical identity...");
+  const sourceIdCol = await db.query(
+    `SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'source_id'`
+  );
+  assert.strictEqual(sourceIdCol.rows[0]?.data_type, "text", "jobs.source_id must stay the text board key (never uuid)");
+  const registryFk = await db.query(
+    `SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conrelid = 'public.jobs'::regclass AND contype = 'f'
+       AND pg_get_constraintdef(oid) LIKE '%source_registry_id%'`
+  );
+  assert.ok(
+    /internal_ingestion\.ingestion_sources\(id\)/.test(registryFk.rows[0]?.d || "") && /ON DELETE SET NULL/.test(registryFk.rows[0]?.d || ""),
+    "jobs.source_registry_id must be a uuid FK to internal_ingestion.ingestion_sources ON DELETE SET NULL"
+  );
+  await db.exec(`
+    INSERT INTO public.job_postings (source_id, external_id, title, company_name, dedupe_hash, is_active)
+    VALUES ('${sourceId}', 'same-hash-1', 'Same Posting', 'Same Co', 'simhash-board-pair', true),
+           ('${sourceB}', 'same-hash-1', 'Same Posting', 'Same Co', 'simhash-board-pair', true);
+  `);
+  const boardPair = await db.query(`SELECT count(*) AS n FROM public.job_postings WHERE dedupe_hash = 'simhash-board-pair' AND is_active`);
+  assert.strictEqual(Number(boardPair.rows[0].n), 2, "Two boards with the same similarity hash must coexist in job_postings");
+  const upsert = `INSERT INTO public.job_postings (source_id, external_id, title, company_name)
+    VALUES ('${sourceId}', 'same-hash-1', 'Same Posting v2', 'Same Co')
+    ON CONFLICT (source_id, external_id) WHERE source_id IS NOT NULL AND external_id IS NOT NULL DO UPDATE SET title = EXCLUDED.title`;
+  await db.exec(upsert);
+  await db.exec(upsert);
+  const canonical = await db.query(`SELECT count(*) AS n, max(title) AS t FROM public.job_postings WHERE source_id = '${sourceId}' AND external_id = 'same-hash-1'`);
+  assert.strictEqual(Number(canonical.rows[0].n), 1, "Canonical (source_id, external_id) upsert must be idempotent");
+  assert.strictEqual(canonical.rows[0].t, "Same Posting v2", "Canonical upsert must update the existing row");
+  console.log("  -> [PASS] source_id stays text, registry FK is separate; job_postings boards coexist, canonical upsert idempotent.");
+
   console.log("\n================================================================================");
   console.log("ALL 10M SCHEMA STEP 1 OFFLINE FIXTURES & CHECKS PASSED [PASS-LOCAL]");
   console.log("================================================================================\n");
