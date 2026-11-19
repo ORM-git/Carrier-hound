@@ -133,21 +133,20 @@ function run() {
     console.log("  [PASS] match score: zero unbacked hash/random score fallback in getJobMatchScore");
   }
 
-  // Check 14: Desktop (>=1024px) card right panel shows listing facts only. Mobile/tablet is final and
-  // unchanged, so the older score/upload panels may remain but must be hidden from lg up.
-  const hasListingFactsPanel =
-    code.includes("Listing facts") &&
-    /data-tour=\{index === 0 \? "tour-job-facts"[\s\S]{0,120}className="hidden lg:flex/.test(code);
+  // Check 14: the Listing Facts panel was reverted (no prior git history ever had it); the
+  // card's right panel is back to the single match-score/upload-CTA panel, shown at every
+  // width (no lg:hidden split between a facts panel and a separately-hidden score panel).
+  const hasListingFactsPanel = code.includes("Listing facts") || code.includes("job-card-facts") || code.includes("tour-job-facts");
   const scorePanels = code.match(/className="[^"]*bg-gradient-to-b from-\[#09151E\][^"]*"/g) || [];
-  const hasOldMatchScoreInCard = scorePanels.length === 0 ? false : !scorePanels.every((c) => c.includes("lg:hidden"));
+  const hasDesktopHiddenScorePanel = scorePanels.some((c) => c.includes("lg:hidden"));
 
-  if (!hasListingFactsPanel || hasOldMatchScoreInCard) {
+  if (hasListingFactsPanel || hasDesktopHiddenScorePanel || scorePanels.length === 0) {
     failures.push(
-      'LISTING FACTS FAIL: Desktop card must render the listing facts panel (tour-job-facts, hidden lg:flex) and hide every score/upload panel from lg up.'
+      "LISTING FACTS FAIL: Desktop card must not render a Listing Facts panel; the match-score/upload-CTA panel must be present and not lg:hidden."
     );
   } else {
     console.log(
-      '  [PASS] listing facts: card right panel renders real listing facts (Job Facts, tour-job-facts); zero match score / upload CTA leak'
+      "  [PASS] listing facts panel reverted; match-score/upload-CTA panel is the only right-side panel and renders at every width"
     );
   }
 

@@ -30,7 +30,7 @@ import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
-import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -1232,13 +1232,25 @@ function JobsPageInner() {
       });
     }
 
-    // Sort
-    if (sortBy === "match" && candidate) {
-      result = [...result].sort((a, b) => {
-        const scoreA = getJobMatchScore(a, candidate) ?? 0;
-        const scoreB = getJobMatchScore(b, candidate) ?? 0;
-        return scoreB - scoreA;
-      });
+    // Sort: Recommended ranking (title/skills + experience fit, location/remote
+    // eligibility, recency, salary-listed) via the scoring module's pure ranking
+    // function. Ranking only — nothing above this is excluded by score. Runs
+    // whenever the Recommended tab is the effective sort (same condition the
+    // fetch uses above) or the user explicitly picks Sort: Recommended — not
+    // gated on a local "match" default — and with no candidate/resume, the
+    // module's own neutral fallback (fitScore 50) still orders by the other
+    // factors instead of skipping ranking entirely.
+    if (shouldApplyRecommendedRanking(activeTab, sortBy)) {
+      const now = Date.now(); // one snapshot for the whole sort pass, not per-comparison
+      result = [...result].sort((a, b) =>
+        compareByRecommendedRanking(
+          a,
+          b,
+          candidate,
+          preferences ? { preferredCountryCode: preferences.countryCode, remotePreference: preferences.remotePreference } : null,
+          now
+        )
+      );
     }
 
     if (activeTab === "recommended") {
@@ -1263,6 +1275,7 @@ function JobsPageInner() {
     selectedExperience,
     sortBy,
     candidate,
+    preferences,
   ]);
 
   const displayedJobs = filteredJobs;
@@ -1756,6 +1769,7 @@ function JobsPageInner() {
           searchPlaceholder="Search by title or company"
           user={user}
           isPro={isPro}
+          hidePlanPill
         />
         <main
           id="main-content"
@@ -2324,7 +2338,7 @@ function JobsPageInner() {
 
                               {/* Right: Desktop Match Panel (about 164px wide, inset 4px top/right/bottom, radius 12, full card height ~224px) */}
                               {matchScore !== null ? (
-                                <div className="lg:hidden w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
+                                <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
                                   <div className="flex flex-col items-center w-full pt-1">
                                     <CircularMatchRing
                                       score={matchScore}
@@ -2360,7 +2374,7 @@ function JobsPageInner() {
                                 <Link
                                   href="/resume"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="lg:hidden w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center p-3 transition-all duration-200 group/cta space-y-2.5 self-stretch my-0.5 mr-0.5 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[196px] flex flex-col items-center justify-between"
+                                  className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] border border-emerald-950/40 text-center p-3 transition-all duration-200 group/cta space-y-2.5 self-stretch my-0.5 mr-0.5 focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 text-white min-h-[196px] flex flex-col items-center justify-between"
                                 >
                                   <div className="flex flex-col items-center justify-center flex-1 w-full space-y-2">
                                     <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-400/30 flex items-center justify-center transition-colors">
@@ -2375,39 +2389,6 @@ function JobsPageInner() {
                                   </div>
                                 </Link>
                               )}
-
-                              {/* Desktop (>=1024px) listing facts panel: real payload fields only, no score */}
-                              <div
-                                data-testid="job-card-facts"
-                                data-tour={index === 0 ? "tour-job-facts" : undefined}
-                                className="hidden lg:flex w-44 shrink-0 rounded-[16px] bg-slate-50 border border-[#E2E8F0] p-3.5 self-stretch my-0.5 mr-0.5 flex-col gap-2.5 text-left"
-                              >
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-[#475569]">Listing facts</span>
-                                <dl className="space-y-2 text-xs">
-                                  <div>
-                                    <dt className="text-[#475569]">Location</dt>
-                                    <dd className="font-semibold text-[#0F172A] truncate" title={job.location || undefined}>{locInfo.primary || "Not listed"}</dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-[#475569]">Work model</dt>
-                                    <dd className="font-semibold text-[#0F172A]">
-                                      {(job.location || "").toLowerCase().includes("hybrid") || (job.remoteScope || "").toLowerCase() === "hybrid"
-                                        ? "Hybrid"
-                                        : job.remote
-                                        ? "Remote"
-                                        : "On-site"}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-[#475569]">Job type</dt>
-                                    <dd className="font-semibold text-[#0F172A]">{job.type || "Not listed"}</dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-[#475569]">Posted</dt>
-                                    <dd className="font-semibold text-[#0F172A]">{job.postedAt ? formatDesktopPillTime(job.postedAt) : "Not listed"}</dd>
-                                  </div>
-                                </dl>
-                              </div>
                             </div>
 
                             {/* MOBILE VIEW (under sm: 390px, 360px) */}

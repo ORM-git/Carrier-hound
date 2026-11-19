@@ -25,6 +25,9 @@ interface AppTopBarProps {
   searchPlaceholder?: string;
   user?: User | null;
   isPro?: boolean;
+  /** Hides the desktop "Free"/"Pro" plan pill next to the avatar. Default false (shown), so
+   * other pages using AppTopBar are unaffected; Jobs passes this true. */
+  hidePlanPill?: boolean;
 }
 
 export default function AppTopBar({
@@ -35,6 +38,7 @@ export default function AppTopBar({
   searchPlaceholder = "Search by title or company",
   user,
   isPro = false,
+  hidePlanPill = false,
 }: AppTopBarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -317,9 +321,11 @@ export default function AppTopBar({
               </div>
 
               {/* Plan Pill ("Free" or "Pro") with neutral outline */}
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shadow-none shrink-0">
-                {isPro ? "Pro" : "Free"}
-              </span>
+              {!hidePlanPill && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-[#CBD5E1] text-[#475569] bg-white shadow-none shrink-0">
+                  {isPro ? "Pro" : "Free"}
+                </span>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
