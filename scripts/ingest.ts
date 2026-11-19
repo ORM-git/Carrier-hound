@@ -413,6 +413,22 @@ export function recordSourceFailure(stats: SourceStats, err: unknown): void {
 }
 
 /**
+ * True only when Postgres itself names the violated constraint as jobs_apply_url_unique:
+ * the driver-provided constraint field when present, otherwise the quoted constraint name
+ * anchored in the Postgres message. The details payload (row data) is never inspected: a 23505
+ * on another constraint can echo the string "jobs_apply_url_unique" inside its row values.
+ */
+function isApplyUrlUniqueViolation(err: { message?: string; constraint?: string }): boolean {
+  if (typeof err.constraint === 'string' && err.constraint.length > 0) {
+    return err.constraint === 'jobs_apply_url_unique';
+  }
+  const quoted = typeof err.message === 'string'
+    ? err.message.match(/violates unique constraint "([^"]+)"/)
+    : null;
+  return quoted?.[1] === 'jobs_apply_url_unique';
+}
+
+/**
  * Per-row insert failure. The existing-row lookup is identity-scoped, so a jobs_apply_url_unique
  * conflict means another source_job_id already owns this apply_url: skip it, don't fail the shard.
  * Every other write error still counts as a real failure.
@@ -420,9 +436,9 @@ export function recordSourceFailure(stats: SourceStats, err: unknown): void {
 export function recordInsertFailure(
   stats: SourceStats,
   item: { source_job_id?: string; apply_url?: string },
-  err: { code?: string; message?: string; details?: string } | null | undefined
+  err: { code?: string; message?: string; details?: string; constraint?: string } | null | undefined
 ): void {
-  if (err?.code === '23505' && `${err.message} ${err.details ?? ''}`.includes('jobs_apply_url_unique')) {
+  if (err?.code === '23505' && isApplyUrlUniqueViolation(err)) {
     stats.duplicateSkipped = (stats.duplicateSkipped || 0) + 1;
     console.log(`   ↷ [Duplicate Skipped] ${stats.sourceName}: ${item.source_job_id} apply_url already owned by another job: ${item.apply_url}`);
     return;
