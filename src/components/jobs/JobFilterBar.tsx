@@ -263,14 +263,11 @@ export default function JobFilterBar({
       {/* 2. DESKTOP FILTER BAR (md and up) - Compact Open Chip Rows          */}
       {/* =================================================================== */}
       <div className="hidden md:flex flex-col gap-2">
-        {/* ROW 1: Location, Function, Level, Job Type, Work Model, Date Posted, Sort */}
-        {/* lg:flex-nowrap + lg:shrink-0 on Sort (below) keeps Sort pinned on this row at desktop
-            widths (>=1024px) even when its label is the longer "Sort: Recommended"; the chip
-            group absorbs any width deficit via its own min-w-0 + internal flex-wrap instead of
-            pushing Sort to a new row. Tablet (768-1023px) keeps the original flex-wrap/items-center
-            behavior unchanged. */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2">
-          <div className="flex items-center gap-1.5 lg:gap-2 min-w-0 flex-wrap">
+        {/* ROW 1: Location, Function, Level, Job Type, Work Model, Sort */}
+        {/* Pin Sort on the primary row top-right (shrink-0); the chip group absorbs width deficits
+            via flex-1 min-w-0 flex-wrap instead of pushing Sort to a separate orphan row. */}
+        <div className="flex items-start justify-between gap-1.5 lg:gap-2">
+          <div className="flex items-center gap-1.5 lg:gap-2 min-w-0 flex-wrap flex-1">
             {/* 1. LOCATION CHIP & POPOVER */}
             <div className="relative">
               <button
@@ -728,89 +725,6 @@ export default function JobFilterBar({
                 </div>
               )}
             </div>
-
-            {/* 6. DATE POSTED CHIP & POPOVER */}
-            <div className="relative">
-              <button
-                ref={(el) => { triggerRefs.current["date"] = el; }}
-                type="button"
-                onClick={() => handleOpenPopover("date")}
-                aria-expanded={activePopover === "date"}
-                aria-label={`Date posted filter: ${filters.datePosted || "Any time"}`}
-                className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                  filters.datePosted && filters.datePosted !== "all"
-                    ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
-                    : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
-                }`}
-              >
-                <span className="whitespace-nowrap">{filters.datePosted && filters.datePosted !== "all" ? filters.datePosted : "Date Posted"}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
-              </button>
-
-              {activePopover === "date" && (
-                <div
-                  ref={popoverRef}
-                  role="dialog"
-                  aria-label="Filter by Date Posted"
-                  className="absolute left-0 mt-1.5 w-60 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
-                >
-                  <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
-                    <span className="font-bold text-[13px] text-[#0F172A]">Date Posted</span>
-                    <button
-                      type="button"
-                      onClick={() => handleReset("datePosted", "")}
-                      className="text-[11px] text-[#2563EB] hover:underline font-semibold"
-                    >
-                      Clear
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {[
-                      { id: "", label: "Any time" },
-                      { id: "24h", label: "Past 24 hours" },
-                      { id: "7d", label: "Past week" },
-                      { id: "30d", label: "Past month" },
-                    ].map((item) => (
-                      <label
-                        key={item.id || "any"}
-                        className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-[13px] ${
-                          draftFilters.datePosted === item.id
-                            ? "bg-[#EFF6FF] text-[#1D4ED8] font-semibold"
-                            : "text-[#334155] hover:bg-slate-50"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="date_posted_preset"
-                          checked={draftFilters.datePosted === item.id}
-                          onChange={() => setDraftFilters((prev) => ({ ...prev, datePosted: item.id }))}
-                          className="w-3.5 h-3.5 text-[#2563EB] focus:ring-[#93C5FD]"
-                        />
-                        <span>{item.label}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
-                    <button
-                      type="button"
-                      onClick={() => handleReset("datePosted", "")}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleConfirm({ datePosted: draftFilters.datePosted })}
-                      className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
-                    >
-                      Confirm
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
 
           {/* FAR RIGHT: SORT DROPDOWN */}
@@ -821,7 +735,7 @@ export default function JobFilterBar({
               onClick={() => handleOpenPopover("sort")}
               aria-expanded={activePopover === "sort"}
               aria-label={`Sort by: ${filters.sort === "match" ? "Recommended" : "Newest"}`}
-              className="h-8 px-2.5 rounded-lg border border-[#CBD5E1] bg-white text-[#0F172A] text-[13px] font-medium transition inline-flex items-center gap-1.5 hover:bg-[#F8FAFC] cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
+              className="h-8 px-2 lg:px-2.5 rounded-lg border border-[#CBD5E1] bg-white text-[#0F172A] text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 hover:bg-[#F8FAFC] cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
             >
               <ArrowUpDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               <span className="truncate max-w-[130px]">{filters.sort === "match" ? "Recommended" : "Newest"}</span>
@@ -872,9 +786,92 @@ export default function JobFilterBar({
           </div>
         </div>
 
-        {/* ROW 2: Years of Experience, Hidden Jobs, All Filters button */}
+        {/* ROW 2: Date Posted, Years of Experience, Min Salary (xl+), Source (xl+), Company (xl+), Hidden Jobs, All Filters */}
         <div className="flex flex-wrap items-center gap-1.5 lg:gap-2">
-          {/* Years of Experience Chip & Popover */}
+          {/* 6. DATE POSTED CHIP & POPOVER */}
+          <div className="relative">
+            <button
+              ref={(el) => { triggerRefs.current["date"] = el; }}
+              type="button"
+              onClick={() => handleOpenPopover("date")}
+              aria-expanded={activePopover === "date"}
+              aria-label={`Date posted filter: ${filters.datePosted || "Any time"}`}
+              className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                filters.datePosted && filters.datePosted !== "all"
+                  ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                  : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
+              }`}
+            >
+              <span className="whitespace-nowrap">{filters.datePosted && filters.datePosted !== "all" ? filters.datePosted : "Date Posted"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
+            </button>
+
+            {activePopover === "date" && (
+              <div
+                ref={popoverRef}
+                role="dialog"
+                aria-label="Filter by Date Posted"
+                className="absolute left-0 mt-1.5 w-60 max-w-[calc(100vw-32px)] bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 z-50 text-xs space-y-3"
+              >
+                <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
+                  <span className="font-bold text-[13px] text-[#0F172A]">Date Posted</span>
+                  <button
+                    type="button"
+                    onClick={() => handleReset("datePosted", "")}
+                    className="text-[11px] text-[#2563EB] hover:underline font-semibold"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  {[
+                    { id: "", label: "Any time" },
+                    { id: "24h", label: "Past 24 hours" },
+                    { id: "7d", label: "Past week" },
+                    { id: "30d", label: "Past month" },
+                  ].map((item) => (
+                    <label
+                      key={item.id || "any"}
+                      className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg cursor-pointer transition text-[13px] ${
+                        draftFilters.datePosted === item.id
+                          ? "bg-[#EFF6FF] text-[#1D4ED8] font-semibold"
+                          : "text-[#334155] hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="date_posted_preset"
+                        checked={draftFilters.datePosted === item.id}
+                        onChange={() => setDraftFilters((prev) => ({ ...prev, datePosted: item.id }))}
+                        className="w-3.5 h-3.5 text-[#2563EB] focus:ring-[#93C5FD]"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
+                  <button
+                    type="button"
+                    onClick={() => handleReset("datePosted", "")}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm({ datePosted: draftFilters.datePosted })}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 7. Years of Experience Chip & Popover */}
           <div className="relative">
             <button
               ref={(el) => { triggerRefs.current["experience"] = el; }}
@@ -947,8 +944,8 @@ export default function JobFilterBar({
             )}
           </div>
 
-          {/* Min Salary Chip & Popover */}
-          <div className="relative">
+          {/* 8. Min Salary Chip & Popover (hidden below 2xl, accessible in All Filters) */}
+          <div className="relative hidden 2xl:block">
             <button
               ref={(el) => { triggerRefs.current["salaryMin"] = el; }}
               type="button"
@@ -1028,8 +1025,8 @@ export default function JobFilterBar({
             )}
           </div>
 
-          {/* Source Type Chip & Popover */}
-          <div className="relative">
+          {/* 9. Source Type Chip & Popover (hidden below 2xl, accessible in All Filters) */}
+          <div className="relative hidden 2xl:block">
             <button
               ref={(el) => { triggerRefs.current["sourceType"] = el; }}
               type="button"
@@ -1106,8 +1103,8 @@ export default function JobFilterBar({
             )}
           </div>
 
-          {/* Company Chip & Popover */}
-          <div className="relative">
+          {/* 10. Company Chip & Popover (hidden below 2xl, accessible in All Filters) */}
+          <div className="relative hidden 2xl:block">
             <button
               ref={(el) => { triggerRefs.current["company"] = el; }}
               type="button"

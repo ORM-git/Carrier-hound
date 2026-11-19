@@ -43,7 +43,7 @@ describe("JobFilterBar - Chip Labels and Unclipped Popovers", () => {
     // The desktop filter bar container must NOT contain overflow-x-auto around the filter buttons
     const desktopFilterBar = container.querySelector(".hidden.md\\:flex");
     expect(desktopFilterBar).toBeTruthy();
-    expect(desktopFilterBar?.innerHTML).not.toContain("overflow-x-auto");
+    expect(desktopFilterBar?.querySelector(".overflow-x-auto")).toBeNull();
   });
 
   it("ensures filter chip buttons have whitespace-nowrap and shrink-0 so labels never wrap across lines", () => {
@@ -98,6 +98,64 @@ describe("JobFilterBar - Chip Labels and Unclipped Popovers", () => {
     const dateBtn = screen.getByLabelText(/date posted filter/i);
     fireEvent.click(dateBtn);
     expect(screen.getByRole("dialog", { name: /filter by date posted/i })).toBeInTheDocument();
+  });
+
+  it("visibly opens the Job Type filter popover on click", () => {
+    renderFilterBar();
+
+    const jobTypeBtn = screen.getByLabelText(/job type filter/i);
+    fireEvent.click(jobTypeBtn);
+    expect(screen.getByRole("dialog", { name: /filter by job type/i })).toBeInTheDocument();
+  });
+
+  it("visibly opens the Work Model filter popover on click", () => {
+    renderFilterBar();
+
+    const workModelBtn = screen.getByLabelText(/work model filter/i);
+    fireEvent.click(workModelBtn);
+    expect(screen.getByRole("dialog", { name: /filter by work model/i })).toBeInTheDocument();
+  });
+
+  it("visibly opens the Years of Experience filter popover on click", () => {
+    renderFilterBar();
+
+    const expBtn = screen.getByLabelText(/experience filter/i);
+    fireEvent.click(expBtn);
+    expect(screen.getByRole("dialog", { name: /filter by experience/i })).toBeInTheDocument();
+  });
+
+  it("verifies two-row desktop layout structure and pinned sort", () => {
+    const { container } = renderFilterBar();
+
+    const desktopFilterBar = container.querySelector(".hidden.md\\:flex");
+    expect(desktopFilterBar).toBeTruthy();
+
+    // Row 1 container must be flex items-start justify-between without outer flex-wrap
+    const row1Container = desktopFilterBar?.children[0];
+    expect(row1Container?.className).toContain("flex");
+    expect(row1Container?.className).toContain("items-start");
+    expect(row1Container?.className).toContain("justify-between");
+    expect(row1Container?.className).not.toContain("flex-wrap");
+
+    // Primary chip container must absorb width deficits via flex-1 min-w-0 flex-wrap
+    const primaryChipGroup = row1Container?.children[0];
+    expect(primaryChipGroup?.className).toContain("flex-1");
+    expect(primaryChipGroup?.className).toContain("min-w-0");
+    expect(primaryChipGroup?.className).toContain("flex-wrap");
+
+    // Sort control must be pinned with shrink-0
+    const sortContainer = row1Container?.children[1];
+    expect(sortContainer?.className).toContain("shrink-0");
+
+    // Row 2 container must be flex flex-wrap items-center
+    const row2Container = desktopFilterBar?.children[1];
+    expect(row2Container?.className).toContain("flex");
+    expect(row2Container?.className).toContain("flex-wrap");
+    expect(row2Container?.className).toContain("items-center");
+
+    // Secondary filters (min salary, source, company) are hidden below 2xl
+    const salaryChip = row2Container?.querySelector('[class*="2xl:block"]');
+    expect(salaryChip).toBeTruthy();
   });
 
   it("visibly opens the Sort dropdown on click", () => {
