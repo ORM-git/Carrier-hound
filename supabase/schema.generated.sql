@@ -9875,14 +9875,21 @@ COMMIT;
 --   3.5 User Accounting & Privacy Tables (saved_jobs, ai_generations,
 --       consent_logs, user_age_attestations) with strict Row Level Security (RLS)
 --
--- Architectural Ownership & Coordination Note:
---   PR #642 owns: scraper worker, 4-category classification endpoints, and
---                 merge_job_by_dedupe_priority() trigger on public.jobs.
---   PR #643 owns: internal_ingestion schema, dedicated public.job_postings table,
---                 public.job_postings_public view, canonical (source_id, source_job_id)
---                 identity, Section 3.1 enums, and user accounting/privacy tables.
---   Both migrations are idempotent and guarded by IF NOT EXISTS, allowing safe
---   application in either order (642 then 643, or 643 then 642).
+-- Current contract (repaired; evidence: docs/10m-schema-step1-rehearsal.md):
+--   - Applies AFTER #645 (20261116d/e/f), which is the production order, and also in fresh filename
+--     order; both were rehearsed and yield identical 16b types, constraints and FKs. No other order
+--     combination (e.g. with any #642 migration) is claimed safe.
+--   - public.jobs.source_id is the LIVE text board key (e.g. 'greenhouse:stripe'); never uuid.
+--     The registry link is the separate nullable jobs.source_registry_id uuid FK
+--     (internal_ingestion.ingestion_sources.slug = jobs.source_id).
+--   - Canonical identity: UNIQUE (source_id, source_job_id) on jobs and (source_id, external_id) on
+--     job_postings. dedupe_hash / similarity hashes are ADVISORY only: no unique dedupe index and no
+--     merge trigger is created (#645 removed merge_job_by_dedupe_priority and its unique index).
+--   - NOT zero-downtime: one transaction holds ACCESS EXCLUSIVE on saved_jobs, job_descriptions, jobs
+--     and companies while plain CREATE INDEX builds run. Apply only in a maintenance window with
+--     lock_timeout set (e.g. 3s) and retry on lock-timeout aborts.
+--   - Records what it created in internal_ingestion.schema_migration_provenance; rollback uses only
+--     that record (see ROLLBACK at the end of this file).
 -- ============================================================================
 
 -- ============================================================================
@@ -9908,9 +9915,10 @@ BEGIN;
 -- REPAIR (docs/10m-schema-step1-rehearsal.md, deadlock): take every pre-existing table lock this migration
 -- needs up front, children before parents (saved_jobs, job_descriptions -> jobs -> companies), the same
 -- order live writers take them (a row lock on the referencing table, then a foreign-key check on the
--- referenced one). A live writer can then only wait for this migration, never deadlock with it; the real
--- PostgreSQL rehearsal reproduced that deadlock with the previous statement-by-statement lock order.
--- Run with lock_timeout set: on contention this fails fast and rolls back. Missing tables are skipped.
+-- referenced one). Proven only for the probed writer patterns (INSERT into jobs then a FK check on
+-- companies; a saved_jobs write then a read of jobs): with the previous statement-by-statement order both
+-- deadlocked on real PostgreSQL 17, with this prelude both only wait. Other lock orders are not proven.
+-- Always run with lock_timeout set: on contention this fails fast and rolls back. Missing tables are skipped.
 DO $$
 DECLARE
   t text;
@@ -9921,6 +9929,42 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- PROVENANCE (rollback safety): snapshot which candidate objects exist BEFORE this migration, so the
+-- rollback scripts act only on what this migration created and restore the exact prior grants / RLS of
+-- pre-existing tables it changed. Metadata only; no table data is read or written.
+CREATE TEMP VIEW _m16b_catalog AS
+  SELECT 'schema'::text AS kind, n.nspname::text AS schema_name, ''::text AS object_name, ''::text AS sub_name, ''::text AS detail
+    FROM pg_namespace n WHERE n.nspname IN ('public', 'internal_ingestion')
+  UNION ALL
+  SELECT 'type', n.nspname, t.typname, '', t.typtype::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+   WHERE n.nspname IN ('public', 'internal_ingestion') AND t.typtype = 'e'
+  UNION ALL
+  SELECT 'relation', n.nspname, c.relname, '', c.relkind::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname IN ('public', 'internal_ingestion') AND c.relkind IN ('r', 'p', 'v', 'm', 'i', 'S')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e')
+  UNION ALL
+  SELECT 'column', n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod)
+    FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname IN ('public', 'internal_ingestion') AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped
+  UNION ALL
+  SELECT 'constraint', n.nspname, c.relname, k.conname, pg_get_constraintdef(k.oid)
+    FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname IN ('public', 'internal_ingestion') AND k.contype <> 'n'
+  UNION ALL
+  SELECT 'policy', n.nspname, c.relname, p.polname, '' FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname IN ('public', 'internal_ingestion')
+  UNION ALL
+  SELECT 'function', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid), '' FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname IN ('public', 'internal_ingestion')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+  UNION ALL
+  SELECT 'acl', n.nspname, c.relname, '', coalesce(c.relacl::text, '') FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname IN ('public', 'internal_ingestion') AND c.relkind IN ('r', 'p', 'v', 'm')
+  UNION ALL
+  SELECT 'rls', n.nspname, c.relname, '', c.relrowsecurity::text || ',' || c.relforcerowsecurity::text FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname IN ('public', 'internal_ingestion') AND c.relkind IN ('r', 'p');
+CREATE TEMP TABLE _m16b_before ON COMMIT DROP AS SELECT * FROM _m16b_catalog;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -10818,6 +10862,63 @@ WHERE is_active = TRUE OR status = 'active';
 REVOKE ALL ON public.job_postings_public FROM PUBLIC;
 GRANT SELECT ON public.job_postings_public TO anon, authenticated, service_role;
 
+-- Re-enable path: ADD COLUMN IF NOT EXISTS ... REFERENCES skips the FK when the column already exists
+-- (e.g. re-applying after the documented disable). Recreate each missing FK (validated, so it refuses
+-- dangling values instead of hiding them).
+DO $$
+DECLARE
+  fk record;
+BEGIN
+  FOR fk IN SELECT * FROM (VALUES
+      ('public.jobs', 'source_registry_id', 'jobs_source_registry_id_fkey', 'internal_ingestion.ingestion_sources'),
+      ('public.job_descriptions', 'posting_id', 'job_descriptions_posting_id_fkey', 'public.job_postings'),
+      ('public.saved_jobs', 'job_posting_id', 'saved_jobs_job_posting_id_fkey', 'public.job_postings')
+    ) AS v(tbl, col, con, ref)
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint k JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = ANY (k.conkey)
+       WHERE k.conrelid = fk.tbl::regclass AND k.contype = 'f' AND a.attname = fk.col
+    ) THEN
+      EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %s(id) ON DELETE SET NULL',
+                     fk.tbl, fk.con, fk.col, fk.ref);
+    END IF;
+  END LOOP;
+END $$;
+
+-- PROVENANCE record: what this migration created, and the prior ACL / RLS of pre-existing relations it
+-- changed. First-apply rows are kept on re-apply (ON CONFLICT DO NOTHING); a re-apply clears the
+-- disabled/removed state marker written by the rollback scripts.
+CREATE TABLE IF NOT EXISTS internal_ingestion.schema_migration_provenance (
+  migration   text NOT NULL,
+  kind        text NOT NULL,
+  schema_name text NOT NULL,
+  object_name text NOT NULL DEFAULT '',
+  sub_name    text NOT NULL DEFAULT '',
+  detail      text NOT NULL DEFAULT '',
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (migration, kind, schema_name, object_name, sub_name)
+);
+REVOKE ALL ON TABLE internal_ingestion.schema_migration_provenance FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE internal_ingestion.schema_migration_provenance TO service_role;
+
+INSERT INTO internal_ingestion.schema_migration_provenance (migration, kind, schema_name, object_name, sub_name, detail)
+SELECT '20261116b', a.kind, a.schema_name, a.object_name, a.sub_name, a.detail
+  FROM _m16b_catalog a
+ WHERE a.kind NOT IN ('acl', 'rls')
+   AND NOT EXISTS (SELECT 1 FROM _m16b_before b WHERE b.kind = a.kind AND b.schema_name = a.schema_name
+                     AND b.object_name = a.object_name AND b.sub_name = a.sub_name)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO internal_ingestion.schema_migration_provenance (migration, kind, schema_name, object_name, sub_name, detail)
+SELECT '20261116b', 'prior_' || b.kind, b.schema_name, b.object_name, b.sub_name, b.detail
+  FROM _m16b_before b
+  JOIN _m16b_catalog a ON a.kind = b.kind AND a.schema_name = b.schema_name AND a.object_name = b.object_name AND a.sub_name = b.sub_name
+ WHERE b.kind IN ('acl', 'rls') AND a.detail IS DISTINCT FROM b.detail
+ON CONFLICT DO NOTHING;
+
+DELETE FROM internal_ingestion.schema_migration_provenance WHERE migration = '20261116b' AND kind = 'state';
+DROP VIEW pg_temp._m16b_catalog;
+
 COMMIT;
 
 -- ============================================================================
@@ -10861,60 +10962,22 @@ COMMIT;
 -- ============================================================================
 
 -- ============================================================================
--- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
---   -- 1. DROP VIEW & NEW TABLES (No CASCADE on shared production tables!)
---   DROP VIEW IF EXISTS public.job_postings_public;
---   DROP POLICY IF EXISTS "service_role_job_postings_all" ON public.job_postings;
---   DROP TABLE IF EXISTS public.user_age_attestations;
---   DROP TABLE IF EXISTS public.consent_logs;
---   DROP TABLE IF EXISTS public.ai_generations;
---   DROP TABLE IF EXISTS public.job_postings;
---
---   -- 2. REVERT ADDED COLUMNS & INDEXES ON SHARED PRE-EXISTING TABLES
---   -- (public.saved_jobs, public.companies, public.jobs, and public.job_descriptions)
---   ALTER TABLE public.saved_jobs DROP COLUMN IF EXISTS job_posting_id;
---   ALTER TABLE public.saved_jobs DROP COLUMN IF EXISTS notes;
---   DROP INDEX IF EXISTS public.idx_saved_jobs_job_posting_id;
---   DROP INDEX IF EXISTS public.idx_job_descriptions_posting_id;
---   ALTER TABLE public.job_descriptions DROP COLUMN IF EXISTS posting_id;
---
---   DROP INDEX IF EXISTS public.idx_jobs_source_vendor_source_job_id_uniq;
---   DROP INDEX IF EXISTS public.idx_jobs_source_registry_id;
---   -- NOT dropped: idx_jobs_source_id_source_job_id_uniq, idx_jobs_active_role_category,
---   -- idx_jobs_active_category, idx_companies_category, idx_companies_slug_uniq are owned by #645 (16e)
---   -- or pre-existed in production; IF NOT EXISTS here never created them on the post-#645 schema.
---   DROP INDEX IF EXISTS public.idx_jobs_top_keywords_gin;
---   DROP INDEX IF EXISTS public.idx_jobs_active_is_remote;
---   DROP INDEX IF EXISTS public.idx_jobs_active_role_category_posted_at;
---   DROP INDEX IF EXISTS public.idx_jobs_active_category_country_posted_at;
---   DROP INDEX IF EXISTS public.idx_jobs_active_posted_at_desc;
---   DROP INDEX IF EXISTS public.idx_jobs_active_country;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_company_category_check;
---   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
---   -- jobs.source_id is the LIVE text board key (#645 / ingestion): never dropped by this rollback.
---   ALTER TABLE public.jobs DROP COLUMN IF EXISTS source_registry_id;
---   ALTER TABLE public.jobs DROP COLUMN IF EXISTS company_category;
---
---   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
---   DROP INDEX IF EXISTS public.idx_companies_canonical_domain;
---
---   -- 3. DROP INTERNAL INGESTION SCHEMA & TABLES
---   DROP TABLE IF EXISTS internal_ingestion.category_overrides;
---   DROP TABLE IF EXISTS internal_ingestion.search_outbox;
---   DROP TABLE IF EXISTS internal_ingestion.company_aliases;
---   DROP TABLE IF EXISTS internal_ingestion.job_source_records;
---   DROP TABLE IF EXISTS internal_ingestion.ingestion_sources;
---   DROP SCHEMA IF EXISTS internal_ingestion;
---
---   -- 4. DROP SECTION 3.1 ENUMS
---   DROP TYPE IF EXISTS public.user_consent_type;
---   DROP TYPE IF EXISTS public.search_outbox_status;
---   DROP TYPE IF EXISTS public.company_category_type;
---   DROP TYPE IF EXISTS public.role_category_type;
---   DROP TYPE IF EXISTS public.job_posting_status;
---   DROP TYPE IF EXISTS public.ingestion_status;
---   DROP TYPE IF EXISTS public.ingestion_source_type;
+-- ROLLBACK (data-preserving, provenance-aware, atomic; tested by scripts/test-10m-schema-step1-rehearsal.ts):
+--   Do NOT hand-drop objects: on the post-#645 schema many names this file mentions already existed
+--   (IF NOT EXISTS skipped them), and its new tables / columns may hold data.
+--   Level 1 (always safe, keeps every table, column and row):
+--     psql -v ON_ERROR_STOP=1 -f supabase/scripts/rollback-20261116b-disable.sql
+--     -- drops ONLY the policies, constraints and indexes this migration created on pre-existing tables,
+--     -- restores their exact prior grants and RLS flags from the provenance record, and REVOKEs API access
+--     -- (anon, authenticated, PUBLIC) from the relations this migration created.
+--   Level 2 (optional, after Level 1; refuses unless every created table is empty and nothing still
+--   points into it):
+--     psql -v ON_ERROR_STOP=1 -f supabase/scripts/rollback-20261116b-remove-if-empty.sql
+--     -- drops the created view, then the created tables in FK-dependency order, then unused created types.
+--   Never dropped by either level: pre-existing objects, columns this migration added (data-preserving),
+--   jobs.source_id, #645 objects, the internal_ingestion schema and the provenance record. No CASCADE.
+--   Re-enable: re-apply this migration (it recreates the dropped indexes, constraints, FKs and policies).
+--   NOTE: both scripts run in one transaction with lock_timeout = 3s; on a lock timeout nothing changes.
 -- ============================================================================
 
 

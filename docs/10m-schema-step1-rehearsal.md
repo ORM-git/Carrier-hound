@@ -15,8 +15,10 @@ Nothing here was run against production.
 | 3 | `idx_jobs_active_dedupe_hash_uniq` is **not created** | #645 drops it as destructive. On populated data: `could not create unique index`, aborting the migration. On data without pairs it would reject legitimate cross-source rows at ingest. |
 | 4 | `job_postings` dedupe index is **non-unique** (`idx_job_postings_active_dedupe_hash`). Identity is explicit: **one row per `(source_id → ingestion_sources.id, external_id)`**, enforced by the existing unique index | Two boards posting the same job got `duplicate key value violates unique constraint "idx_job_postings_active_dedupe_hash_uniq"`. |
 | 5 | `saved_jobs.job_posting_id` and `job_descriptions.posting_id`: `ON DELETE SET NULL` instead of `CASCADE` | Deleting a posting would have silently deleted users' saved-job rows and job descriptions, even though they still reference a live legacy job. |
-| 6 | **Lock prelude:** `LOCK TABLE` saved_jobs → job_descriptions → jobs → companies up front (`ACCESS EXCLUSIVE`, missing tables skipped) | The real-PG rehearsal reproduced **deadlocks** with live writers. The old statement order locked a referenced table before `jobs` (and `jobs` before `saved_jobs`), the opposite of writers. |
-| 7 | Rollback notes: never drop live `jobs.source_id` or the #645-owned indexes; drop only `source_registry_id` and `idx_jobs_source_registry_id` | The old notes would have dropped live production data and #645's canonical-identity index. |
+| 6 | **Lock prelude:** `LOCK TABLE` saved_jobs → job_descriptions → jobs → companies up front (`ACCESS EXCLUSIVE`, missing tables skipped) | Real PostgreSQL reproduced **deadlocks** for two writer patterns: an INSERT into `jobs` followed by a FK check on `companies`, and a `saved_jobs` write followed by a read of `jobs`. The old statement order locked those tables the other way round. With the prelude, both probed patterns only wait. **Other lock orders are not proven.** `lock_timeout` and a maintenance window remain required. |
+| 7 | **Provenance record + tested rollback** replace the old hand-written rollback notes (see "Rollback" below) | The old notes would have destroyed data: they dropped tables and columns that may hold data. They were not provenance-aware: they dropped `companies_category_check`, which #645 D owns on a full-D database. They were also dependency-broken without CASCADE: `job_postings` was dropped while `saved_jobs` still referenced it, and `ingestion_sources` while `jobs.source_registry_id` did. |
+| 8 | Guarded FK re-creation for `jobs.source_registry_id`, `saved_jobs.job_posting_id` and `job_descriptions.posting_id` | Re-applying after a disable would otherwise silently leave these FKs out, because `ADD COLUMN IF NOT EXISTS … REFERENCES` skips when the column exists. |
+| 9 | Header rewritten to the current contract | Removed stale claims: "safe in either order with #642", "#642 owns a merge trigger on jobs", and the implied uuid `source_id`. Added the not-zero-downtime warning and the `lock_timeout` / maintenance-window requirement. |
 
 Untouched:
 
@@ -25,7 +27,7 @@ Untouched:
 - canonical `UNIQUE (source_id, source_job_id)`, kept;
 - UI, billing, workflows, flags, ingestion, and the TS pipeline.
 
-There are no forward `DROP`, `TRUNCATE`, `DELETE` or `UPDATE` statements.
+There are no forward `DROP`, `TRUNCATE`, `UPDATE` or data `DELETE` statements. The one `DELETE` clears the migration's own rollback-state marker in its provenance table on re-apply.
 
 ## Baselines (all labelled; none is a live snapshot)
 
@@ -59,7 +61,10 @@ npm run test:10m-rehearsal -- --migration=<original 16b>                # contro
 npm install --no-save pg@8                                              # client only, package.json untouched
 PG_BIN=<dir with initdb/pg_ctl/postgres> npm run test:10m-postgres      # default --jobs=200000
 PG_BIN=... npm run test:10m-postgres -- --negative-control              # must exit 1
-PG_BIN=... npm run test:10m-postgres -- --skip-correctness --jobs=20000 --migration=<original 16b>
+PG_BIN=... npm run test:10m-postgres -- --jobs=20000 --migration=<original 16b>
+# Rollback procedure (production: Level 1 first; Level 2 only if every created table is empty):
+psql -v ON_ERROR_STOP=1 -f supabase/scripts/rollback-20261116b-disable.sql
+psql -v ON_ERROR_STOP=1 -f supabase/scripts/rollback-20261116b-remove-if-empty.sql
 ```
 
 The real-PG runner refuses to start without binaries or `pg` (exit 2). It ignores `DATABASE_URL`/`PG*`, and it
@@ -67,14 +72,16 @@ verifies the connected server's `data_directory` is the temp cluster it created 
 
 ## Results
 
+Committed machine output: [`docs/evidence/10m-schema-step1/`](evidence/10m-schema-step1/README.md).
+
 | Run | Engine | Result |
 |---|---|---|
-| `test:10m-rehearsal` (repaired) | PGlite (PostgreSQL 18.6 WASM) | **171 passed, 0 failed** (exit 0) |
+| `test:10m-rehearsal` (repaired) | PGlite (PostgreSQL 18.6 WASM) | **213 passed, 0 failed** (exit 0) |
 | `test:10m-rehearsal -- --negative-control` | PGlite | exit 1, 8 checks caught the tampering |
-| `test:10m-rehearsal -- --migration=<#643 original f8280087>` | PGlite | exit 1, 80 passed, 21 failed (old failures reproduced) |
-| `test:10m-postgres` (repaired, 200,000 jobs) | **PostgreSQL 17.12**, real server | **183 passed, 0 failed** (exit 0) |
+| `test:10m-rehearsal -- --migration=<#643 original f8280087>` | PGlite | exit 1, 81 passed, 23 failed (old failures reproduced) |
+| `test:10m-postgres` (repaired, 200,000 jobs) | **PostgreSQL 17.12**, real server | **225 passed, 0 failed** (exit 0) |
 | `test:10m-postgres -- --negative-control` | PostgreSQL 17.12 | exit 1, the same 8 checks caught it |
-| `test:10m-postgres -- --migration=<original>` (20,000 jobs) | PostgreSQL 17.12 | exit 1, 89 passed, 22 failed; lock-order probes: **deadlock detected** (both) |
+| `test:10m-postgres -- --migration=<original>` (20,000 jobs) | PostgreSQL 17.12 | exit 1, 90 passed, 26 failed. Lock-order probes: **deadlock detected** (both); no provenance, so no safe rollback |
 | `test-10m-schema-step1-fixtures.ts` / `--negative-control` | PGlite | exit 0 / exit 1 |
 
 **Original #643 as control.** The populated full-migration baseline gives `could not create unique index
@@ -84,7 +91,8 @@ baseline it *applies*, because `dedupe_hash` does not exist yet there, but then:
 - it recreates the destructive index;
 - it rejects two boards with the same hash in `job_postings`;
 - it lacks the registry FK;
-- it deadlocks with live writers.
+- it deadlocks in both probed writer patterns;
+- it has no provenance, so the rollback cannot be done safely.
 
 **Repaired, each populated baseline.**
 
@@ -108,43 +116,69 @@ Three CHECKs (`role_category`, `company_category`, `source_priority`) differ onl
 passes, and the comparison normalizes them. `jobs_source_type_check` differs between scoped and full D. 16b does
 not touch it, so it is outside 16b's contract.
 
+## Rollback (documented procedure, executed by the tests)
+
+The migration records its own provenance in `internal_ingestion.schema_migration_provenance` (metadata only).
+Before creating anything it snapshots the catalog (schemas, enum types, relations, columns, constraints, policies,
+non-extension functions, and the ACL and RLS flags of tables). Just before COMMIT it records what it **created**,
+and the **prior** ACL and RLS of pre-existing tables it **changed**. Re-applies keep the first-apply rows.
+
+| Script | What it does | Never does |
+|---|---|---|
+| `supabase/scripts/rollback-20261116b-disable.sql` (Level 1) | Refuses without provenance. Uses the same lock order as the migration. Drops only the policies, constraints and non-constraint indexes the migration created on **pre-existing** tables. Restores their exact prior grants and RLS flags. Revokes PUBLIC/anon/authenticated access to relations the migration created. Marks the state `disabled`. Idempotent. | DROP TABLE, DROP COLUMN, CASCADE, touching pre-existing or #645 objects |
+| `supabase/scripts/rollback-20261116b-remove-if-empty.sql` (Level 2) | Refuses unless disabled, every created table is empty, and no added column still references a created table. Then drops created views, created tables leaves-first (refuses on outside references instead of cascading) and unused created enum types. | Dropping added columns, `jobs.source_id`, the `internal_ingestion` schema or the provenance record |
+
+Both scripts run in one transaction with `lock_timeout = 3s`, so a refusal or a timeout changes nothing.
+**Re-enable** by re-applying the migration. It recreates the dropped indexes, constraints and policies, and its
+guarded block recreates the FKs that `ADD COLUMN IF NOT EXISTS … REFERENCES` would otherwise skip.
+
+**Tested** (`R:recon-incomplete`, `R:full`) on PGlite and real PostgreSQL 17, executing the exact files. The
+`saved_jobs` grants and RLS were first set to differ from what 16b sets, so the restore path is exercised.
+
+1. **Apply 16b, then check provenance.** It must list exactly the relations 16b created (11). It recorded 33 columns added to pre-existing tables and 2 prior grant/RLS states.
+2. **Write new data:** a registered source, linked jobs, postings, a saved job linked to a posting, and a consent row.
+3. **Remove before disable:** refused.
+4. **Disable.**
+   - Original data is unchanged: counts, checksums, `last_seen_at`, #645 F state and app queries.
+   - New data is preserved.
+   - Every pre-existing table's indexes, constraints, policies, effective privileges per role, RLS and triggers equal the pre-16b state: 1,549 attributes compared (1,556 on full D). On full D this includes #645 D's `companies_category_check` and E's indexes, which the old notes would have dropped.
+   - There is no API access to created relations, and added columns are kept.
+   - A sensitivity check confirms the same comparison saw 22 (16 on full D) attributes 16b had changed.
+5. **Disable again:** a no-op.
+6. **Remove with data present:** refused, naming the blocking tables and columns; nothing changed.
+7. **Operator clears the new data, then remove succeeds.** Only the provenance table remains of the created relations. Original data and pre-existing objects equal the pre-16b state.
+8. **Re-apply:** 16b is re-enabled, with the registry FK recreated and the rollback state cleared.
+
+Disable took 72–82 ms on the 200k-row real-PG cluster's small-fixture databases.
+
 ## Real PostgreSQL: scale and concurrency (measured)
 
 **Hardware and settings.** 13th Gen Intel Core i5-13420H, 12 logical cores, 16 GB RAM, Windows 11. PostgreSQL
 17.12 with defaults (`shared_buffers` 128 MB, `maintenance_work_mem` 64 MB, `fsync` on, `synchronous_commit`
-on), on a local SSD temp directory. **Fixture:** 200,000 jobs (160,000 active, 504 MB with indexes), 2,000
-companies, 100,000 descriptions and 5,000 saved jobs, populated in 284 s.
+on), on a local SSD temp directory. **Fixture:** 200,000 jobs (160,000 active, 505 MB with indexes), 2,000
+companies, 100,000 descriptions and 5,000 saved jobs, populated in 285 s. Full timelines are in
+[`evidence/10m-schema-step1/README.md`](evidence/10m-schema-step1/README.md).
 
 The sessions are independent connections: the migration, a held reader, a live writer (INSERT every 25 ms), a
 feed reader (`jobs_public`, every 25 ms) and a lock observer (`pg_locks` + `pg_stat_activity` every 50 ms).
 
 | Phase | Measured |
 |---|---|
-| a. A reader holds `ACCESS SHARE` on `jobs`; 16b runs with `lock_timeout = 3s` | 16b waited 2,950 ms, then aborted (`canceling statement due to lock timeout`). **The writer and feed reader queued behind 16b's pending `ACCESS EXCLUSIVE` request for 2,576 ms** (worst write 2,690 ms, worst read 2,663 ms). Afterwards data, schema, grants and #645 state were unchanged, with no partial objects. |
-| b. `statement_timeout = 250ms` fires mid-migration (injected 1 s statement before COMMIT) | Aborted (`canceling statement due to statement timeout`) in 704 ms; everything unchanged. |
-| c. Retry under live writes and reads (`lock_timeout = 3s`) | Committed in **5,399 ms**. `ACCESS EXCLUSIVE` on jobs, companies, job_descriptions and saved_jobs was held for **~5.3 s**; all traffic was blocked for that window. Steady state: write p50 5 ms, read p50 2 ms. During the migration: **worst write 5,395 ms, worst read 5,388 ms**, no errors. Counts, checksums, `last_seen_at`, #645 state and app queries were unchanged at scale. |
-| d. Second apply | No-op in 1,100 ms, but it **still takes `ACCESS EXCLUSIVE` on all four tables**. |
-| Lock-order probes | A writer holding `jobs` (INSERT) then FK-checking `companies`, or holding `saved_jobs` then reading `jobs`: no deadlock, the writer committed first and 16b followed about 1.1 s later. **Original 16b: `deadlock detected` in both.** |
-
-**Timeline of the retry (phase c), ms from the start of the observation:**
-
-| ms | Event |
-|---|---|
-| 0 | Live writes and reads running (p50 5 ms / 2 ms) |
-| 506 | 16b starts and the prelude takes every lock |
-| 539 | First sample with 16b holding `ACCESS EXCLUSIVE` on jobs; writer and reader queued |
-| 5,869 | Last sample with the lock held |
-| 5,905 | 16b commits; queued traffic resumes (worst wait about 5.4 s) |
+| a. A reader holds `ACCESS SHARE` on `jobs`; 16b runs with `lock_timeout = 3s` | 16b waited 2,940 ms, then aborted (`canceling statement due to lock timeout`). **The writer and feed reader queued behind 16b's pending `ACCESS EXCLUSIVE` request for 2,566 ms** (worst write 2,723 ms, worst read 2,683 ms). Afterwards data, schema, grants and #645 state were unchanged, with no partial objects. |
+| b. `statement_timeout = 250ms` fires mid-migration (injected 1 s statement before COMMIT) | Aborted (`canceling statement due to statement timeout`) in 852 ms; everything unchanged. |
+| c. Retry under live writes and reads (`lock_timeout = 3s`) | Committed in **6,790 ms**. The lock prelude waited 942 ms for in-flight statements, then `ACCESS EXCLUSIVE` on jobs, companies, job_descriptions and saved_jobs was held for **~5.7 s** and all traffic queued. Steady state: write p50 5 ms, read p50 1 ms. During the migration: **worst write 6,812 ms, worst read 6,783 ms**, no errors. Counts, checksums, `last_seen_at`, #645 state and app queries were unchanged at scale. |
+| d. Second apply | No-op in 136 ms, but it **still takes `ACCESS EXCLUSIVE` on all four tables**. |
+| Lock-order probes | **Only these two writer patterns are proven.** A writer holding `jobs` (INSERT) then FK-checking `companies`, or holding `saved_jobs` (UPDATE) then reading `jobs`: no deadlock; the writer committed first and 16b followed 1.2–1.4 s later. **Original 16b: `deadlock detected` in both.** Other lock orders, such as unprobed triggers or multi-table application transactions, are not claimed. |
 
 ### What this means for production (honest limits)
 
-- **Not zero-downtime.** One transaction holds `ACCESS EXCLUSIVE` on `jobs`, `companies`, `job_descriptions` and `saved_jobs` while building 7 or more indexes on `jobs` with plain `CREATE INDEX`. At 200k rows on this laptop that blocked the feed, saved jobs and ingestion for about 5.4 s. **Duration at production size is unmeasured**; it grows with rows and indexes, and these numbers support no 10M capacity claim.
-- While 16b *waits* for its locks, every new reader and writer queues behind it, so `lock_timeout` must always be set (3 s was used here).
+- **Not zero-downtime.** One transaction holds `ACCESS EXCLUSIVE` on `jobs`, `companies`, `job_descriptions` and `saved_jobs` while building 7 or more indexes on `jobs` with plain `CREATE INDEX`. At 200k rows on this laptop that blocked the feed, saved jobs and ingestion for about 6.8 s. **Duration at production size is unmeasured**; it grows with rows and indexes, and these numbers support no 10M capacity claim.
+- **Keep `lock_timeout` set for any apply (3 s used here) and use a maintenance window.** While 16b *waits* for its locks, every new reader and writer queues behind it.
 - A second apply also locks everything.
 
 **Suggested staged plan for production** (not implemented here):
 
-1. **Phase 1, short transaction, `lock_timeout` 3 s, retry:** the lock prelude, enums, `internal_ingestion`, new tables and views, `ADD COLUMN`s (catalog-only on PG 11+), `NOT VALID` constraints, grants and RLS. No index builds on existing big tables.
+1. **Phase 1, short transaction, `lock_timeout` 3 s, retry:** the lock prelude, provenance, enums, `internal_ingestion`, new tables and views, `ADD COLUMN`s (catalog-only on PG 11+), `NOT VALID` constraints, grants and RLS. No index builds on existing big tables.
 2. **Phase 2, outside a transaction, one statement at a time:** `CREATE INDEX CONCURRENTLY` for each `jobs` / `companies` / `job_descriptions` / `saved_jobs` index, then check `indisvalid` (#645 E's pattern).
 3. **Phase 3, optional:** `VALIDATE CONSTRAINT` (`SHARE UPDATE EXCLUSIVE`, which doesn't block reads or writes).
 
@@ -162,6 +196,7 @@ feed reader (`jobs_public`, every 25 ms) and a lock observer (`pg_locks` + `pg_s
 3. No maintenance window sized from a measurement on production-size data, or the staged plan is not adopted.
 4. `lock_timeout` is not set for the apply, or no retry policy exists for a lock-timeout abort.
 5. Anything writes `jobs.source_registry_id` without the `slug = source_id` mapping.
+6. The rollback has not been rehearsed against a snapshot of the target database, or the provenance record is missing after the apply.
 
 ## Known gaps
 

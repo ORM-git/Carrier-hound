@@ -564,6 +564,193 @@ export async function structureOf(db: Db): Promise<Record<string, string>> {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// Rollback: executes the EXACT documented scripts (supabase/scripts/rollback-20261116b-*.sql)
+// ---------------------------------------------------------------------------------------------------
+export const ROLLBACK_DISABLE = path.join(ROOT, "supabase/scripts/rollback-20261116b-disable.sql");
+export const ROLLBACK_REMOVE = path.join(ROOT, "supabase/scripts/rollback-20261116b-remove-if-empty.sql");
+const PRIVS = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"];
+const API_ROLES = ["anon", "authenticated", "service_role"];
+
+/** Everything attached to a given set of relations: indexes, constraints, policies, effective privileges, RLS, triggers. */
+async function objectState(db: Db, relations: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const rels = (await db.query<{ q: string; oid: number; rls: boolean; force: boolean; kind: string }>(
+    `SELECT n.nspname || '.' || c.relname q, c.oid, c.relrowsecurity rls, c.relforcerowsecurity force, c.relkind::text kind
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname || '.' || c.relname = ANY($1)`, [relations])).rows;
+  for (const r of rels) {
+    if (r.kind === "r" || r.kind === "p") out[`rls ${r.q}`] = `${r.rls},${r.force}`;
+    for (const role of API_ROLES)
+      for (const priv of PRIVS)
+        out[`priv ${r.q} ${role} ${priv}`] = String((await db.query<{ v: boolean }>(`SELECT has_table_privilege($1, $2::oid, $3) v`, [role, r.oid, priv])).rows[0].v);
+  }
+  const oids = rels.map((r) => r.oid);
+  for (const r of (await db.query<{ t: string; i: string; d: string }>(
+    `SELECT tc.relname t, ic.relname i, pg_get_indexdef(i.indexrelid) d FROM pg_index i JOIN pg_class ic ON ic.oid = i.indexrelid
+       JOIN pg_class tc ON tc.oid = i.indrelid WHERE i.indrelid = ANY($1::oid[])`, [oids])).rows) out[`index ${r.t}.${r.i}`] = r.d;
+  for (const r of (await db.query<{ t: string; k: string; d: string }>(
+    `SELECT c.relname t, k.conname k, pg_get_constraintdef(k.oid) d FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+      WHERE k.conrelid = ANY($1::oid[]) AND k.contype <> 'n'`, [oids])).rows) out[`constraint ${r.t}.${r.k}`] = r.d;
+  for (const r of (await db.query<{ t: string; p: string; d: string }>(
+    `SELECT c.relname t, p.polname p, p.polcmd::text || '|' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') d
+       FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE p.polrelid = ANY($1::oid[])`, [oids])).rows) out[`policy ${r.t}.${r.p}`] = r.d;
+  for (const r of (await db.query<{ t: string; g: string }>(
+    `SELECT c.relname t, tg.tgname g FROM pg_trigger tg JOIN pg_class c ON c.oid = tg.tgrelid WHERE tg.tgrelid = ANY($1::oid[]) AND NOT tg.tgisinternal`, [oids])).rows)
+    out[`trigger ${r.t}.${r.g}`] = "1";
+  return out;
+}
+
+async function relationsNow(db: Db): Promise<string[]> {
+  return (await db.query<{ q: string }>(
+    `SELECT n.nspname || '.' || c.relname q FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname IN ('public', 'internal_ingestion') AND c.relkind IN ('r', 'p', 'v', 'm')`)).rows.map((r) => r.q);
+}
+
+const diffMaps = (a: Record<string, string>, b: Record<string, string>) =>
+  [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
+
+/** md5 over the data written into objects 20261116b created (new tables + new columns on old tables). */
+async function newDataChecksum(db: Db, created: string[]): Promise<string> {
+  const parts: string[] = [];
+  for (const q of created.filter((x) => x !== "internal_ingestion.schema_migration_provenance").sort()) {
+    const kind = (await db.query<{ k: string }>(`SELECT c.relkind::text k FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname || '.' || c.relname = $1`, [q])).rows[0]?.k;
+    if (kind !== "r") continue;
+    parts.push(q + "=" + (await db.query<{ j: string }>(`SELECT coalesce(string_agg(row_to_json(t)::text, '|' ORDER BY row_to_json(t)::text), '') j FROM ${q} t`)).rows[0].j);
+  }
+  for (const [t, cols] of [["public.jobs", "id, source_registry_id"], ["public.saved_jobs", "id, job_posting_id"], ["public.job_descriptions", "job_id, posting_id"]] as const)
+    parts.push(t + "=" + (await db.query<{ j: string }>(`SELECT coalesce(string_agg(row_to_json(t)::text, '|' ORDER BY row_to_json(t)::text), '') j FROM (SELECT ${cols} FROM ${t}) t`)).rows[0].j);
+  return md5(parts.join("\n"));
+}
+
+async function runFile(db: Db, file: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await db.exec(fs.readFileSync(file, "utf8"));
+    return { ok: true };
+  } catch (e: any) {
+    try { await db.exec("ROLLBACK"); } catch {}
+    return { ok: false, error: String(e?.message || e).slice(0, 240) };
+  }
+}
+
+export async function rollbackScenario(engine: Engine, kind: Baseline, targetSql: string) {
+  const scn = `R:${kind}`;
+  console.log(`\n=== ${scn}: documented rollback scripts on the populated baseline ===`);
+  const db = await populatedProductionOrder(engine, kind, `rollback-${kind}`);
+  try {
+    await rollbackSteps(scn, db, targetSql);
+  } catch (e: any) {
+    check(scn, "rollback scenario completed", false, String(e?.message || e).slice(0, 200));
+  } finally {
+    await engine.close(db);
+  }
+}
+
+async function rollbackSteps(scn: string, db: Db, targetSql: string) {
+  // A production variant whose saved_jobs grants / RLS differ from what 20261116b sets, so the migration
+  // changes them and the disable script has to restore the exact prior state from the provenance record.
+  await db.exec(`GRANT SELECT ON public.saved_jobs TO anon; ALTER TABLE public.saved_jobs NO FORCE ROW LEVEL SECURITY;`);
+  const cols = await originalColumns(db);
+  const preRelations = await relationsNow(db);
+  const s0 = await snapshot(db, cols);
+  const pre0 = await objectState(db, preRelations);
+
+  const applied = await applyTarget(db, targetSql);
+  check(scn, "20261116b applies", applied.ok, applied.error);
+  if (!applied.ok) return;
+
+  // Provenance must name exactly the relations the migration created
+  const created = (await relationsNow(db)).filter((q) => !preRelations.includes(q)).sort();
+  const prov = (await db.query<{ q: string }>(
+    `SELECT schema_name || '.' || object_name q FROM internal_ingestion.schema_migration_provenance
+      WHERE migration = '20261116b' AND kind = 'relation' AND detail IN ('r', 'p', 'v', 'm') ORDER BY 1`)).rows.map((r) => r.q);
+  check(scn, "provenance records exactly the relations 20261116b created", JSON.stringify(prov) === JSON.stringify(created),
+    `${created.length} created, ${prov.length} recorded`);
+  const addedCols = await n(db, `SELECT count(*) n FROM internal_ingestion.schema_migration_provenance p WHERE p.migration = '20261116b' AND p.kind = 'column'
+      AND NOT EXISTS (SELECT 1 FROM internal_ingestion.schema_migration_provenance x WHERE x.migration = p.migration AND x.kind = 'relation'
+                        AND x.schema_name = p.schema_name AND x.object_name = p.object_name)`);
+  const priorRows = await n(db, `SELECT count(*) n FROM internal_ingestion.schema_migration_provenance WHERE kind IN ('prior_acl', 'prior_rls')`);
+  notes[`${scn}:provenance`] = { created_relations: created.length, added_columns_on_existing_tables: addedCols, prior_acl_rls: priorRows };
+  check(scn, "provenance recorded the prior grants/RLS of pre-existing tables 20261116b changed", priorRows >= 2, `${priorRows} rows`);
+
+  // New data in the new objects
+  const key = (await db.query<{ k: string }>(`SELECT source_id k FROM public.jobs WHERE id = '00000000-0000-4000-8000-000000000004'`)).rows[0].k;
+  await db.exec(`
+    INSERT INTO internal_ingestion.ingestion_sources (id, name, slug, source_type) VALUES ('00000000-0000-4000-8000-00000000e001', 'Registered board', '${key}', 'ats');
+    UPDATE public.jobs j SET source_registry_id = s.id FROM internal_ingestion.ingestion_sources s WHERE s.slug = j.source_id;
+    INSERT INTO public.job_postings (id, source_id, external_id, title, company_name, dedupe_hash) VALUES
+      ('00000000-0000-4000-8000-00000000e101', '00000000-0000-4000-8000-00000000e001', 'p-1', 'Posting one', 'Board Co', 'h-1'),
+      ('00000000-0000-4000-8000-00000000e102', '00000000-0000-4000-8000-00000000e001', 'p-2', 'Posting two', 'Board Co', 'h-1');
+    UPDATE public.saved_jobs SET job_posting_id = '00000000-0000-4000-8000-00000000e101' WHERE id = (SELECT id FROM public.saved_jobs ORDER BY id LIMIT 1);
+    INSERT INTO public.consent_logs (session_id, consent_type, granted) VALUES ('rollback-session', 'cookies', true);`);
+  const newData = await newDataChecksum(db, created);
+  const mapped = await n(db, `SELECT count(*) n FROM public.jobs WHERE source_registry_id IS NOT NULL`);
+  const s1 = await snapshot(db, cols);
+  check(scn, "writing new data did not touch original data", diffSnapshots(s0, s1).filter((d) => /^(counts|checksums|last_seen|#645|queries)/.test(d)).length === 0);
+
+  // Sensitivity: the same comparison must SEE what 20261116b changed on pre-existing tables
+  const changedByMigration = diffMaps(pre0, await objectState(db, preRelations));
+  notes[`${scn}:preexisting_attributes_changed_by_20261116b`] = changedByMigration.length;
+  check(scn, "comparison is sensitive: 20261116b visibly changed pre-existing tables before rollback", changedByMigration.length > 0,
+    `${changedByMigration.length} attributes, e.g. ${changedByMigration.slice(0, 3).join("; ")}`);
+
+  // Level 2 before Level 1 must refuse
+  const early = await runFile(db, ROLLBACK_REMOVE);
+  check(scn, "remove-if-empty refuses before disable", !early.ok && /disable/i.test(early.error || ""), early.error);
+
+  // Level 1
+  const t0 = performance.now();
+  const dis = await runFile(db, ROLLBACK_DISABLE);
+  notes[`${scn}:disable_ms`] = Math.round(performance.now() - t0);
+  check(scn, "documented disable script succeeds", dis.ok, dis.error);
+  const s2 = await snapshot(db, cols);
+  const dataDiff = diffSnapshots(s0, s2).filter((d) => /^(counts|checksums|last_seen|#645|queries)/.test(d));
+  check(scn, "disable: original data unchanged (counts, checksums, last_seen_at, #645 state, app queries)", dataDiff.length === 0, dataDiff.join("; ") || undefined);
+  check(scn, "disable: new data preserved (new tables, registry links, saved_jobs posting links, consent rows)", (await newDataChecksum(db, created)) === newData);
+  const preNow = await objectState(db, preRelations);
+  const preDiff = diffMaps(pre0, preNow);
+  check(scn, "disable: pre-existing tables' indexes, constraints, policies, privileges, RLS and triggers equal pre-20261116b", preDiff.length === 0, preDiff.slice(0, 5).join("; ") || `${Object.keys(pre0).length} attributes compared`);
+  const apiLeft = (await db.query<{ q: string }>(
+    `SELECT n.nspname || '.' || c.relname q FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname || '.' || c.relname = ANY($1) AND (has_table_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,DELETE')
+         OR has_table_privilege('authenticated', c.oid, 'SELECT,INSERT,UPDATE,DELETE'))`, [created])).rows.map((r) => r.q);
+  check(scn, "disable: no anon/authenticated access to any relation 20261116b created", apiLeft.length === 0, apiLeft.join(", ") || undefined);
+  check(scn, "disable: columns added to pre-existing tables are kept (no DROP COLUMN)",
+    (await n(db, `SELECT count(*) n FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'source_registry_id'`)) === 1
+      && (await n(db, `SELECT count(*) n FROM public.jobs WHERE source_registry_id IS NOT NULL`)) === mapped);
+  const again = await runFile(db, ROLLBACK_DISABLE);
+  check(scn, "disable is idempotent (second run succeeds, changes nothing)", again.ok && diffMaps(preNow, await objectState(db, preRelations)).length === 0, again.error);
+
+  // Level 2 with data present must refuse atomically
+  const relsBefore = await relationsNow(db);
+  const refused = await runFile(db, ROLLBACK_REMOVE);
+  check(scn, "remove-if-empty refuses while new data exists (names the blocking tables/columns)", !refused.ok && /data would be lost/.test(refused.error || ""), refused.error?.slice(0, 160));
+  check(scn, "refused removal changed nothing", JSON.stringify((await relationsNow(db)).sort()) === JSON.stringify(relsBefore.sort())
+    && (await newDataChecksum(db, created)) === newData);
+
+  // Operator clears the new data, then Level 2 succeeds
+  await db.exec(`
+    UPDATE public.saved_jobs SET job_posting_id = NULL WHERE job_posting_id IS NOT NULL;
+    UPDATE public.jobs SET source_registry_id = NULL WHERE source_registry_id IS NOT NULL;
+    UPDATE public.job_descriptions SET posting_id = NULL WHERE posting_id IS NOT NULL;
+    DELETE FROM public.job_postings; DELETE FROM public.consent_logs; DELETE FROM internal_ingestion.ingestion_sources;`);
+  const rem = await runFile(db, ROLLBACK_REMOVE);
+  check(scn, "remove-if-empty succeeds once the new objects are empty", rem.ok, rem.error);
+  const left = (await relationsNow(db)).filter((q) => !preRelations.includes(q));
+  check(scn, "remove: only the provenance record remains of the created relations", JSON.stringify(left) === JSON.stringify(["internal_ingestion.schema_migration_provenance"]), left.join(", "));
+  const s3 = await snapshot(db, cols);
+  const dataDiff3 = diffSnapshots(s0, s3).filter((d) => /^(counts|checksums|last_seen|#645|queries)/.test(d));
+  check(scn, "remove: original data unchanged", dataDiff3.length === 0, dataDiff3.join("; ") || undefined);
+  const preDiff3 = diffMaps(pre0, await objectState(db, preRelations));
+  check(scn, "remove: pre-existing objects equal pre-20261116b", preDiff3.length === 0, preDiff3.slice(0, 5).join("; ") || undefined);
+
+  // Re-enable
+  const re = await applyTarget(db, targetSql);
+  check(scn, "re-applying 20261116b after removal re-enables it", re.ok, re.error ?? `${re.ms} ms`);
+  const fk = await n(db, `SELECT count(*) n FROM pg_constraint WHERE conrelid = 'public.jobs'::regclass AND contype = 'f' AND pg_get_constraintdef(oid) LIKE '%source_registry_id%internal_ingestion.ingestion_sources%'`);
+  check(scn, "re-apply recreated the registry FK and cleared the rollback state", fk === 1
+    && (await n(db, `SELECT count(*) n FROM internal_ingestion.schema_migration_provenance WHERE kind = 'state'`)) === 0);
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Scenario driver (engine-neutral)
 // ---------------------------------------------------------------------------------------------------
 export type Engine = { name: string; newDb: (label: string) => Promise<Db>; close: (db: Db) => Promise<void> };
@@ -634,6 +821,9 @@ export async function runScenarios(engine: Engine, targetSql: string, opts: { ne
     }
     await engine.close(db);
   }
+
+  // ---- R. documented rollback scripts (reconstructed and full baselines) ---------------------------
+  for (const kind of ["recon-incomplete", "full"] as const) await rollbackScenario(engine, kind, targetSql);
 
   // ---- C. intentional failure then retry ---------------------------------------------------------
   console.log("\n=== C: intentional failure before COMMIT, then retry (recon-incomplete) ===");
