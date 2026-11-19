@@ -161,13 +161,15 @@ function run() {
     console.log("  [PASS] Footer actions: Hide, Save, Tailor Resume, and Apply buttons preserved");
   }
 
-  // Dark match panel on the right preserved
-  const hasDarkMatchPanel = jobsPageCode.includes("w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E]") ||
+  // Right panel preserved (listings-only Job Facts panel or legacy dark match panel)
+  const hasDarkMatchPanel =
+    jobsPageCode.includes("w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px]") ||
+    jobsPageCode.includes("Job Facts") ||
     jobsPageCode.includes("CircularMatchRing");
   if (!hasDarkMatchPanel) {
-    failures.push("MATCH PANEL FAIL: Right dark match panel must be preserved unchanged.");
+    failures.push("MATCH PANEL FAIL: Right dark match panel or Job Facts panel must be preserved.");
   } else {
-    console.log("  [PASS] Match panel: Right dark match panel preserved unchanged");
+    console.log("  [PASS] Match panel: Right panel geometry preserved");
   }
 
   // Mobile below 640px preserved

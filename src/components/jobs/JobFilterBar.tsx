@@ -189,7 +189,7 @@ export default function JobFilterBar({
   const workModelInfo = formatMultiLabel(filters.workModel, "Work model");
 
   return (
-    <div className="sticky top-[56px] z-tk-sticky py-2 sm:py-0 bg-[#F8FAFC]/95 backdrop-blur-xs space-y-2">
+    <div className="sticky top-[56px] z-tk-sticky py-2 sm:py-0 bg-[#F8FAFC]/95 lg:bg-slate-100/95 backdrop-blur-xs space-y-2">
       {/* =================================================================== */}
       {/* 1. MOBILE FILTER ROW (< 768px)                                      */}
       {/* =================================================================== */}
@@ -197,6 +197,7 @@ export default function JobFilterBar({
         <button
           ref={mobileFiltersTriggerRef}
           type="button"
+          data-tour="tour-filters"
           onClick={onOpenMobileFilters}
           aria-expanded={isMobileFiltersOpen}
           aria-label="Open filter settings"
@@ -1191,6 +1192,7 @@ export default function JobFilterBar({
           <button
             ref={allFiltersTriggerRef}
             type="button"
+            data-tour="tour-filters"
             onClick={onOpenAllFilters}
             aria-label="Open all filters drawer"
             className="h-8 px-3.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"

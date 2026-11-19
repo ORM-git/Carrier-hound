@@ -4,6 +4,7 @@ import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/coun
 import { decodeCursor, encodeCursor } from "../../src/lib/pagination/cursor";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "../../src/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "../../src/lib/jobs/eligibility";
+import { applyExperienceLevelQuery, isExperienceLevelFilterActive } from "../../src/lib/jobs/experienceLevels";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -378,7 +379,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") ||
       (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") ||
       (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") ||
-      (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") ||
+      isExperienceLevelFilterActive(levelParam) ||
       (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") ||
       (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") ||
       (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") ||
@@ -484,23 +485,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       }
 
       if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
-        const lvl = levelParam.trim().toLowerCase();
-        if (lvl.includes("lead") || lvl.includes("staff")) {
-          query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-        } else if (lvl.includes("senior")) {
-          query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-        } else if (lvl.includes("entry") || lvl.includes("junior")) {
-          query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-        } else if (lvl.includes("mid")) {
-          query = query
-            .not("title", "ilike", "%senior%")
-            .not("title", "ilike", "%sr.%")
-            .not("title", "ilike", "%staff%")
-            .not("title", "ilike", "%principal%")
-            .not("title", "ilike", "%lead%")
-            .not("title", "ilike", "%junior%")
-            .not("title", "ilike", "%entry%");
-        }
+        query = applyExperienceLevelQuery(query, levelParam);
       }
 
       if (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") {
