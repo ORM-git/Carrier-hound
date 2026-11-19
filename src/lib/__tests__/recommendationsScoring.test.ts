@@ -173,7 +173,7 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       expect(ranked[1].matchScore).toBeGreaterThan(ranked[2].matchScore!);
     });
 
-    it("hard filters: entry-level 100%-remote seeker never gets Senior/Staff on-site jobs as top matches", () => {
+    it("hard filters: entry-level Open-to-Remote seeker never gets Senior/Staff jobs; remote is additive, not remote-only", () => {
       const entryRemoteAnswers: OnboardingAnswers = {
         roles: ["Software Engineer"],
         experienceLevel: "entry",
@@ -223,10 +223,12 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       const entryOnsiteScore = scoreJobRecommendation(jobs[2], entryRemoteAnswers);
       const leadRemoteScore = scoreJobRecommendation(jobs[3], entryRemoteAnswers);
 
-      // Hard filters: Senior/Staff roles and on-site roles must score 0
+      // Hard filters: Senior/Staff roles score 0. A saved "remote" preference is additive, so an
+      // eligible on-site entry role still qualifies, just below the remote one.
       expect(seniorOnsiteScore.score).toBe(0);
-      expect(entryOnsiteScore.score).toBe(0);
       expect(leadRemoteScore.score).toBe(0);
+      expect(entryOnsiteScore.score).toBeGreaterThan(0);
+      expect(entryOnsiteScore.score).toBeLessThan(entryRemoteScore.score);
 
       // Qualifying entry remote role scores high
       expect(entryRemoteScore.score).toBeGreaterThanOrEqual(80);
@@ -237,6 +239,7 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       expect(ranked[0].matchScore).toBe(entryRemoteScore.score);
       const seniorOnsiteRanked = ranked.find((j) => j.id === "senior-onsite");
       expect(seniorOnsiteRanked).toBeUndefined();
+      expect(ranked.map((j) => j.id)).toEqual(["entry-remote", "entry-onsite"]);
     });
 
     it("respects salary and country preferences as hard filters / strong ranking signals", () => {
