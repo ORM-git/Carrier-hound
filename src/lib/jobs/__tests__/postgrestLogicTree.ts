@@ -43,6 +43,7 @@ export function evalPostgrestNode(node: string, row: Record<string, any>): Tri {
   if (op === "is") r = value === "null" ? v === null || v === undefined : String(v) === value;
   else if (v === null || v === undefined) r = null;
   else if (op === "ilike") r = ilike(String(v), value);
+  else if (op === "imatch") r = new RegExp(value.replace(/\\y/g, "\\b"), "i").test(String(v));
   else if (op === "eq") r = String(v) === value;
   else if (op === "neq") r = String(v) !== value;
   else if (op === "gt" || op === "gte" || op === "lt" || op === "lte") {

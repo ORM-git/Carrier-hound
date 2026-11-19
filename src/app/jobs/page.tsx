@@ -1756,10 +1756,10 @@ function JobsPageInner() {
       {/* <GuideHeader /> replaced by unified AppIconRail / AppTopBar shell before and after login (!user) */}
 
       {/* Left Icon Rail (fixed 72px wide narrow / 240px expanded on desktop, bottom tab bar on mobile) */}
-      <AppIconRail expandOnDesktop />
+      <AppIconRail />
 
       {/* Main Content Area (offset by 72px or 240px on desktop) */}
-      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px] min-[1440px]:pl-[240px]"} flex flex-col min-w-0 pb-6 md:pb-0 lg:bg-slate-100 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 lg:bg-slate-100 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         {/* Top bar for both guest and signed-in users: 56px, white, 1px bottom border */}
         <AppTopBar
           pageLabel="JOBS"

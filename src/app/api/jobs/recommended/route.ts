@@ -10,7 +10,8 @@ import { createLogger } from "@/lib/observability/logger";
 import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
-import { applyExperienceLevelQuery, parseExperienceLevels } from "@/lib/jobs/experienceLevels";
+import { applyExperienceLevelQuery, parseExperienceLevels, EARLY_CAREER_OR_CLAUSE } from "@/lib/jobs/experienceLevels";
+import { normalizeUserCountries as normalizeEligibleCountries } from "@/lib/jobs/eligibility";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -191,16 +192,18 @@ export async function GET(req: Request) {
 
     const isPersonalized = hasOnboardingAnswers(answers);
 
-    // Read shared filter parameters to apply as HARD filters before ranking
+    // Read EXPLICIT feed filter parameters to apply as HARD filters before ranking. Saved onboarding
+    // preferences (experienceLevel, remotePreference, countryCode, locations) arrive under their own
+    // names and only rank; they never activate a hard filter.
     const categoryParam = searchParams.get("category") || "";
     const remoteOnly = searchParams.get("remoteOnly") === "true";
-    const countryCodeParam = searchParams.get("country_code") || searchParams.get("country") || searchParams.get("countryCode") || "";
+    const countryCodeParam = searchParams.get("country_code") || "";
     const locationParam = searchParams.get("location") || "";
     const jobTypeParam = searchParams.get("jobType") || "";
     const levelParam = searchParams.get("level") || "";
-    const workModelParam = searchParams.get("workModel") || searchParams.get("remotePreference") || "";
+    const workModelParam = searchParams.get("workModel") || "";
     const dateParam = searchParams.get("datePosted") || searchParams.get("date") || "";
-    const experienceParam = searchParams.get("experience") || searchParams.get("experienceLevel") || searchParams.get("exp") || "";
+    const experienceParam = searchParams.get("experience") || searchParams.get("exp") || "";
     const salaryMinParam = searchParams.get("salaryMin") || searchParams.get("salary_min") || "";
     const sourceTypeParam = searchParams.get("sourceType") || searchParams.get("source_type") || "";
     const companyParam = searchParams.get("company") || "";
@@ -271,6 +274,19 @@ export async function GET(req: Request) {
           query = query.eq("country_code", code);
         }
       }
+    } else {
+      // Saved countries are a preference, not a country-only restriction: pre-select the eligible superset
+      // (those countries + remote/worldwide roles). isJobEligible in ranking then drops remote roles
+      // restricted to other countries, so restricted jobs are never widened in.
+      const savedCodes = normalizeEligibleCountries(
+        [...(answers.locations || []), answers.country || "", answers.countryCode || ""].filter(Boolean)
+      ).codes;
+      const countryClauses = savedCodes.map((c) => getCountryFilterClause(c)).filter(Boolean);
+      if (countryClauses.length > 0) {
+        query = query.or(
+          [...countryClauses, "remote.eq.true", "remote_scope.eq.worldwide", "remote_eligibility.eq.worldwide", "location.ilike.%remote%", "location.ilike.%worldwide%"].join(",")
+        );
+      }
     }
 
     // 4. Location hard filter
@@ -320,7 +336,7 @@ export async function GET(req: Request) {
           .not("title", "ilike", "%entry%");
       } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
         query = query
-          .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+          .or(EARLY_CAREER_OR_CLAUSE)
           .not("title", "ilike", "%senior%")
           .not("title", "ilike", "%sr.%")
           .not("title", "ilike", "%staff%")
@@ -440,22 +456,10 @@ export async function GET(req: Request) {
       ? rankJobsByRecommendation(candidateJobs, answers)
       : rankJobsByRecommendation(candidateJobs, null);
 
-    // Hard preference exclusion: drop rows failing user's hard preferences or with matchScore <= 0
-    // Resume alone never drops jobs (eligibility is independent of resume)
-    const qualifyingJobs = isPersonalized && answers
-      ? rankedJobs.filter((job) => {
-          const score = job.matchScore ?? job._matchScore ?? 0;
-          if (score <= 0) return false;
-          if (answers.remotePreference === "remote") {
-            const isRemote =
-              job.remote === true ||
-              (job.remote_scope || "").toLowerCase() === "remote" ||
-              (job.remote_scope || "").toLowerCase() === "worldwide" ||
-              (job.location || "").toLowerCase().includes("remote");
-            if (!isRemote) return false;
-          }
-          return true;
-        })
+    // Drop rows with matchScore <= 0 (ineligible under saved preferences). A saved "remote" preference is
+    // additive and is handled in ranking; resume alone never drops jobs.
+    const qualifyingJobs = isPersonalized
+      ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
       : rankedJobs;
 
     const cappedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);

@@ -191,3 +191,27 @@ describe("NEGATIVE CONTROL: the old behavior fails these contracts", () => {
     expect(server).toContain("Junior Data Analyst");
   });
 });
+
+describe("isEarlyCareerJob / EARLY_CAREER_OR_CLAUSE (one intern/graduate/fresher classifier)", () => {
+  it("client predicate and server clause agree, by whole word", async () => {
+    const { isEarlyCareerJob, EARLY_CAREER_OR_CLAUSE } = await import("@/lib/jobs/experienceLevels");
+    const { matchesPostgrestOr } = await import("@/lib/jobs/__tests__/postgrestLogicTree");
+    const cases: Array<[string, string, boolean]> = [
+      ["Software Engineering Intern", "full-time", true],
+      ["Summer Internship - Data", "full-time", true],
+      ["Graduate Software Engineer", "full-time", true],
+      ["New Grad Backend Engineer", "full-time", true],
+      ["Fresher Java Developer", "full-time", true],
+      ["Junior Data Analyst", "full-time", true],
+      ["Associate Product Manager", "full-time", true],
+      ["Data Analyst", "internship", true],
+      ["Internal Tools Engineer", "full-time", false],
+      ["International Sales Lead", "full-time", false],
+      ["Software Engineer", "full-time", false],
+    ];
+    for (const [title, job_type, expected] of cases) {
+      expect(isEarlyCareerJob(title, job_type), title).toBe(expected);
+      expect(matchesPostgrestOr(EARLY_CAREER_OR_CLAUSE, { title, job_type }), `sql: ${title}`).toBe(expected);
+    }
+  });
+});
