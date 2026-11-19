@@ -107,11 +107,14 @@ async function main() {
     "company career pages",
     "Current prices are shown on the",
     "Pricing page",
-    "plans are prepaid for a fixed period and do not renew automatically",
+    "Weekly and Quarterly plans are prepaid for a fixed period and do not renew automatically",
+    "Monthly plan is available as an auto-renewing subscription at flat ₹499 per month",
+    "12 monthly billing cycles",
     "Add-on packs:",
     "expire together with the subscription",
     "Razorpay",
     "4. Cancellation, Renewal, and Access After Cancellation",
+    "How to cancel auto-renewal",
     "Cancellation &amp; Refund Policy",
     "5. Intellectual Property &amp; Acceptable Use",
     "6. Limitation of Liability &amp; Disclaimer",
@@ -147,22 +150,12 @@ async function main() {
     const text = html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ");
     assert.ok(!text.includes("799"), `${route} must NOT contain 799 (old monthly price)`);
     assert.ok(!/first[\s-]+month/i.test(text), `${route} must NOT contain "first month" pricing copy`);
-    for (const banned of [/autopay/i, /e-?mandate/i, /billed (weekly|monthly|quarterly|every)/i, /per month/i, /\/\s?mo\b/i]) {
-      assert.ok(!banned.test(text), `${route} must NOT contain recurring billing text matching ${banned}`);
-    }
-    // Any sentence about recurring charges or renewal must be a denial ("no recurring charges",
-    // "do not renew automatically"), never an affirmative recurring-billing statement.
-    const renewalSentences = text
-      .split(/(?<=[.!?])\s+/)
-      .filter((sentence) => /recurr|auto[\s-]?renew|renews?\s+automatically|automatically\s+renew/i.test(sentence));
-    assert.ok(renewalSentences.length > 0, `${route} must state that plans do not auto-renew`);
-    for (const sentence of renewalSentences) {
-      assert.ok(
-        /\b(no|not|never|nothing)\b/i.test(sentence),
-        `${route} must NOT contain recurring or auto-renew billing text: "${sentence.trim()}"`
-      );
-    }
-    console.log(`  [PASS-LOCAL] ${route} has no 799, no "first month", no recurring/auto-renew billing text`);
+    assert.ok(/auto[\s-]?renew/i.test(text), `${route} must mention auto-renew`);
+    assert.ok(text.includes("499"), `${route} must mention flat 499 price`);
+    assert.ok(/cancel/i.test(text), `${route} must explain how to cancel`);
+    assert.ok(/12\s+monthly\s+cycles|12-cycle/i.test(text), `${route} must mention 12 monthly cycles limit`);
+    assert.ok(!/reminder/i.test(text), `${route} must NOT promise email renewal reminders without a real sender`);
+    console.log(`  [PASS-LOCAL] ${route} has no 799, no "first month", correctly mentions 499 auto-renew, 12 cycles, cancellation, and excludes false reminders`);
   }
 
   // Plan prices are final and rendered from the central config (PREPAID_PRICE_SUMMARY in src/config/plans.ts).

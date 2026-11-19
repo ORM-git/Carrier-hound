@@ -16,7 +16,7 @@ import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
-import { handleProCheckout } from "@/lib/billing/checkout";
+import { handleProCheckout, openRazorpaySubscription } from "@/lib/billing/checkout";
 import { toast } from "react-toastify";
 
 // Every plan unlocks the same product: full access to job listings.
@@ -75,6 +75,8 @@ export default function PricingPage() {
   }, []);
 
   const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
+  const isAutoRenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
+  const [autoRenewConsent, setAutoRenewConsent] = useState(false);
 
   // Single synchronous purchase lock shared by all plan buttons
   const checkoutLockRef = useRef<boolean>(false);
@@ -118,6 +120,42 @@ export default function PricingPage() {
       return;
     }
 
+    if (planCode === "monthly" && isAutoRenewEnabled) {
+      if (!autoRenewConsent) {
+        resetLock();
+        toast.error("Please authorize auto-renewal before subscribing.");
+        return;
+      }
+
+      const consentRecord = {
+        agreed: true,
+        version: "2026-11-autorenew-v1",
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        await openRazorpaySubscription({
+          planCode: "monthly",
+          consent: consentRecord,
+          redirectTarget: "/pricing",
+          onError: (errMsg) => {
+            resetLock();
+            toast.error(errMsg || "Subscription processing failed. Please try again.");
+          },
+          onSuccess: () => {
+            resetLock();
+          },
+          onDismiss: () => {
+            resetLock();
+          },
+        });
+      } catch (err: any) {
+        resetLock();
+        toast.error(err?.message || "Failed to initiate subscription checkout.");
+      }
+      return;
+    }
+
     try {
       await handleProCheckout({
         planCode,
@@ -150,7 +188,11 @@ export default function PricingPage() {
     },
     {
       q: "Does my plan renew automatically?",
-      a: (
+      a: isAutoRenewEnabled ? (
+        <>
+          The Monthly plan auto-renews at flat ₹499/month until cancelled. You can cancel anytime from Settings &gt; Billing. Weekly and Quarterly plans are prepaid for a fixed duration and do not auto-renew.
+        </>
+      ) : (
         <>
           No. Plans are prepaid for a fixed duration and do not auto-renew. You pay once ({PREPAID_PRICE_SUMMARY}) and
           access ends when the period is over unless you choose to buy again.
@@ -184,7 +226,9 @@ export default function PricingPage() {
         </h1>
         <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
           <span className="sm:block">Full access to verified unindexed remote job listings.</span>{" "}
-          <span className="sm:block whitespace-nowrap">One-time payment, no auto-renewal.</span>
+          <span className="sm:block whitespace-nowrap">
+            {isAutoRenewEnabled ? "Flat ₹499/mo monthly auto-renew, cancel anytime." : "One-time payment, no auto-renewal."}
+          </span>
         </p>
       </header>
 
@@ -218,9 +262,13 @@ export default function PricingPage() {
                 <span className="text-4xl font-semibold text-[#090E34] dark:text-white tracking-tight">
                   {formatPriceINR(plan.price)}
                 </span>
-                <span className="text-sm text-slate-500 dark:text-slate-400">one-time</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  {isPopular && isAutoRenewEnabled ? "/month" : "one-time"}
+                </span>
               </div>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{durationDays} days access</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {isPopular && isAutoRenewEnabled ? "Auto-renews monthly" : `${durationDays} days access`}
+              </p>
 
               <ul className="mt-8 space-y-3 text-sm text-slate-700 dark:text-slate-300 flex-1">
                 {JOB_LISTING_FEATURES.map((feature) => (
@@ -241,11 +289,28 @@ export default function PricingPage() {
               </ul>
 
               <div className="mt-8">
+                {isPopular && isAutoRenewEnabled && isBillingEnabled && (
+                  <div className="mb-4">
+                    <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        data-testid="autorenew-consent-checkbox"
+                        aria-label="Authorize monthly auto-renewal"
+                        checked={autoRenewConsent}
+                        onChange={(e) => setAutoRenewConsent(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span>
+                        I authorize CareerMonke to charge ₹499/month until cancelled. I can cancel anytime from Settings.
+                      </span>
+                    </label>
+                  </div>
+                )}
                 {isBillingEnabled ? (
                   <button
                     type="button"
                     data-plan-code={plan.id}
-                    disabled={isCheckoutLocked}
+                    disabled={isCheckoutLocked || (isPopular && isAutoRenewEnabled && !autoRenewConsent)}
                     onClick={() => handleBuyPlan(plan.id)}
                     className={cnTokens(
                       "w-full min-h-[48px] rounded-xl font-semibold text-sm flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed",
@@ -301,7 +366,9 @@ export default function PricingPage() {
       <div className="w-full max-w-3xl mx-auto text-center space-y-3 text-xs text-slate-500 dark:text-slate-400">
         <p className="font-semibold text-[#090E34] dark:text-white">All sales final · no refunds</p>
         <p>
-          Plans are prepaid for a fixed duration and do not auto-renew. ({PREPAID_PRICE_SUMMARY}). Access ends automatically when the plan period expires.
+          {isAutoRenewEnabled
+            ? "Monthly plan auto-renews at flat ₹499/month until cancelled. Weekly and Quarterly plans are prepaid for a fixed duration."
+            : `Plans are prepaid for a fixed duration and do not auto-renew. (${PREPAID_PRICE_SUMMARY}). Access ends automatically when the plan period expires.`}
         </p>
         <nav aria-label="Policies" className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
           {policyLinks.map((link) => (

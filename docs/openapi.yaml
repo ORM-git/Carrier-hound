@@ -184,6 +184,12 @@ paths:
       description: Creates a recurring subscription via Razorpay /v1/subscriptions.
       responses:
         "200": { description: Subscription created }
+    delete:
+      tags: [billing]
+      summary: Cancel subscription auto-renewal
+      description: Cancels recurring auto-renewal at period end.
+      responses:
+        "200": { description: Subscription scheduled to cancel at period end }
   /api/billing/razorpay/verify:
     post:
       tags: [billing]

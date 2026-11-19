@@ -11,6 +11,12 @@ export type SubscriptionStatus =
   | "loading"
   | "unknown";
 
+export interface AutoRenewConsent {
+  agreed: boolean;
+  version: string;
+  timestamp: string;
+}
+
 export interface BillingPlan {
   id: string;
   name: string;
@@ -27,6 +33,7 @@ export interface UserSubscription {
   id: string;
   userId: string;
   provider: BillingProvider;
+  subscriptionId?: string;
   planId?: string;
   currency: string;
   amount?: number;

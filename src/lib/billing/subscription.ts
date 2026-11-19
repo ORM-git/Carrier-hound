@@ -325,7 +325,7 @@ export async function getUserSubscription(
     if (resolvedUserId) {
       const { data: sub, error } = await supabase
         .from("subscriptions")
-        .select("id, user_id, provider, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
+        .select("id, user_id, provider, subscription_id, plan_id, currency, amount, status, current_period_start, current_period_end, grace_period_end, cancel_at_period_end, metadata")
         .eq("user_id", resolvedUserId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -368,6 +368,7 @@ export async function getUserSubscription(
           id: sub.id,
           userId: sub.user_id,
           provider: sub.provider || "manual",
+          subscriptionId: sub.subscription_id || sub.metadata?.razorpay_subscription_id,
           planId: normalizedPlan || sub.plan_id || undefined,
           currency: rawCurrency,
           amount: resolvedAmount,
@@ -385,6 +386,56 @@ export async function getUserSubscription(
   }
 
   return null;
+}
+
+/**
+ * Cancels auto-renew subscription at the end of the current billing cycle.
+ * Calls the server-side cancellation endpoint which updates Razorpay and marks
+ * cancel_at_period_end = true in the database.
+ */
+export async function cancelAutoRenewSubscription(
+  authToken?: string
+): Promise<{ success: boolean; error?: string; cancelAtPeriodEnd?: boolean }> {
+  try {
+    let token = authToken;
+    if (!token) {
+      const { createClient } = await import("../supabase/client");
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      token = session?.access_token;
+    }
+
+    if (!token) {
+      return { success: false, error: "Please sign in to cancel subscription." };
+    }
+
+    const res = await fetch("/api/billing/razorpay/subscription", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data?.error || "Failed to cancel auto-renewal. Please contact support.",
+      };
+    }
+
+    invalidateProAccessCache();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("careermonke_pro_updated"));
+    }
+
+    return { success: true, cancelAtPeriodEnd: true };
+  } catch (err: any) {
+    log.error("Failed to cancel auto-renew subscription", { error: err });
+    return { success: false, error: err?.message || "Network error while cancelling auto-renewal." };
+  }
 }
 
 /**

@@ -95,7 +95,7 @@ export default function TermsPage() {
             <strong>Add-on packs:</strong> additional generation sets can only be added for additional usage on an active subscription; add-on sets are used only after your plan quota is exhausted and expire together with the subscription.
           </li>
           <li>
-            <strong>No automatic renewal:</strong> plans are prepaid for a fixed period and do not renew automatically. Prices are one-time, flat amounts: {PREPAID_PRICE_SUMMARY}. You are never charged again unless you choose to buy another plan, which extends your access period.
+            <strong>Plans and renewal:</strong> Weekly and Quarterly plans are prepaid for a fixed period and do not renew automatically. Plan prices: {PREPAID_PRICE_SUMMARY}. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month for up to 12 monthly billing cycles unless cancelled earlier. For the Monthly auto-renew subscription, your payment method is billed automatically at the end of each monthly billing cycle until cancelled or the 12-cycle maximum is reached. You can view your current cycle and cancel anytime before the next renewal date in Settings &gt; Billing.
           </li>
           <li>
             <strong>Payment gateway:</strong> Payments will open soon. When active, all transactions are processed in Indian Rupees (INR) through Razorpay, supporting UPI, NetBanking, and cards. We do not collect or store your complete card numbers, UPI PINs, or netbanking credentials.
@@ -115,7 +115,14 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Cancellation, Renewal, and Access After Cancellation</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            Plans do not renew automatically, so there is nothing to cancel. Your plan expires at the end of its paid period and your account returns to the free tier unless you choose to buy again.
+            Prepaid plans (Weekly, Quarterly) do not renew automatically. Your plan expires at the end of its paid period and your account returns to the free tier unless you choose to buy again.
+          </li>
+          <li>
+            <strong>How to cancel auto-renewal:</strong> If you are subscribed to the auto-renewing Monthly plan (₹499/month), you may cancel auto-renewal at any time before your next billing date directly from your account in Settings &gt; Billing or by contacting{" "}
+            <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
+              support@careermonke.com
+            </a>
+            . Cancellation takes effect at the end of your current monthly billing cycle: no further charges will be made, and you keep full Pro access until the cycle ends.
           </li>
           <li>
             If you stop using the service before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}
