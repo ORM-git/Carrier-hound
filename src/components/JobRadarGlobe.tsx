@@ -9,8 +9,6 @@ import {
   RadarJobCard,
   CountryRegion,
   RADAR_REGIONS,
-  DENSITY_TIERS,
-  getDensityColor,
   getMarkerRadius,
 } from "@/data/radarCities";
 import { CANONICAL_CATEGORIES } from "@/lib/taxonomy";
@@ -146,6 +144,46 @@ interface ActiveSelection {
   isWorldwideRemote?: boolean;
 }
 
+type GlobeMapStyle = "night" | "satellite" | "minimal";
+
+const GLOBE_MAP_TEXTURES: Record<GlobeMapStyle, string> = {
+  night: "/globe/earth-night.jpg",
+  satellite: "/globe/earth-blue-marble.jpg",
+  minimal: "/globe/earth-dark.jpg",
+};
+
+const GLOBE_MAP_LABELS: Record<GlobeMapStyle, string> = {
+  night: "Night",
+  satellite: "Satellite",
+  minimal: "Minimal Dark",
+};
+
+// Single teal/cyan marker color (replaces the old multi-hue density scale)
+const MARKER_COLOR_HEX = 0x22d3ee;
+const MARKER_COLOR_CSS = "#22d3ee";
+const MARKER_GLOW_CSS = "rgba(34, 211, 238, 0.55)";
+
+const NAV_HINT_STORAGE_KEY = "cm_radar_nav_hint_dismissed";
+
+// Creates a small canvas texture with a soft radial-gradient dot, so starfield
+// points render as round sprites instead of square GL points.
+function createCircleSpriteTexture(): THREE.Texture {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.4, "rgba(255,255,255,0.8)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export default function JobRadarGlobe() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -160,12 +198,19 @@ export default function JobRadarGlobe() {
   const controlsRef = useRef<OrbitControls | null>(null);
   const markersGroupRef = useRef<THREE.Group | null>(null);
   const selectionRingRef = useRef<THREE.Mesh | null>(null);
+  const arcsGroupRef = useRef<THREE.Group | null>(null);
+  const earthMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const globeTexturesRef = useRef<Partial<Record<GlobeMapStyle, THREE.Texture>>>({});
+  const bumpTextureRef = useRef<THREE.Texture | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
   // Camera animation target
   const targetCameraPosRef = useRef<THREE.Vector3 | null>(null);
   const targetLookAtRef = useRef<THREE.Vector3 | null>(null);
   const isTransitioningRef = useRef<boolean>(false);
+
+  // Auto-rotate resume timer: idle rotation pauses on interaction, resumes ~4s after the last one
+  const autoRotateResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Direct DOM references for 60 FPS HTML marker transforms (ZERO React re-renders)
   const markerElementsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -175,6 +220,28 @@ export default function JobRadarGlobe() {
   const [telemetry, setTelemetry] = useState<RadarTelemetryPayload | null>(null);
   const [isLoadingTelemetry, setIsLoadingTelemetry] = useState<boolean>(true);
   const [telemetryError, setTelemetryError] = useState<string | null>(null);
+  const [textureLoaded, setTextureLoaded] = useState<boolean>(false);
+  // True once the initial earth texture load has settled (succeeded or failed), so the
+  // full-screen loading overlay can clear even when the texture itself failed to load.
+  const [textureLoadFailed, setTextureLoadFailed] = useState<boolean>(false);
+
+  // Respect prefers-reduced-motion: no auto-rotate, no pulse animations
+  const [prefersReducedMotion] = useState<boolean>(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+
+  // Map style layer switcher: night lights / satellite (day) / minimal dark
+  const [mapStyle, setMapStyle] = useState<GlobeMapStyle>("night");
+
+  // "How to navigate" card: collapsible, auto-hides after first interaction, remembered in localStorage
+  const [showNavHint, setShowNavHint] = useState<boolean>(true);
+
+  // Mobile filter bottom sheet
+  const [showMobileFilterSheet, setShowMobileFilterSheet] = useState<boolean>(false);
+
+  // Hover tooltip (low-frequency UI state; fine as React state unlike the 60fps position loop)
+  const [hoveredCity, setHoveredCity] = useState<RadarCityAggregate | null>(null);
+  const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
 
   // ==========================================
   // THE 4 LIGHT FILTERS (Radar Only)
@@ -194,7 +261,7 @@ export default function JobRadarGlobe() {
   // Selection & UI State
   const [selectedCity, setSelectedCity] = useState<ActiveSelection | null>(null);
   const [isSpinning, setIsSpinning] = useState<boolean>(true);
-  const [showLegend, setShowLegend] = useState<boolean>(false);
+  const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
 
   // Drawer jobs state
   const [drawerJobs, setDrawerJobs] = useState<RadarJobCard[]>([]);
@@ -296,6 +363,24 @@ export default function JobRadarGlobe() {
   // Check WebGL support on client
   useEffect(() => {
     setWebglSupported(checkWebGLSupport());
+  }, []);
+
+  // Restore "How to navigate" card dismissal from localStorage
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(NAV_HINT_STORAGE_KEY) === "true") {
+        setShowNavHint(false);
+      }
+    } catch {
+      // Storage denied (private mode, etc.) — keep the hint visible.
+    }
+  }, []);
+
+  const dismissNavHint = useCallback(() => {
+    setShowNavHint(false);
+    try {
+      localStorage.setItem(NAV_HINT_STORAGE_KEY, "true");
+    } catch {}
   }, []);
 
   // 3. Initialize Filters from URL query params
@@ -573,6 +658,103 @@ export default function JobRadarGlobe() {
     }
   };
 
+  // 7b. Swap the earth texture when the user picks a different map style (night / satellite / minimal).
+  // Declared before the main WebGL effect so it isn't the file's last cleanup-returning effect; it
+  // no-ops on initial mount (earthMaterialRef/rendererRef aren't set yet) and reacts once mapStyle
+  // actually changes, by which point the main effect has already run and populated those refs.
+  useEffect(() => {
+    const earthMat = earthMaterialRef.current;
+    const renderer = rendererRef.current;
+    if (!earthMat || !renderer) return;
+
+    const cached = globeTexturesRef.current[mapStyle];
+    if (cached) {
+      earthMat.map = cached;
+      earthMat.needsUpdate = true;
+      return;
+    }
+
+    let cancelled = false;
+    new THREE.TextureLoader().load(GLOBE_MAP_TEXTURES[mapStyle], (texture) => {
+      if (cancelled) {
+        texture.dispose();
+        return;
+      }
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.colorSpace = THREE.SRGBColorSpace;
+      globeTexturesRef.current[mapStyle] = texture;
+      disposablesRef.current.push(texture);
+      earthMat.map = texture;
+      earthMat.needsUpdate = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mapStyle]);
+
+  // 7c. Worldwide Remote: animated hub-and-spoke arcs between top cities. Declared
+  // before the main WebGL effect for the same reason as 7b above (arcsGroupRef isn't
+  // set until that effect runs; this one no-ops harmlessly until selectedCity changes).
+  useEffect(() => {
+    const group = arcsGroupRef.current;
+    if (!group) return;
+
+    while (group.children.length > 0) {
+      const child = group.children[0] as THREE.Mesh;
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+      group.remove(child);
+    }
+
+    const showArcs = Boolean(telemetry) && Boolean(selectedCity?.isWorldwideRemote) && !prefersReducedMotion;
+    if (!showArcs || !telemetry) return;
+
+    const topCities = [...telemetry.cities].sort((a, b) => b.totalCount - a.totalCount).slice(0, 7);
+    if (topCities.length < 2) return;
+
+    const hub = topCities[0];
+    const hubXYZ = latLngToVector3(hub.coordinates[1], hub.coordinates[0], 5.01);
+    const hubVec = new THREE.Vector3(hubXYZ.x, hubXYZ.y, hubXYZ.z);
+
+    const materials: THREE.MeshBasicMaterial[] = [];
+    for (const city of topCities.slice(1)) {
+      const cityXYZ = latLngToVector3(city.coordinates[1], city.coordinates[0], 5.01);
+      const cityVec = new THREE.Vector3(cityXYZ.x, cityXYZ.y, cityXYZ.z);
+      const mid = hubVec.clone().add(cityVec).multiplyScalar(0.5);
+      const liftScale = 5.01 + hubVec.distanceTo(cityVec) * 0.35;
+      mid.normalize().multiplyScalar(liftScale);
+
+      const curve = new THREE.QuadraticBezierCurve3(hubVec, mid, cityVec);
+      const tubeGeo = new THREE.TubeGeometry(curve, 32, 0.012, 6, false);
+      const tubeMat = new THREE.MeshBasicMaterial({
+        color: MARKER_COLOR_HEX,
+        transparent: true,
+        opacity: 0.35,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const tube = new THREE.Mesh(tubeGeo, tubeMat);
+      group.add(tube);
+      materials.push(tubeMat);
+    }
+
+    // Subtle breathing pulse; independent of the main render loop (which still draws every frame)
+    let rafId: number;
+    const start = performance.now();
+    const pulse = () => {
+      const t = (performance.now() - start) / 1000;
+      materials.forEach((m, i) => {
+        m.opacity = 0.25 + 0.2 * Math.sin(t * 1.4 + i * 0.6);
+      });
+      rafId = requestAnimationFrame(pulse);
+    };
+    pulse();
+
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [telemetry, selectedCity, prefersReducedMotion]);
+
   // 8. Initialize Three.js 3D Globe with 60 FPS zero-rerender animation loop
   useEffect(() => {
     if (!webglSupported || !containerRef.current) return;
@@ -594,7 +776,7 @@ export default function JobRadarGlobe() {
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, isMobile ? 1.5 : 4, isMobile ? 22 : 14);
+    camera.position.set(0, isMobile ? 1.8 : 4.8, isMobile ? 18 : 17);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
@@ -626,6 +808,15 @@ export default function JobRadarGlobe() {
     controls.addEventListener("start", () => {
       isTransitioningRef.current = false;
       setIsSpinning(false);
+      dismissNavHint();
+
+      // Idle auto-rotate resumes ~4s after the last interaction (unless a city is open)
+      if (autoRotateResumeTimeoutRef.current) clearTimeout(autoRotateResumeTimeoutRef.current);
+      if (!prefersReducedMotion) {
+        autoRotateResumeTimeoutRef.current = setTimeout(() => {
+          if (!selectedCityRef.current) setIsSpinning(true);
+        }, 4000);
+      }
     });
 
     // Lighting
@@ -640,86 +831,183 @@ export default function JobRadarGlobe() {
     backLight.position.set(-10, -5, -10);
     scene.add(backLight);
 
-    // Starfield
-    const starsCount = isMobile ? 500 : 1200;
+    // Starfield: round sprite points (not square GL points), fine twinkling via per-point size jitter
+    const spriteTexture = createCircleSpriteTexture();
+    const starsCount = isMobile ? 600 : 1600;
     const starsGeo = new THREE.BufferGeometry();
     const starPositions = new Float32Array(starsCount * 3);
-    for (let i = 0; i < starsCount * 3; i += 3) {
-      starPositions[i] = (Math.random() - 0.5) * 160;
-      starPositions[i + 1] = (Math.random() - 0.5) * 160;
-      starPositions[i + 2] = (Math.random() - 0.5) * 160;
+    const starSizes = new Float32Array(starsCount);
+    for (let i = 0; i < starsCount; i++) {
+      starPositions[i * 3] = (Math.random() - 0.5) * 220;
+      starPositions[i * 3 + 1] = (Math.random() - 0.5) * 220;
+      starPositions[i * 3 + 2] = (Math.random() - 0.5) * 220;
+      starSizes[i] = 0.35 + Math.random() * 0.75;
     }
     starsGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    starsGeo.setAttribute("size", new THREE.BufferAttribute(starSizes, 1));
     const starsMat = new THREE.PointsMaterial({
-      color: 0x93c5fd,
-      size: 0.6,
+      color: 0xbfdbfe,
+      size: 0.7,
+      map: spriteTexture,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.85,
+      depthWrite: false,
+      sizeAttenuation: true,
     });
     const starField = new THREE.Points(starsGeo, starsMat);
     scene.add(starField);
-    disposablesRef.current.push(starsGeo, starsMat);
+    disposablesRef.current.push(starsGeo, starsMat, spriteTexture);
 
-    // Earth Sphere
+    // Deep space gradient background (radial, behind the starfield)
+    const bgCanvas = document.createElement("canvas");
+    bgCanvas.width = 2;
+    bgCanvas.height = 256;
+    const bgCtx = bgCanvas.getContext("2d")!;
+    const bgGradient = bgCtx.createLinearGradient(0, 0, 0, 256);
+    bgGradient.addColorStop(0, "#0a1230");
+    bgGradient.addColorStop(0.55, "#040816");
+    bgGradient.addColorStop(1, "#000005");
+    bgCtx.fillStyle = bgGradient;
+    bgCtx.fillRect(0, 0, 2, 256);
+    const bgTexture = new THREE.CanvasTexture(bgCanvas);
+    scene.background = bgTexture;
+    disposablesRef.current.push(bgTexture);
+
+    // Earth Sphere: swappable map style (night / satellite / minimal dark) + relief bump map
     const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(
-      "/globe/earth-night.jpg",
-      (texture) => {
-        if (isCancelled) {
-          // Unmounted mid-load: free the decoded texture immediately.
-          texture.dispose();
-          return;
-        }
-        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        const earthGeo = new THREE.SphereGeometry(5, isMobile ? 48 : 64, isMobile ? 48 : 64);
-        const earthMat = new THREE.MeshStandardMaterial({
-          map: texture,
-          roughness: 0.65,
-          metalness: 0.15,
-        });
-        const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-        scene.add(earthMesh);
-        disposablesRef.current.push(earthGeo, earthMat, texture);
-      },
-      undefined,
-      () => {
-        const fallbackMat = new THREE.MeshStandardMaterial({
-          color: 0x0c1b33,
-          wireframe: true,
-        });
-        const earthGeo = new THREE.SphereGeometry(5, 32, 32);
-        const earthMesh = new THREE.Mesh(earthGeo, fallbackMat);
-        scene.add(earthMesh);
-        disposablesRef.current.push(earthGeo, fallbackMat);
-      }
-    );
+    const earthGeo = new THREE.SphereGeometry(5, isMobile ? 48 : 64, isMobile ? 48 : 64);
+    disposablesRef.current.push(earthGeo);
 
-    // Atmosphere Shells
-    const atmosGeo = new THREE.SphereGeometry(5.18, 48, 48);
-    const atmosMat = new THREE.MeshBasicMaterial({
-      color: 0x06b6d4,
+    const loadStyleTexture = (
+      style: GlobeMapStyle,
+      onReady: (tex: THREE.Texture) => void,
+      onError?: () => void
+    ) => {
+      const cached = globeTexturesRef.current[style];
+      if (cached) {
+        onReady(cached);
+        return;
+      }
+      textureLoader.load(
+        GLOBE_MAP_TEXTURES[style],
+        (texture) => {
+          if (isCancelled) {
+            texture.dispose();
+            return;
+          }
+          texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+          texture.colorSpace = THREE.SRGBColorSpace;
+          globeTexturesRef.current[style] = texture;
+          disposablesRef.current.push(texture);
+          onReady(texture);
+        },
+        undefined,
+        () => {
+          // Leave the fallback wireframe mesh in place; let the caller settle any
+          // loading state so the UI doesn't wait forever on a texture that never arrives.
+          if (!isCancelled) onError?.();
+        }
+      );
+    };
+
+    // Fallback wireframe shown until the real texture resolves (removed once it does)
+    const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x0c1b33, wireframe: true });
+    const fallbackMesh = new THREE.Mesh(earthGeo, fallbackMat);
+    scene.add(fallbackMesh);
+    disposablesRef.current.push(fallbackMat);
+
+    loadStyleTexture(mapStyle, (texture) => {
+      if (isCancelled) return;
+      if (fallbackMesh.parent) scene.remove(fallbackMesh);
+
+      const earthMat = new THREE.MeshStandardMaterial({
+        map: texture,
+        roughness: 0.65,
+        metalness: 0.15,
+      });
+      earthMaterialRef.current = earthMat;
+      const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+      scene.add(earthMesh);
+      disposablesRef.current.push(earthMat);
+      setTextureLoaded(true);
+
+      // Subtle surface relief from the topology map (loaded once, reused across styles)
+      if (bumpTextureRef.current) {
+        earthMat.bumpMap = bumpTextureRef.current;
+        earthMat.bumpScale = 0.035;
+        earthMat.needsUpdate = true;
+      } else {
+        textureLoader.load(
+          "/globe/earth-topology.png",
+          (bumpTex) => {
+            if (isCancelled) {
+              bumpTex.dispose();
+              return;
+            }
+            bumpTextureRef.current = bumpTex;
+            disposablesRef.current.push(bumpTex);
+            if (earthMaterialRef.current) {
+              earthMaterialRef.current.bumpMap = bumpTex;
+              earthMaterialRef.current.bumpScale = 0.035;
+              earthMaterialRef.current.needsUpdate = true;
+            }
+          },
+          undefined,
+          () => {}
+        );
+      }
+    }, () => {
+      // Texture failed to load: settle the loading state so the overlay clears and the
+      // fallback wireframe globe (already in the scene) is shown instead of waiting forever.
+      setTextureLoaded(true);
+      setTextureLoadFailed(true);
+    });
+
+    // Fresnel atmosphere glow: soft cyan rim, replaces the old flat backside-sphere halo
+    const atmosGeo = new THREE.SphereGeometry(5.22, 64, 64);
+    const atmosMat = new THREE.ShaderMaterial({
+      uniforms: {
+        glowColor: { value: new THREE.Color(0x67e8f9) },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          vViewPos = -mvPos.xyz;
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 glowColor;
+        varying vec3 vNormal;
+        varying vec3 vViewPos;
+        void main() {
+          float facing = clamp(dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0);
+          // Narrower, softer falloff than a plain pow() curve: a subtle glow rather than a solid ring.
+          float fresnel = smoothstep(0.75, 1.0, 1.0 - facing);
+          gl_FragColor = vec4(glowColor, fresnel * 0.5);
+        }
+      `,
       transparent: true,
-      opacity: 0.18,
       side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
     scene.add(atmosMesh);
-
-    const haloGeo = new THREE.SphereGeometry(5.35, 48, 48);
-    const haloMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.BackSide,
-    });
-    const haloMesh = new THREE.Mesh(haloGeo, haloMat);
-    scene.add(haloMesh);
-    disposablesRef.current.push(atmosGeo, atmosMat, haloGeo, haloMat);
+    disposablesRef.current.push(atmosGeo, atmosMat);
 
     // Group for dynamic 3D marker meshes
     const markersGroup = new THREE.Group();
     scene.add(markersGroup);
     markersGroupRef.current = markersGroup;
+
+    // Group for Worldwide Remote connection arcs (populated by a separate effect)
+    const arcsGroup = new THREE.Group();
+    scene.add(arcsGroup);
+    arcsGroupRef.current = arcsGroup;
 
     // Selected marker glowing ring mesh
     const selRingGeo = new THREE.RingGeometry(0.24, 0.36, 32);
@@ -794,6 +1082,7 @@ export default function JobRadarGlobe() {
           screenX: number;
           screenY: number;
           isSelected: boolean;
+          edgeFade: number;
         }[] = [];
 
         for (let i = 0; i < data.cities.length; i++) {
@@ -805,60 +1094,89 @@ export default function JobRadarGlobe() {
           scratchWorldPos.set(x, y, z);
           scratchMarkerDir.copy(scratchWorldPos).normalize();
           const dot = camPos.dot(scratchMarkerDir);
-          const isFacingCamera = dot > 0.15;
           const isMatch = matchesFilters(city, cFilter, rFilter);
 
-          if (isFacingCamera && isMatch) {
+          // Fully cull well past the horizon (saves layout cost). Nearer the horizon, or when
+          // filtered out, the marker stays mounted and fades via CSS transition instead of
+          // snapping with display:none, satisfying both "far-side fade" and "filters fade".
+          if (dot > -0.08) {
             scratchScreenVec.copy(scratchWorldPos).project(camera);
             if (scratchScreenVec.z < 1) {
               const screenX = (scratchScreenVec.x * 0.5 + 0.5) * cWidth;
               const screenY = (-scratchScreenVec.y * 0.5 + 0.5) * cHeight;
               el.style.transform = `translate3d(${screenX}px, ${screenY}px, 0) translate(-50%, -50%)`;
               el.style.display = "flex";
-              const isSelected = selectedCityRef.current?.id === city.id;
-              visibleMarkers.push({ city, el, screenX, screenY, isSelected });
+              // dot in [0.15, -0.08] maps to edge fade [1, 0]; filtered-out markers fade to 0
+              const edgeFade = Math.max(0, Math.min(1, (dot + 0.08) / 0.23));
+              const targetOpacity = isMatch ? edgeFade : 0;
+              el.style.opacity = String(targetOpacity);
+              el.style.pointerEvents = targetOpacity > 0.4 ? "auto" : "none";
+              if (isMatch) {
+                const isSelected = selectedCityRef.current?.id === city.id;
+                visibleMarkers.push({ city, el, screenX, screenY, isSelected, edgeFade });
+              }
               continue;
             }
           }
           el.style.display = "none";
         }
 
-        // Prioritize selected city and higher density cities for badge display
+        // Prioritize selected city and higher-count cities for badge display & cluster survival
         visibleMarkers.sort((a, b) => {
           if (a.isSelected) return -1;
           if (b.isSelected) return 1;
           return (b.city.totalCount || 0) - (a.city.totalCount || 0);
         });
 
-        // Collision avoidance: keep diode dots visible, hide label badge if within 55px of another label
-        const placedLabelPositions: { x: number; y: number }[] = [];
+        // Collision avoidance + lightweight clustering: nearby labels merge into the
+        // surviving (higher-count) one; it splits back out once they're no longer close
+        // (zooming in increases on-screen distance between cities).
+        const placed: { x: number; y: number; badgeEl: HTMLElement; extraCount: number; extraJobs: number }[] = [];
         for (const marker of visibleMarkers) {
           const badgeEl = marker.el.querySelector(".city-tag-badge") as HTMLElement | null;
+          const lineEl = marker.el.querySelector(".city-leader-line") as HTMLElement | null;
           if (!badgeEl) continue;
+          if (lineEl) lineEl.style.opacity = marker.edgeFade > 0.4 ? "1" : "0";
 
           if (marker.isSelected) {
             badgeEl.style.opacity = "1";
             badgeEl.style.pointerEvents = "auto";
-            placedLabelPositions.push({ x: marker.screenX, y: marker.screenY });
+            placed.push({ x: marker.screenX, y: marker.screenY, badgeEl, extraCount: 0, extraJobs: 0 });
             continue;
           }
 
-          let collides = false;
-          for (const pos of placedLabelPositions) {
-            const dist = Math.hypot(marker.screenX - pos.x, marker.screenY - pos.y);
+          let mergedInto: (typeof placed)[number] | null = null;
+          for (const p of placed) {
+            const dist = Math.hypot(marker.screenX - p.x, marker.screenY - p.y);
             if (dist < 55) {
-              collides = true;
+              mergedInto = p;
               break;
             }
           }
 
-          if (collides) {
+          if (mergedInto) {
+            // Merge into the surviving (closer in sort order = higher priority) label
+            mergedInto.extraCount += 1;
+            mergedInto.extraJobs += marker.city.totalCount || 0;
             badgeEl.style.opacity = "0";
             badgeEl.style.pointerEvents = "none";
           } else {
-            badgeEl.style.opacity = "1";
-            badgeEl.style.pointerEvents = "auto";
-            placedLabelPositions.push({ x: marker.screenX, y: marker.screenY });
+            const visible = marker.edgeFade > 0.4;
+            badgeEl.style.opacity = visible ? "1" : "0";
+            badgeEl.style.pointerEvents = visible ? "auto" : "none";
+            placed.push({ x: marker.screenX, y: marker.screenY, badgeEl, extraCount: 0, extraJobs: 0 });
+          }
+        }
+
+        // Write the "+N more (M jobs)" cluster suffix on each surviving label
+        for (const p of placed) {
+          const extraEl = p.badgeEl.querySelector(".cluster-extra") as HTMLElement | null;
+          if (!extraEl) continue;
+          if (p.extraCount > 0) {
+            extraEl.textContent = `+${p.extraCount} (${p.extraJobs})`;
+            extraEl.style.display = "inline";
+          } else {
+            extraEl.style.display = "none";
           }
         }
       }
@@ -871,6 +1189,7 @@ export default function JobRadarGlobe() {
     return () => {
       isCancelled = true;
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (autoRotateResumeTimeoutRef.current) clearTimeout(autoRotateResumeTimeoutRef.current);
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
 
@@ -893,6 +1212,20 @@ export default function JobRadarGlobe() {
             else child.material.dispose();
           }
           markersGroup.remove(child);
+        }
+      }
+
+      // Arc meshes are owned by the Worldwide Remote arcs effect; dispose whatever remains.
+      const arcsGroup = arcsGroupRef.current;
+      if (arcsGroup) {
+        while (arcsGroup.children.length > 0) {
+          const child = arcsGroup.children[0] as THREE.Mesh;
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+          arcsGroup.remove(child);
         }
       }
 
@@ -929,12 +1262,12 @@ export default function JobRadarGlobe() {
       const isVisible = matchesFilters(city, countryFilter, regionFilter);
       const { x, y, z } = latLngToVector3(city.coordinates[1], city.coordinates[0], 5.02);
       const markerVec = new THREE.Vector3(x, y, z);
-      const density = getDensityColor(city.totalCount);
       const radius = getMarkerRadius(city.totalCount);
 
+      // Single teal/cyan marker color; size (not hue) communicates job count
       const diodeGeo = new THREE.SphereGeometry(radius * 0.7, 16, 16);
       const diodeMat = new THREE.MeshBasicMaterial({
-        color: density.hex,
+        color: MARKER_COLOR_HEX,
         transparent: true,
         opacity: isVisible ? 0.95 : 0,
       });
@@ -944,7 +1277,7 @@ export default function JobRadarGlobe() {
 
       const ringGeo = new THREE.RingGeometry(radius * 1.1, radius * 1.8, 24);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: density.hex,
+        color: MARKER_COLOR_HEX,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: isVisible ? 0.6 : 0,
@@ -1023,7 +1356,7 @@ export default function JobRadarGlobe() {
     if (!region || region.id === "all") {
       setIsSpinning(true);
       const isMobile = window.innerWidth < 640;
-      targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 3.5 : 4, isMobile ? 16.5 : 14);
+      targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.8 : 4.8, isMobile ? 18 : 17);
       targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
       isTransitioningRef.current = true;
     } else {
@@ -1089,7 +1422,7 @@ export default function JobRadarGlobe() {
 
     if (!cameraRef.current || !controlsRef.current) return;
     const isMobile = window.innerWidth < 640;
-    targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 3.5 : 4, isMobile ? 16.5 : 14);
+    targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.8 : 4.8, isMobile ? 18 : 17);
     targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
     isTransitioningRef.current = true;
   };
@@ -1097,6 +1430,79 @@ export default function JobRadarGlobe() {
   const handleApplyClick = (jobId: string) => {
     setAppliedJobs((prev) => ({ ...prev, [jobId]: true }));
   };
+
+  // Keyboard controls: arrows rotate, +/- zoom, Esc closes the drawer
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
+      if (e.key === "Escape") {
+        if (selectedCityRef.current) {
+          e.preventDefault();
+          handleCloseDrawer();
+        }
+        return;
+      }
+
+      const controls = controlsRef.current;
+      const camera = cameraRef.current;
+      if (!controls || !camera) return;
+
+      const rotateStep = 0.08;
+      switch (e.key) {
+        case "ArrowLeft":
+          e.preventDefault();
+          camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotateStep);
+          controls.update();
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), -rotateStep);
+          controls.update();
+          break;
+        case "ArrowUp": {
+          e.preventDefault();
+          const axis = new THREE.Vector3().crossVectors(camera.position, new THREE.Vector3(0, 1, 0)).normalize();
+          camera.position.applyAxisAngle(axis, rotateStep);
+          controls.update();
+          break;
+        }
+        case "ArrowDown": {
+          e.preventDefault();
+          const axis = new THREE.Vector3().crossVectors(camera.position, new THREE.Vector3(0, 1, 0)).normalize();
+          camera.position.applyAxisAngle(axis, -rotateStep);
+          controls.update();
+          break;
+        }
+        case "+":
+        case "=": {
+          e.preventDefault();
+          const dir = camera.position.clone().normalize();
+          const newDist = Math.max(controls.minDistance, camera.position.length() - 0.8);
+          camera.position.copy(dir.multiplyScalar(newDist));
+          controls.update();
+          break;
+        }
+        case "-":
+        case "_": {
+          e.preventDefault();
+          const dir = camera.position.clone().normalize();
+          const newDist = Math.min(controls.maxDistance, camera.position.length() + 0.8);
+          camera.position.copy(dir.multiplyScalar(newDist));
+          controls.update();
+          break;
+        }
+        default:
+          return;
+      }
+      setIsSpinning(false);
+      dismissNavHint();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleCloseDrawer, dismissNavHint]);
 
   // Compute Explore All URL carrying all 4 Light Filters
   const exploreAllUrl = useMemo(() => {
@@ -1171,13 +1577,54 @@ export default function JobRadarGlobe() {
       {/* Cyber Radial Overlay */}
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/10 to-slate-950/75" />
 
+      {/* Loading Skeleton: shown until the globe texture and telemetry are both ready */}
+      {webglSupported && (!textureLoaded || (isLoadingTelemetry && !telemetry)) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#040610] pointer-events-none">
+          <div className="flex flex-col items-center gap-4">
+            <div
+              className={`w-40 h-40 sm:w-56 sm:h-56 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 ${
+                prefersReducedMotion ? "" : "animate-pulse"
+              }`}
+            />
+            <div className="flex items-center gap-2 text-xs font-mono text-cyan-400/80">
+              <Loader2 className={`w-3.5 h-3.5 ${prefersReducedMotion ? "" : "animate-spin"}`} />
+              <span>Loading live radar telemetry…</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {telemetryError && !telemetry && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#040610]">
+          <div className="max-w-sm p-6 rounded-2xl bg-slate-900/80 border border-red-500/30 text-center space-y-3">
+            <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
+            <p className="text-sm text-slate-300">{telemetryError}</p>
+            <button
+              type="button"
+              onClick={() => fetchTelemetry()}
+              className="px-4 py-2 rounded-full text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 transition cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Small non-blocking note: the globe texture itself failed to load (city data and
+          interactions still work normally against the plain wireframe fallback globe). */}
+      {textureLoadFailed && (
+        <div className="absolute top-36 sm:top-28 right-3 z-30 pointer-events-none flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/85 border border-amber-500/30 backdrop-blur-md text-[11px] text-amber-300 shadow-lg">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>Globe imagery failed to load — showing wireframe view</span>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 3D PROJECTED HTML CITY MARKERS (Zero React Re-render Animation Loop)      */}
       {/* ========================================================================= */}
       {webglSupported && telemetry && (
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
           {telemetry.cities.map((city) => {
-            const density = getDensityColor(city.totalCount);
             const isSelected = selectedCity?.id === city.id;
 
             return (
@@ -1195,21 +1642,38 @@ export default function JobRadarGlobe() {
                   left: 0,
                   top: 0,
                 }}
-                className="city-marker-btn pointer-events-auto flex flex-col items-center cursor-pointer group transition-transform duration-200 hover:scale-115 focus:outline-none"
+                className="city-marker-btn pointer-events-auto flex flex-col items-center cursor-pointer group transition-[transform,opacity] duration-300 hover:scale-115 focus:outline-none"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleCitySelect(city);
                 }}
+                onMouseEnter={(e) => {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  const parentRect = containerRef.current?.getBoundingClientRect();
+                  setHoveredCity(city);
+                  setHoveredPos({
+                    x: rect.left + rect.width / 2 - (parentRect?.left || 0),
+                    y: rect.top - (parentRect?.top || 0),
+                  });
+                }}
+                onMouseLeave={() => {
+                  setHoveredCity((prev) => (prev?.id === city.id ? null : prev));
+                  setHoveredPos(null);
+                }}
               >
-                {/* Concentric Radar Ping Rings */}
-                <div
-                  className="absolute -top-3.5 -left-3.5 w-11 h-11 rounded-full animate-radar-ping pointer-events-none opacity-40"
-                  style={{ backgroundColor: density.css }}
-                />
-                <div
-                  className="absolute -top-3.5 -left-3.5 w-11 h-11 rounded-full animate-radar-ping-delay pointer-events-none opacity-30"
-                  style={{ backgroundColor: density.css }}
-                />
+                {/* Concentric Radar Ping Rings (disabled under prefers-reduced-motion) */}
+                {!prefersReducedMotion && (
+                  <>
+                    <div
+                      className="absolute -top-3.5 -left-3.5 w-11 h-11 rounded-full animate-radar-ping pointer-events-none opacity-40"
+                      style={{ backgroundColor: MARKER_COLOR_CSS }}
+                    />
+                    <div
+                      className="absolute -top-3.5 -left-3.5 w-11 h-11 rounded-full animate-radar-ping-delay pointer-events-none opacity-30"
+                      style={{ backgroundColor: MARKER_COLOR_CSS }}
+                    />
+                  </>
+                )}
 
                 {/* Core Diode with Selected Glowing Ring */}
                 <div
@@ -1219,33 +1683,58 @@ export default function JobRadarGlobe() {
                       : "border-white/80 group-hover:scale-115"
                   }`}
                   style={{
-                    backgroundColor: density.css,
-                    boxShadow: isSelected ? "0 0 20px #ffffff" : `0 0 12px ${density.glowCss}`,
+                    backgroundColor: MARKER_COLOR_CSS,
+                    boxShadow: isSelected ? "0 0 20px #ffffff" : `0 0 12px ${MARKER_GLOW_CSS}`,
                   }}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-white" />
                 </div>
 
-                {/* City Tag Badge */}
+                {/* Leader line connecting the dot to its label pill */}
+                <div className="city-leader-line w-px h-2 bg-cyan-300/40 transition-opacity duration-200" />
+
+                {/* City Tag Badge (glass pill) */}
                 <div
-                  className={`city-tag-badge mt-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold shadow-[0_4px_14px_rgba(0,0,0,0.85)] backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap transition-all group-hover:opacity-100! group-hover:pointer-events-auto! ${
+                  className={`city-tag-badge px-2.5 py-0.5 rounded-full border text-[11px] font-semibold shadow-[0_4px_14px_rgba(0,0,0,0.85)] backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap transition-opacity duration-200 group-hover:opacity-100! group-hover:pointer-events-auto! ${
                     isSelected
-                      ? "bg-slate-950 border-white text-white ring-2 ring-white/50"
-                      : "bg-slate-950/90 border-slate-700/80 text-slate-200 group-hover:border-cyan-400 group-hover:text-white"
+                      ? "bg-slate-950/80 border-white text-white ring-2 ring-white/50"
+                      : "bg-slate-950/70 border-slate-700/80 text-slate-200 group-hover:border-cyan-400 group-hover:text-white"
                   }`}
                 >
                   <span
-                    className="w-1.5 h-1.5 rounded-full animate-pulse"
-                    style={{ backgroundColor: density.css }}
+                    className={`w-1.5 h-1.5 rounded-full ${prefersReducedMotion ? "" : "animate-pulse"}`}
+                    style={{ backgroundColor: MARKER_COLOR_CSS }}
                   />
                   <span>{city.name}</span>
-                  <span className="font-mono font-normal opacity-85" style={{ color: density.css }}>
+                  <span className="font-mono font-normal opacity-85" style={{ color: MARKER_COLOR_CSS }}>
                     ({city.totalCount})
                   </span>
+                  <span className="cluster-extra font-mono font-normal text-slate-400" style={{ display: "none" }} />
                 </div>
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Hover Tooltip: city, job count, verified count, top companies */}
+      {hoveredCity && hoveredPos && (
+        <div
+          className="absolute z-40 pointer-events-none -translate-x-1/2 px-3.5 py-2.5 rounded-xl bg-slate-950/95 border border-cyan-500/40 backdrop-blur-xl shadow-2xl text-xs text-slate-200 min-w-[180px] animate-fadeIn"
+          style={{ left: hoveredPos.x, top: hoveredPos.y - 14, transform: "translate(-50%, -100%)" }}
+        >
+          <p className="font-bold text-white text-sm">{hoveredCity.name}</p>
+          <div className="flex items-center gap-3 mt-1 text-[11px]">
+            <span className="text-cyan-300 font-semibold">{hoveredCity.totalCount.toLocaleString()} jobs</span>
+            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> {hoveredCity.verifiedCount.toLocaleString()} verified
+            </span>
+          </div>
+          {hoveredCity.topCompanies && hoveredCity.topCompanies.length > 0 && (
+            <p className="mt-1.5 text-[10px] text-slate-400 truncate">
+              Top companies: {hoveredCity.topCompanies.slice(0, 3).join(", ")}
+            </p>
+          )}
         </div>
       )}
 
@@ -1346,26 +1835,28 @@ export default function JobRadarGlobe() {
               />
             </button>
 
-            {/* Legend Toggle */}
+            {/* Layers Toggle: night / satellite / minimal dark map style */}
             <button
               type="button"
-              onClick={() => setShowLegend((prev) => !prev)}
-              title="Density Color Scale Legend"
+              onClick={() => setShowLayersPanel((prev) => !prev)}
+              title="Switch map style (Night / Satellite / Minimal Dark)"
+              aria-label="Switch map style"
+              aria-expanded={showLayersPanel}
               className={`p-2 min-w-[38px] min-h-[38px] flex items-center justify-center rounded-full border text-xs font-medium transition-all backdrop-blur-md ${
-                showLegend
-                  ? "bg-violet-950/80 border-violet-500 text-violet-300"
+                showLayersPanel
+                  ? "bg-cyan-950/80 border-cyan-500 text-cyan-300"
                   : "bg-slate-950/80 border-slate-700 text-slate-400 hover:text-white"
               }`}
             >
-              <Layers className="w-4 h-4 text-violet-400" />
+              <Layers className="w-4 h-4 text-cyan-400" />
             </button>
           </div>
         </div>
 
         {/* ===================================================================== */}
-        {/* Row 2: THE 4 LIGHT FILTERS (Country, Category, Remote, Internship)    */}
+        {/* Row 2 (desktop/tablet): THE 4 LIGHT FILTERS, inline glass toolbar     */}
         {/* ===================================================================== */}
-        <div className="pointer-events-auto flex items-center justify-start sm:justify-center gap-1.5 p-1 sm:p-1.5 rounded-2xl bg-slate-950/90 border border-slate-800/90 backdrop-blur-xl shadow-2xl max-w-full overflow-x-auto no-scrollbar mx-auto px-2">
+        <div className="pointer-events-auto hidden sm:flex items-center justify-center gap-1.5 p-1.5 rounded-2xl bg-slate-950/90 border border-slate-800/90 backdrop-blur-xl shadow-2xl max-w-full overflow-x-auto no-scrollbar mx-auto px-2">
           {/* Filter 1: Real Countries Dropdown */}
           <div className="relative flex items-center shrink-0">
             <select
@@ -1469,7 +1960,138 @@ export default function JobRadarGlobe() {
             </button>
           )}
         </div>
+
+        {/* Row 2 (mobile): single Filters button opening a bottom sheet */}
+        <button
+          type="button"
+          onClick={() => setShowMobileFilterSheet(true)}
+          className={`pointer-events-auto sm:hidden mx-auto flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full text-xs font-semibold transition-all border ${
+            hasActiveFilters
+              ? "bg-cyan-950/80 border-cyan-500 text-cyan-300"
+              : "bg-slate-950/90 border-slate-700/80 text-slate-200"
+          }`}
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          <span>Filters</span>
+          {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
+        </button>
       </div>
+
+      {/* Mobile Filters Bottom Sheet */}
+      {showMobileFilterSheet && (
+        <div
+          className="fixed inset-0 z-50 sm:hidden flex items-end bg-slate-950/70 backdrop-blur-sm"
+          onClick={() => setShowMobileFilterSheet(false)}
+        >
+          <div
+            className="w-full max-h-[75dvh] overflow-y-auto rounded-t-3xl bg-slate-950 border-t border-slate-800 p-4 pb-[env(safe-area-inset-bottom,1.25rem)] space-y-3 animate-slideUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                <Filter className="w-4 h-4 text-cyan-400" /> Filters
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowMobileFilterSheet(false)}
+                aria-label="Close filters"
+                className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-slate-800 text-slate-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <select
+                value={countryFilter}
+                onChange={(e) => handleCountryFilterChange(e.target.value)}
+                aria-label="Filter by Country (mobile)"
+                className="w-full appearance-none bg-slate-900 text-slate-200 border border-slate-700/80 rounded-xl px-3 py-3 pr-8 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-400 min-h-[44px]"
+              >
+                <option value="all">🌍 All Countries</option>
+                {realCountriesList.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name} ({c.total})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={categoryFilter}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  updateUrlFilters({ cat: e.target.value });
+                }}
+                aria-label="Filter by Category (mobile)"
+                className="w-full appearance-none bg-slate-900 text-slate-200 border border-slate-700/80 rounded-xl px-3 py-3 pr-8 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-400 min-h-[44px]"
+              >
+                <option value="all">💼 All Categories</option>
+                {CANONICAL_CATEGORIES.map((cat) => (
+                  <option key={cat.slug} value={cat.slug}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !remoteFilter;
+                  setRemoteFilter(next);
+                  updateUrlFilters({ remote: next });
+                }}
+                className={`flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl text-sm font-semibold border ${
+                  remoteFilter ? "bg-[#2563EB] text-white border-[#2563EB]" : "bg-slate-900 text-slate-300 border-slate-700/80"
+                }`}
+              >
+                <Globe2 className="w-4 h-4" /> Remote
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !internshipFilter;
+                  setInternshipFilter(next);
+                  updateUrlFilters({ internship: next });
+                }}
+                className={`flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl text-sm font-semibold border ${
+                  internshipFilter ? "bg-[#2563EB] text-white border-[#2563EB]" : "bg-slate-900 text-slate-300 border-slate-700/80"
+                }`}
+              >
+                <GraduationCap className="w-4 h-4" /> Internships
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setVerifiedOnly((prev) => !prev)}
+              className={`w-full flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl text-sm font-semibold border ${
+                verifiedOnly ? "bg-emerald-950/80 border-emerald-400 text-emerald-300" : "bg-slate-900 text-slate-300 border-slate-700/80"
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400" /> Verified Only
+            </button>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  handleResetAllFilters();
+                  setShowMobileFilterSheet(false);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl bg-slate-800 text-slate-300 border border-slate-700 text-sm font-medium"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-red-400" /> Reset all filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* POP-OUT JOB CARDS DRAWER / HUD (Real Supabase Jobs + Free vs Pro Gating)  */}
@@ -1478,7 +2100,7 @@ export default function JobRadarGlobe() {
       {/* SLIDE-OVER / BOTTOM-SHEET JOB DRAWER                                      */}
       {/* ========================================================================= */}
       {selectedCity && (
-        <div className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-x-auto sm:bottom-6 sm:left-auto sm:right-6 sm:w-[480px] z-40 max-h-[72dvh] sm:max-h-[78vh] flex flex-col rounded-t-3xl sm:rounded-2xl bg-slate-950/95 border-t sm:border border-cyan-500/40 backdrop-blur-2xl shadow-[0_-12px_45px_rgba(0,0,0,0.85)] sm:shadow-[0_12px_50px_rgba(6,182,212,0.3)] animate-slideUp sm:animate-pop-out overflow-hidden pb-[env(safe-area-inset-bottom,1.5rem)] sm:pb-0">
+        <div className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-x-auto sm:bottom-6 sm:left-auto sm:right-6 sm:w-[480px] z-40 max-h-[72dvh] sm:max-h-[78vh] flex flex-col rounded-t-3xl sm:rounded-2xl bg-slate-950/95 border-t sm:border border-cyan-500/40 backdrop-blur-2xl shadow-[0_-12px_45px_rgba(0,0,0,0.85)] sm:shadow-[0_12px_50px_rgba(6,182,212,0.3)] animate-slideUp sm:animate-slideInRight overflow-hidden pb-[env(safe-area-inset-bottom,1.5rem)] sm:pb-0">
           {/* Mobile Drag Indicator Handle (tap or drag to close) */}
           <div
             onClick={handleCloseDrawer}
@@ -1833,38 +2455,51 @@ export default function JobRadarGlobe() {
       )}
 
       {/* ========================================================================= */}
-      {/* FLOATING LEGEND: Density Color Scale & Verification HUD                    */}
+      {/* FLOATING PANEL: Map Style Layers & Marker Key                              */}
       {/* ========================================================================= */}
-      {showLegend && (
+      {showLayersPanel && (
         <div className="absolute bottom-20 right-3 sm:bottom-4 sm:right-4 z-30 flex flex-col gap-2 p-3.5 rounded-2xl bg-slate-950/95 border border-slate-800 backdrop-blur-md text-[11px] text-slate-300 shadow-2xl max-w-[280px] sm:max-w-xs pointer-events-auto animate-scaleUp">
           <div className="flex items-center justify-between text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
             <span className="flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              JOB DENSITY SCALE
+              MAP LAYERS
             </span>
             <button
               type="button"
-              onClick={() => setShowLegend(false)}
+              onClick={() => setShowLayersPanel(false)}
               className="p-1 min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-500 hover:text-white cursor-pointer"
-              aria-label="Close legend"
+              aria-label="Close map layers panel"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {DENSITY_TIERS.map((tier) => (
-              <div key={tier.label} className="flex items-center gap-2">
-                <span
-                  className="w-3 h-3 rounded-full shrink-0 border border-white/60"
-                  style={{ backgroundColor: tier.css, boxShadow: `0 0 8px ${tier.glowCss}` }}
-                />
-                <span className="text-slate-300 font-mono text-[11px]">{tier.label}</span>
-              </div>
+          <div className="flex flex-col gap-1.5 mt-1">
+            {(Object.keys(GLOBE_MAP_LABELS) as GlobeMapStyle[]).map((style) => (
+              <button
+                key={style}
+                type="button"
+                onClick={() => setMapStyle(style)}
+                className={`flex items-center justify-between px-3 py-2 min-h-[38px] rounded-xl text-xs font-semibold transition-all ${
+                  mapStyle === style
+                    ? "bg-cyan-500 text-slate-950"
+                    : "bg-slate-900 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                <span>{GLOBE_MAP_LABELS[style]}</span>
+                {mapStyle === style && <CheckCircle2 className="w-3.5 h-3.5" />}
+              </button>
             ))}
           </div>
 
           <div className="pt-2 border-t border-slate-800/80 space-y-1 text-[10px] text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="w-3 h-3 rounded-full shrink-0 border border-white/60"
+                style={{ backgroundColor: MARKER_COLOR_CSS, boxShadow: `0 0 8px ${MARKER_GLOW_CSS}` }}
+              />
+              <span>City marker: size scales with job count</span>
+            </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded-full border-2 border-white bg-slate-900 shrink-0" />
               <span>Selected marker: Glowing white ring</span>
@@ -1877,36 +2512,60 @@ export default function JobRadarGlobe() {
         </div>
       )}
 
-      {/* Mobile Floating Legend Toggle Button (visible when drawer closed) */}
-      {!selectedCity && !showLegend && (
+      {/* Mobile Floating Layers Toggle Button (visible when drawer closed) */}
+      {!selectedCity && !showLayersPanel && (
         <div className="absolute bottom-4 right-4 z-20 lg:hidden pointer-events-auto">
           <button
             type="button"
-            onClick={() => setShowLegend(true)}
+            onClick={() => setShowLayersPanel(true)}
+            aria-label="Switch map style"
             className="flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-full bg-slate-950/90 border border-slate-700/80 text-xs font-semibold text-cyan-300 shadow-lg backdrop-blur-md cursor-pointer"
           >
             <Layers className="w-4 h-4 text-cyan-400" />
-            <span>Legend</span>
+            <span>Layers</span>
           </button>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* BOTTOM-LEFT HUD: Radar Navigation Guide                                   */}
+      {/* BOTTOM-LEFT HUD: Radar Navigation Guide (collapsible, auto-hides on first  */}
+      {/* interaction, dismissal remembered in localStorage)                         */}
       {/* ========================================================================= */}
-      <div className="absolute bottom-4 left-4 z-20 hidden md:flex flex-col gap-1.5 p-3 rounded-xl bg-slate-950/85 border border-slate-800 backdrop-blur-md text-[11px] text-slate-400 pointer-events-none max-w-xs shadow-lg">
-        <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-          <span>HOW TO NAVIGATE RADAR</span>
+      {showNavHint ? (
+        <div className="absolute bottom-4 left-4 z-20 hidden sm:flex flex-col gap-1.5 p-3 rounded-xl bg-slate-950/85 border border-slate-800 backdrop-blur-md text-[11px] text-slate-400 max-w-xs shadow-lg animate-fadeIn">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
+              <span className={`w-1.5 h-1.5 rounded-full bg-cyan-400 ${prefersReducedMotion ? "" : "animate-ping"}`} />
+              <span>HOW TO NAVIGATE RADAR</span>
+            </div>
+            <button
+              type="button"
+              onClick={dismissNavHint}
+              aria-label="Dismiss navigation guide"
+              className="pointer-events-auto p-1 min-h-[28px] min-w-[28px] flex items-center justify-center text-slate-500 hover:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="leading-relaxed text-slate-300 pointer-events-none">
+            • Filter by <span className="text-cyan-300 font-semibold">Country, Category, Remote, or Internships</span> above.
+            <br />
+            • Click any <span className="text-cyan-300 font-semibold">City Marker</span> for cinematic fly-in & job drawer.
+            <br />
+            • Drag to orbit • Scroll to zoom • Arrow keys rotate • +/- zoom • Esc closes.
+          </p>
         </div>
-        <p className="leading-relaxed text-slate-300">
-          • Filter by <span className="text-cyan-300 font-semibold">Country, Category, Remote, or Internships</span> above.
-          <br />
-          • Click any <span className="text-cyan-300 font-semibold">City Marker</span> for cinematic fly-in & job drawer.
-          <br />
-          • Drag to orbit • Scroll to zoom.
-        </p>
-      </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowNavHint(true)}
+          aria-label="Show navigation guide"
+          title="How to navigate"
+          className="absolute bottom-4 left-4 z-20 hidden sm:flex items-center justify-center w-9 h-9 rounded-full bg-slate-950/85 border border-slate-800 backdrop-blur-md text-cyan-400 shadow-lg pointer-events-auto hover:text-white hover:border-cyan-500/60 transition-colors"
+        >
+          <span className="text-xs font-bold">?</span>
+        </button>
+      )}
 
       {/* ========================================================================= */}
       {/* PRO UPGRADE MODAL                                                         */}

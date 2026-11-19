@@ -229,7 +229,7 @@ export default function AppTopBar({
                   className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:border-blue-300 transition-colors shadow-2xs shrink-0"
                 >
                   <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[10px]">⚡</span>
-                  <span>Pro: Direct Apply & AI Tailor</span>
+                  <span>Upgrade to Pro</span>
                   <span className="text-[#2563EB] font-bold">›</span>
                 </Link>
               )}
@@ -405,17 +405,17 @@ export default function AppTopBar({
         aria-modal="true"
         aria-hidden={!drawerOpen}
         inert={(!drawerOpen ? "" : undefined) as any}
-        className={`fixed inset-y-0 right-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
-          drawerOpen ? "translate-x-0" : "translate-x-full invisible pointer-events-none"
+        className={`fixed inset-y-0 left-0 z-[61] w-full max-w-[280px] bg-white h-full shadow-2xl flex flex-col justify-between p-5 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] md:hidden overflow-y-auto overscroll-contain ${
+          drawerOpen ? "translate-x-0" : "-translate-x-full invisible pointer-events-none"
         }`}
       >
         <div className="space-y-4 min-h-0">
           {/* Header: Brand Logo + Close */}
           <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
             <Link
-              href="/dashboard"
+              href="/jobs"
               onClick={() => setDrawerOpen(false)}
-              aria-label="CareerMonke Dashboard"
+              aria-label="CareerMonke Jobs"
               className="flex items-center min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
             >
               <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />

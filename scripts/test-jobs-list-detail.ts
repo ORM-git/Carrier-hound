@@ -82,16 +82,15 @@ function run() {
     console.log("  [PASS] card middle: title bold 16px ink, company 14px #475569, row of small gray chips (location, work type, salary, posted time)");
   }
 
-  // 1e. Right: Fit Match panel from PR #68 unchanged with real score condition or upload CTA
-  const hasFitMatchRight =
+  // 1e. Right: Inset panel geometry preserved with Job Facts (listings-only) or legacy Fit Match
+  const hasInsetPanelRight =
     jobsCode.includes("w-44 shrink-0") &&
-    jobsCode.includes("rounded-[16px]") &&
-    jobsCode.includes("matchScore !== null ?");
-  const hasUploadCta = jobsCode.includes("Upload your resume to see your real match") && jobsCode.includes('href="/resume"');
-  if (!hasFitMatchRight || !hasUploadCta) {
-    failures.push("FIT MATCH FAIL: Right Fit Match panel from PR #68 must be preserved with conditional real score or upload CTA.");
+    (jobsCode.includes("rounded-[16px]") || jobsCode.includes("rounded-xl")) &&
+    (jobsCode.includes("Job Facts") || jobsCode.includes("matchScore !== null ?"));
+  if (!hasInsetPanelRight) {
+    failures.push("INSET PANEL FAIL: Right inset panel geometry must be preserved with listings-only Job Facts or Fit Match.");
   } else {
-    console.log("  [PASS] fit match panel: desktop panel (w-44 shrink-0 rounded-[16px]) with score condition and resume upload CTA");
+    console.log("  [PASS] inset panel: desktop panel (w-44 shrink-0 rounded-[16px]) with listing facts / geometry preserved");
   }
 
   // 1f. Bottom row: Save icon button and primary blue pill Apply
@@ -196,11 +195,13 @@ function run() {
   // -------------------------------------------------------------------------
   // 4. MOBILE LAYOUT SPECIFICATIONS
   // -------------------------------------------------------------------------
-  const hasMobileFitMatchUnderChips = (jobsCode.includes("sm:hidden") && (jobsCode.includes("w-[54px]") || jobsCode.includes("Fit Match"))) || (jobsCode.includes("sm:hidden pt-2") && jobsCode.includes("Fit Match"));
-  if (!hasMobileFitMatchUnderChips) {
-    failures.push("MOBILE RESPONSIVENESS FAIL: On mobile, Fit Match panel must move under the chips.");
+  const hasMobileResponsiveLayout =
+    jobsCode.includes("sm:hidden") &&
+    (jobsCode.includes("w-[54px]") || jobsCode.includes("Fit Match") || jobsCode.includes("grid-cols-2") || jobsCode.includes("CompanyLogo"));
+  if (!hasMobileResponsiveLayout) {
+    failures.push("MOBILE RESPONSIVENESS FAIL: On mobile, cards must stack compactly with responsive facts.");
   } else {
-    console.log("  [PASS] mobile responsiveness: cards full width, Fit Match panel moves under chips on mobile");
+    console.log("  [PASS] mobile responsiveness: cards full width, responsive mobile layout preserved");
   }
 
   // -------------------------------------------------------------------------

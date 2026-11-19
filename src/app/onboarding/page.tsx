@@ -9,14 +9,15 @@ import {
   getAuthUser,
   getUserPreferences,
   saveUserPreferences,
+  signOutUser,
 } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
-import { updateSwr, invalidateSwr } from "@/lib/cache/swr";
 import { Loader2, AlertCircle } from "lucide-react";
 import { toast } from "react-toastify";
 import OnboardingStep1 from "@/components/onboarding/OnboardingStep1";
-import OnboardingStep2 from "@/components/onboarding/OnboardingStep2";
+import OnboardingStep2, { ResumeParseSummary } from "@/components/onboarding/OnboardingStep2";
+import { setFirstJobsMarker } from "@/components/onboarding/onboardingMarkers";
 import { isOnboardingActive } from "@/config/onboarding";
 import { normalizeUserCountries } from "@/lib/countries";
 import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
@@ -25,7 +26,15 @@ function OnboardingPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawNext = searchParams.get("returnTo") || searchParams.get("return_to") || searchParams.get("next");
-  const next = getValidReturnUrl(rawNext, "/dashboard");
+  const validatedNext = getValidReturnUrl(rawNext, "/jobs");
+  // Normalize removed routes to /jobs
+  const next =
+    validatedNext === "/dashboard" ||
+    validatedNext === "/resume" ||
+    validatedNext.startsWith("/dashboard/") ||
+    validatedNext.startsWith("/resume/")
+      ? "/jobs"
+      : validatedNext;
 
   const mode = searchParams.get("mode") || searchParams.get("edit");
   const isEditMode = mode === "edit" || mode === "true";
@@ -46,6 +55,10 @@ function OnboardingPageInner() {
   const [openToRemote, setOpenToRemote] = useState<boolean>(true);
   const [remoteTouched, setRemoteTouched] = useState(false);
   const [existingPrefs, setExistingPrefs] = useState<UserPreferences | null>(null);
+
+  // Preserve saved Step 2 state across Back navigation
+  const [savedResumeName, setSavedResumeName] = useState<string | null>(null);
+  const [savedResumeParse, setSavedResumeParse] = useState<ResumeParseSummary | null>(null);
 
   // Funnel tracking: onboarding started on mount. Editing saved preferences is not onboarding,
   // so edit mode emits no funnel events (keeps the signup -> onboarding funnel honest).
@@ -131,6 +144,14 @@ function OnboardingPageInner() {
     };
   }, [router, rawNext, next, isEditMode]);
 
+  // Logout handler
+  const handleLogout = async () => {
+    try {
+      await signOutUser();
+    } catch {}
+    router.push("/login");
+  };
+
   // Role toggles
   const handleToggleRole = (role: string) => {
     setRoles((prev) =>
@@ -160,7 +181,7 @@ function OnboardingPageInner() {
 
   // Finish and save answers to user profile
   const handleFinishOnboarding = async () => {
-    if (!userId) return;
+    if (!userId || isSaving) return;
     setIsSaving(true);
     setProcessingError(null);
 
@@ -238,7 +259,8 @@ function OnboardingPageInner() {
           workAuth,
           remotePreference: finalRemotePref,
           salaryCurrency: existingPrefs?.salaryCurrency || undefined,
-          dailyDigestOptIn: false,
+          // Keep the stored digest choice; never opt anyone in (digest UI and sending stay off).
+          dailyDigestOptIn: existingPrefs?.dailyDigestOptIn ?? false,
           onboardingCompleted: true,
           updatedAt: new Date().toISOString(),
         };
@@ -248,14 +270,11 @@ function OnboardingPageInner() {
         await markAccountOnboardingCompleted(supabase, userId).catch(() => {});
       }
 
-      // Funnel event: onboarding completed (first-run only; edits are not onboarding)
-      if (!isEditMode) trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
-
-      // Update dashboard SWR cache so next mount reflects completed status
-      updateSwr<any>(`dashboard:${userId}`, (current) =>
-        current ? { ...current, onboardingCompleted: true } : current
-      );
-      invalidateSwr(`dashboard:${userId}`);
+      // First-run only: publish account-scoped first-Jobs marker on successful accepted save!
+      if (!isEditMode) {
+        setFirstJobsMarker(userId);
+        trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
+      }
 
       toast.success(
         isEditMode
@@ -263,7 +282,7 @@ function OnboardingPageInner() {
           : "Preferences saved! Showing recommended jobs for your profile."
       );
 
-      // Post-submit navigation
+      // Post-submit navigation to /jobs (or safe explicit returnTo)
       setTimeout(() => {
         router.push(next);
       }, 400);
@@ -328,6 +347,7 @@ function OnboardingPageInner() {
             workAuth={workAuth}
             onSelectWorkAuth={setWorkAuth}
             isEditMode={isEditMode}
+            onLogout={handleLogout}
             onNext={() => {
               setProcessingError(null);
               setCurrentStep(2);
@@ -342,6 +362,13 @@ function OnboardingPageInner() {
             onFinish={handleFinishOnboarding}
             isSaving={isSaving}
             authToken={authToken}
+            onLogout={handleLogout}
+            initialResumeName={savedResumeName}
+            initialResumeParse={savedResumeParse}
+            onResumeSaved={(name, parse) => {
+              setSavedResumeName(name);
+              setSavedResumeParse(parse);
+            }}
           />
         )}
       </div>

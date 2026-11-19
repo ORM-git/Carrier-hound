@@ -402,8 +402,8 @@ async function run() {
   }
 
   const jobDetailCode = fs.readFileSync(jobDetailPath, "utf-8");
-  if (!jobDetailCode.includes("Tailor Resume is coming soon")) {
-    failures.push("JobDetailView.tsx must gate Tailor Resume behind the Coming Soon toast.");
+  if (!jobDetailCode.includes("Tailor Resume is coming soon") && jobDetailCode.includes("Tailor Resume")) {
+    failures.push("JobDetailView.tsx must either omit Tailor Resume entry point or gate it behind the Coming Soon toast.");
   }
 
   const resumePageCode = fs.readFileSync(resumePagePath, "utf-8");

@@ -34,7 +34,8 @@ afterEach(() => {
 describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
   it("tells users they can upload their LinkedIn 'Save to PDF' file in the same box", () => {
     renderStep2();
-    expect(screen.getByText("Upload resume or LinkedIn PDF")).toBeTruthy();
+    // Heading renders once per breakpoint tree (desktop + mobile/tablet); check the desktop copy by its stable id.
+    expect(document.getElementById("resume-card-title")?.textContent).toBe("Upload resume or LinkedIn PDF");
     const hint = screen.getByTestId("resume-linkedin-hint").textContent || "";
     expect(hint).toMatch(/LinkedIn profile/);
     expect(hint).toMatch(/More/);
@@ -42,6 +43,30 @@ describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
     // Same single upload input, same accepted types
     expect(screen.getAllByTestId("input-resume-file")).toHaveLength(1);
     expect((screen.getByTestId("input-resume-file") as HTMLInputElement).accept).toContain(".pdf");
+  });
+
+  it("while the real request is pending: one request, honest processing status, no percentage, no second upload or finish", async () => {
+    let release!: (r: Response) => void;
+    const fetchMock = vi.fn(() => new Promise<Response>((r) => (release = r)));
+    globalThis.fetch = fetchMock as any;
+    const onFinish = vi.fn();
+    render(<OnboardingStep2 onBack={vi.fn()} onFinish={onFinish} isSaving={false} authToken="tok" />);
+    pickFile();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Uploading and reading your resume...")).toBeTruthy();
+    const visible = document.body.cloneNode(true) as HTMLElement;
+    visible.querySelectorAll("style").forEach((s) => s.remove()); // CSS keyframes are not user-visible text
+    expect(visible.textContent).not.toMatch(/\d+\s*%/);
+    // The dropzone/input is replaced while pending, so no concurrent duplicate upload can start.
+    expect(screen.queryByTestId("input-resume-file")).toBeNull();
+    const finish = screen.queryByTestId("btn-onboarding-finish");
+    if (finish) fireEvent.click(finish);
+    expect(onFinish).not.toHaveBeenCalled();
+
+    release(new Response(JSON.stringify({ ok: true, fileName: "Profile.pdf", parse: { status: "failed", source: "rules", reason: "no_text" } }), { status: 200 }));
+    await waitFor(() => expect(screen.getByTestId("resume-success").textContent).toMatch(/Resume saved/));
+    expect(screen.queryByText("Uploading and reading your resume...")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows what was read after a parsed upload", async () => {
@@ -64,7 +89,7 @@ describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
       "We read Senior Data Analyst · 4 skills · 8.4 yrs experience. We'll use this to rank your recommended jobs."
     );
     expect(screen.getByTestId("resume-success").textContent).toMatch(/Resume saved/);
-    expect(screen.getByTestId("btn-onboarding-finish").textContent).toBe("Finish");
+    expect(screen.getByTestId("btn-onboarding-finish").textContent).toBe("Continue to Jobs");
   });
 
   it("a scanned PDF is saved, explained without an error, and the user can finish", async () => {
@@ -92,7 +117,8 @@ describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
     renderStep2();
     expect(screen.queryByTestId("input-resume-file")).toBeNull();
     expect(screen.queryByTestId("resume-linkedin-hint")).toBeNull();
-    expect(screen.getAllByText("Coming soon").length).toBe(2);
+    // 2 placeholder cards (LinkedIn, Resume) rendered once per breakpoint tree (desktop + mobile/tablet) = 4.
+    expect(screen.getAllByText("Coming soon").length).toBe(4);
   });
 });
 

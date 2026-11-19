@@ -2,7 +2,8 @@
  * scripts/test-error-boundaries.ts
  *
  * Verifies Frontend Error Boundaries:
- * 1. File existence: app/error.tsx, app/global-error.tsx, app/jobs/error.tsx, app/dashboard/error.tsx, and app/not-found.tsx.
+ * 1. File existence: app/error.tsx, app/global-error.tsx, app/jobs/error.tsx, and app/not-found.tsx.
+ *    (Dashboard was retired: /dashboard is a redirect stub covered by the root boundary.)
  * 2. Client directive: all error boundaries have "use client".
  * 3. Fallback rendering: each error boundary renders branded UI with "Try again" (reset) and link home.
  * 4. Zero stack trace leakage: ensures error.stack and raw traces are never exposed in markup.
@@ -56,7 +57,6 @@ async function runTestSuite() {
     "src/app/error.tsx",
     "src/app/global-error.tsx",
     "src/app/jobs/error.tsx",
-    "src/app/dashboard/error.tsx",
     "src/app/not-found.tsx",
   ];
 
@@ -65,6 +65,12 @@ async function runTestSuite() {
     assert.strictEqual(fs.existsSync(fullPath), true, `File must exist: ${relPath}`);
     console.log(`  -> [PASS-LOCAL] Exists: ${relPath}`);
   }
+  assert.strictEqual(
+    fs.existsSync(path.join(rootDir, "src/app/dashboard/error.tsx")),
+    false,
+    "Retired Dashboard must not keep a Dashboard-branded error boundary"
+  );
+  console.log("  -> [PASS-LOCAL] Retired /dashboard has no Dashboard-branded error boundary.");
   passed++;
 
   // ---------------------------------------------------------------------------
@@ -75,7 +81,6 @@ async function runTestSuite() {
     "src/app/error.tsx",
     "src/app/global-error.tsx",
     "src/app/jobs/error.tsx",
-    "src/app/dashboard/error.tsx",
   ];
 
   for (const relPath of clientFiles) {
@@ -108,7 +113,6 @@ async function runTestSuite() {
   const { default: RootError } = await import("../src/app/error");
   const { default: GlobalError } = await import("../src/app/global-error");
   const { default: JobsError } = await import("../src/app/jobs/error");
-  const { default: DashboardError } = await import("../src/app/dashboard/error");
 
   const mockError = new Error("Simulated runtime component failure");
   (mockError as any).digest = "ERR_TEST_12345";
@@ -154,17 +158,6 @@ async function runTestSuite() {
   assert.ok(jobsMarkup.includes("CareerMonke"), "Jobs error must display CareerMonke branding");
   assert.ok(!jobsMarkup.includes("secret-internal.ts"), "Jobs error MUST NOT leak stack trace");
   console.log("  -> [PASS-LOCAL] app/jobs/error.tsx renders segment-level fallback without stack traces.");
-
-  // 3D. DashboardError (app/dashboard/error.tsx)
-  const dashboardMarkup = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(DashboardError, { error: mockError, reset: mockReset })
-  );
-  assert.ok(dashboardMarkup.includes("Unable to load dashboard"), "Dashboard error must show segment title");
-  assert.ok(dashboardMarkup.includes("Try again"), "Dashboard error must include 'Try again' button");
-  assert.ok(dashboardMarkup.includes("Back to Homepage"), "Dashboard error must include home link");
-  assert.ok(dashboardMarkup.includes("CareerMonke"), "Dashboard error must display CareerMonke branding");
-  assert.ok(!dashboardMarkup.includes("secret-internal.ts"), "Dashboard error MUST NOT leak stack trace");
-  console.log("  -> [PASS-LOCAL] app/dashboard/error.tsx renders segment-level fallback without stack traces.");
   passed++;
 
   // ---------------------------------------------------------------------------

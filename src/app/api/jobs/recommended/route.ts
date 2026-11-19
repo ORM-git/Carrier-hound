@@ -10,6 +10,7 @@ import { createLogger } from "@/lib/observability/logger";
 import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
+import { applyExperienceLevelQuery, parseExperienceLevels } from "@/lib/jobs/experienceLevels";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -162,7 +163,10 @@ export async function GET(req: Request) {
 
     // Allow query params to supply or override onboarding answers (useful for guest preview and tests)
     const queryRoles = searchParams.get("roles") || searchParams.get("role") || "";
-    const queryExperience = searchParams.get("experienceLevel") || searchParams.get("experience") || searchParams.get("level") || "";
+    // A multi-level Level filter (e.g. "entry,senior") is a feed filter only; it never replaces the
+    // single stored experienceLevel used for scoring. A legacy single-level value keeps its old role.
+    const levelForScoring = parseExperienceLevels(searchParams.get("level")).length === 1 ? searchParams.get("level") : "";
+    const queryExperience = searchParams.get("experienceLevel") || searchParams.get("experience") || levelForScoring || "";
     const queryRemote = searchParams.get("remotePreference") || searchParams.get("workModel") || "";
     const queryLocations = searchParams.get("locations") || searchParams.get("location") || "";
     const queryEmployment = searchParams.get("employmentTypes") || searchParams.get("jobType") || "";
@@ -297,23 +301,7 @@ export async function GET(req: Request) {
 
     // 6. Level hard filter
     if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
-      const lvl = levelParam.trim().toLowerCase();
-      if (lvl.includes("lead") || lvl.includes("staff")) {
-        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-      } else if (lvl.includes("senior")) {
-        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-      } else if (lvl.includes("entry") || lvl.includes("junior")) {
-        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-      } else if (lvl.includes("mid")) {
-        query = query
-          .not("title", "ilike", "%senior%")
-          .not("title", "ilike", "%sr.%")
-          .not("title", "ilike", "%staff%")
-          .not("title", "ilike", "%principal%")
-          .not("title", "ilike", "%lead%")
-          .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%");
-      }
+      query = applyExperienceLevelQuery(query, levelParam);
     }
 
     // 7. Experience hard filter

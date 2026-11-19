@@ -205,17 +205,12 @@ export default function Footer({ isGuide = false }: FooterProps) {
             </ul>
           </div>
 
-          {/* Column 2: Tools & AI */}
+          {/* Column 2: Platform */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">
               Platform
             </h3>
             <ul className="space-y-2">
-              <li>
-                <Link href="/resume" prefetch={false} className={publicFooterLinkClass}>
-                  ATS Resume Builder
-                </Link>
-              </li>
               <li>
                 <Link href="/tracker" prefetch={false} className={publicFooterLinkClass}>
                   Applications Tracker
@@ -243,11 +238,6 @@ export default function Footer({ isGuide = false }: FooterProps) {
               <li>
                 <Link href="/signup" className={publicFooterLinkClass}>
                   Get Started
-                </Link>
-              </li>
-              <li>
-                <Link href="/dashboard" className={publicFooterLinkClass}>
-                  Candidate Dashboard
                 </Link>
               </li>
             </ul>

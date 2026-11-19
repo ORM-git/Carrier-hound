@@ -178,18 +178,6 @@ export const LIFECYCLE_ALLOWLIST: LifecycleAllowlistEntry[] = [
     reason: "One-shot 400ms post-submit redirect feedback after save completes",
   },
   {
-    file: "src/components/interview-pack/AskThemSection.tsx",
-    kind: "timeout",
-    snippetMatch: "setCopiedId(null)",
-    reason: "Transient 2s copy-button badge reset inside click handler",
-  },
-  {
-    file: "src/components/interview-pack/YourAnswersSection.tsx",
-    kind: "timeout",
-    snippetMatch: "setCopiedId(null)",
-    reason: "Transient 2s copy-button badge reset inside click handler",
-  },
-  {
     file: "src/components/jobs/JobDetailView.tsx",
     kind: "timeout",
     snippetMatch: "2500",

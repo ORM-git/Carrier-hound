@@ -7,8 +7,6 @@ import {
   Sparkles,
   Building2,
   TrendingUp,
-  FileText,
-  FileCheck2,
   CheckCircle2,
   LogOut,
   ArrowRight,
@@ -23,7 +21,7 @@ interface ProUpgradeScreenProps {
 
 export default function ProUpgradeScreen({
   title = "Unlock CareerMonke Pro",
-  subtitle = "Complete your membership to access full job details, match scores, and AI application tools.",
+  subtitle = "Complete your membership to access full job details, and match scores.",
 }: ProUpgradeScreenProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<"weekly" | "monthly" | "quarterly">("monthly");
 
@@ -50,16 +48,6 @@ export default function ProUpgradeScreen({
       icon: Sparkles,
       title: "Your Top 10 Jobs",
       desc: "The 10 highest-matching roles ranked across our full live dataset.",
-    },
-    {
-      icon: FileCheck2,
-      title: "AI-Powered Resume Tools",
-      desc: "Highlights and formats relevant skills for each opening.",
-    },
-    {
-      icon: FileText,
-      title: "Tailored Cover Letters",
-      desc: "Generates role-specific cover letters grounded in your profile facts.",
     },
   ];
 

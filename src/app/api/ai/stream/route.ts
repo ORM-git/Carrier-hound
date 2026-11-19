@@ -5,6 +5,7 @@ import {
 } from "@/lib/ai/serviceHandler";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { createLogger } from "@/lib/observability/logger";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 
 export const runtime = "edge";
 
@@ -49,8 +50,7 @@ function sseFrame(event: string, data: unknown): string {
 async function postHandler(req: Request): Promise<Response> {
   let cfEnv: Record<string, any> | undefined;
   try {
-    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
-    const ctx = mod?.getRequestContext?.();
+    const ctx = getRequestContext();
     if (ctx?.env) {
       cfEnv = ctx.env as Record<string, any>;
     }
@@ -121,14 +121,6 @@ async function postHandler(req: Request): Promise<Response> {
 }
 
 export async function POST(req: Request) {
-  return new Response(
-    JSON.stringify({ error: "This feature is coming soon.", code: "FEATURE_COMING_SOON" }),
-    { status: 503, headers: { "Content-Type": "application/json" } }
-  );
-}
-
-// Preserved for handler and route budget tracing reference
-async function _legacyStreamHandler(req: Request) {
   try {
     return await measureRouteBudget("/api/ai/stream", () => postHandler(req));
   } catch (err) {

@@ -12,8 +12,6 @@ const targetFiles = [
   path.join(rootDir, 'src', 'app', 'remote', '[slug]', 'page.tsx'),
   path.join(rootDir, 'src', 'app', 'remote', '[slug]', 'titles', 'page.tsx'),
   path.join(rootDir, 'src', 'app', 'remote', 'jobs', '[category]', 'page.tsx'),
-  path.join(rootDir, 'src', 'app', 'jobs', '[id]', 'interview-pack', 'page.tsx'),
-  path.join(rootDir, 'src', 'app', 'jobs', '[id]', 'skill-what-if', 'page.tsx'),
 ];
 
 const RUNTIME_EXPORT = "export const runtime = 'edge';";

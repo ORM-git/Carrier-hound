@@ -249,9 +249,9 @@ async function runSuite() {
     const data = await res.json();
 
     assert(
-      res.status === 503 && data.code === "FEATURE_COMING_SOON",
-      "Next.js POST /api/jobs/top10 returns 503 FEATURE_COMING_SOON (launch gate precedes SUPABASE_SERVICE_ROLE_KEY env check)",
-      `Expected status 503 FEATURE_COMING_SOON, got status ${res.status}: ${JSON.stringify(data)}`
+      res.status === 500 && data.missingVariable === "SUPABASE_SERVICE_ROLE_KEY",
+      "Next.js POST /api/jobs/top10 fails with 500 and names SUPABASE_SERVICE_ROLE_KEY",
+      `Expected status 500 and missingVariable SUPABASE_SERVICE_ROLE_KEY, got status ${res.status}: ${JSON.stringify(data)}`
     );
   }
 
@@ -320,9 +320,9 @@ async function runSuite() {
       const data = await res.json();
 
       assert(
-        res.status === 503 && data.code === "FEATURE_COMING_SOON",
-        "Next.js POST /api/ai returns 503 FEATURE_COMING_SOON (launch gate precedes GROQ_API_KEY env check)",
-        `Expected status 503 FEATURE_COMING_SOON, got status ${res.status}: ${JSON.stringify(data)}`
+        res.status === 500 && data.missingVariable === "GROQ_API_KEY",
+        "Next.js POST /api/ai fails with 500 and names GROQ_API_KEY",
+        `Expected status 500 and missingVariable GROQ_API_KEY, got status ${res.status}: ${JSON.stringify(data)}`
       );
     } finally {
       global.fetch = origFetch;
@@ -354,9 +354,9 @@ async function runSuite() {
     const data = await res.json();
 
     assert(
-      res.status === 503 && data.code === "FEATURE_COMING_SOON",
-      "Next.js POST /api/ai returns 503 FEATURE_COMING_SOON (launch gate precedes SUPABASE_SERVICE_ROLE_KEY env check when service-role key is missing (anon key ignored))",
-      `Expected status 503 FEATURE_COMING_SOON, got status ${res.status}: ${JSON.stringify(data)}`
+      res.status === 500 && data.missingVariable === "SUPABASE_SERVICE_ROLE_KEY",
+      "Next.js POST /api/ai fails closed with 500 and names SUPABASE_SERVICE_ROLE_KEY when service-role key is missing (anon key ignored)",
+      `Expected status 500 and missingVariable SUPABASE_SERVICE_ROLE_KEY, got status ${res.status}: ${JSON.stringify(data)}`
     );
   }
 
@@ -537,9 +537,9 @@ async function runSuite() {
       const data = JSON.parse(res.body);
 
       assert(
-        res.statusCode === 503 && data.code === "FEATURE_COMING_SOON",
-        "Netlify ai handler returns 503 FEATURE_COMING_SOON (launch gate precedes GROQ_API_KEY env check)",
-        `Expected statusCode 503 FEATURE_COMING_SOON, got ${res.statusCode}: ${res.body}`
+        res.statusCode === 500 && data.missingVariable === "GROQ_API_KEY",
+        "Netlify ai handler fails with 500 and names GROQ_API_KEY",
+        `Expected statusCode 500 and missingVariable GROQ_API_KEY, got ${res.statusCode}: ${res.body}`
       );
     } finally {
       global.fetch = origFetch;
@@ -567,9 +567,9 @@ async function runSuite() {
     const data = JSON.parse(res.body);
 
     assert(
-      res.statusCode === 503 && data.code === "FEATURE_COMING_SOON",
-      "Netlify ai handler returns 503 FEATURE_COMING_SOON (launch gate precedes SUPABASE_SERVICE_ROLE_KEY env check when service-role key is missing (anon key ignored))",
-      `Expected statusCode 503 FEATURE_COMING_SOON, got ${res.statusCode}: ${res.body}`
+      res.statusCode === 500 && data.missingVariable === "SUPABASE_SERVICE_ROLE_KEY",
+      "Netlify ai handler fails closed with 500 and names SUPABASE_SERVICE_ROLE_KEY when service-role key is missing (anon key ignored)",
+      `Expected statusCode 500 and missingVariable SUPABASE_SERVICE_ROLE_KEY, got ${res.statusCode}: ${res.body}`
     );
   }
 

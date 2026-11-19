@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { getLiveJobs } from "@/lib/jobs/service";
+import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
 const state = vi.hoisted(() => ({
   users: {} as Record<string, { id: string; email: string; user_metadata: Record<string, unknown> }>,
@@ -97,27 +98,9 @@ vi.mock("@supabase/supabase-js", () => {
             };
           }
           if (prop === "or") {
+            // Evaluate PostgREST logic trees (nested and()/or()) like Postgres, not a naive comma split.
             return (expr: string) => {
-              const clauses = expr.split(",");
-              predicates.push((r) => {
-                return clauses.some((clause: string) => {
-                  const parts = clause.split(".");
-                  if (parts.length >= 3) {
-                    const col = parts[0];
-                    const op = parts[1];
-                    const rawVal = parts.slice(2).join(".");
-                    if (op === "eq") {
-                      const boolVal = rawVal === "true" ? true : rawVal === "false" ? false : rawVal;
-                      return r[col] === boolVal || String(r[col]) === String(rawVal);
-                    }
-                    if (op === "ilike") {
-                      const term = rawVal.replace(/^%|%$/g, "").toLowerCase();
-                      return String(r[col] || "").toLowerCase().includes(term);
-                    }
-                  }
-                  return false;
-                });
-              });
+              predicates.push((r) => matchesPostgrestOr(expr, r));
               return b;
             };
           }
@@ -833,5 +816,25 @@ describe("4. Parsed onboarding resume / LinkedIn PDF ranking (behind the Step 2 
     process.env[STEP2_FLAG] = "true";
     const body = await (await recommendedRoute(req("http://localhost/api/jobs/recommended"))).json();
     expect(body.personalized).toBe(false);
+  });
+});
+
+describe("explicit Level filter on the current recommended feed (multi-level OR)", () => {
+  it("level=entry,senior keeps only entry+senior jobs and never changes the stored-experience scoring", async () => {
+    const { matchesExperienceLevelFilter } = await import("@/lib/jobs/experienceLevels");
+    const unfiltered = await (
+      await recommendedRoute(req("http://localhost/api/jobs/recommended?pageSize=100", "tok-pro-with-answers"))
+    ).json();
+    const filtered = await (
+      await recommendedRoute(req("http://localhost/api/jobs/recommended?level=entry,senior&pageSize=100", "tok-pro-with-answers"))
+    ).json();
+    expect(filtered.jobs.length).toBeGreaterThan(0);
+    for (const j of filtered.jobs) {
+      expect(matchesExperienceLevelFilter({ title: j.title, type: j.type ?? j.jobType }, "entry,senior"), j.title).toBe(true);
+    }
+    const scoreById = new Map(unfiltered.jobs.map((j: any) => [j.id, j.matchScore]));
+    for (const j of filtered.jobs) {
+      if (scoreById.has(j.id)) expect(j.matchScore, j.title).toBe(scoreById.get(j.id));
+    }
   });
 });

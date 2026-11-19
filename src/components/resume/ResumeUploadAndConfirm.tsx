@@ -385,7 +385,7 @@ export default function ResumeUploadAndConfirm({
       </div>
 
       <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-        {hasConfirmedFacts ? "Replace or Re-upload Resume File" : "Upload Your Resume for AI Fit & ATS Export"}
+        {hasConfirmedFacts ? "Replace or Re-upload Resume File" : "Upload Your Resume"}
       </h2>
 
       <p className="text-sm text-slate-600 leading-relaxed max-w-xl mx-auto">

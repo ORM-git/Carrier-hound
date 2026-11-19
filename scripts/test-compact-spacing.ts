@@ -22,7 +22,7 @@ function runAudit(corruptions: {
   removeIsProDefinitiveGating?: boolean;
   duplicateHeaderName?: boolean;
   removeSidebarUserCard?: boolean;
-  breakMobileDashboardBase?: boolean;
+  breakMobileProfileBase?: boolean;
   revertSidebarGap?: boolean;
 } = {}) {
   const failures: string[] = [];
@@ -31,7 +31,6 @@ function runAudit(corruptions: {
   const topBarPath = path.resolve(process.cwd(), "src/components/shell/AppTopBar.tsx");
   const filterBarPath = path.resolve(process.cwd(), "src/components/jobs/JobFilterBar.tsx");
   const detailPath = path.resolve(process.cwd(), "src/components/jobs/JobDetailView.tsx");
-  const dashPath = path.resolve(process.cwd(), "src/app/dashboard/page.tsx");
   const profilePath = path.resolve(process.cwd(), "src/app/profile/page.tsx");
   const pricingPath = path.resolve(process.cwd(), "src/app/pricing/page.tsx");
   const trackerPath = path.resolve(process.cwd(), "src/app/tracker/page.tsx");
@@ -43,7 +42,6 @@ function runAudit(corruptions: {
   let topBarCode = fs.readFileSync(topBarPath, "utf-8");
   let filterBarCode = fs.readFileSync(filterBarPath, "utf-8");
   let detailCode = fs.readFileSync(detailPath, "utf-8");
-  let dashCode = fs.readFileSync(dashPath, "utf-8");
   let profileCode = fs.readFileSync(profilePath, "utf-8");
   let pricingCode = fs.readFileSync(pricingPath, "utf-8");
   let trackerCode = fs.readFileSync(trackerPath, "utf-8");
@@ -67,8 +65,8 @@ function runAudit(corruptions: {
   if (corruptions.removeSidebarUserCard) {
     jobsCode = jobsCode.replace(/data-testid="sidebar-user-card"/g, 'data-testid="removed-user-card"');
   }
-  if (corruptions.breakMobileDashboardBase) {
-    dashCode = dashCode.replace(/p-tk-3 sm:p-tk-2/g, "p-tk-2");
+  if (corruptions.breakMobileProfileBase) {
+    profileCode = profileCode.replace(/p-6 sm:p-5/g, "p-5");
   }
   if (corruptions.revertSidebarGap) {
     jobsCode = jobsCode.replace(/w-\[316px\] shrink-0 space-y-3/g, "w-[316px] shrink-0 space-y-8");
@@ -104,7 +102,7 @@ function runAudit(corruptions: {
   }
 
   // Check 5: Right sidebar card padding 16px (p-4), gap between widgets 12px (space-y-3)
-  const hasSidebarGap12 = jobsCode.includes("w-[316px] shrink-0 space-y-3 sticky top-20");
+  const hasSidebarGap12 = jobsCode.includes("sticky top-14 p-4 space-y-3");
   const hasSidebarCardPadding = jobsCode.includes("p-4 space-y-3");
   if (!hasSidebarGap12 || !hasSidebarCardPadding) {
     failures.push("SIDEBAR FAIL: Right sidebar must have 12px gap between widgets (space-y-3) and 16px card padding (p-4).");
@@ -129,9 +127,7 @@ function runAudit(corruptions: {
   }
 
   // Check 8: Compact scale applied on desktop behind sm:, mobile base classes unchanged across all signed-in pages
-  const hasDashboardMobileBase = dashCode.includes("py-tk-3 sm:py-tk-3") &&
-    dashCode.includes("space-y-tk-3 sm:space-y-tk-2") &&
-    dashCode.includes("p-tk-3 sm:p-tk-2");
+  // (Dashboard was retired: /dashboard is a redirect stub with no layout to audit.)
   const hasProfileMobileBase = profileCode.includes("py-6 sm:py-5") &&
     profileCode.includes("space-y-6 sm:space-y-4") &&
     profileCode.includes("p-6 sm:p-5");
@@ -141,7 +137,8 @@ function runAudit(corruptions: {
     !pricingCode.includes("space-y-tk-4 sm:space-y-tk-3");
   const hasDetailMobileBase = detailCode.includes("space-y-4 sm:space-y-3 md:pb-12") &&
     detailCode.includes("p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3");
-  const hasTrackerMobileBase = trackerCode.includes("py-5 sm:py-4 space-y-5 sm:space-y-3.5");
+  const hasTrackerMobileBase = trackerCode.includes("py-5 sm:py-4 space-y-5 sm:space-y-3.5") &&
+    trackerCode.includes("p-6 sm:p-5 space-y-4 sm:space-y-3");
   const hasModalMobileBase = modalCode.includes("p-5 sm:p-5") &&
     modalCode.includes("mb-4 sm:mb-3");
   const hasTopTenMobileBase = topTenCode.includes("space-y-5 sm:space-y-4") &&
@@ -149,7 +146,6 @@ function runAudit(corruptions: {
   const hasWhyMatchMobileBase = whyMatchCode.includes("space-y-4 sm:space-y-3");
 
   if (
-    !hasDashboardMobileBase ||
     !hasProfileMobileBase ||
     !hasPricingMobileBase ||
     !hasDetailMobileBase ||
@@ -184,7 +180,7 @@ if (!isNegativeControl) {
   console.log("  [PASS] Target 5: Right sidebar widget gap 12px (space-y-3) and card padding 16px (p-4) verified");
   console.log("  [PASS] Add-on 1: Sidebar user card with avatar, name, divider, and isProDefinitive-gated plan pill");
   console.log("  [PASS] Add-on 2: Header user name deduplicated on desktop for /jobs, mobile header preserved");
-  console.log("  [PASS] Mobile Base & Compact Scale: All 8 signed-in pages preserve main's base mobile spacing and apply compact scale on desktop");
+  console.log("  [PASS] Mobile Base & Compact Scale: All signed-in pages preserve main's base mobile spacing and apply compact scale on desktop");
   console.log("\n----------------------------------------------------------------------------------");
   console.log("SIGNED-IN COMPACT DENSITY & SIDEBAR USER CARD [PASS-LOCAL]");
   process.exit(0);
@@ -197,7 +193,7 @@ if (!isNegativeControl) {
     { name: "Bypassing isProDefinitive gating on sidebar plan badge", opts: { removeIsProDefinitiveGating: true } },
     { name: "Duplicating header name on desktop /jobs", opts: { duplicateHeaderName: true } },
     { name: "Removing right sidebar user card", opts: { removeSidebarUserCard: true } },
-    { name: "Breaking mobile base spacing on dashboard", opts: { breakMobileDashboardBase: true } },
+    { name: "Breaking mobile base spacing on profile", opts: { breakMobileProfileBase: true } },
     { name: "Reverting sidebar widget gap to 32px", opts: { revertSidebarGap: true } },
   ];
 
