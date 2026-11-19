@@ -45,6 +45,30 @@ describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
     expect((screen.getByTestId("input-resume-file") as HTMLInputElement).accept).toContain(".pdf");
   });
 
+  it("while the real request is pending: one request, honest processing status, no percentage, no second upload or finish", async () => {
+    let release!: (r: Response) => void;
+    const fetchMock = vi.fn(() => new Promise<Response>((r) => (release = r)));
+    globalThis.fetch = fetchMock as any;
+    const onFinish = vi.fn();
+    render(<OnboardingStep2 onBack={vi.fn()} onFinish={onFinish} isSaving={false} authToken="tok" />);
+    pickFile();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Uploading and reading your resume...")).toBeTruthy();
+    const visible = document.body.cloneNode(true) as HTMLElement;
+    visible.querySelectorAll("style").forEach((s) => s.remove()); // CSS keyframes are not user-visible text
+    expect(visible.textContent).not.toMatch(/\d+\s*%/);
+    // The dropzone/input is replaced while pending, so no concurrent duplicate upload can start.
+    expect(screen.queryByTestId("input-resume-file")).toBeNull();
+    const finish = screen.queryByTestId("btn-onboarding-finish");
+    if (finish) fireEvent.click(finish);
+    expect(onFinish).not.toHaveBeenCalled();
+
+    release(new Response(JSON.stringify({ ok: true, fileName: "Profile.pdf", parse: { status: "failed", source: "rules", reason: "no_text" } }), { status: 200 }));
+    await waitFor(() => expect(screen.getByTestId("resume-success").textContent).toMatch(/Resume saved/));
+    expect(screen.queryByText("Uploading and reading your resume...")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("shows what was read after a parsed upload", async () => {
     globalThis.fetch = vi.fn(async () =>
       new Response(
