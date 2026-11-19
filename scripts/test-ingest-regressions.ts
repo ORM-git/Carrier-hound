@@ -10,6 +10,7 @@ import {
   parseTimeoutMs,
   fetchWithTimeout,
   recordSourceFailure,
+  recordInsertFailure,
   shouldFailShard,
   updateExistingJobs,
   ABSOLUTE_MAX_SOURCE_TIMEOUT_MS,
@@ -417,6 +418,20 @@ async function runRegressionTests() {
   // Shard exit decision: warnings alone never fail a shard; real write failures do
   assert(shouldFailShard({ totalFailed: 0 }) === false, 'Shard with only source warnings (0 write failures) exits successfully');
   assert(shouldFailShard({ totalFailed: writeStats.failed }) === true, 'Shard with real job write failures exits non-zero');
+
+  // Duplicate apply_url owned by another source_job_id (run 44529155668, SumUp): skipped, never a shard failure
+  const dupStats: any = { sourceName: 'SumUp', failed: 0 };
+  const dupItem = { source_job_id: 'sumup-8592596002', apply_url: 'https://jobs.example.com/sumup/8592596002' };
+  recordInsertFailure(dupStats, dupItem, {
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "jobs_apply_url_unique"',
+  });
+  assert(dupStats.duplicateSkipped === 1 && dupStats.failed === 0, 'apply_url duplicate is counted as duplicate skipped, not failed');
+  assert(shouldFailShard({ totalFailed: dupStats.failed }) === false, 'Shard with only apply_url duplicates exits successfully');
+  recordInsertFailure(dupStats, dupItem, { code: '23505', message: 'duplicate key value violates unique constraint "jobs_source_source_job_id_key"' });
+  recordInsertFailure(dupStats, dupItem, { code: '57014', message: 'canceling statement due to statement timeout' });
+  recordInsertFailure(dupStats, dupItem, null);
+  assert(dupStats.failed === 3 && dupStats.duplicateSkipped === 1, 'Other unique violations and real write errors still fail the shard');
 
   // ---------------------------------------------------------------------------
   // TEST 9: Digest job scan pagination across a shared boundary timestamp (runs the real query logic)
