@@ -22,6 +22,7 @@ export default function JobFunctionBottomSheet({
   const modalRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const focusReturnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCatId, setSelectedCatId] = useState<string>("software-internet-ai");
@@ -33,7 +34,8 @@ export default function JobFunctionBottomSheet({
     // Return focus to opener element
     const target = openerElement || openerRef.current;
     if (target && typeof target.focus === "function") {
-      setTimeout(() => {
+      if (focusReturnTimeoutRef.current) clearTimeout(focusReturnTimeoutRef.current);
+      focusReturnTimeoutRef.current = setTimeout(() => {
         target.focus();
       }, 50);
     }
@@ -47,6 +49,12 @@ export default function JobFunctionBottomSheet({
       }
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (focusReturnTimeoutRef.current) clearTimeout(focusReturnTimeoutRef.current);
+    };
+  }, []);
 
   // Focus trap & Escape key listener
   useEffect(() => {

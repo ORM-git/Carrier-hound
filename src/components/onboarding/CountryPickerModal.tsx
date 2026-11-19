@@ -24,13 +24,15 @@ export default function CountryPickerModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const focusReturnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleClose = useCallback(() => {
     onClose();
     const target = openerElement || openerRef.current;
     if (target && typeof target.focus === "function") {
-      setTimeout(() => {
+      if (focusReturnTimeoutRef.current) clearTimeout(focusReturnTimeoutRef.current);
+      focusReturnTimeoutRef.current = setTimeout(() => {
         target.focus();
       }, 50);
     }
@@ -41,6 +43,12 @@ export default function CountryPickerModal({
       openerRef.current = document.activeElement;
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (focusReturnTimeoutRef.current) clearTimeout(focusReturnTimeoutRef.current);
+    };
+  }, []);
 
   // Build full sorted country list
   const allCountries = useMemo(() => {
