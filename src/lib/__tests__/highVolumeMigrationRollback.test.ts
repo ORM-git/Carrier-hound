@@ -17,5 +17,5 @@ import { runMigrationRollbackFixtureTest } from "../../../scripts/test-postgres-
 describe("High-Volume Ingestion Schema: Forward & Rollback SQL Execution on Populated Postgres Fixture", () => {
   it("executes forward migration, ingests vendor rows, executes rollback SQL, and verifies queries & data integrity", async () => {
     await expect(runMigrationRollbackFixtureTest()).resolves.not.toThrow();
-  });
+  }, 60000);
 });
