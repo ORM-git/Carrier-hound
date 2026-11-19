@@ -674,7 +674,7 @@ export default function OnboardingStep2({
                         )}
 
                         {resumeName && !resumeError && (
-                          <p data-testid="resume-success" className="text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <p data-testid="resume-success" className="text-xs text-brand-700 dark:text-brand-300 flex items-center gap-1.5">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Resume saved
                           </p>
                         )}
