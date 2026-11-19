@@ -34,7 +34,8 @@ afterEach(() => {
 describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
   it("tells users they can upload their LinkedIn 'Save to PDF' file in the same box", () => {
     renderStep2();
-    expect(screen.getByText("Upload resume or LinkedIn PDF")).toBeTruthy();
+    // Heading renders once per breakpoint tree (desktop + mobile/tablet); check the desktop copy by its stable id.
+    expect(document.getElementById("resume-card-title")?.textContent).toBe("Upload resume or LinkedIn PDF");
     const hint = screen.getByTestId("resume-linkedin-hint").textContent || "";
     expect(hint).toMatch(/LinkedIn profile/);
     expect(hint).toMatch(/More/);
@@ -116,7 +117,8 @@ describe("Onboarding Step 2: resume or LinkedIn PDF", () => {
     renderStep2();
     expect(screen.queryByTestId("input-resume-file")).toBeNull();
     expect(screen.queryByTestId("resume-linkedin-hint")).toBeNull();
-    expect(screen.getAllByText("Coming soon").length).toBe(2);
+    // 2 placeholder cards (LinkedIn, Resume) rendered once per breakpoint tree (desktop + mobile/tablet) = 4.
+    expect(screen.getAllByText("Coming soon").length).toBe(4);
   });
 });
 

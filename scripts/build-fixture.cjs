@@ -11,6 +11,12 @@ esbuild.buildSync({
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
     "process.env.NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED": JSON.stringify("true"),
+    // next/image (used by BrandIcon) reads these at module scope; without a value
+    // the bare `process` reference throws ReferenceError in a non-Next browser bundle.
+    "process.env.NEXT_RUNTIME": JSON.stringify(""),
+    "process.env.NEXT_DEPLOYMENT_ID": JSON.stringify(""),
+    "process.env.__NEXT_IMAGE_OPTS": "undefined",
+    "process.env.__NEXT_OPTIMIZE_FONTS": JSON.stringify("false"),
   },
   loader: {
     ".tsx": "tsx",

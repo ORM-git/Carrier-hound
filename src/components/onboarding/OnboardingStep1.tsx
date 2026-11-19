@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { Plus, X, Globe, Check, HelpCircle, LogOut } from "lucide-react";
 import BrandIcon from "@/components/BrandIcon";
 import JobFunctionBottomSheet from "./JobFunctionBottomSheet";
@@ -48,8 +48,10 @@ export default function OnboardingStep1({
   const [showRemoteHelp, setShowRemoteHelp] = useState(false);
   const [showWorkAuthHelp, setShowWorkAuthHelp] = useState(false);
 
-  const jobFunctionTriggerRef = useRef<HTMLButtonElement>(null);
-  const countryTriggerRef = useRef<HTMLButtonElement>(null);
+  // Tracks whichever trigger (mobile/tablet tree or desktop tree) was actually
+  // clicked, so focus returns to the right one regardless of viewport.
+  const [activeJobTrigger, setActiveJobTrigger] = useState<HTMLElement | null>(null);
+  const [activeCountryTrigger, setActiveCountryTrigger] = useState<HTMLElement | null>(null);
 
   // Form is valid only when all 4 required fields are filled
   const isFormValid =
@@ -58,7 +60,7 @@ export default function OnboardingStep1({
     Boolean(country && country.trim().length > 0) &&
     Boolean(workAuth && workAuth.trim().length > 0);
 
-  // Rendered with focus-visible accessibility
+  // Rendered twice (mobile tree + desktop tree); the hidden copy is display:none so only one is focusable
   const remoteHelpButton = (extraClass = "") => (
     <button
       type="button"
@@ -76,305 +78,277 @@ export default function OnboardingStep1({
   );
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      {/* 1. LEFT WELCOME PANEL (Desktop full-height sticky split shell, Mobile compact header) */}
-      <aside className="w-full lg:w-[42%] xl:w-[40%] bg-gradient-to-br from-emerald-50/90 via-teal-50/70 to-emerald-100/50 dark:from-zinc-950 dark:via-emerald-950/20 dark:to-zinc-900 border-b lg:border-b-0 lg:border-r border-emerald-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-6 sm:p-8 lg:p-12 lg:sticky lg:top-0 lg:h-screen flex-shrink-0">
-        {/* Brand Bar */}
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-emerald-500/20 shadow-xs flex items-center justify-center p-2 text-emerald-600">
-              <BrandIcon className="w-6 h-6" />
+    <>
+      {/* ============================================================
+          MOBILE / TABLET (<1024px): main-branch markup, unchanged.
+          ============================================================ */}
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
+        {/* Copilot Greeting Header */}
+        <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
+          <div className="relative flex-shrink-0">
+            <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
+              <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
             </div>
-            <div>
-              <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
-                CareerMonke
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"
+              title="Copilot Online"
+            />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm md:text-base font-bold text-zinc-900 dark:text-zinc-100">
+                CareerMonke Copilot
               </span>
-              <span className="block text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                {isEditMode ? "Preferences Editor" : "Job Discovery"}
+              <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+                {isEditMode ? "Edit Mode" : "AI"}
               </span>
+            </div>
+            <div className="p-3.5 md:p-4 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm md:text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed">
+              {isEditMode
+                ? "Update your job preferences below to tune your recommended jobs feed."
+                : "Hi, I'm your CareerMonke Copilot. What type of role are you looking for?"}
             </div>
           </div>
         </div>
 
-        {/* Welcome Block (Non-AI CM Welcome & Reference Typography) */}
-        <div className="my-6 lg:my-0 space-y-4 max-w-md">
-          {/* Reference-style speech badge treatment */}
-          <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-emerald-200/80 dark:border-emerald-800/50 shadow-xs">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-              CareerMonke Guide
-            </span>
-          </div>
+        {/* Main Form Card */}
+        <div className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-8 shadow-sm md:shadow-md space-y-6 md:space-y-7">
+          {/* 1. Job Function (Required) */}
+          <div>
+            <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
+              Job Function{" "}
+              <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                (select from categories for best results)
+              </span>
+            </label>
 
-          <h1 className="text-2xl sm:text-3xl xl:text-4xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
-            To get started, what type of role are you looking for?
-          </h1>
-
-          <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            {isEditMode
-              ? "Update your preferred functions, employment agreements, and locations to refresh your recommendations."
-              : "Tell us your target function, employment terms, and location preferences to receive tailored job matches."}
-          </p>
-        </div>
-
-        {/* Left footer note on desktop */}
-        <div className="hidden lg:block text-xs text-zinc-400 dark:text-zinc-500">
-          Step 1 of 2 · Basic Preferences
-        </div>
-      </aside>
-
-      {/* 2. RIGHT FORM PANEL */}
-      <section className="flex-1 flex flex-col justify-between min-h-screen bg-white dark:bg-zinc-950 overflow-y-auto">
-        <div>
-          {/* Top Bar with Logout */}
-          <div className="w-full flex items-center justify-between px-6 sm:px-8 pt-6 pb-2">
-            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-              {isEditMode ? "Edit Profile" : "Onboarding"}
-            </div>
-            {onLogout && (
+            {roles.length === 0 ? (
               <button
                 type="button"
-                onClick={onLogout}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
+                onClick={(e) => {
+                  setActiveJobTrigger(e.currentTarget);
+                  setIsBottomSheetOpen(true);
+                }}
+                className="w-full py-3.5 md:py-4 px-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition group"
               >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Logout</span>
+                <Plus className="w-4 h-4 text-zinc-500 group-hover:text-emerald-600 transition" />
+                <span>Add</span>
               </button>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap gap-2 md:gap-2.5">
+                  {roles.map((r) => (
+                    <span
+                      key={r}
+                      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs md:text-sm font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30"
+                    >
+                      <span>{r}</span>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveRole(r)}
+                        aria-label={`Remove ${r}`}
+                        className="p-0.5 text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-100 rounded-full hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 transition"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setActiveJobTrigger(e.currentTarget);
+                    setIsBottomSheetOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs md:text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add more roles</span>
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Main Form Fields Container */}
-          <div className="max-w-xl w-full mx-auto px-5 sm:px-8 py-6 space-y-6 sm:space-y-7">
-            {/* 1. Job Function (Required) */}
-            <div className="space-y-2">
-              <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
-                Job Function
-                <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400 ml-1.5">
-                  (select from categories for best results)
-                </span>
-              </div>
-
-              {roles.length === 0 ? (
-                <button
-                  ref={jobFunctionTriggerRef}
-                  type="button"
-                  onClick={() => setIsBottomSheetOpen(true)}
-                  className="w-full py-3.5 px-4 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl flex items-center justify-between text-left text-sm text-zinc-400 dark:text-zinc-500 bg-zinc-50/50 dark:bg-zinc-900/50 hover:bg-emerald-50/30 transition group"
-                >
-                  <span>Please select/enter your expected job function</span>
-                  <Plus className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 transition" />
-                </button>
-              ) : (
-                <div className="space-y-2.5">
-                  <div className="flex flex-wrap gap-2">
-                    {roles.map((r) => (
-                      <span
-                        key={r}
-                        className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30"
-                      >
-                        <span>{r}</span>
-                        <button
-                          type="button"
-                          onClick={() => onRemoveRole(r)}
-                          aria-label={`Remove ${r}`}
-                          className="p-0.5 text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-100 rounded-full hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 transition"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+          {/* 2. Job Type (Required) */}
+          <div>
+            <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2.5">
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
+              Job Type
+            </label>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3">
+              {JOB_TYPE_OPTIONS.map((jt) => {
+                const isChecked = employmentTypes.includes(jt.id) || employmentTypes.includes(jt.label);
+                return (
                   <button
-                    ref={jobFunctionTriggerRef}
+                    key={jt.id}
                     type="button"
-                    onClick={() => setIsBottomSheetOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-0.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add more roles</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* 2. Job Type (Required, 2x2 grid matching Reference 1) */}
-            <div className="space-y-2.5">
-              <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
-                Job Type
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                {JOB_TYPE_OPTIONS.map((jt) => {
-                  const isChecked = employmentTypes.includes(jt.id) || employmentTypes.includes(jt.label);
-                  return (
-                    <button
-                      key={jt.id}
-                      type="button"
-                      aria-pressed={isChecked}
-                      onClick={() => onToggleEmploymentType(jt.id)}
-                      className={`flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
-                        isChecked
-                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
-                          : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      <div
-                        className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
-                          isChecked
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
-                        }`}
-                      >
-                        {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      </div>
-                      <span className="truncate">{jt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 3. Location & Remote (Side-by-side row matching Reference 1) */}
-            <div className="space-y-2.5">
-              <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
-                Location
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
-                {/* Country / Location Picker button */}
-                <div className="sm:col-span-7">
-                  <button
-                    ref={countryTriggerRef}
-                    type="button"
-                    onClick={() => setIsCountryPickerOpen(true)}
-                    className="w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
-                  >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      {country ? (
-                        <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
-                          {country}
-                        </span>
-                      ) : (
-                        <span className="text-zinc-400 dark:text-zinc-500 truncate">
-                          Select country / location
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0 ml-2">
-                      {country ? "Change" : "Select"}
-                    </span>
-                  </button>
-                </div>
-
-                {/* Open to Remote card */}
-                <div className="sm:col-span-5">
-                  <div
-                    className={`w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
-                      openToRemote
-                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100"
-                        : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
+                    aria-pressed={isChecked}
+                    onClick={() => onToggleEmploymentType(jt.id)}
+                    className={`flex items-center gap-3 p-3 md:p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+                      isChecked
+                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-sm"
+                        : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={onToggleOpenToRemote}
-                      className="flex-1 flex items-center gap-2.5 text-left -my-3.5 -ml-3.5 py-3.5 pl-3.5 rounded-l-2xl"
+                    <div
+                      className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors md:flex-shrink-0 ${
+                        isChecked
+                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                      }`}
                     >
-                      <div
-                        className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
-                          openToRemote
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
-                        }`}
-                      >
-                        {openToRemote && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      </div>
-                      <span className="truncate">Open to Remote</span>
-                    </button>
-                    {remoteHelpButton()}
-                  </div>
+                      {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    </div>
+                    <span>{jt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3 & 4. Location & Remote (Two-column layout on desktop) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            {/* Location / Country */}
+            <div>
+              <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
+                Country / Location
+              </label>
+              <button
+                type="button"
+                onClick={(e) => {
+                  setActiveCountryTrigger(e.currentTarget);
+                  setIsCountryPickerOpen(true);
+                }}
+                className="w-full md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
+              >
+                <div className="flex items-center gap-2.5 truncate">
+                  <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  {country ? (
+                    <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
+                      {country}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-400 dark:text-zinc-500 truncate">
+                      Select your country
+                    </span>
+                  )}
                 </div>
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0 ml-2">
+                  {country ? "Change" : "Select"}
+                </span>
+              </button>
+            </div>
+
+            {/* Open to Remote */}
+            <div>
+              {/* Desktop: label row with help above the card */}
+              <div className="hidden md:flex items-center justify-between mb-2">
+                <span className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  Remote Preference
+                </span>
+                {remoteHelpButton()}
+              </div>
+
+              {/* Card is a div so the help can be a sibling button (buttons can't nest); mobile looks as on main */}
+              <div
+                className={`w-full md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
+                  openToRemote
+                    ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100"
+                    : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
+                {/* Negative margin stretches the click target over the card padding */}
+                <button
+                  type="button"
+                  onClick={onToggleOpenToRemote}
+                  className="flex-1 flex items-center gap-3 text-left -my-3.5 -ml-3.5 py-3.5 pl-3.5 md:-my-4 md:-ml-4 md:py-4 md:pl-4 rounded-l-2xl"
+                >
+                  <div
+                    className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors md:flex-shrink-0 ${
+                      openToRemote
+                        ? "bg-emerald-600 border-emerald-600 text-white"
+                        : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                    }`}
+                  >
+                    {openToRemote && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  </div>
+                  <span>Open to Remote</span>
+                </button>
+                {remoteHelpButton("md:hidden")}
               </div>
 
               {showRemoteHelp && (
-                <p
-                  id="remote-help"
-                  className="mt-1 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50"
-                >
+                <p id="remote-help" className="mt-1.5 px-3 md:px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
                   When checked, your recommended jobs will include remote roles alongside your preferred location.
                 </p>
               )}
             </div>
+          </div>
 
-            {/* 4. Work Authorization (Required per prompt contract) */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                  <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
-                  Work Authorization
-                </div>
-                <button
-                  type="button"
-                  className={HELP_BUTTON_CLASS}
-                  onClick={() => setShowWorkAuthHelp(!showWorkAuthHelp)}
-                  aria-label="Info about work authorization"
-                  aria-expanded={showWorkAuthHelp}
-                  aria-controls="work-auth-help"
-                >
-                  <HelpCircle className="w-4 h-4" />
-                </button>
-              </div>
+          {/* 5. Work Authorization / Sponsorship (Required, Never default to Authorized) */}
+          <div>
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
+                Work Authorization
+              </label>
+              <button
+                type="button"
+                className={HELP_BUTTON_CLASS}
+                onClick={() => setShowWorkAuthHelp(!showWorkAuthHelp)}
+                aria-label="Info about work authorization"
+                aria-expanded={showWorkAuthHelp}
+                aria-controls="work-auth-help"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            </div>
 
-              {showWorkAuthHelp && (
-                <p
-                  id="work-auth-help"
-                  className="px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50"
-                >
-                  Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
-                </p>
-              )}
+            {showWorkAuthHelp && (
+              <p id="work-auth-help" className="mb-2.5 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
+                Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
+              </p>
+            )}
 
-              <div className="space-y-2">
-                {WORK_AUTH_OPTIONS.map((opt) => {
-                  const isSelected = workAuth === opt.label || workAuth === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => onSelectWorkAuth(opt.label)}
-                      className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+            <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
+              {WORK_AUTH_OPTIONS.map((opt) => {
+                const isSelected = workAuth === opt.label || workAuth === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => onSelectWorkAuth(opt.label)}
+                    className={`w-full md:h-full flex items-center gap-3 p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
+                      isSelected
+                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-sm"
+                        : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors flex-shrink-0 ${
                         isSelected
-                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
-                          : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
+                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
                       }`}
                     >
-                      <div
-                        className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors flex-shrink-0 ${
-                          isSelected
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
-                        }`}
-                      >
-                        {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
-                      <span className="text-xs sm:text-sm">{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <span className="text-xs sm:text-sm">{opt.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
-        {/* 5. Bottom Navigation Bar with Progress & Next CTA */}
-        <div className="w-full bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-100 dark:border-zinc-800 p-4 sm:p-6 mt-6">
-          <div className="max-w-xl mx-auto space-y-3">
-            {/* Progress Bar (Step 1 of 2 -> 50%) */}
-            <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 sm:h-2 rounded-full overflow-hidden">
+        {/* Progress Indicator and Next Button (Fixed on mobile, in-flow on desktop) */}
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 p-4 md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+          <div className="max-w-lg md:max-w-none mx-auto space-y-3 md:space-y-4">
+            {/* Progress bar (Step 1 of 2 -> 50%) */}
+            <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
               <div
                 className="bg-emerald-500 h-full rounded-full transition-all duration-300"
                 style={{ width: "50%" }}
@@ -382,40 +356,371 @@ export default function OnboardingStep1({
             </div>
 
             <div className="flex items-center justify-between gap-4">
-              <span className="text-xs sm:text-sm font-semibold text-zinc-400 dark:text-zinc-500">
+              <span className="text-xs md:text-sm font-semibold text-zinc-400 dark:text-zinc-500">
                 Step 1 of 2
               </span>
               <button
                 type="button"
-                data-testid="btn-onboarding-step1-next"
+                data-testid="btn-onboarding-step1-next-mobile"
                 disabled={!isFormValid}
                 onClick={onNext}
-                className="px-8 sm:px-10 py-3 sm:py-3.5 rounded-full text-sm sm:text-base font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+                className="px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
               >
                 <span>Next</span>
               </button>
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Two-Pane Job Function Picker */}
+      {/* ============================================================
+          DESKTOP (>=1024px): split-shell redesign.
+          ============================================================ */}
+      <div className="hidden lg:flex min-h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+        {/* 1. LEFT WELCOME PANEL (Desktop full-height sticky split shell) */}
+        <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-emerald-50/90 via-teal-50/70 to-emerald-100/50 dark:from-zinc-950 dark:via-emerald-950/20 dark:to-zinc-900 border-r border-emerald-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
+          {/* Brand Bar */}
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-emerald-500/20 shadow-xs flex items-center justify-center p-2 text-emerald-600">
+                <BrandIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
+                  CareerMonke
+                </span>
+                <span className="block text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  {isEditMode ? "Preferences Editor" : "Job Discovery"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Welcome Block (Non-AI CM Welcome & Reference Typography) */}
+          <div className="space-y-4 max-w-md">
+            {/* Reference-style speech badge treatment */}
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-emerald-200/80 dark:border-emerald-800/50 shadow-xs">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                CareerMonke Guide
+              </span>
+            </div>
+
+            <h1 className="text-3xl xl:text-4xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
+              To get started, what type of role are you looking for?
+            </h1>
+
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              {isEditMode
+                ? "Update your preferred functions, employment agreements, and locations to refresh your recommendations."
+                : "Tell us your target function, employment terms, and location preferences to receive tailored job matches."}
+            </p>
+          </div>
+
+          {/* Left footer note on desktop */}
+          <div className="text-xs text-zinc-400 dark:text-zinc-500">
+            Step 1 of 2 · Basic Preferences
+          </div>
+        </aside>
+
+        {/* 2. RIGHT FORM PANEL */}
+        <section className="flex-1 flex flex-col justify-between min-h-screen bg-white dark:bg-zinc-950 overflow-y-auto">
+          <div>
+            {/* Top Bar with Logout */}
+            <div className="w-full flex items-center justify-between px-8 pt-6 pb-2">
+              <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                {isEditMode ? "Edit Profile" : "Onboarding"}
+              </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
+              )}
+            </div>
+
+            {/* Main Form Fields Container */}
+            <div className="max-w-xl w-full mx-auto px-8 py-6 space-y-7">
+              {/* 1. Job Function (Required) */}
+              <div className="space-y-2">
+                <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
+                  Job Function
+                  <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400 ml-1.5">
+                    (select from categories for best results)
+                  </span>
+                </div>
+
+                {roles.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setActiveJobTrigger(e.currentTarget);
+                      setIsBottomSheetOpen(true);
+                    }}
+                    className="w-full py-3.5 px-4 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl flex items-center justify-between text-left text-sm text-zinc-400 dark:text-zinc-500 bg-zinc-50/50 dark:bg-zinc-900/50 hover:bg-emerald-50/30 transition group"
+                  >
+                    <span>Please select/enter your expected job function</span>
+                    <Plus className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 transition" />
+                  </button>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex flex-wrap gap-2">
+                      {roles.map((r) => (
+                        <span
+                          key={r}
+                          className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30"
+                        >
+                          <span>{r}</span>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveRole(r)}
+                            aria-label={`Remove ${r}`}
+                            className="p-0.5 text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-100 rounded-full hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 transition"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        setActiveJobTrigger(e.currentTarget);
+                        setIsBottomSheetOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-0.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add more roles</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Job Type (Required, 2x2 grid matching Reference 1) */}
+              <div className="space-y-2.5">
+                <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
+                  Job Type
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {JOB_TYPE_OPTIONS.map((jt) => {
+                    const isChecked = employmentTypes.includes(jt.id) || employmentTypes.includes(jt.label);
+                    return (
+                      <button
+                        key={jt.id}
+                        type="button"
+                        aria-pressed={isChecked}
+                        onClick={() => onToggleEmploymentType(jt.id)}
+                        className={`flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+                          isChecked
+                            ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                            : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
+                            isChecked
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                          }`}
+                        >
+                          {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                        <span className="truncate">{jt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Location & Remote (Side-by-side row matching Reference 1) */}
+              <div className="space-y-2.5">
+                <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
+                  Location
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
+                  {/* Country / Location Picker button */}
+                  <div className="sm:col-span-7">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        setActiveCountryTrigger(e.currentTarget);
+                        setIsCountryPickerOpen(true);
+                      }}
+                      className="w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        {country ? (
+                          <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
+                            {country}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400 dark:text-zinc-500 truncate">
+                            Select country / location
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0 ml-2">
+                        {country ? "Change" : "Select"}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Open to Remote card */}
+                  <div className="sm:col-span-5">
+                    <div
+                      className={`w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+                        openToRemote
+                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100"
+                          : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={onToggleOpenToRemote}
+                        className="flex-1 flex items-center gap-2.5 text-left -my-3.5 -ml-3.5 py-3.5 pl-3.5 rounded-l-2xl"
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
+                            openToRemote
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                          }`}
+                        >
+                          {openToRemote && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                        <span className="truncate">Open to Remote</span>
+                      </button>
+                      {remoteHelpButton()}
+                    </div>
+                  </div>
+                </div>
+
+                {showRemoteHelp && (
+                  <p
+                    id="remote-help-desktop"
+                    className="mt-1 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50"
+                  >
+                    When checked, your recommended jobs will include remote roles alongside your preferred location.
+                  </p>
+                )}
+              </div>
+
+              {/* 4. Work Authorization (Required per prompt contract) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                    <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
+                    Work Authorization
+                  </div>
+                  <button
+                    type="button"
+                    className={HELP_BUTTON_CLASS}
+                    onClick={() => setShowWorkAuthHelp(!showWorkAuthHelp)}
+                    aria-label="Info about work authorization"
+                    aria-expanded={showWorkAuthHelp}
+                    aria-controls="work-auth-help-desktop"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {showWorkAuthHelp && (
+                  <p
+                    id="work-auth-help-desktop"
+                    className="px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50"
+                  >
+                    Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
+                  </p>
+                )}
+
+                <div className="space-y-2">
+                  {WORK_AUTH_OPTIONS.map((opt) => {
+                    const isSelected = workAuth === opt.label || workAuth === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => onSelectWorkAuth(opt.label)}
+                        className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+                          isSelected
+                            ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                            : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors flex-shrink-0 ${
+                            isSelected
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                          }`}
+                        >
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <span className="text-xs sm:text-sm">{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 5. Bottom Navigation Bar with Progress & Next CTA */}
+          <div className="w-full bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-100 dark:border-zinc-800 p-6 mt-6">
+            <div className="max-w-xl mx-auto space-y-3">
+              {/* Progress Bar (Step 1 of 2 -> 50%) */}
+              <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                  style={{ width: "50%" }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold text-zinc-400 dark:text-zinc-500">
+                  Step 1 of 2
+                </span>
+                <button
+                  type="button"
+                  data-testid="btn-onboarding-step1-next"
+                  disabled={!isFormValid}
+                  onClick={onNext}
+                  className="px-10 py-3.5 rounded-full text-base font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  <span>Next</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* Shared modals (rendered once; focus returns to whichever tree's trigger was clicked) */}
       <JobFunctionBottomSheet
         isOpen={isBottomSheetOpen}
         onClose={() => setIsBottomSheetOpen(false)}
         selectedRoles={roles}
         onToggleRole={onToggleRole}
-        openerElement={jobFunctionTriggerRef.current}
+        openerElement={activeJobTrigger}
       />
-
-      {/* Searchable Country Picker Modal */}
       <CountryPickerModal
         isOpen={isCountryPickerOpen}
         onClose={() => setIsCountryPickerOpen(false)}
         selectedCountry={country}
         onSelectCountry={(c) => onSelectCountry(c)}
-        openerElement={countryTriggerRef.current}
+        openerElement={activeCountryTrigger}
       />
-    </div>
+    </>
   );
 }

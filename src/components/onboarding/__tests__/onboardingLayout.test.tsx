@@ -71,7 +71,8 @@ describe("OnboardingStep1 help controls", () => {
     render(<OnboardingStep1 {...step1Props} onToggleOpenToRemote={onToggle} />);
     fireEvent.click(screen.getAllByRole("button", { name: "Info about remote preference" })[0]);
     expect(onToggle).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Open to Remote" }));
+    // Renders once per breakpoint tree (desktop + mobile/tablet); either copy toggles the same state.
+    fireEvent.click(screen.getAllByRole("button", { name: "Open to Remote" })[0]);
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });
@@ -84,8 +85,10 @@ describe("OnboardingStep2 card text", () => {
       const desc = title.nextElementSibling!;
       expect(title.className).not.toContain("truncate");
       expect(desc.className).not.toContain("truncate");
+      if (id === "linkedin-card-title") {
+        expect(desc.textContent).toBe("e.g. https://www.linkedin.com/in/yourname");
+      }
     }
-    expect(screen.getByText("e.g. https://www.linkedin.com/in/yourname")).toBeTruthy();
   });
 });
 
@@ -200,7 +203,8 @@ describe("OnboardingStep2 flag ON/OFF behavior", () => {
 
     expect(screen.queryByTestId("input-resume-file")).toBeNull();
     expect(screen.queryByTestId("input-linkedin-url")).toBeNull();
-    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    // 2 placeholder cards (LinkedIn, Resume) rendered once per breakpoint tree (desktop + mobile/tablet) = 4.
+    expect(screen.getAllByText("Coming soon")).toHaveLength(4);
 
     const finishBtn = screen.getByTestId("btn-onboarding-finish");
     expect(finishBtn.textContent).toBe("Skip for now & Continue to Jobs");
@@ -224,15 +228,15 @@ describe("Step 2 Skip Both and Finish", () => {
     const onFinish = vi.fn();
     render(<OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" />);
 
-    // Skip LinkedIn
+    // Skip LinkedIn (state is shared, so both breakpoint trees reflect it)
     const skipLi = screen.getByTestId("skip-linkedin");
     fireEvent.click(skipLi);
-    expect(screen.getByText("Skipped")).toBeTruthy();
+    expect(screen.getAllByText("Skipped")).toHaveLength(2);
 
     // Skip Resume
     const skipRes = screen.getByTestId("skip-resume");
     fireEvent.click(skipRes);
-    expect(screen.getAllByText("Skipped")).toHaveLength(2);
+    expect(screen.getAllByText("Skipped")).toHaveLength(4);
 
     // Finish button
     const finishBtn = screen.getByTestId("btn-onboarding-finish");
@@ -342,7 +346,7 @@ describe("Step 2 Parse Summary States: parsed, failed, and unavailable", () => {
 
     expect(screen.queryByTestId("resume-parse-status")).toBeNull();
     expect(screen.getByTestId("resume-success").textContent).toContain("Resume saved");
-    expect(screen.getByText("cv.docx")).toBeTruthy();
+    expect(screen.getAllByText("cv.docx").length).toBeGreaterThan(0);
     const finishBtn = screen.getByTestId("btn-onboarding-finish");
     expect(finishBtn.textContent).toBe("Continue to Jobs");
   });
@@ -363,22 +367,25 @@ describe("OnboardingStep1 in Edit Mode", () => {
       />
     );
 
-    // Selected role shown in summary chip
-    expect(screen.getByText("Backend Engineer")).toBeTruthy();
+    // Selected role shown in summary chip (once per breakpoint tree: desktop + mobile/tablet)
+    expect(screen.getAllByText("Backend Engineer").length).toBeGreaterThan(0);
 
     // Checkboxes checked
-    const fullTimeBtn = screen.getByRole("button", { name: "Full-time" });
-    expect(fullTimeBtn.getAttribute("aria-pressed")).toBe("true");
+    for (const fullTimeBtn of screen.getAllByRole("button", { name: "Full-time" })) {
+      expect(fullTimeBtn.getAttribute("aria-pressed")).toBe("true");
+    }
 
-    const contractBtn = screen.getByRole("button", { name: "Contract" });
-    expect(contractBtn.getAttribute("aria-pressed")).toBe("true");
+    for (const contractBtn of screen.getAllByRole("button", { name: "Contract" })) {
+      expect(contractBtn.getAttribute("aria-pressed")).toBe("true");
+    }
 
     // Location shown
-    expect(screen.getByText("United States")).toBeTruthy();
+    expect(screen.getAllByText("United States").length).toBeGreaterThan(0);
 
     // Work auth selected
-    const workAuthBtn = screen.getByRole("button", { name: /Authorized to work/ });
-    expect(workAuthBtn.getAttribute("aria-pressed")).toBe("true");
+    for (const workAuthBtn of screen.getAllByRole("button", { name: /Authorized to work/ })) {
+      expect(workAuthBtn.getAttribute("aria-pressed")).toBe("true");
+    }
 
     // Next button enabled
     const nextBtn = screen.getByTestId("btn-onboarding-step1-next");
