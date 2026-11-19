@@ -122,12 +122,12 @@ async function runSuite() {
       const pMonthly = resolveOrderPricing({ planCode: "monthly" });
       assert.strictEqual(pMonthly?.type, "plan");
       assert.strictEqual(pMonthly?.code, "monthly");
-      assert.strictEqual(pMonthly?.amount_paise, 149900);
+      assert.strictEqual(pMonthly?.amount_paise, 49900);
 
       const pWeekly = resolveOrderPricing({ planCode: "weekly" });
       assert.strictEqual(pWeekly?.type, "plan");
       assert.strictEqual(pWeekly?.code, "weekly");
-      assert.strictEqual(pWeekly?.amount_paise, 69200);
+      assert.strictEqual(pWeekly?.amount_paise, 39900);
     });
 
     check("1.5 resolveOrderPricing rejects unknown codes", () => {
@@ -216,7 +216,7 @@ async function runSuite() {
                   maybeSingle: async () => ({
                     data: {
                       duration_days: PLAN_DEFINITIONS[code as keyof typeof PLAN_DEFINITIONS]?.duration_days || 30,
-                      price_paise: PLAN_DEFINITIONS[code as keyof typeof PLAN_DEFINITIONS]?.price_paise || 149900,
+                      price_paise: PLAN_DEFINITIONS[code as keyof typeof PLAN_DEFINITIONS]?.price_paise || 49900,
                     },
                     error: null,
                   }),
@@ -495,6 +495,13 @@ async function runSuite() {
 
       (req as any).__testDeps = {
         getSupabaseAdmin: () => mockDb.client,
+        fetchRazorpayPayment: async () => ({
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: orderRow.amount_paise,
+          currency: orderRow.currency || "INR",
+        }),
       };
 
       const res = await verifyPost(req);
@@ -525,6 +532,13 @@ async function runSuite() {
       const mockDb = createMockSupabase(orderRow, subRow, options);
       const handler = createNetlifyVerifyHandler({
         getSupabaseAdmin: () => mockDb.client,
+        fetchRazorpayPayment: async () => ({
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: orderRow.amount_paise,
+          currency: orderRow.currency || "INR",
+        }),
       });
 
       const res = await handler({

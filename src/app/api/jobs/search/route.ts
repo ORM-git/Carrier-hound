@@ -14,6 +14,7 @@ import {
   detectRoleCategory,
   extractTopKeywords,
 } from "@/lib/jobs/highVolumeEnrichment";
+import { applyExperienceLevelQuery, isExperienceLevelFilterActive } from "@/lib/jobs/experienceLevels";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { withRouteSpan } from "@/lib/monitoring/tracing";
@@ -334,7 +335,7 @@ async function getHandler(req: Request) {
       (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") ||
       (locationParam && locationParam.trim() && locationParam.toLowerCase() !== "all") ||
       (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") ||
-      (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") ||
+      isExperienceLevelFilterActive(levelParam) ||
       (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") ||
       (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") ||
       (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") ||
@@ -443,23 +444,7 @@ async function getHandler(req: Request) {
     }
 
     if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
-      const lvl = levelParam.trim().toLowerCase();
-      if (lvl.includes("lead") || lvl.includes("staff")) {
-        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-      } else if (lvl.includes("senior")) {
-        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-      } else if (lvl.includes("entry") || lvl.includes("junior")) {
-        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-      } else if (lvl.includes("mid")) {
-        query = query
-          .not("title", "ilike", "%senior%")
-          .not("title", "ilike", "%sr.%")
-          .not("title", "ilike", "%staff%")
-          .not("title", "ilike", "%principal%")
-          .not("title", "ilike", "%lead%")
-          .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%");
-      }
+      query = applyExperienceLevelQuery(query, levelParam);
     }
 
     if (experienceParam && experienceParam.trim() && experienceParam.toLowerCase() !== "all" && experienceParam.toLowerCase() !== "all experience") {

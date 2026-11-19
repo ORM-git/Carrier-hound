@@ -262,20 +262,34 @@ function detectCurrency(text: string, context?: ParseSalaryOptions): { currency:
 }
 
 /**
- * Detects pay period from snippet.
+ * Detects pay period from snippet or string.
+ * Normalizes period aliases:
+ * - Hourly: per hour, /hr, /hour, hourly, hour, hr, an hour
+ * - Monthly: per month, /mo, /month, monthly, month, mo, a month, p.m., pm
+ * - Yearly: per year, per annum, /yr, /year, annually, annual, annum, yearly, year, yr, p.a., pa, lpa
  */
-function detectPayPeriod(text: string): SalaryPeriod | null {
-  if (/\b(?:per\s+hour|\/hr|\/hour|hourly|an\s+hour)\b/i.test(text)) {
+export function detectPayPeriod(text: string | null | undefined): SalaryPeriod | null {
+  if (!text || typeof text !== 'string') {
+    return null;
+  }
+  const clean = text.trim();
+  if (!clean) {
+    return null;
+  }
+
+  if (/(?:^|\b)(?:per\s+hour|\/hr|\/hour|hourly|hour|hr|an\s+hour)(?:(?<=\w)\b|$|\s)/i.test(clean)) {
     return 'hourly';
   }
-  if (/\b(?:per\s+month|\/mo|\/month|monthly|a\s+month|p\.m\.|pm)\b/i.test(text)) {
+  if (/(?:^|\b)(?:per\s+month|\/mo|\/month|monthly|month|mo|a\s+month|p\.m\.|pm)(?:(?<=\w)\b|$|\s)/i.test(clean)) {
     return 'monthly';
   }
-  if (/\b(?:per\s+year|per\s+annum|\/yr|\/year|annually|annual|yearly|p\.a\.|pa|lpa)\b/i.test(text)) {
+  if (/(?:^|\b)(?:per\s+year|per\s+annum|\/yr|\/year|annually|annual|annum|yearly|year|yr|p\.a\.|pa|lpa)(?:(?<=\w)\b|$|\s)/i.test(clean)) {
     return 'yearly';
   }
   return null;
 }
+
+export const normalizeSalaryPeriod = detectPayPeriod;
 
 /**
  * Parses numeric compensation amounts from a snippet.

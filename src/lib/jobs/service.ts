@@ -4,8 +4,7 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring"
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
-import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "@/lib/countries";
-import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
+import { getCountryFilterClause } from "@/lib/countries";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import {
   detectRoleCategory,
@@ -13,6 +12,12 @@ import {
   type CompanyCategory,
   type RoleCategory,
 } from "@/lib/jobs/highVolumeEnrichment";
+import { rankJobsByRecommendation, hasOnboardingAnswers } from "./recommendations";
+import {
+  applyExperienceLevelQuery,
+  formatExperienceLevels,
+  parseExperienceLevels,
+} from "./experienceLevels";
 
 export interface LiveJob {
   id: string;
@@ -48,6 +53,8 @@ export interface LiveJob {
   logo_url?: string | null;
   salary_display?: string | null;
   salary_original?: string | null;
+  matchScore?: number | null;
+  matchReasons?: string[];
 }
 
 export interface ProUnlockError {
@@ -57,6 +64,7 @@ export interface ProUnlockError {
 }
 
 export interface GetJobsOptions {
+  baseUrl?: string;
   page?: number;
   pageSize?: number;
   category?: string;
@@ -361,11 +369,11 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const relevanceTerms = isMatchSort
     ? extractCandidateRelevanceTerms(candidate, preferences)
     : [];
+  const isRecommendedWithoutResume = isMatchSort && (!candidate || relevanceTerms.length === 0);
 
-  // 1. Route text search and default list through safe server endpoint so company capping can use service-key company_id
-  // without exposing raw database tables or leaking paid fields to guests
+  const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
   const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
-  const shouldUseServer = typeof window !== "undefined" && (hasServerFilter || !candidate || relevanceTerms.length === 0);
+  const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
       let token: string | undefined;
@@ -381,6 +389,74 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         headers["Authorization"] = `Bearer ${token}`;
       }
 
+      // Wire recommendations into the real production path:
+      // When user requests match/recommended jobs without an uploaded resume, call /api/jobs/recommended
+      if (isRecommendedWithoutResume) {
+        const recParams = new URLSearchParams({
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+        if (preferences?.roles?.length) recParams.set("roles", preferences.roles.join(","));
+        if (preferences?.experienceLevel) recParams.set("experienceLevel", preferences.experienceLevel);
+        if (preferences?.remotePreference) recParams.set("remotePreference", preferences.remotePreference);
+        if (preferences?.locations?.length) recParams.set("locations", preferences.locations.join(","));
+        if (preferences?.employmentTypes?.length) recParams.set("employmentTypes", preferences.employmentTypes.join(","));
+        const prefMinSalary = preferences?.minSalary ?? (preferences as any)?.min_salary ?? salaryMin;
+        if (prefMinSalary) recParams.set("minSalary", String(prefMinSalary));
+        const prefCountry = (preferences as any)?.country ?? (preferences as any)?.countryCode ?? countryCode;
+        if (prefCountry && prefCountry !== "all") recParams.set("countryCode", String(prefCountry));
+        if (category && category !== "all") recParams.set("category", category);
+        if (remoteOnly) recParams.set("remoteOnly", "true");
+        if (location && location !== "all") recParams.set("location", location);
+        if (level && level !== "all") {
+          const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+          if (normLevel) recParams.set("level", normLevel);
+        }
+        if (jobType && jobType !== "all") recParams.set("jobType", jobType);
+        if (workModel && workModel !== "all") recParams.set("workModel", workModel);
+        if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
+        if (datePosted && datePosted !== "all") recParams.set("datePosted", datePosted);
+        if (experience && experience !== "all" && experience.toLowerCase() !== "all experience") recParams.set("experience", experience);
+        if (salaryMin) recParams.set("salaryMin", String(salaryMin));
+        if (sourceType && sourceType !== "all") recParams.set("sourceType", sourceType);
+        if (company && company.trim() && company.toLowerCase() !== "all") recParams.set("company", company.trim());
+        if (search && search.trim()) recParams.set("search", search.trim());
+
+        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers });
+        if (recRes.status === 403) {
+          return {
+            jobs: [],
+            totalCount: 0,
+            nextCursor: null,
+            hasNextPage: false,
+            error: "forbidden",
+          };
+        }
+        if (recRes.status === 503) {
+          return {
+            jobs: [],
+            totalCount: 0,
+            nextCursor: null,
+            hasNextPage: false,
+            isDegraded: true,
+            error: "degraded",
+          };
+        }
+        if (recRes.ok) {
+          const json = await recRes.json();
+          const count = json.totalCount ?? (json.jobs?.length || 0);
+          return {
+            jobs: json.jobs || [],
+            totalCount: count,
+            nextCursor: null,
+            hasNextPage: (page * pageSize) < count,
+            isDegraded: false,
+          };
+        } else {
+          log.warn(`Recommended endpoint responded with status ${recRes.status}, falling back to public preview query.`);
+        }
+      }
+
       const params = new URLSearchParams({
         q: (search || '').trim(),
         page: String(page),
@@ -389,7 +465,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (category && category !== "all") params.set("category", category);
       if (remoteOnly) params.set("remoteOnly", "true");
       if (location && location !== "all") params.set("location", location);
-      if (level && level !== "all") params.set("level", level);
+      if (level && level !== "all") {
+        const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+        if (normLevel) params.set("level", normLevel);
+      }
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
@@ -403,7 +482,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (options.eligibility) params.set("eligibility", options.eligibility);
       if (options.currency) params.set("currency", options.currency);
 
-      const res = await fetch(`/api/jobs/search?${params.toString()}`, { headers });
+      const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers });
       if (res.status === 403) {
         return {
           jobs: [],
@@ -414,7 +493,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         };
       }
       if (res.status === 503) {
-        const json = await res.json().catch(() => ({}));
+        await res.json().catch(() => ({}));
         return {
           jobs: [],
           totalCount: 0,
@@ -530,23 +609,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
 
     if (level && level.trim() && level.toLowerCase() !== "all") {
-      const lvl = level.trim().toLowerCase();
-      if (lvl.includes("lead") || lvl.includes("staff")) {
-        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-      } else if (lvl.includes("senior")) {
-        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-      } else if (lvl.includes("entry") || lvl.includes("junior")) {
-        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-      } else if (lvl.includes("mid")) {
-        query = query
-          .not("title", "ilike", "%senior%")
-          .not("title", "ilike", "%sr.%")
-          .not("title", "ilike", "%staff%")
-          .not("title", "ilike", "%principal%")
-          .not("title", "ilike", "%lead%")
-          .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%");
-      }
+      query = applyExperienceLevelQuery(query, level);
     }
 
     if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
@@ -682,23 +745,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           }
         }
         if (level && level.trim() && level.toLowerCase() !== "all") {
-          const lvl = level.trim().toLowerCase();
-          if (lvl.includes("lead") || lvl.includes("staff")) {
-            catQuery = catQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-          } else if (lvl.includes("senior")) {
-            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
-          } else if (lvl.includes("entry") || lvl.includes("junior")) {
-            catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-          } else if (lvl.includes("mid")) {
-            catQuery = catQuery
-              .not("title", "ilike", "%senior%")
-              .not("title", "ilike", "%sr.%")
-              .not("title", "ilike", "%staff%")
-              .not("title", "ilike", "%principal%")
-              .not("title", "ilike", "%lead%")
-              .not("title", "ilike", "%junior%")
-              .not("title", "ilike", "%entry%");
-          }
+          catQuery = applyExperienceLevelQuery(catQuery, level);
         }
 
         if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
@@ -761,11 +808,36 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
             description: row.description,
           };
           const diagnostics = computeFitDiagnostics(candidate, teaserJob);
-          return { row, score: diagnostics.score };
+          let score = diagnostics.score;
+          if (preferences) {
+            const userRemote = (preferences.remotePreference || (preferences as any).remote_preference || "").toLowerCase().trim();
+            const isRemote =
+              row.remote === true ||
+              (row.remote_scope || "").toLowerCase() === "remote" ||
+              (row.remote_scope || "").toLowerCase() === "worldwide" ||
+              (row.location || "").toLowerCase().includes("remote");
+            if (userRemote === "remote" && !isRemote) {
+              score = 0;
+            }
+            const userExp = (preferences.experienceLevel || (preferences as any).experience_level || "").toLowerCase().trim();
+            const title = (row.title || "").toLowerCase();
+            const isLeadOrPrincipal = /\b(lead|staff|principal|head|director|architect|manager|vp|chief)\b/i.test(title);
+            const isSenior = /\b(senior|sr\.?)\b/i.test(title);
+            if ((userExp === "entry" || userExp === "intern") && (isSenior || isLeadOrPrincipal)) {
+              score = 0;
+            }
+          }
+          const finalScore = score > 0 ? Math.max(10, Math.min(99, Math.round(score))) : 0;
+          row.matchScore = finalScore;
+          return { row, score: finalScore };
         });
 
+        // Hard filter enforcement: only include qualifying roles; never show disqualified jobs
+        const qualifyingPool = scoredPool.filter((item) => item.score > 0);
+        const poolToSort = qualifyingPool;
+
         // Sort by match score descending, then recency descending
-        scoredPool.sort((a, b) => {
+        poolToSort.sort((a, b) => {
           if (b.score !== a.score) return b.score - a.score;
           const timeA = new Date(a.row.posted_at || a.row.created_at || 0).getTime();
           const timeB = new Date(b.row.posted_at || b.row.created_at || 0).getTime();
@@ -773,20 +845,37 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         });
 
         // Cap jobs per company: max 3 per company in visible top-30
-        const cappedPool = capJobsPerCompany(scoredPool.map((item) => item.row), 3, 30);
+        const cappedPool = capJobsPerCompany(poolToSort.map((item) => item.row), 3, 30);
         data = cappedPool.slice(from, to + 1);
+        count = cappedPool.length;
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
-      // Guest or profile without confirmed resume: sensible global relevance (verified roles first, then newest)
-      const res = await query
-        .order("verified", { ascending: false })
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(from, to);
-      if (res.error && !isLegacyBehavior) {
-        return DEGRADED_JOBS_RESULT;
+      if (hasOnboardingAnswers(preferences)) {
+        const poolLimit = 1000;
+        const poolQuery = query
+          .order("posted_at", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: false })
+          .range(0, poolLimit - 1);
+        const poolRes = await poolQuery;
+        if (poolRes.error && !isLegacyBehavior) {
+          return DEGRADED_JOBS_RESULT;
+        }
+        const ranked = rankJobsByRecommendation(poolRes.data || [], preferences);
+        const capped = capJobsPerCompany(ranked, 3, 30);
+        data = capped.slice(from, to + 1);
+        count = capped.length;
+      } else {
+        // Guest or profile without confirmed resume or preferences: sensible global relevance (verified roles first, then newest)
+        const res = await query
+          .order("verified", { ascending: false })
+          .order("posted_at", { ascending: false, nullsFirst: false })
+          .range(from, to);
+        if (res.error && !isLegacyBehavior) {
+          return DEGRADED_JOBS_RESULT;
+        }
+        data = capJobsPerCompany(res.data || [], 3, 30);
+        count = res.count;
       }
-      data = capJobsPerCompany(res.data || [], 3, 30);
-      count = res.count;
     } else {
       // Default newest first
       const res = await query
@@ -844,6 +933,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           postedAt: row.posted_at || row.created_at,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
+          matchScore: typeof row.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row.matchScore))) : (typeof row._matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row._matchScore))) : null),
         };
       });
 
@@ -1013,6 +1103,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 status: isInactive ? "expired" : (job.status || "active"),
                 logoUrl: job.logo_url || job.logoUrl || null,
                 logo_url: job.logo_url || job.logoUrl || null,
+                matchScore: typeof job.matchScore === "number" ? job.matchScore : null,
               };
             }
           } else {
@@ -1081,7 +1172,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
     const selectColumns =
       "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
 
-    let { data, error } = await supabase
+    let { data } = await supabase
       .from("jobs_public")
       .select(selectColumns)
       .eq("id", cleanId)

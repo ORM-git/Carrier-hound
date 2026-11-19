@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { rpcWithRetry } from "@/lib/db/rpcRetry";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -10,6 +11,25 @@ import { createLogger } from "@/lib/observability/logger";
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/verify" } });
 
 export const runtime = "edge";
+
+async function getCloudflareEnv(deps?: any): Promise<Record<string, any> | undefined> {
+  if (deps?.cfEnv) return deps.cfEnv;
+  if (deps?.env) return deps.env;
+  try {
+    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
+    const ctx = mod?.getRequestContext?.();
+    if (ctx?.env) {
+      return ctx.env as Record<string, any>;
+    }
+  } catch {}
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env) {
+      return cfContext.env as Record<string, any>;
+    }
+  } catch {}
+  return undefined;
+}
 
 interface VerifyPayload {
   order_id?: string;
@@ -83,8 +103,9 @@ async function verifySignature(
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
   try {
-    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+    if (getRuntimeEnv("NEXT_PUBLIC_BILLING_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
         { status: 503 }
@@ -103,11 +124,12 @@ export async function POST(req: Request) {
       supabaseAdmin = deps.getSupabaseAdmin();
     } else {
       const supabaseUrl =
-        process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.SUPABASE_URL ||
+        getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+        getRuntimeEnv("SUPABASE_URL", cfEnv) ||
         "https://szakevhxhwpeskidvtfs.supabase.co";
       const serviceRoleKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+        getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+        getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
         return NextResponse.json({ error: "Supabase service configuration missing" }, { status: 500 });
@@ -128,8 +150,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
     }
 
-    const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || "";
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    const keyId =
+      getRuntimeEnv("NEXT_PUBLIC_RAZORPAY_KEY_ID", cfEnv) ||
+      getRuntimeEnv("RAZORPAY_KEY_ID", cfEnv) ||
+      "";
+    const keySecret = getRuntimeEnv("RAZORPAY_KEY_SECRET", cfEnv);
 
     if (!keySecret || !keyId) {
       return NextResponse.json(
@@ -170,7 +195,7 @@ export async function POST(req: Request) {
     // Look up order in payment_orders table belonging to user (REQUIRED - Fail closed)
     const { data: orderRow, error: orderErr } = await supabaseAdmin
       .from("payment_orders")
-      .select("id, provider, mode, provider_order_id, plan_code, addon_code, amount_paise, status")
+      .select("id, provider, mode, provider_order_id, plan_code, addon_code, amount_paise, currency, status")
       .eq("provider_order_id", orderId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -254,6 +279,127 @@ export async function POST(req: Request) {
         isPro: serverMode === "live" && Boolean(orderRow.plan_code),
         orderId: orderRow.id,
       });
+    }
+
+    // Authoritative Server-Side Razorpay Verification (Launch Scope Requirement 4)
+    // Fetch payment from Razorpay and require captured status with matching amount and currency
+    const fetchCaller = deps.fetchFn;
+    const rzpCreds = btoa(`${keyId}:${keySecret}`);
+    let rzpPayment: any = null;
+
+    if (deps.fetchRazorpayPayment) {
+      rzpPayment = await deps.fetchRazorpayPayment(paymentId);
+    } else if (fetchCaller) {
+      try {
+        const rzpPayRes = await fetchCaller(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${rzpCreds}`,
+          },
+        });
+        if (!rzpPayRes.ok) {
+          const errData = await rzpPayRes.json().catch(() => ({}));
+          log.error("Razorpay payment fetch failed", { status: rzpPayRes.status, err: errData });
+          return NextResponse.json(
+            { error: "Payment verification failed with provider", code: "PAYMENT_VERIFICATION_FAILED" },
+            { status: 400 }
+          );
+        }
+        rzpPayment = await rzpPayRes.json();
+      } catch (fetchErr: any) {
+        log.error("Network error during Razorpay payment fetch", { error: fetchErr?.message || String(fetchErr) });
+        return NextResponse.json(
+          { error: "Payment verification failed with provider", code: "PAYMENT_VERIFICATION_FAILED" },
+          { status: 502 }
+        );
+      }
+    } else {
+      try {
+        const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${rzpCreds}`,
+          },
+        });
+        if (!rzpPayRes.ok) {
+          const errData = await rzpPayRes.json().catch(() => ({}));
+          log.error("Razorpay payment fetch failed", { status: rzpPayRes.status, err: errData });
+          return NextResponse.json(
+            { error: "Payment verification failed with provider", code: "PAYMENT_VERIFICATION_FAILED" },
+            { status: 400 }
+          );
+        }
+        rzpPayment = await rzpPayRes.json();
+      } catch (fetchErr: any) {
+        log.error("Network error during Razorpay payment fetch", { error: fetchErr?.message || String(fetchErr) });
+        return NextResponse.json(
+          { error: "Payment verification failed with provider", code: "PAYMENT_VERIFICATION_FAILED" },
+          { status: 502 }
+        );
+      }
+    }
+
+    if (!rzpPayment || typeof rzpPayment !== "object") {
+      return NextResponse.json(
+        { error: "Unable to retrieve payment details from provider", code: "PAYMENT_NOT_FOUND" },
+        { status: 400 }
+      );
+    }
+
+    // Require exact non-empty payment ID matching request paymentId
+    const rzpId = typeof rzpPayment.id === "string" ? rzpPayment.id.trim() : "";
+    if (!rzpId || rzpId !== paymentId) {
+      log.warn("Payment ID mismatch or missing from provider response", { rzpId, paymentId });
+      return NextResponse.json(
+        { error: "Payment verification failed with provider: invalid payment ID", code: "PAYMENT_ID_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    // Require exact non-empty order_id matching request orderId
+    const rzpOrderId = typeof rzpPayment.order_id === "string" ? rzpPayment.order_id.trim() : "";
+    if (!rzpOrderId || rzpOrderId !== orderId) {
+      log.warn("Payment order_id mismatch with request", { paymentOrderId: rzpPayment.order_id, expected: orderId });
+      return NextResponse.json(
+        { error: "Payment order mismatch", code: "ORDER_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    // Require captured status
+    if (rzpPayment.status !== "captured") {
+      log.warn("Payment rejected: status is not captured", { paymentId, status: rzpPayment.status });
+      return NextResponse.json(
+        { error: `Payment is not captured (status: ${rzpPayment.status})`, code: "PAYMENT_NOT_CAPTURED" },
+        { status: 400 }
+      );
+    }
+
+    // Require finite exact amount matching orderRow.amount_paise
+    const rzpAmount = Number(rzpPayment.amount);
+    if (
+      rzpPayment.amount === null ||
+      rzpPayment.amount === undefined ||
+      !Number.isFinite(rzpAmount) ||
+      rzpAmount <= 0 ||
+      rzpAmount !== Number(orderRow.amount_paise)
+    ) {
+      log.warn("Payment amount mismatch with orderRow", { rzpAmount, orderPaise: orderRow.amount_paise });
+      return NextResponse.json(
+        { error: "Payment amount does not match recorded order amount", code: "AMOUNT_MISMATCH" },
+        { status: 400 }
+      );
+    }
+
+    // Require exact non-empty currency matching orderRow.currency
+    const rzpCurrency = typeof rzpPayment.currency === "string" ? rzpPayment.currency.trim().toUpperCase() : "";
+    const expectedCurrency = (orderRow.currency || "INR").trim().toUpperCase();
+    if (!rzpCurrency || rzpCurrency !== expectedCurrency) {
+      log.warn("Payment currency mismatch with orderRow", { rzpCurrency, expectedCurrency });
+      return NextResponse.json(
+        { error: "Payment currency does not match recorded order currency", code: "CURRENCY_MISMATCH" },
+        { status: 400 }
+      );
     }
 
     // Fulfillment happens only through the atomic SQL RPC fulfil_payment_order

@@ -1,816 +1,828 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { POST } from "@/app/api/billing/razorpay/subscription/route";
+import { POST as nextSubscriptionPOST, DELETE as nextSubscriptionDELETE } from "@/app/api/billing/razorpay/subscription/route";
+import { createHandler as createNetlifySubscriptionHandler } from "../../../netlify/functions/billing-razorpay-subscription";
 import { openRazorpaySubscription as openGatewaySubscription } from "@/lib/billing/razorpay";
 import { openRazorpaySubscription as openCheckoutSubscription } from "@/lib/billing/checkout";
 
-describe("Razorpay Subscription Route (/api/billing/razorpay/subscription)", () => {
-  const originalEnv = { ...process.env };
+const mockUser = {
+  id: "user_autorenew_test_123",
+  email: "candidate@careermonke.com",
+  user_metadata: { full_name: "Autorenew Candidate" },
+};
 
-  const mockUser = {
-    id: "user_test_uuid_123",
-    email: "test@careermonke.com",
-    user_metadata: { full_name: "Test User" },
+const validConsent = {
+  agreed: true,
+  version: "2026-11-autorenew-v1",
+  timestamp: new Date().toISOString(),
+};
+
+const validPlanResponse = {
+  id: "plan_monthly_rzp_499",
+  entity: "plan",
+  interval: 1,
+  period: "monthly",
+  item: {
+    id: "item_monthly_499",
+    amount: 49900,
+    currency: "INR",
+  },
+};
+
+function createMockSupabase(
+  initialSub?: any,
+  opts: { orders?: any[]; insertConflict?: boolean; failOrderUpdate?: boolean } = {}
+) {
+  let sub = initialSub ? { ...initialSub } : null;
+  const orders: any[] = (opts.orders || []).map((o) => ({ ...o }));
+
+  const mockClient = {
+    auth: {
+      getUser: async (token: string) => {
+        if (token === "valid-token") {
+          return { data: { user: mockUser }, error: null };
+        }
+        return { data: { user: null }, error: new Error("Invalid token") };
+      },
+      getSession: async () => {
+        return { data: { session: { access_token: "valid-token", user: mockUser } }, error: null };
+      },
+    },
+    from: (table: string) => {
+      let filterUserId: string | null = null;
+      let filterStatus: string | null = null;
+      let filterPlanCode: string | null = null;
+
+      const chain: any = {
+        select: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        eq: (col: string, val: any) => {
+          if (col === "user_id") filterUserId = val;
+          if (col === "status") filterStatus = val;
+          if (col === "plan_code") filterPlanCode = val;
+          return chain;
+        },
+        maybeSingle: async () => {
+          if (table === "subscriptions") {
+            return { data: sub ? { ...sub } : null, error: null };
+          }
+          if (table === "payment_orders") {
+            const match = orders.find((o) => {
+              if (filterUserId && o.user_id !== filterUserId) return false;
+              if (filterStatus && o.status !== filterStatus) return false;
+              if (filterPlanCode && o.plan_code !== filterPlanCode) return false;
+              return true;
+            });
+            return { data: match || null, error: null };
+          }
+          return { data: null, error: null };
+        },
+        insert: async (row: any) => {
+          if (table === "payment_orders" && opts.insertConflict) {
+            return { error: { code: "23505", message: "duplicate key value violates unique constraint" } };
+          }
+          if (table === "payment_orders") {
+            orders.push({ ...row, id: `po_${Date.now()}` });
+          } else if (table === "subscriptions") {
+            sub = { ...row, id: `sub_db_${Date.now()}` };
+          }
+          return { error: null };
+        },
+        update: (updates: any) => {
+          const filters: Record<string, any> = {};
+          const q: any = {
+            eq: (col: string, val: any) => {
+              filters[col] = val;
+              return q;
+            },
+            then: (resolve: any, reject: any) => {
+              if (table === "payment_orders" && opts.failOrderUpdate) {
+                return Promise.resolve({ error: { message: "write failed" } }).then(resolve, reject);
+              }
+              if (table === "subscriptions" && sub) {
+                sub = { ...sub, ...updates };
+              }
+              if (table === "payment_orders") {
+                orders.forEach((o, i) => {
+                  if (Object.entries(filters).every(([k, v]) => o[k] === v)) orders[i] = { ...o, ...updates };
+                });
+              }
+              return Promise.resolve({ error: null }).then(resolve, reject);
+            },
+          };
+          return q;
+        },
+      };
+      return chain;
+    },
+    _getSub: () => sub,
+    _getOrders: () => orders,
   };
 
-  let mockDbSubscriptions: Map<string, any>;
-  let mockDbPaymentOrders: Map<string, any>;
+  return mockClient;
+}
+
+describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
+  const originalEnv = { ...process.env };
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
-    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
     process.env.RAZORPAY_MODE = "test";
     process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_test_fixture_key_123456";
     process.env.RAZORPAY_KEY_SECRET = "rzp_test_fixture_secret_abcdef";
-    process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY = "plan_weekly_rzp_123";
-    process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY = "plan_monthly_rzp_456";
-    process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY = "plan_quarterly_rzp_789";
-
-    mockDbSubscriptions = new Map();
-    mockDbPaymentOrders = new Map();
+    process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY = "plan_monthly_rzp_499";
+    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+    fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  function createMockSupabaseAdmin(options?: {
-    getUserError?: any;
-    dbError?: any;
-    insertError?: any;
-  }) {
-    return {
-      auth: {
-        getUser: async (token: string) => {
-          if (options?.getUserError) {
-            return { data: { user: null }, error: options.getUserError };
-          }
-          if (token === "valid_token") {
-            return { data: { user: mockUser }, error: null };
-          }
-          return { data: { user: null }, error: new Error("Invalid token") };
-        },
-      },
-      from: (table: string) => {
-        let filterUserId: string | null = null;
-        let filterStatus: string | null = null;
-        let filterPlanCode: string | null = null;
-        const query: any = {
-          select: () => query,
-          order: () => query,
-          limit: () => query,
-          eq: (col: string, val: any) => {
-            if (col === "user_id") filterUserId = val;
-            if (col === "status") filterStatus = val;
-            if (col === "plan_code") filterPlanCode = val;
-            return query;
-          },
-          maybeSingle: async () => {
-            if (options?.dbError) return { data: null, error: options.dbError };
-            if (table === "payment_orders") {
-              const orders = Array.from(mockDbPaymentOrders.values());
-              const match = orders.find((o) => {
-                if (filterUserId && o.user_id !== filterUserId) return false;
-                if (filterStatus && o.status !== filterStatus) return false;
-                if (filterPlanCode && o.plan_code !== filterPlanCode) return false;
-                return true;
-              });
-              return { data: match || null, error: null };
-            }
-            const found = filterUserId ? mockDbSubscriptions.get(filterUserId) : null;
-            return { data: found || null, error: null };
-          },
-          update: (updates: any) => {
-            let targetUserId: string | null = null;
-            const updateQuery = {
-              eq: async (col: string, val: any) => {
-                if (col === "user_id") targetUserId = val;
-                if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
-                if (targetUserId) {
-                  const existing = mockDbSubscriptions.get(targetUserId) || {};
-                  mockDbSubscriptions.set(targetUserId, { ...existing, ...updates });
-                }
-                return { error: null };
-              },
-            };
-            return updateQuery;
-          },
-          insert: async (row: any) => {
-            if (options?.insertError || options?.dbError) return { error: options.insertError || options.dbError };
-            if (table === "payment_orders") {
-              mockDbPaymentOrders.set(row.provider_order_id, { ...row });
-            } else {
-              mockDbSubscriptions.set(row.user_id, { ...row });
-            }
-            return { error: null };
-          },
+  describe("Feature flag gating", () => {
+    it("returns 503 AUTORENEW_DISABLED when NEXT_PUBLIC_AUTORENEW_ENABLED !== 'true'", async () => {
+      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("AUTORENEW_DISABLED");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("returns 503 BILLING_DISABLED when NEXT_PUBLIC_BILLING_ENABLED !== 'true'", async () => {
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("BILLING_DISABLED");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("client gateway and checkout orchestrator fail closed without network when flag is off", async () => {
+      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
+      const gatewayError = vi.fn();
+      await openGatewaySubscription({ planCode: "monthly", consent: validConsent, authToken: "tok", onError: gatewayError });
+      expect(gatewayError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining("Auto-renew subscriptions are currently disabled") })
+      );
+
+      const checkoutError = vi.fn();
+      const onStart = vi.fn();
+      await openCheckoutSubscription({ planCode: "monthly", consent: validConsent, onError: checkoutError, onStart });
+      expect(checkoutError).toHaveBeenCalledWith(expect.stringContaining("Auto-renew subscriptions are currently disabled"));
+      expect(onStart).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Authentication and Ban checking", () => {
+    it("returns 401 when Authorization header is missing", async () => {
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 when token is invalid", async () => {
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer invalid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 USER_BLOCKED when user is suspended", async () => {
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: true }),
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json.code).toBe("USER_BLOCKED");
+    });
+  });
+
+  describe("Consent validation (Blocker 2)", () => {
+    it("rejects request without consent with 400 CONSENT_REQUIRED", async () => {
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.code).toBe("CONSENT_REQUIRED");
+    });
+
+    it("rejects request with consent.agreed = false with 400 CONSENT_REQUIRED", async () => {
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({
+          planCode: "monthly",
+          consent: { agreed: false, version: "2026-11-autorenew-v1", timestamp: new Date().toISOString() },
+        }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.code).toBe("CONSENT_REQUIRED");
+    });
+
+    it("rejects request with invalid consent timestamp with 400 INVALID_CONSENT_TIMESTAMP", async () => {
+      const mockDb = createMockSupabase();
+      const futureTimestamp = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({
+          planCode: "monthly",
+          consent: { agreed: true, version: "2026-11-autorenew-v1", timestamp: futureTimestamp },
+        }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.code).toBe("INVALID_CONSENT_TIMESTAMP");
+    });
+  });
+
+  describe("Plan validation & Server configuration (Blocker 4)", () => {
+    it("rejects non-monthly plans (weekly, quarterly) with 400 UNSUPPORTED_PLAN", async () => {
+      const mockDb = createMockSupabase();
+      for (const invalidPlan of ["weekly", "quarterly", "annual"]) {
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode: invalidPlan, consent: validConsent }),
+        });
+        (req as any).__testDeps = {
+          getSupabaseAdmin: () => mockDb,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
         };
-        return query;
-      },
-    };
-  }
-
-  function createMockRequest(body: any, headers?: Record<string, string>, deps?: any) {
-    const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer valid_token",
-        ...(headers || {}),
-      },
-      body: JSON.stringify(body),
-    });
-    (req as any).__testDeps = deps || {
-      getSupabaseAdmin: () => createMockSupabaseAdmin(),
-      verifyUserNotBanned: async () => ({ isBlocked: false }),
-    };
-    return req;
-  }
-
-  it("refuses with 503 when NEXT_PUBLIC_AUTORENEW_ENABLED is off or unset", async () => {
-    delete process.env.NEXT_PUBLIC_AUTORENEW_ENABLED;
-    const req = createMockRequest({ planCode: "monthly" });
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("AUTORENEW_DISABLED");
-  });
-
-  it("refuses with 503 when NEXT_PUBLIC_BILLING_ENABLED is off", async () => {
-    process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
-    const req = createMockRequest({ planCode: "monthly" });
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("BILLING_DISABLED");
-  });
-
-  it("refuses with 401 when Authorization header is missing", async () => {
-    const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ planCode: "monthly" }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-  });
-
-  it("refuses with 401 when session token is invalid", async () => {
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      { Authorization: "Bearer invalid_token" },
-      {
-        getSupabaseAdmin: () =>
-          createMockSupabaseAdmin({ getUserError: new Error("Invalid session") }),
+        const res = await nextSubscriptionPOST(req);
+        expect(res.status).toBe(400);
+        const json = await res.json();
+        expect(json.code).toBe("UNSUPPORTED_PLAN");
       }
-    );
-    const res = await POST(req);
-    expect(res.status).toBe(401);
-  });
-
-  it("refuses with 503 when RAZORPAY_MODE is invalid", async () => {
-    process.env.RAZORPAY_MODE = "invalid_mode";
-    const req = createMockRequest({ planCode: "monthly" });
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("RAZORPAY_CONFIG_ERROR");
-  });
-
-  it("refuses with 503 when key prefix does not match configured mode", async () => {
-    process.env.RAZORPAY_MODE = "live"; // requires rzp_live_, but key is rzp_test_
-    const req = createMockRequest({ planCode: "monthly" });
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("RAZORPAY_CONFIG_ERROR");
-  });
-
-  it("refuses test keys on production host with 503", async () => {
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      { Host: "careermonke.com" },
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        isProductionHost: true,
-      }
-    );
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("RAZORPAY_CONFIG_ERROR");
-  });
-
-  it("refuses invalid planCode with 400", async () => {
-    const req = createMockRequest({ planCode: "yearly" });
-    const res = await POST(req);
-    expect(res.status).toBe(400);
-  });
-
-  it("rejects blocked user with 403 USER_BLOCKED", async () => {
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: true, error: "Account suspended." }),
-      }
-    );
-    const res = await POST(req);
-    expect(res.status).toBe(403);
-    const json = await res.json();
-    expect(json.code).toBe("USER_BLOCKED");
-  });
-
-  it("fails closed with 503 when ban check service is unavailable", async () => {
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: true, isServiceUnavailable: true, error: "Unavailable" }),
-      }
-    );
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("USER_BLOCKED");
-  });
-
-  it("creates weekly subscription with total_count=52 (1 year) and stores subscription_id", async () => {
-    let capturedBody: any = null;
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
-      capturedBody = JSON.parse(init.body);
-      return new Response(
-        JSON.stringify({
-          id: "sub_rzp_weekly_123456",
-          plan_id: capturedBody.plan_id,
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
     });
 
-    const req = createMockRequest(
-      { planCode: "weekly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+    it("returns 503 PLAN_NOT_CONFIGURED when RAZORPAY_AUTORENEW_PLAN_MONTHLY is missing", async () => {
+      delete process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-
-    expect(json.subscriptionId).toBe("sub_rzp_weekly_123456");
-    expect(json.planId).toBe("plan_weekly_rzp_123");
-    expect(json.planCode).toBe("weekly");
-    expect(capturedBody.total_count).toBe(52); // 52 weeks = 1 calendar year
-    expect(capturedBody.customer_notify).toBe(true);
-
-    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_weekly_123456");
-    expect(pendingOrder).toBeDefined();
-    expect(pendingOrder.provider_order_id).toBe("sub_rzp_weekly_123456");
-    expect(pendingOrder.plan_code).toBe("weekly");
-    expect(pendingOrder.amount_paise).toBe(69200);
-    expect(pendingOrder.status).toBe("created");
-  });
-
-  it("creates monthly subscription with total_count=12 (1 year) and stores pending order separately", async () => {
-    let capturedBody: any = null;
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
-      capturedBody = JSON.parse(init.body);
-      return new Response(
-        JSON.stringify({
-          id: "sub_rzp_monthly_654321",
-          plan_id: capturedBody.plan_id,
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("PLAN_NOT_CONFIGURED");
     });
 
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+    it("returns 502 PLAN_FETCH_FAILED when Razorpay plan API returns non-2xx", async () => {
+      fetchSpy.mockImplementation(async (url: any) => {
+        if (String(url).includes("/plans/")) {
+          return new Response(JSON.stringify({ error: { description: "Plan not found" } }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("{}", { status: 500 });
+      });
+
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-
-    expect(json.subscriptionId).toBe("sub_rzp_monthly_654321");
-    expect(json.planId).toBe("plan_monthly_rzp_456");
-    expect(capturedBody.total_count).toBe(12); // 12 months = 1 calendar year
-    expect(capturedBody.customer_notify).toBe(true);
-
-    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_monthly_654321");
-    expect(pendingOrder).toBeDefined();
-    expect(pendingOrder.provider_order_id).toBe("sub_rzp_monthly_654321");
-    expect(pendingOrder.plan_code).toBe("monthly");
-    expect(pendingOrder.amount_paise).toBe(149900);
-  });
-
-  it("creates quarterly subscription with total_count=4 (1 year) and stores pending order separately", async () => {
-    let capturedBody: any = null;
-    const mockFetch = vi.fn().mockImplementation(async (_url: string, init: any) => {
-      capturedBody = JSON.parse(init.body);
-      return new Response(
-        JSON.stringify({
-          id: "sub_rzp_quarterly_987654",
-          plan_id: capturedBody.plan_id,
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+        fetchFn: fetchSpy,
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("PLAN_FETCH_FAILED");
     });
 
-    const req = createMockRequest(
-      { planCode: "quarterly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+    it("returns 502 INVALID_PLAN_AMOUNT when plan amount is not 49900", async () => {
+      fetchSpy.mockImplementation(async (url: any) => {
+        if (String(url).includes("/plans/")) {
+          return new Response(
+            JSON.stringify({
+              id: "plan_monthly_rzp_499",
+              entity: "plan",
+              interval: 1,
+              period: "monthly",
+              item: { amount: 39900, currency: "INR" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        return new Response("{}", { status: 500 });
+      });
+
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-
-    expect(json.subscriptionId).toBe("sub_rzp_quarterly_987654");
-    expect(json.planId).toBe("plan_quarterly_rzp_789");
-    expect(capturedBody.total_count).toBe(4); // 4 quarters = 1 calendar year
-    expect(capturedBody.customer_notify).toBe(true);
-
-    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_quarterly_987654");
-    expect(pendingOrder).toBeDefined();
-    expect(pendingOrder.provider_order_id).toBe("sub_rzp_quarterly_987654");
-    expect(pendingOrder.plan_code).toBe("quarterly");
-    expect(pendingOrder.amount_paise).toBe(399900);
+        fetchFn: fetchSpy,
+      };
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("INVALID_PLAN_AMOUNT");
+    });
   });
 
-  it("does NOT overwrite existing active subscription_id or plan_id, storing pending subscription separately", async () => {
-    mockDbSubscriptions.set(mockUser.id, {
-      id: "existing_sub_row_1",
-      user_id: mockUser.id,
-      subscription_id: "old_sub_id",
-      plan_id: "weekly",
-      status: "canceled", // inactive
-      metadata: { initial_plan: "free" },
+  describe("Subscription creation with durable consent (Next.js & Netlify)", () => {
+    it("successfully creates flat Rs 499 Razorpay subscription and stores consent durably", async () => {
+      let rzpPayload: any = null;
+      fetchSpy.mockImplementation(async (url: any, init: any) => {
+        const urlStr = String(url);
+        if (urlStr.includes("/plans/")) {
+          return new Response(JSON.stringify(validPlanResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        rzpPayload = JSON.parse(init.body);
+        return new Response(
+          JSON.stringify({
+            id: "sub_rzp_monthly_499",
+            entity: "subscription",
+            plan_id: rzpPayload.plan_id,
+            status: "created",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const mockDb = createMockSupabase();
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      };
+
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.subscriptionId).toBe("sub_rzp_monthly_499");
+      expect(json.planCode).toBe("monthly");
+      expect(rzpPayload.plan_id).toBe("plan_monthly_rzp_499");
+      expect(rzpPayload.total_count).toBe(12);
+
+      const orders = mockDb._getOrders();
+      expect(orders.length).toBe(1);
+      expect(orders[0].provider_order_id).toBe("sub_rzp_monthly_499");
+      expect(orders[0].amount_paise).toBe(49900);
+      expect(orders[0].plan_code).toBe("monthly");
+      expect(orders[0].metadata?.consent?.agreed).toBe(true);
+      expect(orders[0].metadata?.consent?.version).toBe("2026-11-autorenew-v1");
     });
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_rzp_new_updated_123",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
+    it("creates flat Rs 499 subscription identically on Netlify function handler", async () => {
+      fetchSpy.mockImplementation(async (url: any, init: any) => {
+        const urlStr = String(url);
+        if (urlStr.includes("/plans/")) {
+          return new Response(JSON.stringify(validPlanResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const body = JSON.parse(init.body);
+        return new Response(
+          JSON.stringify({
+            id: "sub_netlify_monthly_499",
+            entity: "subscription",
+            plan_id: body.plan_id,
+            status: "created",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
 
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+      const mockDb = createMockSupabase();
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
+        fetchFn: fetchSpy,
+      });
 
-    const res = await POST(req);
-    expect(res.status).toBe(200);
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
 
-    const sub = mockDbSubscriptions.get(mockUser.id);
-    // Active columns are NOT overwritten!
-    expect(sub.subscription_id).toBe("old_sub_id");
-    expect(sub.plan_id).toBe("weekly");
-    expect(sub.status).toBe("canceled");
-    // Pending ID is stored separately in metadata
-    expect(sub.metadata.pending_subscription_id).toBe("sub_rzp_new_updated_123");
-    expect(sub.metadata.pending_plan_code).toBe("monthly");
-
-    // Also recorded in payment_orders
-    const pendingOrder = mockDbPaymentOrders.get("sub_rzp_new_updated_123");
-    expect(pendingOrder).toBeDefined();
-    expect(pendingOrder.provider_order_id).toBe("sub_rzp_new_updated_123");
-    expect(pendingOrder.plan_code).toBe("monthly");
-  });
-
-  it("blocks subscription creation with 409 when user already has an active plan", async () => {
-    const futureDate = new Date(Date.now() + 15 * 86400000).toISOString();
-    mockDbSubscriptions.set(mockUser.id, {
-      id: "active_sub_row",
-      user_id: mockUser.id,
-      subscription_id: "active_sub_123",
-      plan_id: "monthly",
-      status: "active",
-      current_period_end: futureDate,
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.subscriptionId).toBe("sub_netlify_monthly_499");
+      expect(body.planCode).toBe("monthly");
     });
 
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+    it("Netlify handler rejects request without consent before calling Razorpay", async () => {
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => createMockSupabase(),
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(409);
-    const json = await res.json();
-    expect(json.code).toBe("ACTIVE_PLAN_EXISTS");
-    expect(json.error).toBe(
-      "You already have an active subscription plan. Please manage your existing subscription in account settings."
-    );
-    // Razorpay must never be called when user already has active plan
-    expect(mockFetch).not.toHaveBeenCalled();
+        fetchFn: fetchSpy,
+      });
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly" }),
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).code).toBe("CONSENT_REQUIRED");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
   });
 
-  it("fails closed with 503 before Razorpay call when subscription lookup fails", async () => {
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () =>
-          createMockSupabaseAdmin({ dbError: new Error("Database network failure") }),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("SERVICE_UNAVAILABLE");
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("fails closed with 503 before Razorpay call when entitlement check throws", async () => {
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        getServerEntitlement: async () => {
-          throw new Error("Entitlement service down");
-        },
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.code).toBe("SERVICE_UNAVAILABLE");
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("reuses existing pending payment_orders row for the same user and plan without calling Razorpay", async () => {
-    mockDbPaymentOrders.set("sub_rzp_existing_pending_1", {
-      id: "order_123",
+  describe("Consent persisted on reused pending orders", () => {
+    const legacyOrder = (minutesAgo: number, metadata: any = { source: "legacy" }) => ({
       user_id: mockUser.id,
       provider: "razorpay",
-      provider_order_id: "sub_rzp_existing_pending_1",
+      provider_order_id: "sub_legacy_pending_1",
       plan_code: "monthly",
-      amount_paise: 149900,
-      status: "created",
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_rzp_existing_pending_1");
-    expect(json.reused).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("blocks with 409 PENDING_SUBSCRIPTION_EXISTS when user has pending order for a different plan", async () => {
-    mockDbPaymentOrders.set("sub_rzp_pending_weekly", {
-      id: "order_weekly_1",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_rzp_pending_weekly",
-      plan_code: "weekly",
-      amount_paise: 69200,
-      status: "created",
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(409);
-    const json = await res.json();
-    expect(json.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
-    expect(json.error).toContain("weekly");
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("reuses existing pending subscription from metadata without calling Razorpay", async () => {
-    mockDbSubscriptions.set(mockUser.id, {
-      id: "existing_sub_row",
-      user_id: mockUser.id,
-      status: "canceled",
-      metadata: {
-        pending_subscription_id: "sub_rzp_meta_456",
-        pending_plan_code: "monthly",
-      },
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_rzp_meta_456");
-    expect(json.reused).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("never reuses a prepaid order_* row when creating a subscription", async () => {
-    mockDbPaymentOrders.set("order_prepaid_123", {
-      id: "order_prepaid_id",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "order_prepaid_123",
-      plan_code: "monthly",
-      amount_paise: 149900,
       status: "created",
       mode: "test",
+      created_at: new Date(Date.now() - minutesAgo * 60 * 1000).toISOString(),
+      metadata,
     });
 
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_new_mandate_from_gateway",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
-
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_new_mandate_from_gateway");
-    expect(json.reused).toBeUndefined();
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("never reuses a test-mode row under live config", async () => {
-    process.env.RAZORPAY_MODE = "live";
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_real_key_123";
-
-    mockDbPaymentOrders.set("sub_test_old", {
-      id: "order_old_test",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_test_old",
-      plan_code: "monthly",
-      amount_paise: 149900,
-      status: "created",
-      mode: "test",
-    });
-
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_live_brand_new_mandate",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
-
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_live_brand_new_mandate");
-    expect(json.reused).toBeUndefined();
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("reuses a live sub_* row under live config", async () => {
-    process.env.RAZORPAY_MODE = "live";
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID = "rzp_live_real_key_123";
-
-    mockDbPaymentOrders.set("sub_live_existing_mandate", {
-      id: "order_live_mandate_id",
-      user_id: mockUser.id,
-      provider: "razorpay",
-      provider_order_id: "sub_live_existing_mandate",
-      plan_code: "monthly",
-      amount_paise: 149900,
-      status: "created",
-      mode: "live",
-    });
-
-    const mockFetch = vi.fn();
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
-        verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
-
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.subscriptionId).toBe("sub_live_existing_mandate");
-    expect(json.reused).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("atomic singleFlight coalesces concurrent double-tab requests for the same user and plan into a single mandate", async () => {
-    const mockFetch = vi.fn().mockImplementation(async () => {
-      // Simulate gateway latency
-      await new Promise((r) => setTimeout(r, 50));
-      return new Response(
-        JSON.stringify({
-          id: "sub_rzp_coalesced_789",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+    const mockGateway = () =>
+      fetchSpy.mockImplementation(async (url: any) =>
+        String(url).includes("/plans/")
+          ? new Response(JSON.stringify(validPlanResponse), { status: 200 })
+          : new Response(JSON.stringify({ id: "sub_fresh_new", status: "created" }), { status: 200 })
       );
-    });
 
-    const req1 = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+    const callNext = async (mockDb: any) => {
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
+        fetchFn: fetchSpy,
+      };
+      const res = await nextSubscriptionPOST(req);
+      return { status: res.status, body: await res.json() };
+    };
 
-    const req2 = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () => createMockSupabaseAdmin(),
+    const callNetlify = async (mockDb: any) => {
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
+        fetchFn: fetchSpy,
+      });
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      return { status: res.statusCode, body: JSON.parse(res.body) };
+    };
 
-    const [res1, res2] = await Promise.all([POST(req1), POST(req2)]);
-    expect(res1.status).toBe(200);
-    expect(res2.status).toBe(200);
+    for (const [platform, call] of [["Next.js", callNext], ["Netlify", callNetlify]] as const) {
+      it(`${platform}: recent legacy pending order without consent gets this request's consent merged before reuse`, async () => {
+        mockGateway();
+        const mockDb = createMockSupabase(null, { orders: [legacyOrder(2)] });
+        const { status, body } = await call(mockDb);
+        expect(status).toBe(200);
+        expect(body.reused).toBe(true);
+        expect(body.subscriptionId).toBe("sub_legacy_pending_1");
+        const saved = mockDb._getOrders()[0].metadata;
+        expect(saved.source).toBe("legacy");
+        expect(saved.consent).toMatchObject({ agreed: true, version: validConsent.version });
+      });
 
-    const json1 = await res1.json();
-    const json2 = await res2.json();
+      it(`${platform}: uniqueness-race reuse writes consent onto the existing pending order`, async () => {
+        mockGateway();
+        // Older than the 15-min reuse window, so only the race path can return it
+        const mockDb = createMockSupabase(null, { orders: [legacyOrder(30)], insertConflict: true });
+        const { status, body } = await call(mockDb);
+        expect(status).toBe(200);
+        expect(body.reused).toBe(true);
+        expect(body.subscriptionId).toBe("sub_legacy_pending_1");
+        const saved = mockDb._getOrders()[0].metadata;
+        expect(saved.source).toBe("legacy");
+        expect(saved.consent).toMatchObject({ agreed: true, version: validConsent.version });
+      });
 
-    // Both requests receive the exact same subscription ID
-    expect(json1.subscriptionId).toBe("sub_rzp_coalesced_789");
-    expect(json2.subscriptionId).toBe("sub_rzp_coalesced_789");
+      it(`${platform}: fails closed when consent cannot be written on reuse (recent and race paths)`, async () => {
+        mockGateway();
+        const recent = await call(createMockSupabase(null, { orders: [legacyOrder(2)], failOrderUpdate: true }));
+        expect(recent.status).toBe(500);
+        expect(recent.body.code).toBe("CONSENT_RECORD_FAILED");
+        const race = await call(
+          createMockSupabase(null, { orders: [legacyOrder(30)], insertConflict: true, failOrderUpdate: true })
+        );
+        expect(race.status).toBe(500);
+        expect(race.body.code).toBe("CONSENT_RECORD_FAILED");
+      });
 
-    // Razorpay /v1/subscriptions was called EXACTLY ONCE
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+      it(`${platform}: existing consent on a reused order is kept, not overwritten`, async () => {
+        mockGateway();
+        const original = { agreed: true, version: "2026-10-original", timestamp: "2026-11-19T00:00:00.000Z" };
+        const mockDb = createMockSupabase(null, { orders: [legacyOrder(2, { consent: original })] });
+        const { status } = await call(mockDb);
+        expect(status).toBe(200);
+        expect(mockDb._getOrders()[0].metadata.consent).toEqual(original);
+      });
+    }
   });
 
-  it("fails closed with 500 when database update/insert fails", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          id: "sub_rzp_success_before_db_fail",
-          plan_id: "plan_monthly_rzp_456",
-          status: "created",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
-    );
+  describe("Fail-closed subscription cancellation (Blocker 1)", () => {
+    it("fails closed with 502 on non-2xx from Razorpay cancel API without updating DB (Next.js)", async () => {
+      fetchSpy.mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({ error: { description: "Subscription is in invalid state" } }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      });
 
-    const req = createMockRequest(
-      { planCode: "monthly" },
-      {},
-      {
-        getSupabaseAdmin: () =>
-          createMockSupabaseAdmin({ insertError: new Error("Database disk full") }),
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
-        fetchFn: mockFetch,
-        isProductionHost: false,
-      }
-    );
+        fetchFn: fetchSpy,
+      };
 
-    const res = await POST(req);
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json.code).toBe("SUBSCRIPTION_RECORD_FAILED");
-  });
-
-  it("openGatewaySubscription fails closed when NEXT_PUBLIC_AUTORENEW_ENABLED is off", async () => {
-    delete process.env.NEXT_PUBLIC_AUTORENEW_ENABLED;
-    const onError = vi.fn();
-    await openGatewaySubscription({
-      planCode: "monthly",
-      onError,
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(502);
+      const json = await res.json();
+      expect(json.code).toBe("RAZORPAY_CANCEL_FAILED");
+      expect(mockDb._getSub().cancel_at_period_end).toBe(false); // Retriable
     });
-    expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining("Auto-renew subscriptions are currently disabled"),
-      })
-    );
-  });
 
-  it("openCheckoutSubscription fails closed when NEXT_PUBLIC_AUTORENEW_ENABLED is off", async () => {
-    delete process.env.NEXT_PUBLIC_AUTORENEW_ENABLED;
-    const onError = vi.fn();
-    await openCheckoutSubscription({
-      planCode: "monthly",
-      onError,
+    it("fails closed with 504 on gateway timeout without updating DB (Next.js)", async () => {
+      fetchSpy.mockImplementation(async () => {
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        throw err;
+      });
+
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      };
+
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(504);
+      const json = await res.json();
+      expect(json.code).toBe("GATEWAY_TIMEOUT");
+      expect(mockDb._getSub().cancel_at_period_end).toBe(false); // Retriable
     });
-    expect(onError).toHaveBeenCalledWith(
-      expect.stringContaining("Auto-renew subscriptions are currently disabled")
-    );
+
+    it("fails closed with 503 on missing credentials without updating DB (Next.js)", async () => {
+      delete process.env.RAZORPAY_KEY_SECRET;
+
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      };
+
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.code).toBe("RAZORPAY_CONFIG_ERROR");
+      expect(mockDb._getSub().cancel_at_period_end).toBe(false); // Retriable
+    });
+
+    it("fails closed on non-2xx on Netlify function handler (Netlify)", async () => {
+      fetchSpy.mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({ error: { description: "Subscription is cancelled" } }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      });
+
+      const res = await handler({
+        httpMethod: "DELETE",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.statusCode).toBe(502);
+      expect(mockDb._getSub().cancel_at_period_end).toBe(false);
+    });
+
+    it("fails closed on timeout on Netlify function handler (Netlify)", async () => {
+      fetchSpy.mockImplementation(async () => {
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        throw err;
+      });
+
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      });
+
+      const res = await handler({
+        httpMethod: "DELETE",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.statusCode).toBe(504);
+      expect(mockDb._getSub().cancel_at_period_end).toBe(false);
+    });
+
+    it("fails closed on missing credentials on Netlify function handler (Netlify)", async () => {
+      delete process.env.RAZORPAY_KEY_SECRET;
+
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      });
+
+      const res = await handler({
+        httpMethod: "DELETE",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(mockDb._getSub().cancel_at_period_end).toBe(false);
+    });
+
+    it("cancels active subscription at cycle end only after Razorpay 200 confirmation (Next.js & Netlify)", async () => {
+      let rzpCancelBody: any = null;
+      fetchSpy.mockImplementation(async (url: any, init: any) => {
+        rzpCancelBody = JSON.parse(init.body);
+        return new Response(
+          JSON.stringify({ id: "sub_rzp_active_123", status: "cancelled" }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      });
+
+      const mockDb = createMockSupabase({
+        user_id: mockUser.id,
+        subscription_id: "sub_rzp_active_123",
+        status: "active",
+        cancel_at_period_end: false,
+        current_period_end: new Date(Date.now() + 15 * 86400 * 1000).toISOString(),
+      });
+
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      };
+
+      const res = await nextSubscriptionPOST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.cancelAtPeriodEnd).toBe(true);
+      expect(rzpCancelBody.cancel_at_cycle_end).toBe(1);
+      expect(mockDb._getSub().cancel_at_period_end).toBe(true);
+    });
   });
 });

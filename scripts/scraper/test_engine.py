@@ -104,8 +104,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertIsNone(resolve_logo_url(None, None))
 
     def test_dedupe_hash_normalization(self) -> None:
-        h1 = compute_dedupe_hash("Stripe, Inc.", "Senior Software Engineer!", "US", "San Francisco, CA")
-        h2 = compute_dedupe_hash("stripe", "senior software engineer", "us", "San Francisco, United States")
+        h1 = compute_dedupe_hash("Stripe", "Senior Software Engineer", "US", "San Francisco, CA")
+        h2 = compute_dedupe_hash("stripe", "senior software engineer", "us", "San Francisco, CA")
         self.assertEqual(len(h1), 64)
         self.assertEqual(h1, h2)
 

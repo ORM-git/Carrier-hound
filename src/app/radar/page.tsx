@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
@@ -36,32 +36,48 @@ const JobRadarGlobe = dynamic(() => import("@/components/JobRadarGlobe"), {
   ),
 });
 
+type AccessState = "checking" | "error" | "pro" | "free";
+
 export default function RadarPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isPro, setIsPro] = useState(false);
-  const [isProDefinitive, setIsProDefinitive] = useState(false);
+  const [access, setAccess] = useState<AccessState>("checking");
 
-  useEffect(() => {
-    getAuthUser().then(async (authUser) => {
+  // Spinner only while the request is in flight; a transient failure (network/5xx/timeout,
+  // reported by getProAccessStatus as non-definitive, or a throw) shows a retry state instead.
+  const checkAccess = useCallback(async () => {
+    setAccess("checking");
+    try {
+      const authUser = await getAuthUser();
       if (!authUser) {
         router.replace("/login?returnTo=/radar");
         return;
       }
       setUser(authUser);
       const proRes = await getProAccessStatus(authUser.id);
-      setIsPro(proRes.isPro);
-      setIsProDefinitive(Boolean(proRes.isDefinitive));
-      setLoading(false);
-    });
+      setAccess(proRes.isPro ? "pro" : proRes.isDefinitive ? "free" : "error");
+    } catch {
+      setAccess("error");
+    }
   }, [router]);
 
-  if (loading || (!isPro && !isProDefinitive)) {
+  useEffect(() => {
+    void checkAccess();
+    // Entitlement lifecycle: re-check when the subscription or session changes (purchase, expiry, sign-out).
+    const onChange = () => void checkAccess();
+    window.addEventListener("careermonke_pro_updated", onChange);
+    window.addEventListener("careermonke_auth_updated", onChange);
+    return () => {
+      window.removeEventListener("careermonke_pro_updated", onChange);
+      window.removeEventListener("careermonke_auth_updated", onChange);
+    };
+  }, [checkAccess]);
+
+  if (access === "checking") {
     return (
       <LoggedInAppShell pageLabel="RADAR" user={user} isPro={false}>
         <div className="flex-1 flex items-center justify-center min-h-[60vh] p-6">
-          <div className="text-center space-y-3">
+          <div className="text-center space-y-3" role="status">
             <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
             <p className="text-xs font-semibold text-slate-500">Checking radar access...</p>
           </div>
@@ -70,8 +86,29 @@ export default function RadarPage() {
     );
   }
 
+  if (access === "error") {
+    return (
+      <LoggedInAppShell pageLabel="RADAR" user={user} isPro={false}>
+        <div className="flex-1 flex items-center justify-center min-h-[60vh] p-6">
+          <div className="text-center space-y-3" role="alert">
+            <p className="text-sm font-semibold text-slate-700">We couldn&apos;t verify your radar access.</p>
+            <p className="text-xs text-slate-500">Check your connection and try again.</p>
+            <button
+              type="button"
+              onClick={() => void checkAccess()}
+              data-testid="radar-access-retry"
+              className="px-4 py-2 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      </LoggedInAppShell>
+    );
+  }
+
   // Definitively signed-in non-Pro
-  if (!isPro) {
+  if (access === "free") {
     return (
       <LoggedInAppShell pageLabel="RADAR" user={user} isPro={false}>
         <div className="max-w-5xl w-full mx-auto px-4 py-8">
@@ -89,6 +126,7 @@ export default function RadarPage() {
       pageLabel="RADAR"
       user={user}
       isPro={true}
+      hideFooter
       mainClassName="flex-1 w-full relative bg-[#040610] overflow-hidden flex flex-col"
     >
       <JobRadarGlobe />

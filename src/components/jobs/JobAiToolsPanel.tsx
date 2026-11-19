@@ -1,17 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import {
-  Sparkles,
   CheckCircle2,
   Heart,
   Check,
   ChevronDown,
   ChevronUp,
-  LogIn,
   Loader2,
-  X,
   Target,
 } from "lucide-react";
 import { LiveJob } from "@/lib/jobs/service";
@@ -19,27 +15,8 @@ import { CandidateProfile } from "@/lib/resume/types";
 import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 
-export interface TailorClickDecision {
-  action: "open_tailor" | "show_login_modal" | "redirect_resume";
-  destination?: string;
-}
-
-export function resolveTailorClickAction({
-  user,
-  hasConfirmedResume,
-}: {
-  user: User | null;
-  hasConfirmedResume: boolean;
-}): TailorClickDecision {
-  if (!user) {
-    return { action: "show_login_modal" };
-  }
-  if (!hasConfirmedResume) {
-    return { action: "redirect_resume", destination: "/resume" };
-  }
-  return { action: "open_tailor" };
-}
-
+// Match insights + tracker actions only. AI tool entry points (resume tailoring) are
+// intentionally not offered outside the landing page.
 export interface JobAiToolsPanelProps {
   job: LiveJob;
   candidate: CandidateProfile | null;
@@ -52,15 +29,11 @@ export interface JobAiToolsPanelProps {
   isUpdatingApplied?: boolean;
   onSave: () => void;
   onToggleApplied?: () => void;
-  onOpenTailor: () => void;
-  onOpenPaywall?: () => void;
 }
 
 export default function JobAiToolsPanel({
   job,
   candidate,
-  user,
-  isPro,
   diagnostics,
   isSaved,
   isApplied = false,
@@ -68,14 +41,15 @@ export default function JobAiToolsPanel({
   isUpdatingApplied = false,
   onSave,
   onToggleApplied,
-  onOpenTailor,
-  onOpenPaywall,
 }: JobAiToolsPanelProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
-  const [showLoginModal, setShowLoginModal] = useState(false);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
-  const matchScore = diagnostics ? Math.max(10, Math.min(99, Math.round(diagnostics.score))) : null;
+  const matchScore = typeof job?.matchScore === "number" && !isNaN(job.matchScore)
+    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    : diagnostics
+    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    : null;
   const matchLabel =
     matchScore !== null
       ? matchScore > 70
@@ -88,31 +62,6 @@ export default function JobAiToolsPanel({
   const topMatchedSkills = diagnostics?.matchedSkills ? diagnostics.matchedSkills.slice(0, 5) : [];
   const topMissingSkills = diagnostics?.missingSkills ? diagnostics.missingSkills.slice(0, 4) : [];
 
-  const handleTailorClick = () => {
-    const decision = resolveTailorClickAction({ user, hasConfirmedResume });
-    if (decision.action === "show_login_modal") {
-      setShowLoginModal(true);
-      return;
-    }
-    if (decision.action === "redirect_resume") {
-      if (typeof window !== "undefined") {
-        window.location.href = decision.destination || "/resume";
-      }
-      return;
-    }
-    if (decision.action === "open_tailor") {
-      onOpenTailor();
-    }
-  };
-
-  const getLoginRedirectUrl = () => {
-    if (typeof window !== "undefined") {
-      const returnPath = window.location.pathname + window.location.search;
-      return `/login?returnTo=${encodeURIComponent(returnPath)}`;
-    }
-    return "/login";
-  };
-
   return (
     <div
       data-testid="job-ai-tools-panel"
@@ -122,12 +71,12 @@ export default function JobAiToolsPanel({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200/80 flex items-center justify-center text-[#2563EB] shrink-0">
-            <Sparkles className="w-4 h-4" />
+            <Target className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-[#0F172A] tracking-tight truncate">
-                AI Tools & Match Insights
+                Match Insights
               </h2>
               {matchScore !== null && (
                 <span
@@ -140,7 +89,7 @@ export default function JobAiToolsPanel({
               )}
             </div>
             <p className="text-[11px] text-[#64748B] hidden sm:block truncate">
-              Tailor resume to this position, review match breakdown, and track your application
+              Review your match breakdown and track your application
             </p>
           </div>
         </div>
@@ -151,7 +100,7 @@ export default function JobAiToolsPanel({
           onClick={() => setIsMobileExpanded(!isMobileExpanded)}
           aria-expanded={isMobileExpanded}
           aria-controls="ai-tools-panel-body"
-          aria-label={isMobileExpanded ? "Collapse AI tools panel" : "Expand AI tools panel"}
+          aria-label={isMobileExpanded ? "Collapse match insights panel" : "Expand match insights panel"}
           className="md:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition cursor-pointer shrink-0"
         >
           {isMobileExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -165,53 +114,9 @@ export default function JobAiToolsPanel({
           isMobileExpanded ? "block" : "hidden md:block"
         }`}
       >
-        {/* ROW 1: ACTIONS (Tailor Resume + Quick Tracker) */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Left Action: Tailor My Resume */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleTailorClick}
-              data-testid="ai-tools-tailor-button"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition shadow-xs border border-blue-200 bg-blue-50 hover:bg-blue-100 active:bg-blue-200/70 text-[#1D4ED8] cursor-pointer min-h-[40px] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-              <span>
-                {hasConfirmedResume || !user ? "Tailor my resume" : "Upload resume to tailor"}
-              </span>
-              {!isPro && user && hasConfirmedResume && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/80 border border-blue-200 text-[#2563EB]">
-                  Free
-                </span>
-              )}
-              {isPro && hasConfirmedResume && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#1D4ED8] text-white">
-                  Pro AI
-                </span>
-              )}
-            </button>
-
-            {/* Status note next to button */}
-            {!user ? (
-              <span className="text-[11px] text-[#64748B] hidden sm:inline">
-                Sign in required to tailor
-              </span>
-            ) : !hasConfirmedResume ? (
-              <span className="text-[11px] text-[#64748B] hidden sm:inline">
-                Upload & confirm resume to tailor
-              </span>
-            ) : !isPro ? (
-              <span className="text-[11px] text-[#64748B] hidden sm:inline">
-                Rules-based tailoring • Pro for AI rewrite
-              </span>
-            ) : (
-              <span className="text-[11px] text-emerald-700 hidden sm:inline font-medium">
-                Full AI tailoring enabled
-              </span>
-            )}
-          </div>
-
-          {/* Right Actions: Tracker (Save & Applied) */}
+        {/* ROW 1: ACTIONS (Quick Tracker) */}
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {/* Tracker (Save & Applied) */}
           <div className="flex items-center gap-2 shrink-0">
             {/* Save / Bookmark Button */}
             <button
@@ -342,58 +247,6 @@ export default function JobAiToolsPanel({
           </div>
         )}
       </div>
-
-      {/* LOGIN PROMPT MODAL FOR SIGNED-OUT USERS */}
-      {showLoginModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="login-prompt-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
-        >
-          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] p-6 max-w-md w-full shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2563EB]">
-                <LogIn className="w-5 h-5" />
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowLoginModal(false)}
-                aria-label="Close dialog"
-                className="w-8 h-8 rounded-full text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              <h3 id="login-prompt-title" className="text-base font-bold text-[#0F172A]">
-                Sign in to tailor your resume
-              </h3>
-              <p className="text-xs text-[#64748B] leading-relaxed">
-                Resume tailoring uses your confirmed profile and experience to generate targeted
-                bullet points and keyword-optimized summaries for this position.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#F1F5F9]">
-              <button
-                type="button"
-                onClick={() => setShowLoginModal(false)}
-                className="px-4 py-2 rounded-full text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-slate-100 transition cursor-pointer min-h-[38px]"
-              >
-                Cancel
-              </button>
-              <Link
-                href={getLoginRedirectUrl()}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold text-white bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] transition cursor-pointer min-h-[38px]"
-              >
-                <span>Sign In to Continue</span>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

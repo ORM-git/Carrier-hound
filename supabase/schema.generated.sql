@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
--- Freshness Header: Generated on 2026-11-16
--- Migrations Count: 77
+-- Freshness Header: Generated on 2026-11-19
+-- Migrations Count: 87
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
 
@@ -10417,4 +10417,2049 @@ COMMIT;
 --
 --   -- NOTE: Additive columns are intentionally preserved and NOT dropped.
 -- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116c_launch_scope_coming_soon_gates.sql
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116c_launch_scope_coming_soon_gates.sql
+-- Description: Launch scope database gates for coming-soon features
+--              Blocks direct reads and writes on applications, candidate_profiles,
+--              tailored_resumes, and resumes storage bucket at the DB/RLS level.
+--              Preserves all existing data.
+--
+-- IMPORTANT SECURITY & RLS ARCHITECTURE NOTE ON APPLICATIONS DELETION:
+-- Because applications_coming_soon_block_select sets FOR SELECT USING (false),
+-- direct client queries executed by authenticated owners (e.g. DELETE FROM applications WHERE user_id = auth.uid())
+-- match 0 rows in PostgreSQL (or return 0 rows affected via PostgREST due to disabled SELECT visibility).
+-- Direct client DELETE on applications must NOT be relied upon.
+-- Instead, all GDPR / account deletion workflows are executed strictly server-side
+-- via the authenticated service-role route (/api/account/delete and Netlify account-delete),
+-- which runs under PostgreSQL service_role (BYPASSRLS) and reliably purges application rows.
+-- Status: NOT APPLIED
+-- Record with: node scripts/record-migration.cjs 20261116c_launch_scope_coming_soon_gates
+
+-- ============================================================================
+-- PRE-CHECK SQL (Run independently to verify prerequisites)
+-- ============================================================================
+-- SELECT tablename, policyname, cmd, permissive
+-- FROM pg_policies
+-- WHERE tablename IN ('applications', 'candidate_profiles', 'tailored_resumes');
+
+BEGIN;
+
+-- ----------------------------------------------------------------------------
+-- 1. applications table: Block SELECT, INSERT, UPDATE; preserve DELETE
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "applications_owner_select" ON public.applications;
+DROP POLICY IF EXISTS "applications_owner_insert" ON public.applications;
+DROP POLICY IF EXISTS "applications_owner_update" ON public.applications;
+
+DROP POLICY IF EXISTS "applications_coming_soon_block_select" ON public.applications;
+CREATE POLICY "applications_coming_soon_block_select"
+  ON public.applications
+  FOR SELECT
+  TO authenticated, anon
+  USING (false);
+
+DROP POLICY IF EXISTS "applications_coming_soon_block_insert" ON public.applications;
+CREATE POLICY "applications_coming_soon_block_insert"
+  ON public.applications
+  FOR INSERT
+  TO authenticated, anon
+  WITH CHECK (false);
+
+DROP POLICY IF EXISTS "applications_coming_soon_block_update" ON public.applications;
+CREATE POLICY "applications_coming_soon_block_update"
+  ON public.applications
+  FOR UPDATE
+  TO authenticated, anon
+  USING (false)
+  WITH CHECK (false);
+
+-- Owner delete policy retained for schema completeness, but note that direct authenticated
+-- DELETE deletes 0 rows when SELECT visibility is disabled (USING false).
+-- Authoritative deletion is executed via the service-role endpoint (/api/account/delete).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'applications' AND policyname = 'applications_owner_delete'
+  ) THEN
+    CREATE POLICY "applications_owner_delete"
+      ON public.applications
+      FOR DELETE
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 2. candidate_profiles table: Block SELECT, INSERT, UPDATE; preserve DELETE
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "candidate_profiles_owner_select" ON public.candidate_profiles;
+DROP POLICY IF EXISTS "candidate_profiles_owner_insert" ON public.candidate_profiles;
+DROP POLICY IF EXISTS "candidate_profiles_owner_update" ON public.candidate_profiles;
+
+DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_select" ON public.candidate_profiles;
+CREATE POLICY "candidate_profiles_coming_soon_block_select"
+  ON public.candidate_profiles
+  FOR SELECT
+  TO authenticated, anon
+  USING (false);
+
+DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_insert" ON public.candidate_profiles;
+CREATE POLICY "candidate_profiles_coming_soon_block_insert"
+  ON public.candidate_profiles
+  FOR INSERT
+  TO authenticated, anon
+  WITH CHECK (false);
+
+DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_update" ON public.candidate_profiles;
+CREATE POLICY "candidate_profiles_coming_soon_block_update"
+  ON public.candidate_profiles
+  FOR UPDATE
+  TO authenticated, anon
+  USING (false)
+  WITH CHECK (false);
+
+-- Owner delete policy retained for schema completeness, but note that direct authenticated
+-- DELETE deletes 0 rows when SELECT visibility is disabled (USING false).
+-- Authoritative deletion is executed via the service-role endpoint (/api/account/delete).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'candidate_profiles' AND policyname = 'candidate_profiles_owner_delete'
+  ) THEN
+    CREATE POLICY "candidate_profiles_owner_delete"
+      ON public.candidate_profiles
+      FOR DELETE
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 3. tailored_resumes table: Block SELECT, INSERT, UPDATE; preserve DELETE
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "tailored_resumes_owner_select" ON public.tailored_resumes;
+DROP POLICY IF EXISTS "tailored_resumes_owner_insert" ON public.tailored_resumes;
+DROP POLICY IF EXISTS "tailored_resumes_owner_update" ON public.tailored_resumes;
+
+DROP POLICY IF EXISTS "tailored_resumes_coming_soon_block_select" ON public.tailored_resumes;
+CREATE POLICY "tailored_resumes_coming_soon_block_select"
+  ON public.tailored_resumes
+  FOR SELECT
+  TO authenticated, anon
+  USING (false);
+
+DROP POLICY IF EXISTS "tailored_resumes_coming_soon_block_insert" ON public.tailored_resumes;
+CREATE POLICY "tailored_resumes_coming_soon_block_insert"
+  ON public.tailored_resumes
+  FOR INSERT
+  TO authenticated, anon
+  WITH CHECK (false);
+
+DROP POLICY IF EXISTS "tailored_resumes_coming_soon_block_update" ON public.tailored_resumes;
+CREATE POLICY "tailored_resumes_coming_soon_block_update"
+  ON public.tailored_resumes
+  FOR UPDATE
+  TO authenticated, anon
+  USING (false)
+  WITH CHECK (false);
+
+-- Owner delete policy retained for schema completeness, but note that direct authenticated
+-- DELETE deletes 0 rows when SELECT visibility is disabled (USING false).
+-- Authoritative deletion is executed via the service-role endpoint (/api/account/delete).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'tailored_resumes' AND policyname = 'tailored_resumes_owner_delete'
+  ) THEN
+    CREATE POLICY "tailored_resumes_owner_delete"
+      ON public.tailored_resumes
+      FOR DELETE
+      TO authenticated
+      USING (auth.uid() = user_id);
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 4. storage.objects resumes bucket: Block SELECT, INSERT, UPDATE; preserve DELETE
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Owner can select own resume files" ON storage.objects;
+DROP POLICY IF EXISTS "Owner can insert own resume files" ON storage.objects;
+DROP POLICY IF EXISTS "Owner can update own resume files" ON storage.objects;
+
+DROP POLICY IF EXISTS "resumes_storage_coming_soon_block_select" ON storage.objects;
+CREATE POLICY "resumes_storage_coming_soon_block_select"
+  ON storage.objects
+  FOR SELECT
+  TO authenticated, anon
+  USING (bucket_id = 'resumes' AND false);
+
+DROP POLICY IF EXISTS "resumes_storage_coming_soon_block_insert" ON storage.objects;
+CREATE POLICY "resumes_storage_coming_soon_block_insert"
+  ON storage.objects
+  FOR INSERT
+  TO authenticated, anon
+  WITH CHECK (bucket_id = 'resumes' AND false);
+
+DROP POLICY IF EXISTS "resumes_storage_coming_soon_block_update" ON storage.objects;
+CREATE POLICY "resumes_storage_coming_soon_block_update"
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated, anon
+  USING (bucket_id = 'resumes' AND false)
+  WITH CHECK (bucket_id = 'resumes' AND false);
+
+-- Ensure owner delete policy on storage.objects for resumes bucket remains
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'Owner can delete own resume files'
+  ) THEN
+    CREATE POLICY "Owner can delete own resume files"
+      ON storage.objects
+      FOR DELETE
+      TO authenticated
+      USING (
+        bucket_id = 'resumes'
+        AND (storage.foldername(name))[1] = auth.uid()::text
+      );
+  END IF;
+END $$;
+
+COMMIT;
+
+-- ============================================================================
+-- VERIFY SQL (Run independently to verify correct policy application)
+-- ============================================================================
+-- SELECT tablename, policyname, cmd, qual, with_check
+-- FROM pg_policies
+-- WHERE tablename IN ('applications', 'candidate_profiles', 'tailored_resumes');
+
+-- ============================================================================
+-- ROLLBACK SQL (Restore owner policies)
+-- ============================================================================
+-- BEGIN;
+-- DROP POLICY IF EXISTS "applications_coming_soon_block_select" ON public.applications;
+-- DROP POLICY IF EXISTS "applications_coming_soon_block_insert" ON public.applications;
+-- DROP POLICY IF EXISTS "applications_coming_soon_block_update" ON public.applications;
+-- CREATE POLICY "applications_owner_select" ON public.applications FOR SELECT USING (auth.uid() = user_id);
+-- CREATE POLICY "applications_owner_insert" ON public.applications FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- CREATE POLICY "applications_owner_update" ON public.applications FOR UPDATE USING (auth.uid() = user_id);
+--
+-- DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_select" ON public.candidate_profiles;
+-- DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_insert" ON public.candidate_profiles;
+-- DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_update" ON public.candidate_profiles;
+-- CREATE POLICY "candidate_profiles_owner_select" ON public.candidate_profiles FOR SELECT USING (auth.uid() = user_id);
+-- CREATE POLICY "candidate_profiles_owner_insert" ON public.candidate_profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- CREATE POLICY "candidate_profiles_owner_update" ON public.candidate_profiles FOR UPDATE USING (auth.uid() = user_id);
+--
+-- DROP POLICY IF EXISTS "tailored_resumes_coming_soon_block_select" ON public.tailored_resumes;
+-- DROP POLICY IF EXISTS "tailored_resumes_coming_soon_block_insert" ON public.tailored_resumes;
+-- DROP POLICY IF EXISTS "tailored_resumes_coming_soon_block_update" ON public.tailored_resumes;
+-- CREATE POLICY "tailored_resumes_owner_select" ON public.tailored_resumes FOR SELECT USING (auth.uid() = user_id);
+-- CREATE POLICY "tailored_resumes_owner_insert" ON public.tailored_resumes FOR INSERT WITH CHECK (auth.uid() = user_id);
+-- CREATE POLICY "tailored_resumes_owner_update" ON public.tailored_resumes FOR UPDATE USING (auth.uid() = user_id);
+--
+-- DROP POLICY IF EXISTS "resumes_storage_coming_soon_block_select" ON storage.objects;
+-- DROP POLICY IF EXISTS "resumes_storage_coming_soon_block_insert" ON storage.objects;
+-- DROP POLICY IF EXISTS "resumes_storage_coming_soon_block_update" ON storage.objects;
+-- CREATE POLICY "Owner can select own resume files" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text);
+-- CREATE POLICY "Owner can insert own resume files" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text);
+-- CREATE POLICY "Owner can update own resume files" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text) WITH CHECK (bucket_id = 'resumes' AND (storage.foldername(name))[1] = auth.uid()::text);
+-- COMMIT;
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116d_repair_642_identity_and_similarity_safety.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261116d_repair_642_identity_and_similarity_safety.sql
+-- STATUS: NOT APPLIED
+-- Record after applying manually in the Supabase SQL editor:
+--   node scripts/record-migration.cjs 20261116d_repair_642_identity_and_similarity_safety
+--
+-- Purpose:
+--   Phase 1 of Repair PR #642: Short Additive DDL & Trigger Safety.
+--   1. Strict preflight check that aborts if baseline constraints/tables differ.
+--   2. Authoritative write identity separation: removes harmful triggers & destructive dedupe indexes.
+--   3. Versioned similarity fingerprinting (v2): Unicode-preserving, NFKC normalized (sharp s -> ss),
+--      length-framed UTF-8 serialization, SHA-256 digest (byte-for-byte with TS & Python,
+--      exact normalization for Turkish 'İ', Greek 'ς'->'σ', and NEL 'U+0085').
+--   4. Strictly ADVISORY similarity: No unique constraint on similarity_hash_v2,
+--      no automatic trigger-driven row merging, and no cross-source row replacement.
+--   5. Fixes jobs_touch_last_seen trigger so metadata/enrichment updates (source_priority,
+--      is_remote, role_category, similarity_hash_v2, etc.) do NOT clobber last_seen_at.
+--      Defines liveness explicitly: only caller-provided last_seen_at or explicit scraper
+--      refresh session (careermonke.scraper_refresh = 'on') updates it.
+--   6. Preserves incident recovery tables (public.recovery_642_restore48_20261116) untouched.
+--   7. Updates jobs_public view using CREATE OR REPLACE VIEW (never DROP VIEW),
+--      preserving owner, permissions/grants, RLS, and column order.
+--   8. Uses built-in pg_catalog.sha256 (no CREATE EXTENSION).
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- PREFLIGHT INTEGRITY & SAFETY CHECK (Aborts transaction if baseline differs)
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_dup_source_keys integer := 0;
+BEGIN
+  -- 1. Check required baseline tables exist
+  IF to_regclass('public.jobs') IS NULL THEN
+    RAISE EXCEPTION 'Preflight check failed: public.jobs table does not exist';
+  END IF;
+  IF to_regclass('public.companies') IS NULL THEN
+    RAISE EXCEPTION 'Preflight check failed: public.companies table does not exist';
+  END IF;
+
+  -- 2. Verify expected primary key constraint on public.jobs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.jobs'::regclass
+      AND conname = 'jobs_pkey'
+      AND contype = 'p'
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected primary key constraint jobs_pkey on public.jobs missing or definition differs';
+  END IF;
+
+  -- 3. Verify expected primary key constraint on public.companies
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.companies'::regclass
+      AND conname = 'companies_pkey'
+      AND contype = 'p'
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected primary key constraint companies_pkey on public.companies missing or definition differs';
+  END IF;
+
+  -- 4. Verify expected source uniqueness constraint on public.jobs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.jobs'::regclass
+      AND conname IN ('jobs_source_source_job_id_unique', 'jobs_source_source_job_id_key')
+      AND contype = 'u'
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected unique constraint on (source, source_job_id) missing or definition differs';
+  END IF;
+
+  -- 5. Verify expected baseline trigger jobs_touch_last_seen on public.jobs
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.jobs'::regclass
+      AND tgname = 'jobs_touch_last_seen'
+      AND NOT tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'Preflight check failed: expected trigger jobs_touch_last_seen on public.jobs missing or definition differs';
+  END IF;
+
+  -- 6. Verify incident recovery table is present and uncorrupted if it exists
+  IF to_regclass('public.recovery_642_restore48_20261116') IS NOT NULL THEN
+    RAISE NOTICE 'Preflight: incident recovery table verified intact.';
+  END IF;
+
+  -- 7. Check for existing duplicate (source_id, source_job_id) pairs if column already exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'source_id'
+  ) THEN
+    SELECT count(*) INTO v_dup_source_keys FROM (
+      SELECT source_id, source_job_id
+      FROM public.jobs
+      WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL
+      GROUP BY source_id, source_job_id
+      HAVING count(*) > 1
+    ) dups;
+
+    IF v_dup_source_keys > 0 THEN
+      RAISE EXCEPTION 'Preflight check failed: found % duplicate (source_id, source_job_id) pairs in public.jobs', v_dup_source_keys;
+    END IF;
+  END IF;
+
+  RAISE NOTICE 'Preflight checks passed: baseline tables, constraints, triggers, and source key integrity verified.';
+END $$;
+
+BEGIN;
+
+-- Lock and statement execution budgets for zero-downtime additive DDL
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '10s';
+
+-- ----------------------------------------------------------------------------
+-- 1. CONTAINMENT: PERMANENTLY REMOVE HARMFUL TRIGGERS & DESTRUCTIVE INDEXES
+-- ----------------------------------------------------------------------------
+DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
+DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
+DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
+
+-- ----------------------------------------------------------------------------
+-- 2. REPAIR jobs_touch_last_seen TRIGGER (EXPLICIT LIVENESS CONTRACT)
+-- ----------------------------------------------------------------------------
+-- The legacy trigger unconditionally set NEW.last_seen_at := now() on EVERY update.
+-- This clobbered ranking order during metadata backfills and reversed dry-run winners.
+-- Liveness is now defined explicitly:
+-- 1) If careermonke.skip_touch_last_seen = 'on' -> preserve OLD.last_seen_at.
+-- 2) If caller explicitly provides a distinct last_seen_at -> keep NEW.last_seen_at.
+-- 3) If explicit scraper refresh setting careermonke.scraper_refresh = 'on' -> set now().
+-- 4) All other updates (source_priority, is_remote, role_category, similarity_hash_v2,
+--    top_keywords, backfills, tags, etc.) preserve OLD.last_seen_at.
+CREATE OR REPLACE FUNCTION public.touch_job_last_seen()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- 1. Explicit caller update: caller passed a distinct last_seen_at
+  IF NEW.last_seen_at IS DISTINCT FROM OLD.last_seen_at THEN
+    RETURN NEW;
+  END IF;
+
+  -- 2. Explicit skip setting (maintenance or ingestion session)
+  IF current_setting('careermonke.skip_touch_last_seen', true) = 'on' THEN
+    NEW.last_seen_at := OLD.last_seen_at;
+    RETURN NEW;
+  END IF;
+
+  -- 3. Explicit scraper refresh session setting
+  IF current_setting('careermonke.scraper_refresh', true) = 'on' THEN
+    NEW.last_seen_at := now();
+    RETURN NEW;
+  END IF;
+
+  -- 4. Default: all metadata updates (source_priority, is_remote, role_category,
+  --    similarity_hash_v2, top_keywords, etc.) preserve OLD.last_seen_at.
+  NEW.last_seen_at := OLD.last_seen_at;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS jobs_touch_last_seen ON public.jobs;
+CREATE TRIGGER jobs_touch_last_seen
+  BEFORE UPDATE ON public.jobs
+  FOR EACH ROW EXECUTE FUNCTION public.touch_job_last_seen();
+
+-- ----------------------------------------------------------------------------
+-- 3. VERSIONED SIMILARITY HASH FUNCTION (v2 LENGTH-FRAMED UTF-8 SHA-256)
+-- ----------------------------------------------------------------------------
+-- Immutable, deterministic hash function shared with Python and TypeScript.
+-- Preserves all Unicode letters (Japanese, Cyrillic, accented Latin).
+-- Normalization contract matches TS & Python byte-for-byte:
+--   - Turkish 'İ' (U+0130) and 'i\u0307' -> 'i' (U+0069)
+--   - Greek final sigma 'ς' (U+03C2 / chr(962)) -> 'σ' (U+03C3 / chr(963))
+--   - Next Line 'U+0085' (chr(133)) -> ' '
+-- Serializes using length-framed UTF-8 octets:
+--   v2|c:{len}:{comp}|t:{len}:{title}|co:{len}:{co}|loc:{len}:{loc}
+-- Uses built-in pg_catalog.sha256 to avoid search_path or extension resolution bugs.
+CREATE OR REPLACE FUNCTION public.compute_job_similarity_hash_v2(
+  p_company text,
+  p_title text,
+  p_country text,
+  p_location text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_company text;
+  v_title text;
+  v_country text;
+  v_location text;
+  v_c_len integer;
+  v_t_len integer;
+  v_co_len integer;
+  v_loc_len integer;
+  v_payload text;
+BEGIN
+  -- 1. Normalize company: NFKC, sharp s -> ss, lowercase, edge characters, strip legal suffixes, collapse whitespace
+  v_company := lower(COALESCE(normalize(p_company, NFKC), ''));
+  v_company := replace(replace(replace(replace(replace(v_company, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
+  v_company := regexp_replace(v_company, '\y(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\y\.?', ' ', 'gi');
+  v_company := trim(regexp_replace(v_company, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
+
+  -- 2. Normalize title: NFKC, sharp s -> ss, lowercase, edge characters, collapse whitespace (preserves Unicode & punctuation)
+  v_title := lower(COALESCE(normalize(p_title, NFKC), ''));
+  v_title := replace(replace(replace(replace(replace(v_title, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
+  v_title := trim(regexp_replace(v_title, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
+
+  -- 3. Normalize country: NFKC, sharp s -> ss, lowercase, edge characters, collapse whitespace
+  v_country := lower(COALESCE(normalize(p_country, NFKC), ''));
+  v_country := replace(replace(replace(replace(replace(v_country, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
+  v_country := trim(regexp_replace(v_country, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
+
+  -- 4. Normalize location: primary city/territory before comma, NFKC, sharp s -> ss, lowercase, edge characters, collapse whitespace
+  v_location := lower(COALESCE(normalize(p_location, NFKC), ''));
+  v_location := replace(replace(replace(replace(replace(v_location, 'İ', 'i'), 'i' || chr(775), 'i'), chr(133), ' '), chr(962), chr(963)), chr(223), 'ss');
+  v_location := split_part(v_location, ',', 1);
+  v_location := trim(regexp_replace(v_location, '[ \t\n\r\f\v\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+', ' ', 'g'));
+
+  -- 5. Length framing in UTF-8 octets
+  v_c_len := octet_length(convert_to(v_company, 'UTF8'));
+  v_t_len := octet_length(convert_to(v_title, 'UTF8'));
+  v_co_len := octet_length(convert_to(v_country, 'UTF8'));
+  v_loc_len := octet_length(convert_to(v_location, 'UTF8'));
+
+  v_payload := 'v2|c:' || v_c_len || ':' || v_company ||
+               '|t:' || v_t_len || ':' || v_title ||
+               '|co:' || v_co_len || ':' || v_country ||
+               '|loc:' || v_loc_len || ':' || v_location;
+
+  RETURN encode(pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex');
+END;
+$$;
+
+-- Replace legacy compute_job_dedupe_hash to delegate to compute_job_similarity_hash_v2
+CREATE OR REPLACE FUNCTION public.compute_job_dedupe_hash(
+  p_company text,
+  p_title text,
+  p_country text,
+  p_location text
+)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT public.compute_job_similarity_hash_v2(p_company, p_title, p_country, p_location);
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 4. ADDITIVE SCHEMA COLUMNS ON jobs AND companies
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_id text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS canonical_domain text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS logo_url text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS role_category text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS top_keywords text[] DEFAULT '{}'::text[];
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS similarity_hash_v2 text;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_remote boolean;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS source_priority smallint DEFAULT 2;
+
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS canonical_domain text;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS category text;
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS logo_url text;
+
+-- ----------------------------------------------------------------------------
+-- 5. SAFE CHECK CONSTRAINTS (NOT VALID FOR ZERO TABLE-LOCK DOWNTIME)
+-- ----------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'jobs_role_category_check') THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_role_category_check
+      CHECK (role_category IN ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER')) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'jobs_source_priority_check') THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_priority_check
+      CHECK (source_priority IN (1, 2)) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'companies_category_check') THEN
+    ALTER TABLE public.companies ADD CONSTRAINT companies_category_check
+      CHECK (category IN ('MNC_BIGTECH', 'HIGH_PRODUCT_YC', 'OTHER_STARTUPS', 'INDIAN_IT_AND_OTHER')) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'jobs_source_type_check'
+  ) THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+      CHECK (source_type IN (
+        'ats', 'api', 'feed', 'direct',
+        'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+        'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+      )) NOT VALID;
+  ELSE
+    ALTER TABLE public.jobs DROP CONSTRAINT jobs_source_type_check;
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+      CHECK (source_type IN (
+        'ats', 'api', 'feed', 'direct',
+        'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+        'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+      )) NOT VALID;
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 6. TRANSACTIONAL jobs_public VIEW UPDATE (CREATE OR REPLACE VIEW)
+-- ----------------------------------------------------------------------------
+-- Preserves view owner, grants, RLS, and column order. NEVER DROP VIEW.
+CREATE OR REPLACE VIEW public.jobs_public AS
+SELECT
+  id,
+  title,
+  location,
+  remote,
+  remote_scope,
+  remote_eligibility,
+  job_type,
+  category,
+  country,
+  country_code,
+  seniority,
+  verified,
+  source_type,
+  first_seen_at,
+  last_seen_at,
+  discovered_at,
+  posted_at,
+  created_at,
+  status,
+  is_active,
+  -- Locked fields: Strictly masked from anon and authenticated non-Pro users
+  'Verified Employer'::text AS company,
+  NULL::text AS salary_text,
+  NULL::text AS description,
+  NULL::text AS apply_url,
+  '{}'::text[] AS skills,
+  -- Appended Phase 3 high-volume fields (non-breaking column order)
+  role_category,
+  COALESCE(top_keywords, '{}'::text[]) AS top_keywords,
+  COALESCE(is_remote, remote, false) AS is_remote
+FROM public.jobs
+WHERE is_active = true OR status = 'active';
+
+GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
+
+COMMIT;
+
+-- ============================================================================
+-- ROLLBACK (Run manually in the Supabase SQL editor if this must be undone):
+--   NON-DESTRUCTIVE ROLLBACK POLICY:
+--   - Restores legacy function definitions without dangling dropped references.
+--   - Uses CREATE OR REPLACE VIEW public.jobs_public (never DROP VIEW).
+--   - Does NOT drop pre-existing source-key unique index (jobs_source_source_job_id_unique).
+--   - Keeps additive columns (jobs.source_id, similarity_hash_v2, etc.) to prevent data loss.
+--   - Does NOT touch incident recovery tables (public.recovery_642_restore48_20261116).
+--
+--   -- 1. Restore ORIGINAL compute_job_dedupe_hash definition from #642
+--   CREATE OR REPLACE FUNCTION public.compute_job_dedupe_hash(
+--     p_company text,
+--     p_title text,
+--     p_country text,
+--     p_location text
+--   )
+--   RETURNS text
+--   LANGUAGE plpgsql
+--   IMMUTABLE
+--   SET search_path = public
+--   AS $$
+--   DECLARE
+--     v_company text;
+--     v_title text;
+--     v_country text;
+--     v_city text;
+--     v_payload text;
+--   BEGIN
+--     v_company := lower(trim(COALESCE(p_company, '')));
+--     v_company := regexp_replace(v_company, '\m(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\M\.?', '', 'gi');
+--     v_company := trim(regexp_replace(v_company, '[^a-z0-9]+', ' ', 'g'));
+--
+--     v_title := lower(trim(COALESCE(p_title, '')));
+--     v_title := trim(regexp_replace(v_title, '[^a-z0-9]+', ' ', 'g'));
+--
+--     v_country := lower(trim(COALESCE(NULLIF(trim(p_country), ''), 'any')));
+--     v_country := trim(regexp_replace(v_country, '[^a-z0-9]+', ' ', 'g'));
+--
+--     v_city := lower(trim(split_part(COALESCE(p_location, ''), ',', 1)));
+--     v_city := trim(regexp_replace(v_city, '[^a-z0-9]+', ' ', 'g'));
+--     IF v_city = '' THEN
+--       v_city := 'any';
+--     END IF;
+--
+--     v_payload := v_company || '|' || v_title || '|' || v_country || '|' || v_city;
+--     RETURN encode(pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex');
+--   END;
+--   $$;
+--
+--   -- 2. Drop similarity_hash_v2 function created by this migration
+--   DROP FUNCTION IF EXISTS public.compute_job_similarity_hash_v2(text, text, text, text);
+--
+--   -- 3. Restore touch_job_last_seen function to baseline behavior
+--   CREATE OR REPLACE FUNCTION public.touch_job_last_seen()
+--   RETURNS trigger
+--   LANGUAGE plpgsql
+--   AS $$
+--   BEGIN
+--     NEW.last_seen_at := now();
+--     RETURN NEW;
+--   END;
+--   $$;
+--
+--   -- 4. Restore legacy jobs_public view using CREATE OR REPLACE VIEW (never DROP VIEW)
+--   CREATE OR REPLACE VIEW public.jobs_public AS
+--   SELECT
+--     id, title, location, remote, remote_scope, remote_eligibility,
+--     job_type, category, country, country_code, seniority, verified,
+--     source_type, first_seen_at, last_seen_at, discovered_at, posted_at,
+--     created_at, status, is_active,
+--     'Verified Employer'::text AS company,
+--     NULL::text AS salary_text,
+--     NULL::text AS description,
+--     NULL::text AS apply_url,
+--     '{}'::text[] AS skills,
+--     NULL::text AS role_category,
+--     '{}'::text[] AS top_keywords,
+--     COALESCE(remote, false) AS is_remote
+--   FROM public.jobs
+--   WHERE is_active = true OR status = 'active';
+--   GRANT SELECT ON public.jobs_public TO anon, authenticated, service_role;
+--
+--   -- 5. Drop indexes created by 20261116e (DO NOT drop pre-existing jobs_source_source_job_id_unique!)
+--   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_similarity_hash_v2;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_role_category;
+--   DROP INDEX IF EXISTS public.idx_jobs_active_category;
+--   DROP INDEX IF EXISTS public.idx_companies_category;
+--   DROP INDEX IF EXISTS public.idx_companies_slug_uniq;
+--
+--   -- 6. Drop check constraints added by this migration
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_priority_check;
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_role_category_check;
+--   ALTER TABLE public.companies DROP CONSTRAINT IF EXISTS companies_category_check;
+--
+--   -- 7. Preserve compatible expanded CHECK on jobs.source_type
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_source_type_check;
+--   ALTER TABLE public.jobs ADD CONSTRAINT jobs_source_type_check
+--     CHECK (source_type IN (
+--       'ats', 'api', 'feed', 'direct',
+--       'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday',
+--       'amazon', 'microsoft', 'jobspy', 'arbeitnow', 'adzuna'
+--     )) NOT VALID;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116d_resumes_block_direct_writes.sql
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116d_resumes_block_direct_writes.sql
+-- Description: Close the direct-INSERT path on public.resumes.
+--
+-- Problem: 20261031_account_delete_and_private_resumes.sql created ONE policy,
+-- "Users can manage own resumes" (FOR ALL TO authenticated, USING/WITH CHECK auth.uid() = user_id).
+-- FOR ALL includes INSERT, so any signed-in user could insert rows with the Supabase client
+-- (anon key + user JWT), bypassing any server-side resume gate. 20261116c gated applications,
+-- candidate_profiles, tailored_resumes and the storage bucket but missed this table.
+--
+-- Chosen fix (option A): no code path in this repo inserts into public.resumes (resume files go to
+-- the private storage bucket and candidate_profiles, both already gated). So the safest fix is to
+-- remove client INSERT entirely:
+--   * drop every policy that permits INSERT (FOR ALL or FOR INSERT), whatever it is named in an
+--     environment, then recreate owner-only SELECT / UPDATE / DELETE policies;
+--   * REVOKE INSERT from authenticated, anon and PUBLIC (this also blocks INSERT ... ON CONFLICT
+--     upsert, which needs INSERT privilege);
+--   * the UPDATE policy keeps WITH CHECK (auth.uid() = user_id), so user_id cannot be re-pointed.
+-- Future resume creation must go through a gated server route using the service role (BYPASSRLS),
+-- setting user_id from the verified session. A count-in-RLS gate is deliberately not used (racy).
+--
+-- Idempotent: safe to run twice. Status: NOT APPLIED
+-- Record with: node scripts/record-migration.cjs 20261116d_resumes_block_direct_writes
+
+-- ============================================================================
+-- PRE-CHECK SQL (Run independently)
+-- ============================================================================
+-- SELECT policyname, permissive, roles, cmd, qual, with_check
+-- FROM pg_policies WHERE schemaname = 'public' AND tablename = 'resumes';
+-- SELECT grantee, privilege_type FROM information_schema.role_table_grants
+-- WHERE table_schema = 'public' AND table_name = 'resumes';
+
+BEGIN;
+
+ALTER TABLE public.resumes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resumes FORCE ROW LEVEL SECURITY;
+
+-- 1. Drop every policy that allows INSERT (exact names differ between environments).
+DO $$
+DECLARE
+  p record;
+BEGIN
+  FOR p IN
+    SELECT policyname FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'resumes' AND cmd IN ('ALL', 'INSERT')
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.resumes', p.policyname);
+  END LOOP;
+END $$;
+
+-- 2. Owner-only SELECT / UPDATE / DELETE (same visibility as before, minus INSERT).
+DROP POLICY IF EXISTS "resumes_owner_select" ON public.resumes;
+CREATE POLICY "resumes_owner_select" ON public.resumes
+  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "resumes_owner_update" ON public.resumes;
+CREATE POLICY "resumes_owner_update" ON public.resumes
+  FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "resumes_owner_delete" ON public.resumes;
+CREATE POLICY "resumes_owner_delete" ON public.resumes
+  FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+-- 3. Privilege layer: no client INSERT (also blocks upsert-as-insert).
+REVOKE INSERT ON TABLE public.resumes FROM authenticated, anon, PUBLIC;
+
+COMMIT;
+
+-- ============================================================================
+-- VERIFY SQL (Run independently)
+-- ============================================================================
+-- SELECT policyname, cmd, qual, with_check FROM pg_policies
+-- WHERE schemaname = 'public' AND tablename = 'resumes';   -- expect select/update/delete only
+-- SELECT has_table_privilege('authenticated', 'public.resumes', 'INSERT');  -- expect false
+
+-- ============================================================================
+-- ROLLBACK SQL (Restores the previous FOR ALL policy, i.e. re-opens direct INSERT)
+-- ============================================================================
+-- BEGIN;
+-- DROP POLICY IF EXISTS "resumes_owner_select" ON public.resumes;
+-- DROP POLICY IF EXISTS "resumes_owner_update" ON public.resumes;
+-- DROP POLICY IF EXISTS "resumes_owner_delete" ON public.resumes;
+-- GRANT INSERT ON TABLE public.resumes TO authenticated;
+-- CREATE POLICY "Users can manage own resumes" ON public.resumes
+--   FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+-- COMMIT;
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116e_repair_642_concurrent_indexes.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261116e_repair_642_concurrent_indexes.sql
+-- STATUS: NOT APPLIED
+-- Record after applying manually in the Supabase SQL editor:
+--   node scripts/record-migration.cjs 20261116e_repair_642_concurrent_indexes
+--
+-- Purpose:
+--   Phase 2 of Repair PR #642: CREATE INDEX CONCURRENTLY.
+--   Must be executed OUTSIDE of a transaction block (do NOT wrap in BEGIN / COMMIT),
+--   one statement at a time.
+--   Builds indexes concurrently without table locks:
+--   1. Authoritative write identity unique partial index (board-scoped source_id + requisition source_job_id).
+--   2. Advisory similarity index (STANDARD INDEX - NOT UNIQUE! NO TRIGGER MERGING!).
+--   3. Category and taxonomy filter indexes.
+--
+-- Repair safety (CREATE INDEX ... IF NOT EXISTS only checks the NAME):
+--   a. Preflight fails loudly when duplicate authoritative keys exist (the unique build would fail anyway).
+--   b. A same-name index that is invalid, not ready (left by a failed CONCURRENTLY build) or has a
+--      different definition (e.g. non-unique) is renamed to <name>_broken and dropped concurrently,
+--      so the CREATE below rebuilds it. The rename takes only a SHARE UPDATE EXCLUSIVE lock.
+--   c. Postflight fails loudly unless every index exists, is valid and ready, with the exact definition.
+-- ============================================================================
+
+-- Expected indexes and their exact pg_get_indexdef() text (dropped again at the end).
+CREATE OR REPLACE FUNCTION public.repair_645_expected_indexes()
+RETURNS TABLE (index_name text, index_def text)
+LANGUAGE sql IMMUTABLE
+AS $$
+  VALUES
+    ('idx_jobs_source_id_source_job_id_uniq',
+     'CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))'),
+    ('idx_jobs_active_similarity_hash_v2',
+     'CREATE INDEX idx_jobs_active_similarity_hash_v2 ON public.jobs USING btree (similarity_hash_v2) WHERE (is_active = true)'),
+    ('idx_jobs_active_role_category',
+     'CREATE INDEX idx_jobs_active_role_category ON public.jobs USING btree (role_category) WHERE (is_active = true)'),
+    ('idx_jobs_active_category',
+     'CREATE INDEX idx_jobs_active_category ON public.jobs USING btree (category) WHERE (is_active = true)'),
+    ('idx_companies_category',
+     'CREATE INDEX idx_companies_category ON public.companies USING btree (category)'),
+    ('idx_companies_slug_uniq',
+     'CREATE UNIQUE INDEX idx_companies_slug_uniq ON public.companies USING btree (slug)')
+$$;
+REVOKE ALL ON FUNCTION public.repair_645_expected_indexes() FROM PUBLIC, anon, authenticated;
+
+-- 0. Leftovers from an earlier interrupted repair run
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_source_id_source_job_id_uniq_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_similarity_hash_v2_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_role_category_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_category_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_category_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_slug_uniq_broken;
+
+-- a + b. Preflight: duplicate authoritative keys, then move aside any wrong same-name index
+DO $$
+DECLARE
+  v_dups bigint;
+  r record;
+  v_def text;
+  v_valid boolean;
+  v_ready boolean;
+BEGIN
+  SELECT count(*) INTO v_dups FROM (
+    SELECT 1 FROM public.jobs
+    WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL
+    GROUP BY source_id, source_job_id HAVING count(*) > 1
+  ) d;
+  IF v_dups > 0 THEN
+    RAISE EXCEPTION 'Index repair aborted: % duplicate (source_id, source_job_id) keys in public.jobs. Resolve them before building idx_jobs_source_id_source_job_id_uniq.', v_dups;
+  END IF;
+
+  SELECT count(*) INTO v_dups FROM (
+    SELECT 1 FROM public.companies WHERE slug IS NOT NULL GROUP BY slug HAVING count(*) > 1
+  ) d;
+  IF v_dups > 0 THEN
+    RAISE EXCEPTION 'Index repair aborted: % duplicate slugs in public.companies. Resolve them before building idx_companies_slug_uniq.', v_dups;
+  END IF;
+
+  FOR r IN SELECT * FROM public.repair_645_expected_indexes() LOOP
+    SELECT pg_get_indexdef(i.indexrelid), i.indisvalid, i.indisready
+      INTO v_def, v_valid, v_ready
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = r.index_name;
+
+    IF FOUND AND NOT (v_valid AND v_ready AND v_def = r.index_def) THEN
+      RAISE WARNING 'Index public.% is invalid/not ready or has a wrong definition (valid=%, ready=%, def=%). Moving it aside for rebuild.',
+        r.index_name, v_valid, v_ready, v_def;
+      EXECUTE format('ALTER INDEX public.%I RENAME TO %I', r.index_name, r.index_name || '_broken');
+    END IF;
+  END LOOP;
+END $$;
+
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_source_id_source_job_id_uniq_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_similarity_hash_v2_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_role_category_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_category_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_category_broken;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_slug_uniq_broken;
+
+-- 1. Authoritative write identity unique partial index
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_source_id_source_job_id_uniq
+ON public.jobs (source_id, source_job_id)
+WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL;
+
+-- 2. Advisory similarity index (STANDARD INDEX - NOT UNIQUE!)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_similarity_hash_v2
+ON public.jobs (similarity_hash_v2)
+WHERE is_active = TRUE;
+
+-- 3. Taxonomy & Filtering Indexes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_role_category
+ON public.jobs (role_category)
+WHERE is_active = TRUE;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_active_category
+ON public.jobs (category)
+WHERE is_active = TRUE;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_companies_category
+ON public.companies (category);
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_companies_slug_uniq
+ON public.companies (slug);
+
+-- c. Postflight: every index exists, is valid and ready, with the exact expected definition
+DO $$
+DECLARE
+  r record;
+  v_def text;
+  v_valid boolean;
+  v_ready boolean;
+BEGIN
+  FOR r IN SELECT * FROM public.repair_645_expected_indexes() LOOP
+    SELECT pg_get_indexdef(i.indexrelid), i.indisvalid, i.indisready
+      INTO v_def, v_valid, v_ready
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = r.index_name;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Index repair failed: public.% does not exist as an index.', r.index_name;
+    END IF;
+    IF NOT (v_valid AND v_ready AND v_def = r.index_def) THEN
+      RAISE EXCEPTION 'Index repair failed: public.% (valid=%, ready=%) has definition % but expected %. Re-run this migration.',
+        r.index_name, v_valid, v_ready, v_def, r.index_def;
+    END IF;
+  END LOOP;
+END $$;
+
+DROP FUNCTION IF EXISTS public.repair_645_expected_indexes();
+
+-- ============================================================================
+-- ROLLBACK (Run manually outside transaction if indexes must be undone):
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_similarity_hash_v2;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_role_category;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_jobs_active_category;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_category;
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_companies_slug_uniq;
+--   DROP FUNCTION IF EXISTS public.repair_645_expected_indexes();
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261116f_repair_642_batch_backfill.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261116f_repair_642_batch_backfill.sql
+-- STATUS: NOT APPLIED
+-- Record after applying manually in the Supabase SQL editor:
+--   node scripts/record-migration.cjs 20261116f_repair_642_batch_backfill
+--
+-- Purpose:
+--   Phase 3 of Repair PR #642: Bounded, Resumable Batch Backfill.
+--   - Bounded, resumable batch processing committing after EACH batch (no single DO transaction).
+--   - LIMIT 500 loop per batch with FOR UPDATE SKIP LOCKED.
+--   - Batched updates for all three target fields:
+--       1) public.companies.canonical_domain
+--       2) public.jobs.source_priority
+--       3) public.jobs.similarity_hash_v2
+--   - Tracks progress in public.repair_645_backfill_progress so a rerun resumes automatically.
+--   - Sets careermonke.skip_touch_last_seen = 'on' to preserve last_seen_at.
+-- ============================================================================
+
+-- 1. Create progress tracking table if it does not already exist
+CREATE TABLE IF NOT EXISTS public.repair_645_backfill_progress (
+  phase text PRIMARY KEY,
+  total_rows_updated integer NOT NULL DEFAULT 0,
+  last_batch_rows integer NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 2. Define resumable batch coordinator procedure
+CREATE OR REPLACE PROCEDURE public.repair_645_run_resumable_backfill(p_batch_size integer DEFAULT 500)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_batch_count integer := 0;
+  v_phase_total integer := 0;
+BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 OR p_batch_size > 5000 THEN
+    RAISE EXCEPTION 'repair_645_run_resumable_backfill: p_batch_size must be between 1 and 5000, got %', p_batch_size;
+  END IF;
+
+  SET careermonke.skip_touch_last_seen = 'on';
+
+  -- Phase 1: Bounded batched backfill of companies.canonical_domain
+  LOOP
+    WITH batch AS (
+      SELECT id, lower(trim(domain)) AS new_canon
+      FROM public.companies
+      WHERE canonical_domain IS NULL AND domain IS NOT NULL
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE public.companies c
+    SET canonical_domain = b.new_canon
+    FROM batch b
+    WHERE c.id = b.id;
+
+    GET DIAGNOSTICS v_batch_count = ROW_COUNT;
+    EXIT WHEN v_batch_count = 0;
+
+    v_phase_total := v_phase_total + v_batch_count;
+    INSERT INTO public.repair_645_backfill_progress (phase, total_rows_updated, last_batch_rows, updated_at)
+    VALUES ('companies_canonical_domain', v_phase_total, v_batch_count, now())
+    ON CONFLICT (phase) DO UPDATE
+    SET total_rows_updated = repair_645_backfill_progress.total_rows_updated + EXCLUDED.last_batch_rows,
+        last_batch_rows = EXCLUDED.last_batch_rows,
+        updated_at = EXCLUDED.updated_at;
+
+    COMMIT;
+  END LOOP;
+
+  -- Phase 2: Bounded batched backfill of jobs.source_priority.
+  -- 20261116d adds the column with DEFAULT 2, so existing ATS rows already read 2 (not NULL):
+  -- also pick up ATS rows not yet at 1. Only ever upgrades to 1; never downgrades a row.
+  v_phase_total := 0;
+  LOOP
+    WITH batch AS (
+      SELECT j.id, p.new_priority
+      FROM public.jobs j
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN j.source_type IN ('ats', 'direct', 'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'amazon', 'microsoft')
+            OR lower(COALESCE(j.source, '')) IN ('greenhouse', 'lever', 'ashby', 'smartrecruiters', 'recruitee', 'workable', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join')
+          THEN 1
+          ELSE 2
+        END AS new_priority
+      ) p
+      WHERE j.source_priority IS NULL OR (p.new_priority = 1 AND j.source_priority <> 1)
+      LIMIT p_batch_size
+      FOR UPDATE OF j SKIP LOCKED
+    )
+    UPDATE public.jobs j
+    SET source_priority = b.new_priority
+    FROM batch b
+    WHERE j.id = b.id;
+
+    GET DIAGNOSTICS v_batch_count = ROW_COUNT;
+    EXIT WHEN v_batch_count = 0;
+
+    v_phase_total := v_phase_total + v_batch_count;
+    INSERT INTO public.repair_645_backfill_progress (phase, total_rows_updated, last_batch_rows, updated_at)
+    VALUES ('jobs_source_priority', v_phase_total, v_batch_count, now())
+    ON CONFLICT (phase) DO UPDATE
+    SET total_rows_updated = repair_645_backfill_progress.total_rows_updated + EXCLUDED.last_batch_rows,
+        last_batch_rows = EXCLUDED.last_batch_rows,
+        updated_at = EXCLUDED.updated_at;
+
+    COMMIT;
+  END LOOP;
+
+  -- Phase 3: Bounded batched backfill of jobs.similarity_hash_v2
+  v_phase_total := 0;
+  LOOP
+    WITH batch AS (
+      SELECT id,
+        public.compute_job_similarity_hash_v2(
+          company,
+          title,
+          COALESCE(country_code, country),
+          location
+        ) AS new_hash
+      FROM public.jobs
+      WHERE is_active = TRUE AND similarity_hash_v2 IS NULL
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE public.jobs j
+    SET similarity_hash_v2 = b.new_hash
+    FROM batch b
+    WHERE j.id = b.id;
+
+    GET DIAGNOSTICS v_batch_count = ROW_COUNT;
+    EXIT WHEN v_batch_count = 0;
+
+    v_phase_total := v_phase_total + v_batch_count;
+    INSERT INTO public.repair_645_backfill_progress (phase, total_rows_updated, last_batch_rows, updated_at)
+    VALUES ('jobs_similarity_hash_v2', v_phase_total, v_batch_count, now())
+    ON CONFLICT (phase) DO UPDATE
+    SET total_rows_updated = repair_645_backfill_progress.total_rows_updated + EXCLUDED.last_batch_rows,
+        last_batch_rows = EXCLUDED.last_batch_rows,
+        updated_at = EXCLUDED.updated_at;
+
+    COMMIT;
+  END LOOP;
+
+  RESET careermonke.skip_touch_last_seen;
+END;
+$$;
+
+-- 3. Execute batch backfill in bounded chunks of 500 rows with per-batch commits
+CALL public.repair_645_run_resumable_backfill(500);
+
+-- ============================================================================
+-- ROLLBACK (Run manually if batch backfill data or tracking must be reset):
+--   DROP PROCEDURE IF EXISTS public.repair_645_run_resumable_backfill(integer);
+--   DROP TABLE IF EXISTS public.repair_645_backfill_progress;
+--   -- NOTE: Backfilled columns (canonical_domain, source_priority, similarity_hash_v2)
+--   -- are non-destructive and can safely remain populated. To reset if desired:
+--   -- UPDATE public.jobs SET similarity_hash_v2 = NULL;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261117_user_preferences_country.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: Add country and country_code to user_preferences
+-- Description: Supports explicit user country persistence from mobile onboarding.
+-- ============================================================================
+
+ALTER TABLE public.user_preferences
+ADD COLUMN IF NOT EXISTS country TEXT,
+ADD COLUMN IF NOT EXISTS country_code VARCHAR(2);
+
+-- ============================================================================
+-- ROLLBACK:
+--   ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS country_code;
+--   ALTER TABLE public.user_preferences DROP COLUMN IF EXISTS country;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261117a_update_plan_prices_399_499_2199.sql
+-- ------------------------------------------------------------------------------
+-- Migration: 20261117a_update_plan_prices_399_499_2199.sql
+-- Description: Update public.plans table to server-authoritative prepaid price points:
+--   1. weekly: Rs 399 (39900 paise), 7 days access
+--   2. monthly: Rs 499 (49900 paise), 30 days access
+--   3. quarterly: Rs 2,199 (219900 paise), 90 days access
+
+BEGIN;
+
+SET LOCAL statement_timeout = '10s';
+SET LOCAL lock_timeout = '5s';
+
+-- Preflight: verify that all three required plan rows (weekly, monthly, quarterly) exist before applying updates
+DO $$
+DECLARE
+  v_count integer;
+BEGIN
+  SELECT count(*) INTO v_count
+  FROM public.plans
+  WHERE code IN ('weekly', 'monthly', 'quarterly');
+
+  IF v_count < 3 THEN
+    RAISE EXCEPTION 'Preflight failed: public.plans must contain weekly, monthly, and quarterly rows before price update (found %)', v_count;
+  END IF;
+END $$;
+
+UPDATE public.plans SET price_paise = 39900, duration_days = 7 WHERE code = 'weekly';
+UPDATE public.plans SET price_paise = 49900, duration_days = 30 WHERE code = 'monthly';
+UPDATE public.plans SET price_paise = 219900, duration_days = 90 WHERE code = 'quarterly';
+
+COMMIT;
+
+-- Post-apply verification query:
+-- SELECT code, name, price_paise, duration_days FROM public.plans WHERE code IN ('weekly', 'monthly', 'quarterly') ORDER BY duration_days;
+
+-- ============================================================================
+-- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
+-- NOTE: Manual restore instructions to re-apply previous price points (69200, 149900, 399900 paise):
+--   BEGIN;
+--   SET LOCAL statement_timeout = '10s';
+--   SET LOCAL lock_timeout = '5s';
+--   UPDATE public.plans SET price_paise = 69200, duration_days = 7 WHERE code = 'weekly';
+--   UPDATE public.plans SET price_paise = 149900, duration_days = 30 WHERE code = 'monthly';
+--   UPDATE public.plans SET price_paise = 399900, duration_days = 90 WHERE code = 'quarterly';
+--   COMMIT;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261118_onboarding_resume_uploads.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261118_onboarding_resume_uploads.sql
+-- Description: Pointer table + orphan finder for the onboarding resume upload (PR #655).
+--   * Additive only. Does NOT modify the existing private `resumes` bucket row
+--     (size limit / allowed MIME types), its storage.objects policies, or any object.
+--   * The 5 MB, PDF/DOCX-only rule is enforced by /api/onboarding/resume.
+--   * Uploads run server-side with the service role; clients get no write path.
+--   * Rate limiting reuses public.check_rate_limit (20261020).
+--   * Objects this migration creates are stamped with the marker comment
+--     'created-by:20261118_onboarding_resume_uploads'; the rollback only touches
+--     objects carrying that marker.
+-- Transactional: preflight + DDL + post-checks run in one transaction; any
+-- failure rolls everything back. Idempotent: safe to re-run.
+-- Status: NOT APPLIED. Record with:
+--   node scripts/record-migration.cjs 20261118_onboarding_resume_uploads
+-- ============================================================================
+
+BEGIN;
+
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+
+-- ----------------------------------------------------------------------------
+-- PREFLIGHT (read-only). Any RAISE EXCEPTION aborts and rolls back everything.
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_marker   constant text := 'created-by:20261118_onboarding_resume_uploads';
+  v_table    regclass := to_regclass('public.onboarding_resume_uploads');
+  v_cols     text;
+  v_expected constant text :=
+    'file_name:text:NO,mime_type:text:NO,size_bytes:integer:NO,storage_path:text:NO,'
+    || 'uploaded_at:timestamp with time zone:NO,user_id:uuid:NO';
+  v_bad      text;
+  v_pol      record;
+  v_exprs    text[];
+  v_expr     text;
+  v_queue    text[];
+  v_parts    text[];
+  v_part     text;
+  v_ch       text;
+  v_excluded boolean;
+  v_inq      boolean;
+  v_has_or   boolean;
+  v_depth    integer;
+  v_close    integer;
+  v_start    integer;
+  v_i        integer;
+  v_old_path text;
+BEGIN
+  -- 1. Bucket prerequisites (read only; never modified here).
+  IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes') THEN
+    RAISE EXCEPTION 'preflight: storage bucket "resumes" does not exist';
+  END IF;
+  IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes' AND public IS DISTINCT FROM false) THEN
+    RAISE EXCEPTION 'preflight: storage bucket "resumes" is not private';
+  END IF;
+  IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes'
+             AND file_size_limit IS NOT NULL AND file_size_limit < 5242880) THEN
+    RAISE EXCEPTION 'preflight: "resumes" size limit is below 5 MB';
+  END IF;
+  IF EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'resumes'
+             AND allowed_mime_types IS NOT NULL
+             AND NOT allowed_mime_types @> ARRAY[
+               'application/pdf',
+               'application/vnd.openxmlformats-officedocument.wordprocessingml.document']) THEN
+    RAISE EXCEPTION 'preflight: "resumes" does not allow both PDF and DOCX';
+  END IF;
+  IF to_regprocedure('public.check_rate_limit(text,integer,integer)') IS NULL THEN
+    RAISE EXCEPTION 'preflight: public.check_rate_limit(text,integer,integer) is missing';
+  END IF;
+
+  -- 2. Refuse if ANY effective client write path on storage.objects can reach
+  --    resumes/<uid>/onboarding/... (second path segment = 'onboarding', the same
+  --    rule as the table CHECK and the orphan finder). No allow-listing by name.
+  --    * If RLS is off on storage.objects, any INSERT/UPDATE grant to anon or
+  --      authenticated is a write path: refuse.
+  --    * Every PERMISSIVE INSERT/UPDATE/ALL policy whose roles reach anon or
+  --      authenticated (PUBLIC, the role itself, or any role either one inherits)
+  --      must PROVABLY exclude the prefix. Each expression Postgres evaluates for
+  --      the command (INSERT: WITH CHECK; UPDATE: USING and WITH CHECK; a missing
+  --      WITH CHECK falls back to USING; a missing expression means "true") needs
+  --      a top-level AND conjunct that is one of:
+  --        false
+  --        bucket_id = '<a bucket other than resumes>'
+  --        (storage.foldername(name))[2] <> 'onboarding'
+  --        (storage.foldername(name))[2] IS DISTINCT FROM 'onboarding'
+  --      Anything else (a top-level OR, other functions, NOT, ...) counts as
+  --      reaching the prefix. Restrictive policies cannot grant access and are
+  --      not credited as exclusions.
+  --    search_path is pinned so pg_get_expr deparses schema-qualified names.
+  v_old_path := current_setting('search_path');
+  PERFORM set_config('search_path', 'pg_catalog', true);
+
+  IF NOT (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = 'storage.objects'::regclass)
+     AND (   has_table_privilege('anon', 'storage.objects', 'INSERT')
+          OR has_table_privilege('anon', 'storage.objects', 'UPDATE')
+          OR has_table_privilege('authenticated', 'storage.objects', 'INSERT')
+          OR has_table_privilege('authenticated', 'storage.objects', 'UPDATE')) THEN
+    RAISE EXCEPTION 'preflight: storage.objects has RLS disabled while anon/authenticated can INSERT or UPDATE it';
+  END IF;
+
+  v_bad := NULL;
+  FOR v_pol IN
+    SELECT pol.polname::text AS polname,
+           pol.polcmd,
+           pg_get_expr(pol.polqual, pol.polrelid)      AS qual,
+           pg_get_expr(pol.polwithcheck, pol.polrelid) AS wcheck
+      FROM pg_policy pol
+     WHERE pol.polrelid = 'storage.objects'::regclass
+       AND pol.polpermissive
+       AND pol.polcmd IN ('a', 'w', '*')
+       AND EXISTS (
+             SELECT 1 FROM unnest(pol.polroles) AS r(roid)
+              WHERE CASE WHEN r.roid = 0 THEN true
+                         ELSE pg_has_role('anon', r.roid, 'MEMBER')
+                           OR pg_has_role('authenticated', r.roid, 'MEMBER') END)
+     ORDER BY pol.polname
+  LOOP
+    v_exprs := CASE WHEN v_pol.polcmd = 'a'
+                    THEN ARRAY[coalesce(v_pol.wcheck, v_pol.qual, 'true')]
+                    ELSE ARRAY[coalesce(v_pol.qual, 'true'),
+                               coalesce(v_pol.wcheck, v_pol.qual, 'true')] END;
+    FOREACH v_expr IN ARRAY v_exprs LOOP
+      v_excluded := false;
+      v_queue := ARRAY[v_expr];
+      WHILE NOT v_excluded AND cardinality(v_queue) > 0 LOOP
+        v_part := btrim(v_queue[1]);
+        v_queue := v_queue[2:];
+
+        -- Strip outer parentheses that wrap the whole expression.
+        LOOP
+          EXIT WHEN left(v_part, 1) <> '(' OR right(v_part, 1) <> ')';
+          v_depth := 0; v_inq := false; v_close := 0;
+          FOR v_i IN 1..length(v_part) LOOP
+            v_ch := substr(v_part, v_i, 1);
+            IF v_ch = '''' THEN v_inq := NOT v_inq;
+            ELSIF NOT v_inq AND v_ch = '(' THEN v_depth := v_depth + 1;
+            ELSIF NOT v_inq AND v_ch = ')' THEN
+              v_depth := v_depth - 1;
+              IF v_depth = 0 THEN v_close := v_i; EXIT; END IF;
+            END IF;
+          END LOOP;
+          EXIT WHEN v_close <> length(v_part);
+          v_part := btrim(substr(v_part, 2, length(v_part) - 2));
+        END LOOP;
+
+        -- Split on top-level AND; a top-level OR proves nothing.
+        v_parts := ARRAY[]::text[]; v_depth := 0; v_inq := false; v_start := 1; v_has_or := false;
+        v_i := 1;
+        WHILE v_i <= length(v_part) LOOP
+          v_ch := substr(v_part, v_i, 1);
+          IF v_ch = '''' THEN v_inq := NOT v_inq;
+          ELSIF NOT v_inq AND v_ch = '(' THEN v_depth := v_depth + 1;
+          ELSIF NOT v_inq AND v_ch = ')' THEN v_depth := v_depth - 1;
+          ELSIF NOT v_inq AND v_depth = 0 AND substr(v_part, v_i, 4) = ' OR ' THEN v_has_or := true;
+          ELSIF NOT v_inq AND v_depth = 0 AND substr(v_part, v_i, 5) = ' AND ' THEN
+            v_parts := v_parts || substr(v_part, v_start, v_i - v_start);
+            v_start := v_i + 5;
+            v_i := v_i + 4;
+          END IF;
+          v_i := v_i + 1;
+        END LOOP;
+        CONTINUE WHEN v_has_or;
+        IF cardinality(v_parts) > 0 THEN
+          v_queue := v_queue || v_parts || substr(v_part, v_start);
+          CONTINUE;
+        END IF;
+
+        -- Atomic conjunct: is it one of the proven exclusions?
+        v_part := regexp_replace(v_part, '\s+', ' ', 'g');
+        IF v_part = 'false'
+           OR (v_part ~ '^bucket_id = ''[^'']*''::text$' AND v_part <> 'bucket_id = ''resumes''::text')
+           OR v_part IN ('(storage.foldername(name))[2] <> ''onboarding''::text',
+                         '(storage.foldername(name))[2] IS DISTINCT FROM ''onboarding''::text') THEN
+          v_excluded := true;
+        END IF;
+      END LOOP;
+
+      IF NOT v_excluded THEN
+        v_bad := concat_ws('; ', v_bad,
+                   format('%s [%s] using=%s check=%s', v_pol.polname,
+                          CASE v_pol.polcmd WHEN 'a' THEN 'INSERT' WHEN 'w' THEN 'UPDATE' ELSE 'ALL' END,
+                          coalesce(v_pol.qual, '-'), coalesce(v_pol.wcheck, '-')));
+        EXIT;
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'preflight: unexpected client write policy on storage.objects can reach resumes/<uid>/onboarding/: %', v_bad
+      USING HINT = 'Each such policy must provably exclude the onboarding/ prefix; this migration does not change storage policies.';
+  END IF;
+  PERFORM set_config('search_path', v_old_path, true);
+
+  -- 3. Refuse an incompatible or foreign pre-existing table.
+  IF v_table IS NOT NULL THEN
+    IF obj_description(v_table, 'pg_class') IS DISTINCT FROM v_marker THEN
+      RAISE EXCEPTION 'preflight: public.onboarding_resume_uploads exists but was not created by this migration';
+    END IF;
+    SELECT string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' ORDER BY column_name)
+      INTO v_cols
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'onboarding_resume_uploads';
+    IF v_cols IS DISTINCT FROM v_expected THEN
+      RAISE EXCEPTION 'preflight: public.onboarding_resume_uploads has incompatible columns: % (expected %)',
+        v_cols, v_expected;
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_index i
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
+      WHERE i.indrelid = v_table AND i.indisprimary AND a.attname = 'user_id' AND i.indnatts = 1
+    ) THEN
+      RAISE EXCEPTION 'preflight: public.onboarding_resume_uploads primary key is not (user_id)';
+    END IF;
+  END IF;
+
+  -- 4. Refuse an incompatible or foreign pre-existing function of the same name.
+  SELECT string_agg(format('%s(%s) -> %s [%s]', p.proname,
+                           pg_get_function_identity_arguments(p.oid),
+                           pg_get_function_result(p.oid),
+                           coalesce(obj_description(p.oid, 'pg_proc'), 'no marker')), '; ')
+    INTO v_bad
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'list_onboarding_resume_orphans'
+     AND (   pg_get_function_identity_arguments(p.oid) <> 'p_older_than interval, p_limit integer'
+          OR pg_get_function_result(p.oid) <> 'TABLE(object_name text)'
+          OR obj_description(p.oid, 'pg_proc') IS DISTINCT FROM v_marker);
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'preflight: incompatible or foreign public.list_onboarding_resume_orphans: %', v_bad;
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 1. Additive table: one current onboarding resume per user (pointer to the private object).
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.onboarding_resume_uploads (
+  user_id      uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  storage_path text NOT NULL UNIQUE
+               CHECK (storage_path LIKE user_id::text || '/onboarding/%'),
+  file_name    text NOT NULL CHECK (char_length(file_name) BETWEEN 1 AND 255),
+  mime_type    text NOT NULL CHECK (mime_type IN (
+                 'application/pdf',
+                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')),
+  size_bytes   integer NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+  uploaded_at  timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE public.onboarding_resume_uploads IS 'created-by:20261118_onboarding_resume_uploads';
+
+-- 2. Owner may read own row; writes are service_role only.
+ALTER TABLE public.onboarding_resume_uploads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.onboarding_resume_uploads FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.onboarding_resume_uploads FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.onboarding_resume_uploads TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.onboarding_resume_uploads TO service_role;
+
+DROP POLICY IF EXISTS "onboarding_resume_uploads_owner_select" ON public.onboarding_resume_uploads;
+CREATE POLICY "onboarding_resume_uploads_owner_select"
+  ON public.onboarding_resume_uploads
+  FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+
+-- 3. Orphan finder: onboarding objects older than N with no pointer row.
+--    Only LISTS names; deletion goes through the Storage API so blobs are really removed.
+CREATE OR REPLACE FUNCTION public.list_onboarding_resume_orphans(
+  p_older_than interval DEFAULT interval '1 hour',
+  p_limit      integer  DEFAULT 500
+)
+RETURNS TABLE (object_name text)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT o.name
+  FROM storage.objects o
+  WHERE o.bucket_id = 'resumes'
+    AND (storage.foldername(o.name))[2] = 'onboarding'
+    AND o.created_at < now() - p_older_than
+    AND NOT EXISTS (
+      SELECT 1 FROM public.onboarding_resume_uploads u WHERE u.storage_path = o.name
+    )
+  ORDER BY o.created_at
+  LIMIT LEAST(GREATEST(p_limit, 1), 1000);
+$$;
+COMMENT ON FUNCTION public.list_onboarding_resume_orphans(interval, integer)
+  IS 'created-by:20261118_onboarding_resume_uploads';
+ALTER FUNCTION public.list_onboarding_resume_orphans(interval, integer) SET statement_timeout = '5s';
+REVOKE ALL ON FUNCTION public.list_onboarding_resume_orphans(interval, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_onboarding_resume_orphans(interval, integer) TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- POST-CHECK (inside the transaction): clients cannot write, service_role can.
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  r text;
+  p text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    FOREACH p IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'TRIGGER'] LOOP
+      IF has_table_privilege(r, 'public.onboarding_resume_uploads', p) THEN
+        RAISE EXCEPTION 'post-check: role % still holds % on public.onboarding_resume_uploads', r, p;
+      END IF;
+    END LOOP;
+    IF has_function_privilege(r, 'public.list_onboarding_resume_orphans(interval,integer)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'post-check: role % can EXECUTE public.list_onboarding_resume_orphans', r;
+    END IF;
+  END LOOP;
+  -- Every ACL entry: PUBLIC and anon hold nothing; authenticated holds SELECT only.
+  IF EXISTS (
+    SELECT 1
+      FROM pg_class c
+     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+      LEFT JOIN pg_roles g ON g.oid = a.grantee
+     WHERE c.oid = 'public.onboarding_resume_uploads'::regclass
+       AND (a.grantee = 0 OR g.rolname IN ('anon', 'authenticated'))
+       AND NOT (g.rolname = 'authenticated' AND a.privilege_type = 'SELECT')
+  ) THEN
+    RAISE EXCEPTION 'post-check: PUBLIC/anon/authenticated hold a privilege beyond owner SELECT on public.onboarding_resume_uploads';
+  END IF;
+  IF has_table_privilege('anon', 'public.onboarding_resume_uploads', 'SELECT') THEN
+    RAISE EXCEPTION 'post-check: anon can SELECT public.onboarding_resume_uploads';
+  END IF;
+  FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+    IF NOT has_table_privilege('service_role', 'public.onboarding_resume_uploads', p) THEN
+      RAISE EXCEPTION 'post-check: service_role lacks % on public.onboarding_resume_uploads', p;
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('service_role', 'public.list_onboarding_resume_orphans(interval,integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: service_role cannot EXECUTE public.list_onboarding_resume_orphans';
+  END IF;
+END $$;
+
+COMMIT;
+
+-- ============================================================================
+-- VERIFY (run separately after applying):
+-- -- Bucket unchanged:
+-- SELECT public, file_size_limit, allowed_mime_types FROM storage.buckets WHERE id = 'resumes';
+-- -- Client write is false (expect every column false):
+-- SELECT r AS role,
+--        has_table_privilege(r, 'public.onboarding_resume_uploads', 'INSERT') AS can_insert,
+--        has_table_privilege(r, 'public.onboarding_resume_uploads', 'UPDATE') AS can_update,
+--        has_table_privilege(r, 'public.onboarding_resume_uploads', 'DELETE') AS can_delete,
+--        has_function_privilege(r, 'public.list_onboarding_resume_orphans(interval,integer)', 'EXECUTE') AS can_exec
+--   FROM unnest(ARRAY['anon', 'authenticated']) AS r;
+-- -- Service write is true (expect every column true):
+-- SELECT has_table_privilege('service_role', 'public.onboarding_resume_uploads', 'INSERT') AS can_insert,
+--        has_table_privilege('service_role', 'public.onboarding_resume_uploads', 'UPDATE') AS can_update,
+--        has_table_privilege('service_role', 'public.onboarding_resume_uploads', 'DELETE') AS can_delete,
+--        has_function_privilege('service_role', 'public.list_onboarding_resume_orphans(interval,integer)', 'EXECUTE') AS can_exec;
+-- -- Only the owner-select policy on the new table:
+-- SELECT policyname, cmd, roles FROM pg_policies WHERE tablename = 'onboarding_resume_uploads';
+-- ============================================================================
+-- ROLLBACK (guarded, non-destructive). Acts only on objects carrying this
+-- migration's marker comment; keeps every row and every storage object; never
+-- touches the bucket or storage policies.
+-- BEGIN;
+-- SET LOCAL lock_timeout = '5s';
+-- SET LOCAL statement_timeout = '60s';
+-- DO $$
+-- DECLARE
+--   v_marker constant text := 'created-by:20261118_onboarding_resume_uploads';
+--   v_fn regprocedure := to_regprocedure('public.list_onboarding_resume_orphans(interval,integer)');
+--   v_tb regclass := to_regclass('public.onboarding_resume_uploads');
+-- BEGIN
+--   IF v_fn IS NOT NULL AND obj_description(v_fn, 'pg_proc') = v_marker THEN
+--     DROP FUNCTION public.list_onboarding_resume_orphans(interval, integer);
+--   ELSE
+--     RAISE NOTICE 'rollback: skipping list_onboarding_resume_orphans (absent or not created by this migration)';
+--   END IF;
+--   IF v_tb IS NOT NULL AND obj_description(v_tb, 'pg_class') = v_marker THEN
+--     REVOKE SELECT ON TABLE public.onboarding_resume_uploads FROM authenticated;
+--     ALTER TABLE public.onboarding_resume_uploads RENAME TO onboarding_resume_uploads_rolled_back_20261118;
+--   ELSE
+--     RAISE NOTICE 'rollback: skipping onboarding_resume_uploads (absent or not created by this migration)';
+--   END IF;
+-- END $$;
+-- COMMIT;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261119_onboarding_resume_profiles.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261119_onboarding_resume_profiles.sql
+-- Description: Private store for the structured profile parsed from a user's
+--   onboarding resume (or LinkedIn "Save to PDF" export) so /api/jobs/recommended
+--   can use it for ranking.
+--   * Additive only. Depends on 20261118_onboarding_resume_uploads (one row per
+--     user there; this row is deleted with it, and with the account).
+--   * Stores parsed fields only (job titles, skills, years of experience,
+--     education, location, preferred roles). No raw resume text, no contact data.
+--   * Writes are service_role only (POST /api/onboarding/resume). The owner may
+--     read their own row; nobody else can.
+--   * Objects this migration creates carry the marker comment
+--     'created-by:20261119_onboarding_resume_profiles'; the rollback only touches
+--     objects carrying that marker.
+-- Transactional: preflight + DDL + post-checks run in one transaction; any
+-- failure rolls everything back. Idempotent: safe to re-run.
+-- Status: NOT APPLIED. Record with:
+--   node scripts/record-migration.cjs 20261119_onboarding_resume_profiles
+-- ============================================================================
+
+BEGIN;
+
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+
+-- ----------------------------------------------------------------------------
+-- PREFLIGHT (read-only). Any RAISE EXCEPTION aborts and rolls back everything.
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_marker   constant text := 'created-by:20261119_onboarding_resume_profiles';
+  v_parent   regclass := to_regclass('public.onboarding_resume_uploads');
+  v_table    regclass := to_regclass('public.onboarding_resume_profiles');
+  v_cols     text;
+  v_expected constant text :=
+    'failure_reason:text:YES,parse_source:text:YES,parse_status:text:NO,parsed_at:timestamp with time zone:NO,'
+    || 'profile:jsonb:NO,source_storage_path:text:NO,user_id:uuid:NO';
+BEGIN
+  -- 1. Parent table from 20261118 must exist and be the one that migration created.
+  IF v_parent IS NULL THEN
+    RAISE EXCEPTION 'preflight: public.onboarding_resume_uploads is missing (apply 20261118_onboarding_resume_uploads first)';
+  END IF;
+  IF obj_description(v_parent, 'pg_class') IS DISTINCT FROM 'created-by:20261118_onboarding_resume_uploads' THEN
+    RAISE EXCEPTION 'preflight: public.onboarding_resume_uploads was not created by 20261118_onboarding_resume_uploads';
+  END IF;
+
+  -- 2. Refuse an incompatible or foreign pre-existing table.
+  IF v_table IS NOT NULL THEN
+    IF obj_description(v_table, 'pg_class') IS DISTINCT FROM v_marker THEN
+      RAISE EXCEPTION 'preflight: public.onboarding_resume_profiles exists but was not created by this migration';
+    END IF;
+    SELECT string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' ORDER BY column_name)
+      INTO v_cols
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'onboarding_resume_profiles';
+    IF v_cols IS DISTINCT FROM v_expected THEN
+      RAISE EXCEPTION 'preflight: public.onboarding_resume_profiles has incompatible columns: % (expected %)',
+        v_cols, v_expected;
+    END IF;
+  END IF;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- 1. Additive table: one parsed profile per user, tied to the current upload.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.onboarding_resume_profiles (
+  user_id             uuid PRIMARY KEY
+                      REFERENCES public.onboarding_resume_uploads(user_id) ON DELETE CASCADE,
+  -- The upload this profile was parsed from. Readers ignore the row when it no
+  -- longer matches onboarding_resume_uploads.storage_path (a newer upload).
+  source_storage_path text NOT NULL
+                      CHECK (source_storage_path LIKE user_id::text || '/onboarding/%'),
+  parse_status        text NOT NULL CHECK (parse_status IN ('parsed', 'failed')),
+  parse_source        text CHECK (parse_source IN ('ai', 'rules')),
+  failure_reason      text CHECK (failure_reason IN ('no_text', 'scanned_pdf', 'parse_error')),
+  profile             jsonb NOT NULL DEFAULT '{}'::jsonb
+                      CHECK (jsonb_typeof(profile) = 'object' AND octet_length(profile::text) <= 32768),
+  parsed_at           timestamptz NOT NULL DEFAULT now(),
+  CHECK ((parse_status = 'parsed' AND parse_source IS NOT NULL AND failure_reason IS NULL)
+      OR (parse_status = 'failed' AND failure_reason IS NOT NULL))
+);
+COMMENT ON TABLE public.onboarding_resume_profiles IS 'created-by:20261119_onboarding_resume_profiles';
+
+-- 2. Owner may read own row; writes are service_role only.
+ALTER TABLE public.onboarding_resume_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.onboarding_resume_profiles FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.onboarding_resume_profiles FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.onboarding_resume_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.onboarding_resume_profiles TO service_role;
+
+DROP POLICY IF EXISTS "onboarding_resume_profiles_owner_select" ON public.onboarding_resume_profiles;
+CREATE POLICY "onboarding_resume_profiles_owner_select"
+  ON public.onboarding_resume_profiles
+  FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+
+-- 3. Atomic conditional save: locks the pointer row so a newer upload wins atomically.
+CREATE OR REPLACE FUNCTION public.save_onboarding_resume_profile(
+  p_user_id             uuid,
+  p_storage_path        text,
+  p_parse_status        text,
+  p_parse_source        text,
+  p_failure_reason      text,
+  p_profile             jsonb
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_current_path text;
+BEGIN
+  -- Lock the pointer row to serialize saves for this user
+  SELECT storage_path INTO v_current_path
+    FROM public.onboarding_resume_uploads
+   WHERE user_id = p_user_id
+     FOR UPDATE;
+
+  -- Stale save: pointer moved or does not exist
+  IF v_current_path IS DISTINCT FROM p_storage_path THEN
+    RETURN false;
+  END IF;
+
+  INSERT INTO public.onboarding_resume_profiles (
+    user_id, source_storage_path, parse_status, parse_source, failure_reason, profile, parsed_at
+  ) VALUES (
+    p_user_id, p_storage_path, p_parse_status, p_parse_source, p_failure_reason, p_profile, now()
+  )
+  ON CONFLICT (user_id) DO UPDATE SET
+    source_storage_path = excluded.source_storage_path,
+    parse_status        = excluded.parse_status,
+    parse_source        = excluded.parse_source,
+    failure_reason      = excluded.failure_reason,
+    profile             = excluded.profile,
+    parsed_at           = excluded.parsed_at;
+
+  RETURN true;
+END;
+$$;
+COMMENT ON FUNCTION public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)
+  IS 'created-by:20261119_onboarding_resume_profiles';
+REVOKE ALL ON FUNCTION public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb) TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- POST-CHECK (inside the transaction): clients cannot write, service_role can.
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  r text;
+  p text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'public'] LOOP
+    FOREACH p IN ARRAY ARRAY['TRUNCATE', 'INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'TRIGGER'] LOOP
+      IF has_table_privilege(r, 'public.onboarding_resume_profiles', p) THEN
+        RAISE EXCEPTION 'post-check: role % still holds % on public.onboarding_resume_profiles', r, p;
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF EXISTS (
+    SELECT 1
+      FROM pg_class c
+     CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+      LEFT JOIN pg_roles g ON g.oid = a.grantee
+     WHERE c.oid = 'public.onboarding_resume_profiles'::regclass
+       AND (a.grantee = 0 OR g.rolname IN ('anon', 'authenticated'))
+       AND NOT (g.rolname = 'authenticated' AND a.privilege_type = 'SELECT')
+  ) THEN
+    RAISE EXCEPTION 'post-check: PUBLIC/anon/authenticated hold a privilege beyond owner SELECT on public.onboarding_resume_profiles';
+  END IF;
+  IF has_table_privilege('anon', 'public.onboarding_resume_profiles', 'SELECT') THEN
+    RAISE EXCEPTION 'post-check: anon can SELECT public.onboarding_resume_profiles';
+  END IF;
+  IF has_table_privilege('public', 'public.onboarding_resume_profiles', 'SELECT') THEN
+    RAISE EXCEPTION 'post-check: public can SELECT public.onboarding_resume_profiles';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_policy pol
+     WHERE pol.polrelid = 'public.onboarding_resume_profiles'::regclass
+       AND pol.polname <> 'onboarding_resume_profiles_owner_select'
+  ) THEN
+    RAISE EXCEPTION 'post-check: unexpected extra policy on public.onboarding_resume_profiles';
+  END IF;
+  FOREACH p IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] LOOP
+    IF NOT has_table_privilege('service_role', 'public.onboarding_resume_profiles', p) THEN
+      RAISE EXCEPTION 'post-check: service_role lacks % on public.onboarding_resume_profiles', p;
+    END IF;
+  END LOOP;
+  IF has_function_privilege('anon', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: anon can EXECUTE save_onboarding_resume_profile';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: authenticated can EXECUTE save_onboarding_resume_profile';
+  END IF;
+  IF has_function_privilege('public', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: public can EXECUTE save_onboarding_resume_profile';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'post-check: service_role lacks EXECUTE on save_onboarding_resume_profile';
+  END IF;
+END $$;
+
+COMMIT;
+
+-- ============================================================================
+-- VERIFY (run separately after applying):
+-- -- Client write is false (expect every column false):
+-- SELECT r AS role,
+--        has_table_privilege(r, 'public.onboarding_resume_profiles', 'INSERT') AS can_insert,
+--        has_table_privilege(r, 'public.onboarding_resume_profiles', 'UPDATE') AS can_update,
+--        has_table_privilege(r, 'public.onboarding_resume_profiles', 'DELETE') AS can_delete,
+--        has_table_privilege(r, 'public.onboarding_resume_profiles', 'TRUNCATE') AS can_truncate
+--   FROM unnest(ARRAY['anon', 'authenticated', 'public']) AS r;
+-- -- anon cannot read (expect false):
+-- SELECT has_table_privilege('anon', 'public.onboarding_resume_profiles', 'SELECT') AS anon_can_select;
+-- -- Service write is true (expect every column true):
+-- SELECT has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'INSERT') AS can_insert,
+--        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'UPDATE') AS can_update,
+--        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'DELETE') AS can_delete,
+--        has_table_privilege('service_role', 'public.onboarding_resume_profiles', 'TRUNCATE') AS can_truncate;
+-- -- Only the owner-select policy:
+-- SELECT policyname, cmd, roles, qual FROM pg_policies WHERE tablename = 'onboarding_resume_profiles';
+-- ============================================================================
+-- ROLLBACK (guarded). Acts only on the table carrying this migration's marker.
+-- Keeps the rows (renames the table); never touches onboarding_resume_uploads.
+-- BEGIN;
+-- SET LOCAL lock_timeout = '5s';
+-- SET LOCAL statement_timeout = '60s';
+-- DO $$
+-- DECLARE
+--   v_marker constant text := 'created-by:20261119_onboarding_resume_profiles';
+--   v_tb regclass := to_regclass('public.onboarding_resume_profiles');
+-- BEGIN
+--   DROP FUNCTION IF EXISTS public.save_onboarding_resume_profile(uuid, text, text, text, text, jsonb);
+--   IF v_tb IS NOT NULL AND obj_description(v_tb, 'pg_class') = v_marker THEN
+--     REVOKE SELECT ON TABLE public.onboarding_resume_profiles FROM authenticated;
+--     ALTER TABLE public.onboarding_resume_profiles RENAME TO onboarding_resume_profiles_rolled_back_20261119;
+--   ELSE
+--     RAISE NOTICE 'rollback: skipping onboarding_resume_profiles (absent or not created by this migration)';
+--   END IF;
+-- END $$;
+-- COMMIT;
+-- ============================================================================
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261120a_restore_tracker_profile_owner_policies.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261120a_restore_tracker_profile_owner_policies.sql
+-- STATUS: NOT APPLIED - owner reviews and applies manually in the Supabase SQL editor, then records:
+--   node scripts/record-migration.cjs 20261120a_restore_tracker_profile_owner_policies
+--
+-- Why: the product restore (Tracker, Resume confirm, Profile save, Jobs save/applied and match
+-- scores) needs owner-only client access to public.applications and public.candidate_profiles.
+-- 20261116c_launch_scope_coming_soon_gates.sql (if applied) dropped the owner SELECT/INSERT/UPDATE
+-- policies on those tables and left only USING(false) "coming soon" policies.
+--
+-- Scope (forward-only, additive in effect, data-preserving):
+--   * public.applications, public.candidate_profiles: owner-only SELECT / INSERT / UPDATE for
+--     `authenticated` (auth.uid() = user_id); UPDATE also has WITH CHECK so user_id cannot be
+--     re-pointed. The existing owner DELETE policies are left as they are.
+--   * The matching *_coming_soon_block_* policies on these two tables are dropped (they would be
+--     no-ops next to the owner policies because permissive policies are OR-ed).
+-- NOT changed (intentionally):
+--   * public.tailored_resumes and the private `resumes` storage bucket stay blocked: no reachable
+--     product path uses them after AI tool entry points were removed. No owner-folder storage write
+--     is re-opened, so resumes/<uid>/onboarding/ isolation (#655) is untouched.
+--   * public.resumes (20261116d: no client INSERT) is untouched.
+--   * #660 onboarding_resume_profiles / its atomic save RPC are untouched.
+-- No rows are read, written or deleted. Transactional and idempotent: safe to run twice.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- READ-ONLY PRECHECKS (run first, independently)
+-- ----------------------------------------------------------------------------
+-- -- Current policies on the two tables:
+-- SELECT tablename, policyname, permissive, roles, cmd, qual, with_check
+--   FROM pg_policies
+--  WHERE schemaname = 'public' AND tablename IN ('applications', 'candidate_profiles')
+--  ORDER BY tablename, policyname;
+-- -- RLS must be enabled on both:
+-- SELECT relname, relrowsecurity, relforcerowsecurity
+--   FROM pg_class WHERE oid IN ('public.applications'::regclass, 'public.candidate_profiles'::regclass);
+-- -- Effective role ACLs (table privileges must exist for policies to matter):
+-- SELECT t, p, has_table_privilege('authenticated', t, p) AS authenticated_has,
+--        has_table_privilege('anon', t, p) AS anon_has
+--   FROM unnest(ARRAY['public.applications', 'public.candidate_profiles']) AS t,
+--        unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS p;
+
+BEGIN;
+
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+
+-- ----------------------------------------------------------------------------
+-- Effective-policy guard (pre and post): every PERMISSIVE policy on the two tables that reaches
+-- PUBLIC, anon, authenticated, or any role they inherit (pg_has_role USAGE) must have each
+-- expression (USING and WITH CHECK) be exactly an owner key (auth.uid() = user_id, either order,
+-- incl. the (SELECT auth.uid()) form) or false. Anything else (USING (true), OR-ed conditions,
+-- user_id IS NOT NULL, ...) could let a non-owner read or write rows, so the migration fails.
+-- Session-temporary; dropped before COMMIT.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION pg_temp.cm_20261120a_assert_owner_only(p_phase text) RETURNS void
+LANGUAGE plpgsql AS $fn$
+DECLARE
+  r record;
+  v_uid  constant text := '(\(\s*SELECT auth\.uid\(\) AS uid\)|auth\.uid\(\))';
+  v_ok   constant text[] := ARRAY[
+    '^\(*\s*' || v_uid || '\s*=\s*user_id\s*\)*$',
+    '^\(*\s*user_id\s*=\s*' || v_uid || '\s*\)*$',
+    '^\(*\s*false\s*\)*$'
+  ];
+BEGIN
+  FOR r IN
+    SELECT p.tablename, p.policyname, p.cmd, p.roles, e.expr
+      FROM pg_policies p
+      CROSS JOIN LATERAL (VALUES (p.qual), (p.with_check)) AS e(expr)
+     WHERE p.schemaname = 'public'
+       AND p.tablename IN ('applications', 'candidate_profiles')
+       AND p.permissive = 'PERMISSIVE'
+       AND e.expr IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM unnest(p.roles) AS pr(role_name)
+          WHERE CASE WHEN pr.role_name = 'public' THEN true
+                     ELSE pg_has_role('anon', pr.role_name, 'USAGE')
+                       OR pg_has_role('authenticated', pr.role_name, 'USAGE')
+                END)
+       AND NOT (e.expr ~* v_ok[1] OR e.expr ~* v_ok[2] OR e.expr ~* v_ok[3])
+  LOOP
+    RAISE EXCEPTION '%: permissive policy public.%.% (% TO %) can let a non-owner reach rows: %',
+      p_phase, r.tablename, r.policyname, r.cmd, r.roles, r.expr;
+  END LOOP;
+END
+$fn$;
+
+-- ----------------------------------------------------------------------------
+-- PREFLIGHT: abort (and roll back) if the baseline is not what this migration expects.
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  v_tbl text;
+BEGIN
+  FOREACH v_tbl IN ARRAY ARRAY['applications', 'candidate_profiles'] LOOP
+    IF to_regclass('public.' || v_tbl) IS NULL THEN
+      RAISE EXCEPTION 'preflight: public.% does not exist', v_tbl;
+    END IF;
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = ('public.' || v_tbl)::regclass) THEN
+      RAISE EXCEPTION 'preflight: RLS is disabled on public.%; refusing to change policies', v_tbl;
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = v_tbl
+         AND column_name = 'user_id' AND data_type = 'uuid'
+    ) THEN
+      RAISE EXCEPTION 'preflight: public.%.user_id (uuid) is missing', v_tbl;
+    END IF;
+  END LOOP;
+  PERFORM pg_temp.cm_20261120a_assert_owner_only('preflight');
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- public.applications
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "applications_coming_soon_block_select" ON public.applications;
+DROP POLICY IF EXISTS "applications_coming_soon_block_insert" ON public.applications;
+DROP POLICY IF EXISTS "applications_coming_soon_block_update" ON public.applications;
+
+DROP POLICY IF EXISTS "applications_owner_select" ON public.applications;
+CREATE POLICY "applications_owner_select" ON public.applications
+  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "applications_owner_insert" ON public.applications;
+CREATE POLICY "applications_owner_insert" ON public.applications
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "applications_owner_update" ON public.applications;
+CREATE POLICY "applications_owner_update" ON public.applications
+  FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- public.candidate_profiles
+-- ----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_select" ON public.candidate_profiles;
+DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_insert" ON public.candidate_profiles;
+DROP POLICY IF EXISTS "candidate_profiles_coming_soon_block_update" ON public.candidate_profiles;
+
+DROP POLICY IF EXISTS "candidate_profiles_owner_select" ON public.candidate_profiles;
+CREATE POLICY "candidate_profiles_owner_select" ON public.candidate_profiles
+  FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "candidate_profiles_owner_insert" ON public.candidate_profiles;
+CREATE POLICY "candidate_profiles_owner_insert" ON public.candidate_profiles
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "candidate_profiles_owner_update" ON public.candidate_profiles;
+CREATE POLICY "candidate_profiles_owner_update" ON public.candidate_profiles
+  FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- POST-CHECK inside the transaction: owner policies present, no non-owner reach for any client role.
+-- ----------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM pg_policies
+       WHERE schemaname = 'public' AND tablename IN ('applications', 'candidate_profiles')
+         AND policyname ~ '_owner_(select|insert|update)$') <> 6 THEN
+    RAISE EXCEPTION 'postcheck: expected 6 owner select/insert/update policies';
+  END IF;
+  PERFORM pg_temp.cm_20261120a_assert_owner_only('postcheck');
+END $$;
+
+DROP FUNCTION pg_temp.cm_20261120a_assert_owner_only(text);
+
+COMMIT;
+
+-- ============================================================================
+-- VERIFY (run independently after applying)
+-- ============================================================================
+-- SELECT tablename, policyname, roles, cmd, qual, with_check FROM pg_policies
+--  WHERE schemaname = 'public' AND tablename IN ('applications', 'candidate_profiles')
+--  ORDER BY tablename, policyname;
+--   -- expect *_owner_select / *_owner_insert / *_owner_update / *_owner_delete, TO authenticated,
+--   -- all keyed on auth.uid() = user_id; no *_coming_soon_block_* rows.
+-- -- Cross-user check with two test accounts (A and B), as each user's JWT via the client:
+-- --   A: insert into applications/candidate_profiles with user_id = A  -> succeeds
+-- --   A: insert with user_id = B                                         -> rejected (RLS)
+-- --   A: select ... where user_id = B                                    -> 0 rows
+-- --   A: update own row set user_id = B                                  -> rejected (WITH CHECK)
+
+-- ============================================================================
+-- ROLLBACK (data-preserving: policies only, no rows touched)
+-- ============================================================================
+-- BEGIN;
+-- DROP POLICY IF EXISTS "applications_owner_select" ON public.applications;
+-- DROP POLICY IF EXISTS "applications_owner_insert" ON public.applications;
+-- DROP POLICY IF EXISTS "applications_owner_update" ON public.applications;
+-- CREATE POLICY "applications_coming_soon_block_select" ON public.applications FOR SELECT TO authenticated, anon USING (false);
+-- CREATE POLICY "applications_coming_soon_block_insert" ON public.applications FOR INSERT TO authenticated, anon WITH CHECK (false);
+-- CREATE POLICY "applications_coming_soon_block_update" ON public.applications FOR UPDATE TO authenticated, anon USING (false) WITH CHECK (false);
+-- DROP POLICY IF EXISTS "candidate_profiles_owner_select" ON public.candidate_profiles;
+-- DROP POLICY IF EXISTS "candidate_profiles_owner_insert" ON public.candidate_profiles;
+-- DROP POLICY IF EXISTS "candidate_profiles_owner_update" ON public.candidate_profiles;
+-- CREATE POLICY "candidate_profiles_coming_soon_block_select" ON public.candidate_profiles FOR SELECT TO authenticated, anon USING (false);
+-- CREATE POLICY "candidate_profiles_coming_soon_block_insert" ON public.candidate_profiles FOR INSERT TO authenticated, anon WITH CHECK (false);
+-- CREATE POLICY "candidate_profiles_coming_soon_block_update" ON public.candidate_profiles FOR UPDATE TO authenticated, anon USING (false) WITH CHECK (false);
+-- COMMIT;
 

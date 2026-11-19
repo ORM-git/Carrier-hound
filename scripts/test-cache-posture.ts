@@ -240,20 +240,19 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
     expectedHeaderSnippet: "no-store, no-cache, must-revalidate",
     needsRemediation: false,
   },
-  "src/app/api/jobs/interview-pack/route.ts": {
-    filePath: "src/app/api/jobs/interview-pack/route.ts",
-    authRequirement: "Public Sample / Pro (Bearer)",
-    classification: "private/no-store",
-    hasCacheControl: true,
-    directiveProvidesNoStore: true,
-    handlerDelegatePath: "src/lib/interview-pack/handler.ts",
-    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
-    needsRemediation: false,
-  },
   "src/app/api/jobs/pro/route.ts": {
     filePath: "src/app/api/jobs/pro/route.ts",
     authRequirement: "Pro User (Bearer)",
     classification: "private/no-store",
+    hasCacheControl: false,
+    directiveProvidesNoStore: false,
+    needsRemediation: true,
+  },
+  "src/app/api/jobs/recommended/route.ts": {
+    filePath: "src/app/api/jobs/recommended/route.ts",
+    authRequirement: "Dual-Mode: Public (masked) / User Auth (Bearer: Pro & prefs)",
+    classification: "public cacheable",
+    authenticatedClassification: "private/no-store",
     hasCacheControl: false,
     directiveProvidesNoStore: false,
     needsRemediation: true,
@@ -266,16 +265,6 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
     hasCacheControl: false,
     directiveProvidesNoStore: false,
     needsRemediation: true,
-  },
-  "src/app/api/jobs/skill-what-if/route.ts": {
-    filePath: "src/app/api/jobs/skill-what-if/route.ts",
-    authRequirement: "Public Sample / Pro (Bearer)",
-    classification: "private/no-store",
-    hasCacheControl: true,
-    directiveProvidesNoStore: true,
-    handlerDelegatePath: "src/lib/skill-what-if/handler.ts",
-    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
-    needsRemediation: false,
   },
   "src/app/api/jobs/suggest/route.ts": {
     filePath: "src/app/api/jobs/suggest/route.ts",
@@ -296,6 +285,33 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
   "src/app/api/me/quota/route.ts": {
     filePath: "src/app/api/me/quota/route.ts",
     authRequirement: "User Auth (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
+    needsRemediation: false,
+  },
+  "src/app/api/onboarding/route.ts": {
+    filePath: "src/app/api/onboarding/route.ts",
+    authRequirement: "Authenticated User (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
+    needsRemediation: false,
+  },
+  "src/app/api/onboarding/linkedin/route.ts": {
+    filePath: "src/app/api/onboarding/linkedin/route.ts",
+    authRequirement: "Authenticated User (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-cache, no-store, must-revalidate",
+    needsRemediation: false,
+  },
+  "src/app/api/onboarding/resume/route.ts": {
+    filePath: "src/app/api/onboarding/resume/route.ts",
+    authRequirement: "Authenticated User (Bearer)",
     classification: "private/no-store",
     hasCacheControl: true,
     directiveProvidesNoStore: true,
@@ -485,7 +501,7 @@ function walkRouteFiles(dir: string): string[] {
 
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === ".next" || entry.name === ".git") {
+    if (entry.name === "node_modules" || entry.name === ".next" || entry.name === ".git" || entry.name === "__tests__") {
       continue;
     }
     const fullPath = path.join(dir, entry.name);
@@ -615,12 +631,12 @@ const singleModePrivateMissing = sendingNoneSet.filter(
 );
 const remediationCount = routableEndpoints.filter((r) => r.needsRemediation).length;
 
-check("catalog contains 48 total files (45 endpoints + 3 helpers)", entries.length === 48 && routableEndpoints.length === 45);
-check("catalog records exact header presence counts (14 with Cache-Control, 31 none set)", sendingCacheControl.length === 14 && sendingNoneSet.length === 31);
-check("catalog flags 23 single-mode private/no-store routes omitting Cache-Control and 27 total needing remediation", singleModePrivateMissing.length === 23 && remediationCount === 27);
+check("catalog contains 50 total files (47 endpoints + 3 helpers)", entries.length === 50 && routableEndpoints.length === 47);
+check("catalog records exact header presence counts (15 with Cache-Control, 32 none set)", sendingCacheControl.length === 15 && sendingNoneSet.length === 32);
+check("catalog flags 23 single-mode private/no-store routes omitting Cache-Control and 28 total needing remediation", singleModePrivateMissing.length === 23 && remediationCount === 28);
 
-// Verify dual-mode /api/jobs/search split (both Next and Netlify read Bearer + Pro + prefs)
-for (const searchPath of ["src/app/api/jobs/search/route.ts", "netlify/functions/jobs-search.ts"]) {
+// Verify dual-mode /api/jobs/search and /api/jobs/recommended split (Next and Netlify read Bearer + Pro + prefs)
+for (const searchPath of ["src/app/api/jobs/search/route.ts", "src/app/api/jobs/recommended/route.ts", "netlify/functions/jobs-search.ts"]) {
   const entry = BASELINE_CACHE_CATALOG[searchPath];
   check(
     `${searchPath} splits anonymous-safe (public cacheable) vs authenticated (private/no-store)`,

@@ -91,10 +91,11 @@ check(
   Boolean(prefsButtonMatch && !prefsButtonMatch[0].includes("disabled")),
   "Settings: Confirmed gap - Save Preferences button currently lacks disabled attribute"
 );
-const notifButtonMatch = settingsSrc.match(/<button[^>]*onClick=\{handleSavePreferences\}[^>]*>[\s\S]*?Save Notification Settings[\s\S]*?<\/button>/);
+// The Notifications tab no longer has a save button: its only control was the AI matching
+// digest opt-in, which is intentionally not offered (stored choices are written back unchanged).
 check(
-  Boolean(notifButtonMatch && !notifButtonMatch[0].includes("disabled")),
-  "Settings: Confirmed gap - Save Notification Settings button currently lacks disabled attribute"
+  !settingsSrc.includes("Save Notification Settings") && !settingsSrc.includes("Daily AI Matching Digest"),
+  "Settings: Notifications tab has no AI digest control and no orphan save button"
 );
 
 // 1.4 Resume Upload Component (src/components/resume/ResumeUploadAndConfirm.tsx)

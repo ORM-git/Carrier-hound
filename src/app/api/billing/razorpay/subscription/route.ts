@@ -1,16 +1,41 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
+import { normalizePlanCode } from "@/lib/billing/quota";
+import { PLAN_PRICING } from "@/config/plans";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
+import { handleSubscriptionCancellation } from "@/lib/billing/subscriptionCancellation";
+import { validateRazorpayPlan } from "@/lib/billing/validatePlan";
+import { ensureOrderConsent } from "@/lib/billing/orderConsent";
 
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/subscription" } });
 
 export const runtime = "edge";
 
-function isProductionHost(req: Request, deps?: any): boolean {
+async function getCloudflareEnv(deps?: any): Promise<Record<string, any> | undefined> {
+  if (deps?.cfEnv) return deps.cfEnv;
+  if (deps?.env) return deps.env;
+  try {
+    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
+    const ctx = mod?.getRequestContext?.();
+    if (ctx?.env) {
+      return ctx.env as Record<string, any>;
+    }
+  } catch {}
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env) {
+      return cfContext.env as Record<string, any>;
+    }
+  } catch {}
+  return undefined;
+}
+
+function isProductionHost(req: Request, deps?: any, cfEnv?: Record<string, any>): boolean {
   if (deps?.isProductionHost !== undefined) {
     return Boolean(deps.isProductionHost);
   }
@@ -46,7 +71,6 @@ function isProductionHost(req: Request, deps?: any): boolean {
     return h[name] || h[name.toLowerCase()] || null;
   };
 
-  // 1. Canonical Host header (must not be overridden by caller-supplied forwarding headers)
   const hostHeader = getHeader("host");
   if (hostHeader) {
     const parts = hostHeader.split(",");
@@ -55,7 +79,6 @@ function isProductionHost(req: Request, deps?: any): boolean {
     }
   }
 
-  // 2. Canonical request URL
   if (req?.url) {
     try {
       const url = new URL(req.url);
@@ -65,7 +88,6 @@ function isProductionHost(req: Request, deps?: any): boolean {
     }
   }
 
-  // 3. Forwarded host headers (caller-supplied header must never override a production Host or URL)
   const xForwardedHost = getHeader("x-forwarded-host");
   if (xForwardedHost) {
     const parts = xForwardedHost.split(",");
@@ -74,8 +96,11 @@ function isProductionHost(req: Request, deps?: any): boolean {
     }
   }
 
-  // 4. Deployment environment hints
-  const envUrls = [process.env.NEXT_PUBLIC_SITE_URL, process.env.URL, process.env.SITE_URL];
+  const envUrls = [
+    getRuntimeEnv("NEXT_PUBLIC_SITE_URL", cfEnv),
+    getRuntimeEnv("URL", cfEnv),
+    getRuntimeEnv("SITE_URL", cfEnv),
+  ];
   for (const envUrl of envUrls) {
     if (envUrl) {
       try {
@@ -93,18 +118,35 @@ function isProductionHost(req: Request, deps?: any): boolean {
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
 
   try {
-    // 1. Feature Flag Check: NEXT_PUBLIC_AUTORENEW_ENABLED must be strictly "true"
-    if (process.env.NEXT_PUBLIC_AUTORENEW_ENABLED !== "true") {
+    // Check if this is an explicit cancellation request
+    let bodyText = "";
+    try {
+      bodyText = await req.clone().text();
+    } catch {}
+
+    let bodyJson: any = {};
+    if (bodyText) {
+      try {
+        bodyJson = JSON.parse(bodyText);
+      } catch {}
+    }
+
+    if (bodyJson?.action === "cancel") {
+      return await handleSubscriptionCancellation(req, deps, cfEnv, log);
+    }
+
+    // 1. Feature Flag Checks: NEXT_PUBLIC_AUTORENEW_ENABLED and NEXT_PUBLIC_BILLING_ENABLED
+    if (getRuntimeEnv("NEXT_PUBLIC_AUTORENEW_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Auto-renew subscriptions are currently unavailable", code: "AUTORENEW_DISABLED" },
         { status: 503 }
       );
     }
 
-    // Also verify base billing enabled flag
-    if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+    if (getRuntimeEnv("NEXT_PUBLIC_BILLING_ENABLED", cfEnv) !== "true") {
       return NextResponse.json(
         { error: "Billing is currently unavailable", code: "BILLING_DISABLED" },
         { status: 503 }
@@ -127,11 +169,12 @@ export async function POST(req: Request) {
       supabaseAdmin = deps.getSupabaseAdmin();
     } else {
       const supabaseUrl =
-        process.env.NEXT_PUBLIC_SUPABASE_URL ||
-        process.env.SUPABASE_URL ||
+        getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+        getRuntimeEnv("SUPABASE_URL", cfEnv) ||
         "https://szakevhxhwpeskidvtfs.supabase.co";
       const serviceRoleKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+        getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+        getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
       if (!supabaseUrl || !serviceRoleKey) {
         return NextResponse.json(
@@ -154,296 +197,225 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid user session token" }, { status: 401 });
     }
 
-    // 3. Server-authoritative mode & key validation (Audit Blocker B2 & F01)
-    const configuredMode = process.env.RAZORPAY_MODE;
+    // 3. User Ban Check
+    const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
+    const banResult = await banChecker(supabaseAdmin, user.id, user.user_metadata);
+    if (banResult.isBlocked) {
+      return NextResponse.json({ error: "Account suspended", code: "USER_BLOCKED" }, { status: 403 });
+    }
+
+    // 4. Server-authoritative mode & key validation
+    const configuredMode = getRuntimeEnv("RAZORPAY_MODE", cfEnv) || (deps.configuredMode ?? "test");
     if (configuredMode !== "test" && configuredMode !== "live") {
       log.error("Payment configuration error: invalid or missing mode");
       return NextResponse.json(
-        {
-          error: "Payment configuration error",
-          code: "RAZORPAY_CONFIG_ERROR",
-        },
+        { error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" },
         { status: 503 }
       );
     }
 
     const keyId =
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-      process.env.RAZORPAY_KEY_ID;
-    const keySecret =
-      process.env.RAZORPAY_KEY_SECRET;
+      getRuntimeEnv("NEXT_PUBLIC_RAZORPAY_KEY_ID", cfEnv) ||
+      getRuntimeEnv("RAZORPAY_KEY_ID", cfEnv);
+    const keySecret = getRuntimeEnv("RAZORPAY_KEY_SECRET", cfEnv);
 
     if (!keyId || !keySecret) {
-      log.error("Payment configuration error: missing Razorpay credentials");
+      log.error("Payment configuration error: missing credentials");
       return NextResponse.json(
-        {
-          error: "Payment configuration error",
-          code: "RAZORPAY_CONFIG_ERROR",
-        },
+        { error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" },
         { status: 503 }
       );
     }
 
-    const keyPrefixMode = getRazorpayKeyMode(keyId);
-    if (!keyPrefixMode) {
-      log.error("Payment configuration error: unrecognized key prefix");
-      return NextResponse.json(
-        {
-          error: "Payment configuration error",
-          code: "RAZORPAY_CONFIG_ERROR",
-        },
-        { status: 503 }
-      );
-    }
-
-    if (keyPrefixMode !== configuredMode) {
+    const resolvedMode = getRazorpayKeyMode(keyId);
+    const expectedPrefix = configuredMode === "test" ? "rzp_test_" : "rzp_live_";
+    if (!keyId.startsWith(expectedPrefix) || resolvedMode !== configuredMode) {
       log.error("Payment configuration error: key prefix does not match configured mode");
       return NextResponse.json(
-        {
-          error: "Payment configuration error",
-          code: "RAZORPAY_CONFIG_ERROR",
-        },
+        { error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" },
         { status: 503 }
       );
     }
 
-    const resolvedMode = keyPrefixMode;
-
-    if (keyPrefixMode === "test" && isProductionHost(req, deps)) {
+    if (
+      isProductionHost(req, deps, cfEnv) &&
+      (keyId.startsWith("rzp_test_") || configuredMode === "test")
+    ) {
       log.error("FATAL CONFIGURATION ERROR: Razorpay test keys refused on production host");
       return NextResponse.json(
-        {
-          error: "Payment configuration error",
-          code: "RAZORPAY_CONFIG_ERROR",
-        },
+        { error: "Payment configuration error", code: "RAZORPAY_CONFIG_ERROR" },
         { status: 503 }
       );
     }
 
-    // 4. Validate planCode in {weekly, monthly, quarterly}
-    const body = await req.json().catch(() => ({}));
-    const planCode = body.planCode;
-    if (planCode !== "weekly" && planCode !== "monthly" && planCode !== "quarterly") {
+    // 5. Parse and validate plan code: Flat Rs 499 monthly plan ONLY
+    const rawPlan = bodyJson?.planCode || bodyJson?.planId || "monthly";
+    const planCode = normalizePlanCode(rawPlan);
+
+    if (planCode !== "monthly") {
       return NextResponse.json(
-        { error: "Invalid plan code: must be one of weekly, monthly, quarterly" },
+        {
+          error: "Only the flat Rs 499 monthly auto-renew subscription is supported",
+          code: "UNSUPPORTED_PLAN",
+        },
         { status: 400 }
       );
     }
 
-    // 5. Fail-closed server ban check (verifyUserNotBanned / blocked_users)
-    const banChecker = deps.verifyUserNotBanned || verifyUserNotBanned;
-    const banCheck = await banChecker(supabaseAdmin, user.id, user.user_metadata);
-    if (banCheck?.isBlocked) {
+    // 6. Explicit auto-renew consent validation (Blocker 2)
+    const consent = bodyJson?.consent;
+    if (
+      !consent ||
+      typeof consent !== "object" ||
+      consent.agreed !== true ||
+      typeof consent.version !== "string" ||
+      !consent.version.trim() ||
+      typeof consent.timestamp !== "string" ||
+      Number.isNaN(Date.parse(consent.timestamp))
+    ) {
       return NextResponse.json(
         {
-          error: banCheck.error || "Account suspended. Access revoked by administrator.",
-          code: "USER_BLOCKED",
+          error: "Explicit auto-renew consent is required to create a subscription",
+          code: "CONSENT_REQUIRED",
         },
-        { status: banCheck.isServiceUnavailable ? 503 : 403 }
+        { status: 400 }
       );
     }
 
-    // 6. Map planCode to Razorpay plan ID from env
-    let razorpayPlanId: string | undefined;
-    if (planCode === "weekly") {
-      razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY;
-    } else if (planCode === "monthly") {
-      razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
-    } else if (planCode === "quarterly") {
-      razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY;
-    }
-
-    if (!razorpayPlanId || typeof razorpayPlanId !== "string" || !razorpayPlanId.trim()) {
-      log.error("Payment configuration error: missing Razorpay plan ID for planCode", { planCode });
+    const consentTimestampMs = Date.parse(consent.timestamp);
+    if (
+      consentTimestampMs > Date.now() + 5 * 60 * 1000 ||
+      consentTimestampMs < Date.now() - 24 * 60 * 60 * 1000
+    ) {
       return NextResponse.json(
         {
-          error: "Payment configuration error",
-          code: "RAZORPAY_CONFIG_ERROR",
+          error: "Invalid consent timestamp",
+          code: "INVALID_CONSENT_TIMESTAMP",
         },
-        { status: 503 }
+        { status: 400 }
       );
     }
 
-    // 7. Check if user already has an active plan (block duplicate / overwrite)
-    // Fail-closed: if the existing-subscription/entitlement lookup errors or state cannot be established,
-    // return 503 before any Razorpay call (do not rely on getServerEntitlement which returns free on read failure).
-    const { data: existingSub, error: selectErr } = await supabaseAdmin
-      .from("subscriptions")
-      .select("id, status, plan_id, subscription_id, current_period_end, grace_period_end, metadata")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const consentRecord = {
+      agreed: true,
+      version: consent.version.trim(),
+      timestamp: new Date(consentTimestampMs).toISOString(),
+      recorded_at: new Date().toISOString(),
+    };
 
-    if (selectErr) {
-      log.error("Subscription lookup error during subscription pre-check; failing closed", { error: selectErr });
+    // 7. Plan ID from environment variables only — NEVER hardcoded
+    const razorpayPlanId =
+      getRuntimeEnv("RAZORPAY_AUTORENEW_PLAN_MONTHLY", cfEnv) ||
+      process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
+
+    if (!razorpayPlanId || !razorpayPlanId.trim()) {
+      log.error("Payment configuration error: RAZORPAY_AUTORENEW_PLAN_MONTHLY env var missing");
       return NextResponse.json(
         {
-          error: "Unable to verify subscription state. Please try again later.",
-          code: "SERVICE_UNAVAILABLE",
-        },
-        { status: 503 }
-      );
-    }
-
-    const now = Date.now();
-    const isStatusActive = existingSub && (existingSub.status === "active" || existingSub.status === "trialing");
-    const periodEndMs = existingSub?.current_period_end ? new Date(existingSub.current_period_end).getTime() : 0;
-    const isPeriodActive = isStatusActive && (!existingSub.current_period_end || periodEndMs > now);
-    const isGraceActive = existingSub?.status === "in_grace_period" &&
-      existingSub.grace_period_end &&
-      new Date(existingSub.grace_period_end).getTime() > now;
-
-    let hasActivePlan = Boolean(isPeriodActive || isGraceActive);
-
-    // If explicit entitlement mock is provided in test deps, evaluate it fail-closed
-    if (!hasActivePlan && deps.getServerEntitlement && typeof deps.getServerEntitlement === "function") {
-      try {
-        const ent = await deps.getServerEntitlement(user.id);
-        if (ent?.isPro) {
-          hasActivePlan = true;
-        }
-      } catch (entErr) {
-        log.error("Entitlement lookup failed during pre-check; failing closed", { error: entErr });
-        return NextResponse.json(
-          {
-            error: "Unable to verify subscription state. Please try again later.",
-            code: "SERVICE_UNAVAILABLE",
-          },
-          { status: 503 }
-        );
-      }
-    }
-
-    if (hasActivePlan) {
-      return NextResponse.json(
-        {
-          error: "You already have an active subscription plan. Please manage your existing subscription in account settings.",
-          code: "ACTIVE_PLAN_EXISTS",
-        },
-        { status: 409 }
-      );
-    }
-
-    // 8. Idempotent pending attempts: before creating a subscription, check for an existing pending
-    // payment_orders row (status created) or metadata.pending_subscription_id for this user and plan;
-    // reuse it or return 409, never create a second mandate.
-    const { data: existingPendingOrder, error: pendingOrderErr } = await supabaseAdmin
-      .from("payment_orders")
-      .select("id, provider_order_id, plan_code, status, created_at, mode")
-      .eq("user_id", user.id)
-      .eq("status", "created")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (pendingOrderErr) {
-      log.error("Failed to check pending payment_orders; failing closed", { error: pendingOrderErr });
-      return NextResponse.json(
-        {
-          error: "Unable to verify pending order state. Please try again later.",
-          code: "SERVICE_UNAVAILABLE",
+          error: "Subscription plan is not configured on server",
+          code: "PLAN_NOT_CONFIGURED",
         },
         { status: 503 }
       );
     }
 
-    const isSubMandate =
-      typeof existingPendingOrder?.provider_order_id === "string" &&
-      existingPendingOrder.provider_order_id.startsWith("sub_");
-    const isMatchingMode =
-      resolvedMode === "live"
-        ? existingPendingOrder?.mode === "live"
-        : existingPendingOrder?.mode !== "live";
+    // 8. Validate plan attributes from Razorpay API before use (Blocker 4)
+    const planValidation = await validateRazorpayPlan(
+      razorpayPlanId,
+      keyId,
+      keySecret,
+      { fetchFn: deps.fetchFn, timeoutMs: deps.planValidationTimeoutMs }
+    );
 
-    if (existingPendingOrder && isSubMandate && isMatchingMode) {
-      if (existingPendingOrder.plan_code === planCode) {
-        log.info("Reusing existing pending subscription order for user and plan", {
-          userId: user.id,
-          planCode,
-          subscriptionId: existingPendingOrder.provider_order_id,
-        });
-        return NextResponse.json({
-          subscriptionId: existingPendingOrder.provider_order_id,
-          keyId,
-          planId: razorpayPlanId.trim(),
-          planCode,
-          status: "created",
-          reused: true,
-        });
-      } else {
-        return NextResponse.json(
-          {
-            error: `A checkout is already pending for another plan (${existingPendingOrder.plan_code}). Please complete or cancel that checkout first.`,
-            code: "PENDING_SUBSCRIPTION_EXISTS",
-          },
-          { status: 409 }
-        );
-      }
+    if (!planValidation.valid) {
+      log.error("Razorpay plan validation failed", {
+        code: planValidation.code,
+        error: planValidation.error,
+      });
+      return NextResponse.json(
+        {
+          error: planValidation.error || "Subscription plan validation failed",
+          code: planValidation.code || "PLAN_INVALID",
+        },
+        { status: planValidation.code === "PLAN_NOT_CONFIGURED" ? 503 : 502 }
+      );
     }
 
-    const metadataPendingSubId = existingSub?.metadata?.pending_subscription_id;
-    const metadataPendingPlan = existingSub?.metadata?.pending_plan_code;
-    const metadataPendingMode = existingSub?.metadata?.pending_mode;
-    const isMetaSub =
-      typeof metadataPendingSubId === "string" && metadataPendingSubId.startsWith("sub_");
-    const isMetaMatchingMode =
-      resolvedMode === "live"
-        ? metadataPendingMode === "live"
-        : metadataPendingMode !== "live";
+    const amountInPaise = PLAN_PRICING.monthly.price_paise; // 49900 paise = Rs 499
+    const totalCount = 12;
 
-    if (isMetaSub && isMetaMatchingMode) {
-      if (!metadataPendingPlan || metadataPendingPlan === planCode) {
-        log.info("Reusing existing pending subscription from metadata", {
-          userId: user.id,
-          planCode,
-          subscriptionId: metadataPendingSubId,
-        });
-        return NextResponse.json({
-          subscriptionId: metadataPendingSubId,
-          keyId,
-          planId: razorpayPlanId.trim(),
-          planCode,
-          status: "created",
-          reused: true,
-        });
-      } else {
-        return NextResponse.json(
-          {
-            error: `A subscription checkout is already pending for another plan (${metadataPendingPlan}). Please complete or cancel that checkout first.`,
-            code: "PENDING_SUBSCRIPTION_EXISTS",
-          },
-          { status: 409 }
-        );
-      }
-    }
-
-    // 9. Atomic Double-Tab Coalescing via singleFlight:
-    // Ensures concurrent clicks or simultaneous tabs from the same user for this plan share
-    // ONE in-flight loader and never trigger two distinct mandate creations in Razorpay.
-    const flightKey = `sub_mandate:${user.id}:${planCode}`;
+    // 9. Atomic single-flight per user & plan
+    const flightKey = `sub_create:${user.id}:${planCode}`;
     const resultResponse = await singleFlight(flightKey, async () => {
-      // Re-check pending orders inside flight in case another tab or request settled just before
-      const { data: racePendingOrder } = await supabaseAdmin
-        .from("payment_orders")
-        .select("provider_order_id, plan_code, mode")
+      // Check for an active non-expired subscription
+      const { data: existingSub } = await supabaseAdmin
+        .from("subscriptions")
+        .select("id, status, current_period_end, subscription_id, metadata")
         .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const periodEnd = existingSub?.current_period_end
+        ? new Date(existingSub.current_period_end)
+        : null;
+      const isActiveAndValid =
+        existingSub?.status === "active" &&
+        periodEnd &&
+        periodEnd.getTime() > Date.now();
+
+      const hasActiveRecurringMandate =
+        isActiveAndValid &&
+        typeof existingSub?.subscription_id === "string" &&
+        existingSub.subscription_id.startsWith("sub_");
+
+      if (hasActiveRecurringMandate) {
+        return NextResponse.json(
+          {
+            error: "You already have an active subscription.",
+            code: "ACTIVE_SUBSCRIPTION_EXISTS",
+          },
+          { status: 409 }
+        );
+      }
+
+      // Check for a recent pending order in payment_orders
+      const { data: existingPendingOrder } = await supabaseAdmin
+        .from("payment_orders")
+        .select("provider_order_id, plan_code, mode, created_at, metadata")
+        .eq("user_id", user.id)
+        .eq("plan_code", planCode)
         .eq("status", "created")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      const isRaceSub =
-        typeof racePendingOrder?.provider_order_id === "string" &&
-        racePendingOrder.provider_order_id.startsWith("sub_");
-      const isRaceMatchingMode =
+      const isRecent =
+        existingPendingOrder?.created_at &&
+        Date.now() - new Date(existingPendingOrder.created_at).getTime() < 15 * 60 * 1000;
+      const isSubOrder =
+        typeof existingPendingOrder?.provider_order_id === "string" &&
+        existingPendingOrder.provider_order_id.startsWith("sub_");
+      const isMatchingMode =
         resolvedMode === "live"
-          ? racePendingOrder?.mode === "live"
-          : racePendingOrder?.mode !== "live";
+          ? existingPendingOrder?.mode === "live"
+          : existingPendingOrder?.mode !== "live";
 
-      if (isRaceSub && isRaceMatchingMode && racePendingOrder.plan_code === planCode) {
+      if (existingPendingOrder && isRecent && isSubOrder && isMatchingMode) {
+        if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingPendingOrder, consentRecord))) {
+          log.error("Failed to record consent on reused pending order", {
+            subscriptionId: existingPendingOrder.provider_order_id,
+          });
+          return NextResponse.json(
+            { error: "Failed to record subscription consent. Please try again.", code: "CONSENT_RECORD_FAILED" },
+            { status: 500 }
+          );
+        }
+        log.info("Reusing existing pending subscription mandate", {
+          subscriptionId: existingPendingOrder.provider_order_id,
+        });
         return NextResponse.json({
-          subscriptionId: racePendingOrder.provider_order_id,
+          subscriptionId: existingPendingOrder.provider_order_id,
           keyId,
           planId: razorpayPlanId.trim(),
           planCode,
@@ -452,16 +424,8 @@ export async function POST(req: Request) {
         });
       }
 
-      // Total count calculation: 1 full year (52 weeks, 12 months, 4 quarters)
-      const TOTAL_COUNTS: Record<string, number> = {
-        weekly: 52,
-        monthly: 12,
-        quarterly: 4,
-      };
-      const totalCount = TOTAL_COUNTS[planCode] ?? 12;
-
-      // Create subscription via Razorpay /v1/subscriptions
-      const credentials = btoa(`${keyId}:${keySecret}`);
+      // Create Razorpay Subscription via REST API
+      const credentials = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
       const fetchCaller = deps.fetchFn || fetch;
       const rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
         method: "POST",
@@ -472,7 +436,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           plan_id: razorpayPlanId.trim(),
           total_count: totalCount,
-          customer_notify: true,
+          customer_notify: 1,
           notes: {
             user_id: user.id,
             email: user.email || "",
@@ -495,14 +459,7 @@ export async function POST(req: Request) {
 
       const subscriptionData = await rzpRes.json();
 
-      const PLAN_PAISE: Record<string, number> = {
-        weekly: 69200,
-        monthly: 149900,
-        quarterly: 399900,
-      };
-      const amountInPaise = PLAN_PAISE[planCode] ?? 149900;
-
-      // Record pending subscription order in payment_orders
+      // Record pending subscription order in payment_orders with durable consent record
       const { error: orderInsertErr } = await supabaseAdmin
         .from("payment_orders")
         .insert({
@@ -514,10 +471,12 @@ export async function POST(req: Request) {
           currency: "INR",
           status: "created",
           mode: resolvedMode,
+          metadata: {
+            consent: consentRecord,
+          },
         });
 
       if (orderInsertErr) {
-        // If unique constraint collision occurs across processes
         if (
           orderInsertErr.code === "23505" ||
           orderInsertErr.message?.includes("duplicate") ||
@@ -528,7 +487,7 @@ export async function POST(req: Request) {
           });
           const { data: existingRace } = await supabaseAdmin
             .from("payment_orders")
-            .select("provider_order_id, plan_code, mode")
+            .select("provider_order_id, plan_code, mode, metadata")
             .eq("user_id", user.id)
             .eq("status", "created")
             .order("created_at", { ascending: false })
@@ -544,6 +503,15 @@ export async function POST(req: Request) {
               : existingRace?.mode !== "live";
 
           if (isRaceSub && isRaceMatchingMode) {
+            if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingRace, consentRecord))) {
+              log.error("Failed to record consent on race-reused pending order", {
+                subscriptionId: existingRace.provider_order_id,
+              });
+              return NextResponse.json(
+            { error: "Failed to record subscription consent. Please try again.", code: "CONSENT_RECORD_FAILED" },
+            { status: 500 }
+          );
+            }
             return NextResponse.json({
               subscriptionId: existingRace.provider_order_id,
               keyId,
@@ -583,6 +551,7 @@ export async function POST(req: Request) {
               pending_plan_code: planCode,
               pending_mode: resolvedMode,
               pending_created_at: new Date().toISOString(),
+              pending_consent: consentRecord,
             },
           })
           .eq("user_id", user.id);
@@ -607,4 +576,11 @@ export async function POST(req: Request) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
   }
+}
+
+export async function DELETE(req: Request) {
+  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+  const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
+  return await handleSubscriptionCancellation(req, deps, cfEnv, log);
 }

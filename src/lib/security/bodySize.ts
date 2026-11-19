@@ -14,13 +14,26 @@
  */
 export const GLOBAL_API_BODY_CAP_BYTES = 1024 * 1024; // 1 MB (chosen default)
 
+/**
+ * Exact-path exceptions for upload routes that enforce their own, tighter
+ * streaming cap. /api/onboarding/resume caps the file at 5 MB and the body at
+ * 5 MB + 64 KB multipart framing (see src/lib/onboarding/step2Resume.ts).
+ */
+export const ROUTE_BODY_CAP_OVERRIDES: Readonly<Record<string, number>> = {
+  "/api/onboarding/resume": 5 * 1024 * 1024 + 64 * 1024,
+};
+
+export function bodyCapForPath(pathname: string): number {
+  return ROUTE_BODY_CAP_OVERRIDES[pathname] ?? GLOBAL_API_BODY_CAP_BYTES;
+}
+
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 export function exceedsGlobalBodyCap(
   method: string,
   pathname: string,
   contentLength: string | null,
-  capBytes: number = GLOBAL_API_BODY_CAP_BYTES,
+  capBytes: number = bodyCapForPath(pathname),
 ): boolean {
   if (SAFE_METHODS.has((method || "").toUpperCase())) return false;
   if (!pathname.startsWith("/api/")) return false;

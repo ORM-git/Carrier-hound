@@ -235,10 +235,11 @@ function runAudit() {
     failures.push("Resume Empty State: Missing centred icon, single-line message, or upload button.");
   }
 
-  // Free User Gating: ProUpgradeScreen with exact copy
+  // Free User Gating: ProUpgradeScreen with exact copy (AI tailoring claim removed with the AI tool entry points)
   const hasProGating = resumeCode.includes("ProUpgradeScreen") &&
     resumeCode.includes('title="Unlock CareerMonke Pro"') &&
-    resumeCode.includes('subtitle="Upgrade to Pro to upload your resume, compute compatibility scores, and generate AI tailored applications."');
+    resumeCode.includes('subtitle="Upgrade to Pro to upload your resume and compute compatibility scores."') &&
+    !/AI tailor/i.test(resumeCode);
   if (hasProGating) {
     console.log("  [PASS] Free User Gating: ProUpgradeScreen preserved with exact copy within logged-in shell");
   } else {

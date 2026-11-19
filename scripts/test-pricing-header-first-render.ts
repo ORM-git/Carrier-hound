@@ -41,7 +41,11 @@ async function runPricingHeaderFirstRenderSuite() {
   console.log("   PRICING PAGE FIRST-RENDER HEADER & HYDRATION TEST SUITE [PASS-LOCAL]         ");
   console.log("================================================================================");
 
-  const isNegativeControl = process.argv.includes("--negative-control");
+  const originalBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED;
+  process.env.NEXT_PUBLIC_BILLING_ENABLED = "false";
+
+  try {
+    const isNegativeControl = process.argv.includes("--negative-control");
 
   if (isNegativeControl) {
     console.log("\n[NEGATIVE CONTROL MODE] Intentionally asserting invalid condition (server HTML must NOT equal first client render)...\n");
@@ -138,44 +142,44 @@ async function runPricingHeaderFirstRenderSuite() {
   
   const markup = renderWithRouter(React.createElement(PricingPage));
   assert.ok(
-    markup.includes("Get more interviews with CareerMonke Premium"),
-    "Pricing page must include the heading 'Get more interviews with CareerMonke Premium'"
+    markup.includes("Plans and pricing"),
+    "Pricing page must include the heading 'Plans and pricing'"
   );
   assert.ok(
-    markup.includes("Payments opening soon"),
-    "Pricing page must retain the Upgrade CTA with 'Payments opening soon'"
+    markup.includes("Payments are currently unavailable.") && !/coming soon|opening soon|open soon/i.test(markup),
+    "Pricing page must show the payments-unavailable note and no 'coming soon' wording"
   );
   assert.ok(
     markup.includes('href="/login"'),
     "Pricing page must render Upgrade CTA linking to login/signup for logged-out visitors"
   );
   assert.ok(
-    markup.includes("Billed weekly"),
+    markup.includes("7 days access"),
     "Pricing page must include the Weekly plan row"
   );
   assert.ok(
-    markup.includes("₹692"),
-    "Pricing page must include the Weekly price ₹692"
+    markup.includes("₹399"),
+    "Pricing page must include the Weekly price ₹399"
   );
   assert.ok(
-    markup.includes("billed monthly"),
+    markup.includes("30 days access"),
     "Pricing page must include the Monthly plan row"
   );
   assert.ok(
-    markup.includes("₹1,499"),
-    "Pricing page must include the Monthly price ₹1,499"
+    markup.includes("₹499"),
+    "Pricing page must include the Monthly price ₹499"
   );
   assert.ok(
-    markup.includes("billed every 3 months"),
+    markup.includes("90 days access"),
     "Pricing page must include the Quarterly plan row"
   );
   assert.ok(
-    markup.includes("₹3,999"),
-    "Pricing page must include the Quarterly price ₹3,999"
+    markup.includes("₹2,199"),
+    "Pricing page must include the Quarterly price ₹2,199"
   );
   assert.ok(
-    markup.includes("Free Plan") && markup.includes("₹0.00"),
-    "Pricing page must include the Free Plan row"
+    !markup.includes("Free Plan") && !markup.includes("Add-on Packs"),
+    "Pricing page must show only the three job-listing plans (no Free strip or add-ons)"
   );
   console.log("  -> [PASS-LOCAL] All visible plan picker plans, copy, and CTAs intact.");
 
@@ -230,6 +234,13 @@ async function runPricingHeaderFirstRenderSuite() {
   console.log("\n================================================================================");
   console.log("   ALL PRICING FIRST-RENDER TESTS PASSED SUCCESSFULLY [PASS-LOCAL]              ");
   console.log("================================================================================");
+  } finally {
+    if (originalBillingEnabled !== undefined) {
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = originalBillingEnabled;
+    } else {
+      delete process.env.NEXT_PUBLIC_BILLING_ENABLED;
+    }
+  }
 }
 
 runPricingHeaderFirstRenderSuite().catch((err) => {
