@@ -263,7 +263,7 @@ export default function JobFunctionBottomSheet({
         )}
 
         {/* Desktop Two-Pane Layout / Mobile Drill-in Layout */}
-        <div className="flex-1 overflow-hidden flex flex-col md:flex-row min-h-[380px] sm:min-h-[420px] max-h-[62vh]">
+        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-[380px] sm:min-h-[420px] max-h-[62vh]">
           {/* SEARCH RESULTS VIEW (Applies to both Desktop and Mobile when searching) */}
           {isSearching ? (
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -313,7 +313,7 @@ export default function JobFunctionBottomSheet({
           ) : (
             <>
               {/* DESKTOP VIEW: Left category navigation list + Right grouped role chips */}
-              <div className="hidden md:flex w-full h-full overflow-hidden">
+              <div className="hidden lg:flex w-full h-full overflow-hidden">
                 {/* Left pane: Category navigation */}
                 <div className="w-1/3 min-w-[240px] max-w-[280px] border-r border-zinc-200 dark:border-zinc-800 overflow-y-auto bg-zinc-50/50 dark:bg-zinc-900/40 py-2">
                   <div className="space-y-0.5 px-2">
@@ -394,7 +394,7 @@ export default function JobFunctionBottomSheet({
               </div>
 
               {/* MOBILE VIEW: Drill-down pattern with Back button */}
-              <div className="md:hidden flex-1 overflow-y-auto">
+              <div className="lg:hidden flex-1 overflow-y-auto">
                 {mobileDrilldownCat ? (
                   /* Drill-in View: Subgroups & Chips */
                   <div className="p-4 space-y-4">

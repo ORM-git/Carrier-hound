@@ -41,9 +41,7 @@ function SearchAndCardIllustration() {
       {/* Real search bar simulation */}
       <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 shadow-2xs">
         <Search className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-        <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
-          Senior Software Engineer
-        </span>
+        <span className="h-3 w-32 rounded bg-zinc-200 dark:bg-zinc-700" />
         <span className="ml-auto text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/80 px-2 py-0.5 rounded-md border border-blue-100 dark:border-blue-900/60">
           Search
         </span>
@@ -56,13 +54,11 @@ function SearchAndCardIllustration() {
             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-2xs">
               CM
             </div>
-            <div>
-              <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 leading-snug">
-                Senior Software Engineer
-              </p>
+            <div className="space-y-1.5">
+              <div className="h-3 w-36 rounded bg-zinc-200 dark:bg-zinc-700" />
               <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
                 <Building2 className="w-3 h-3" />
-                <span>CloudScale Inc.</span>
+                <div className="h-2.5 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
               </div>
             </div>
           </div>
