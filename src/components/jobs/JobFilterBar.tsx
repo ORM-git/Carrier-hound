@@ -269,8 +269,8 @@ export default function JobFilterBar({
             group absorbs any width deficit via its own min-w-0 + internal flex-wrap instead of
             pushing Sort to a new row. Tablet (768-1023px) keeps the original flex-wrap/items-center
             behavior unchanged. */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2 md:flex-wrap md:items-center lg:flex-nowrap lg:items-start">
-          <div className="flex flex-wrap items-center gap-1.5 lg:gap-2 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2 md:flex-wrap md:items-center lg:flex-nowrap lg:items-center">
+          <div className="flex items-center gap-1.5 lg:gap-2 min-w-0 flex-nowrap overflow-x-auto no-scrollbar py-0.5">
             {/* 1. LOCATION CHIP & POPOVER */}
             <div className="relative">
               <button
@@ -814,18 +814,18 @@ export default function JobFilterBar({
           </div>
 
           {/* FAR RIGHT: SORT DROPDOWN */}
-          <div className="relative lg:shrink-0">
+          <div className="relative shrink-0">
             <button
               ref={(el) => { triggerRefs.current["sort"] = el; }}
               type="button"
               onClick={() => handleOpenPopover("sort")}
               aria-expanded={activePopover === "sort"}
               aria-label={`Sort by: ${filters.sort === "match" ? "Recommended" : "Newest"}`}
-              className="h-8 px-3 rounded-lg border border-[#CBD5E1] bg-white text-[#0F172A] text-[13px] font-medium transition inline-flex items-center gap-1.5 hover:bg-[#F8FAFC] cursor-pointer shadow-2xs"
+              className="h-8 px-2.5 rounded-lg border border-[#CBD5E1] bg-white text-[#0F172A] text-[13px] font-medium transition inline-flex items-center gap-1.5 hover:bg-[#F8FAFC] cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
             >
-              <ArrowUpDown className="w-3.5 h-3.5 text-[#64748B]" />
-              <span>Sort: {filters.sort === "match" ? "Recommended" : "Newest"}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              <ArrowUpDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
+              <span className="truncate max-w-[130px]">{filters.sort === "match" ? "Recommended" : "Newest"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
             </button>
 
             {activePopover === "sort" && (
