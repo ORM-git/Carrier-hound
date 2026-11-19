@@ -1102,7 +1102,7 @@ export default function JobDetailView({
 
         {/* (4) RIGHT RAIL (DESKTOP ONLY: STACKED CARDS REUSING CURRENT LABELS) */}
         <div className="hidden lg:block lg:col-span-5 space-y-3 min-w-0">
-          {/* AI tool entry cards (Tailor Resume, Interview Pack, Skill What-If) are intentionally
+          {/* AI tool entry cards (resume tailoring, Interview Pack, Skill What-If) are intentionally
               not offered outside the landing page. */}
 
           {/* Card 2: Similar jobs Card (only when similar jobs exist) */}

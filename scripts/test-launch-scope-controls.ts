@@ -144,6 +144,14 @@ async function runSuite() {
     process.env.SUPABASE_SERVICE_ROLE_KEY = "mock_service_role_key";
     process.env.GROQ_API_KEY = "mock_groq_api_key";
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
+    process.env.NODE_ENV = "test";
+    process.env.AI_STREAMING_ENABLED = "true";
+    (globalThis as any).__mockRateLimitClient = {
+      rpc: async () => ({
+        data: { allowed: true, retry_after: 0, current_count: 1 },
+        error: null,
+      }),
+    };
 
     // =========================================================================
     // SECTION 1: Restored routes require auth/entitlement and are never Coming Soon
@@ -183,7 +191,7 @@ async function runSuite() {
     assert.ok(netAiRes.statusCode === 401 || netAiRes.statusCode === 403, `Netlify ai anonymous must be 401/403, got ${netAiRes.statusCode}`);
     console.log(`  [PASS] Netlify ai anonymous -> ${netAiRes.statusCode}`);
 
-    const netTop10Res = await netlifyTop10Handler({ httpMethod: "GET", headers: {} } as any);
+    const netTop10Res = await netlifyTop10Handler({ httpMethod: "POST", headers: {}, body: "{}" } as any);
     assert.notStrictEqual(JSON.parse(netTop10Res.body || "{}").code, "FEATURE_COMING_SOON", "Netlify jobs-top10 must not be Coming Soon");
     assert.ok(netTop10Res.statusCode === 401 || netTop10Res.statusCode === 403, `Netlify jobs-top10 anonymous must be 401/403, got ${netTop10Res.statusCode}`);
     console.log(`  [PASS] Netlify jobs-top10 anonymous -> ${netTop10Res.statusCode}`);

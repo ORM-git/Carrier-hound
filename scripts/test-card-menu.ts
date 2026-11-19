@@ -150,15 +150,14 @@ function run() {
     console.log("  [PASS] Meta grid purity: Empty cells stay empty, zero invented defaults");
   }
 
-  // Footer action buttons: Hide, Save, Tailor Resume, Apply
+  // Footer action buttons: Hide, Save, Apply (Tailor Resume removed under restore-product-no-ai)
   const hasFooterActions = jobsPageCode.includes("handleHideJob") &&
     jobsPageCode.includes("handleSaveJob") &&
-    jobsPageCode.includes("Tailor Resume") &&
     jobsPageCode.includes("Apply");
   if (!hasFooterActions) {
-    failures.push("FOOTER ACTIONS FAIL: Footer action buttons (Hide, Save, Tailor Resume, Apply) must be present.");
+    failures.push("FOOTER ACTIONS FAIL: Footer action buttons (Hide, Save, Apply) must be present.");
   } else {
-    console.log("  [PASS] Footer actions: Hide, Save, Tailor Resume, and Apply buttons preserved");
+    console.log("  [PASS] Footer actions: Hide, Save, and Apply buttons preserved");
   }
 
   // Dark match panel on the right preserved
