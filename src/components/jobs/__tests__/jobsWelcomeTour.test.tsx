@@ -185,18 +185,15 @@ describe("JobsProductTour Component", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("renders 4 defined steps in order and progresses through Next/Back/Complete", () => {
-    expect(TOUR_STEPS).toHaveLength(4);
-    expect(TOUR_STEPS.map((s) => s.id)).toEqual(["filters", "facts", "details", "apply"]);
+  it("renders 3 defined steps in order and progresses through Next/Back/Complete", () => {
+    // The "facts" step (Listing Facts panel) was removed along with the panel itself.
+    expect(TOUR_STEPS).toHaveLength(3);
+    expect(TOUR_STEPS.map((s) => s.id)).toEqual(["filters", "details", "apply"]);
 
     // Create target elements in DOM
     const filterEl = document.createElement("button");
     filterEl.setAttribute("data-tour", "tour-filters");
     document.body.appendChild(filterEl);
-
-    const factsEl = document.createElement("div");
-    factsEl.setAttribute("data-tour", "tour-job-facts");
-    document.body.appendChild(factsEl);
 
     const detailsEl = document.createElement("button");
     detailsEl.setAttribute("data-tour", "tour-job-details");
@@ -219,22 +216,20 @@ describe("JobsProductTour Component", () => {
 
     // Step 1: Adjust Your Job Preferences
     expect(screen.getByText("Adjust Your Job Preferences")).toBeInTheDocument();
-    expect(screen.getByText(/1 of 4/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 3/i)).toBeInTheDocument();
 
     // Click Next -> Step 2
     fireEvent.click(screen.getByRole("button", { name: /Next/i }));
-    expect(screen.getByText("Job Information")).toBeInTheDocument();
-    expect(screen.getByText(/2 of 4/i)).toBeInTheDocument();
+    expect(screen.getByText("View Job Details")).toBeInTheDocument();
+    expect(screen.getByText(/2 of 3/i)).toBeInTheDocument();
 
     // Click Back -> Step 1
     fireEvent.click(screen.getByRole("button", { name: /Back/i }));
     expect(screen.getByText("Adjust Your Job Preferences")).toBeInTheDocument();
 
-    // Advance to Step 4
+    // Advance to Step 3
     fireEvent.click(screen.getByRole("button", { name: /Next/i })); // to step 2
     fireEvent.click(screen.getByRole("button", { name: /Next/i })); // to step 3
-    expect(screen.getByText("View Job Details")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Next/i })); // to step 4
     expect(screen.getByText("Apply")).toBeInTheDocument();
 
     // Click Done button -> onComplete
@@ -412,7 +407,7 @@ describe("Jobs welcome/tour: desktop integration contracts", () => {
   it("uses the visible desktop control when a hidden mobile control shares the same anchor", () => {
     anchor("tour-filters", true); // mobile Filters button, hidden at desktop
     anchor("tour-filters"); // desktop All Filters
-    anchor("tour-job-facts");
+    anchor("tour-job-apply");
     render(<JobsProductTour isActive onComplete={vi.fn()} onExit={vi.fn()} />);
     expect(screen.getByText("Adjust Your Job Preferences")).toBeInTheDocument();
     expect(screen.getByText(/1 of 2|1 \/ 2|Step 1 of 2/)).toBeInTheDocument();

@@ -264,7 +264,12 @@ export default function JobFilterBar({
       {/* =================================================================== */}
       <div className="hidden md:flex flex-col gap-2">
         {/* ROW 1: Location, Function, Level, Job Type, Work Model, Date Posted, Sort */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2">
+        {/* lg:flex-nowrap + lg:shrink-0 on Sort (below) keeps Sort pinned on this row at desktop
+            widths (>=1024px) even when its label is the longer "Sort: Recommended"; the chip
+            group absorbs any width deficit via its own min-w-0 + internal flex-wrap instead of
+            pushing Sort to a new row. Tablet (768-1023px) keeps the original flex-wrap/items-center
+            behavior unchanged. */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2 md:flex-wrap md:items-center lg:flex-nowrap lg:items-start">
           <div className="flex flex-wrap items-center gap-1.5 lg:gap-2 min-w-0">
             {/* 1. LOCATION CHIP & POPOVER */}
             <div className="relative">
@@ -809,7 +814,7 @@ export default function JobFilterBar({
           </div>
 
           {/* FAR RIGHT: SORT DROPDOWN */}
-          <div className="relative">
+          <div className="relative lg:shrink-0">
             <button
               ref={(el) => { triggerRefs.current["sort"] = el; }}
               type="button"
