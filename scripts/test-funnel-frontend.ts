@@ -65,11 +65,10 @@ check("onboarding_completed after preferences persist", onboarding.includes('tra
 const jobs = fs.readFileSync("src/app/jobs/page.tsx", "utf8");
 check("apply_started on Apply click", jobs.includes('trackFunnelEvent("apply_started", { path: "/jobs" })'));
 const completedCount = (jobs.match(/trackFunnelEvent\("apply_completed"/g) || []).length;
-// Launch scope: mark-applied/Tracker is Coming Soon (PR #644), so the page no longer has mark-applied paths.
-check("no mark-applied paths remain (tracker is Coming Soon)", completedCount === 0);
+check("apply_completed on both mark-applied paths", completedCount === 2);
 
 // 6. no user-facing copy changed by the wiring (toasts/buttons untouched)
-check("no tracker toast copy remains", !jobs.includes('Added to Tracker.') && !jobs.includes('Moved to Tracker Applied tab.'));
+check("no toast copy touched", jobs.includes('Marked "${job.title}" as applied! Added to Tracker.') && jobs.includes('Moved to Tracker Applied tab.'));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

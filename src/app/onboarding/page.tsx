@@ -13,7 +13,6 @@ import {
 } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
-import { updateSwr, invalidateSwr } from "@/lib/cache/swr";
 import { Loader2, AlertCircle } from "lucide-react";
 import { toast } from "react-toastify";
 import OnboardingStep1 from "@/components/onboarding/OnboardingStep1";
@@ -260,7 +259,8 @@ function OnboardingPageInner() {
           workAuth,
           remotePreference: finalRemotePref,
           salaryCurrency: existingPrefs?.salaryCurrency || undefined,
-          dailyDigestOptIn: false,
+          // Keep the stored digest choice; never opt anyone in (digest UI and sending stay off).
+          dailyDigestOptIn: existingPrefs?.dailyDigestOptIn ?? false,
           onboardingCompleted: true,
           updatedAt: new Date().toISOString(),
         };
@@ -275,12 +275,6 @@ function OnboardingPageInner() {
         setFirstJobsMarker(userId);
         trackFunnelEvent("onboarding_completed", { path: "/onboarding" });
       }
-
-      // Update dashboard SWR cache so next mount reflects completed status
-      updateSwr<any>(`dashboard:${userId}`, (current) =>
-        current ? { ...current, onboardingCompleted: true } : current
-      );
-      invalidateSwr(`dashboard:${userId}`);
 
       toast.success(
         isEditMode

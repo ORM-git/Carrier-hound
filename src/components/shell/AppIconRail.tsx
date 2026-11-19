@@ -7,7 +7,6 @@ import BrandIcon from "@/components/BrandIcon";
 import { useSidebarMode } from "@/lib/sidebar";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import {
-  LayoutDashboard,
   Briefcase,
   FileText,
   User as UserIcon,
@@ -28,13 +27,6 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    isActive: (p) => p === "/dashboard",
-  },
   {
     id: "jobs",
     label: "Jobs",
@@ -137,8 +129,8 @@ export default function AppIconRail({ currentRoute, expandOnDesktop = false }: A
             /* Expanded Mode Header: Brand Mark + CareerMonke Text + Collapse Button */
             <div className="flex items-center justify-between w-full pb-3 border-b border-[#E2E8F0] px-1">
               <Link
-                href="/dashboard"
-                aria-label="CareerMonke Dashboard"
+                href="/jobs"
+                aria-label="CareerMonke Jobs"
                 className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
               >
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
@@ -163,8 +155,8 @@ export default function AppIconRail({ currentRoute, expandOnDesktop = false }: A
             /* Narrow Mode Header: Logo Mark + Expand Button */
             <div className="flex flex-col items-center gap-2 w-full">
               <Link
-                href="/dashboard"
-                aria-label="CareerMonke Dashboard"
+                href="/jobs"
+                aria-label="CareerMonke Jobs"
                 className="w-[48px] h-[48px] flex items-center justify-center rounded-xl hover:bg-[#F8FAFC] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
               >
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
@@ -185,7 +177,7 @@ export default function AppIconRail({ currentRoute, expandOnDesktop = false }: A
           )}
 
           {/* =================================================================== */}
-          {/* PRIMARY NAVIGATION ITEMS (Dashboard, Jobs, Resume, Tracker, Profile, Radar, Pricing) */}
+          {/* PRIMARY NAVIGATION ITEMS (Jobs, Resume, Tracker, Profile, Radar, Pricing) */}
           {/* =================================================================== */}
           <nav
             aria-label="Application Rail"

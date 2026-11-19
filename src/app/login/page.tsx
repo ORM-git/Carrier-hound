@@ -36,7 +36,7 @@ function GoogleIcon() {
 export default function LoginPage() {
   const router = useRouter();
 
-  const [next, setNext] = useState("/dashboard");
+  const [next, setNext] = useState("/jobs");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -49,7 +49,7 @@ export default function LoginPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const rawNext = params.get("returnTo") || params.get("return_to") || params.get("next");
-      setNext(getValidReturnUrl(rawNext, "/dashboard"));
+      setNext(getValidReturnUrl(rawNext, "/jobs"));
       const queryError = params.get("error");
       if (queryError) {
         setError(queryError);

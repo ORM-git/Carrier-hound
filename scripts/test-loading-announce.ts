@@ -38,13 +38,13 @@ for (const { file, marker, note } of LOADING_STATES) {
   check(window.includes('aria-hidden="true"'), `${note}: decorative indicator is aria-hidden (tag or wrapper)`);
 }
 
-// Shared Skeleton stays decorative; the dashboard loading block wraps its
-// skeleton group in one labelled status region.
+// Shared Skeleton stays decorative. (Dashboard was retired; its legacy URL renders only a
+// labelled role=status redirect message.)
 {
   const sk = fs.readFileSync(path.join(ROOT, "src/components/ui/skeleton.tsx"), "utf8");
   check(sk.includes('aria-hidden="true"'), "shared Skeleton component is aria-hidden (decorative)");
   const dash = fs.readFileSync(path.join(ROOT, "src/app/dashboard/page.tsx"), "utf8");
-  check(/role="status"\s+aria-label="Loading your account"/.test(dash), "dashboard skeleton group announces once via labelled role=status");
+  check(/role="status"/.test(dash), "legacy /dashboard redirect message announces via role=status");
 }
 
 // Toast announcements: react-toastify container renders role="alert" by

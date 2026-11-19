@@ -1,13 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import AppIconRail from "@/components/shell/AppIconRail";
 import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
-import ComingSoonView from "@/components/common/ComingSoonView";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import {
@@ -36,7 +34,6 @@ import {
   Phone,
   Briefcase,
   GraduationCap,
-  Sparkles,
   ChevronDown,
   ChevronUp,
   MoreHorizontal,
@@ -132,9 +129,20 @@ export default function ResumePage() {
         return;
       }
       setUser(u);
-      setLoading(false);
+      loadData(u.id);
     });
-  }, [router]);
+
+    const handleUpdate = () => {
+      getAuthUser().then((u) => {
+        if (u) {
+          setUser(u);
+          loadData(u.id);
+        }
+      });
+    };
+    window.addEventListener("careermonke_profile_updated", handleUpdate);
+    return () => window.removeEventListener("careermonke_profile_updated", handleUpdate);
+  }, [router, loadData]);
 
   const handleDeleteProfile = async () => {
     if (
@@ -193,6 +201,24 @@ export default function ResumePage() {
     toast.success("Resume facts confirmed successfully!");
   };
 
+  if (loading || (!isPro && !isProDefinitive)) {
+    return <ResumeSkeleton user={user} isPro={isPro} />;
+  }
+
+  // Definitively non-Pro
+  if (!isPro) {
+    return (
+      <LoggedInAppShell pageLabel="RESUME" user={user} isPro={false}>
+        <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-8 w-full">
+          <ProUpgradeScreen
+            title="Unlock CareerMonke Pro"
+            subtitle="Upgrade to Pro to upload your resume and compute compatibility scores."
+          />
+        </div>
+              </LoggedInAppShell>
+    );
+  }
+
   const isConfirmed = Boolean(candidate && candidate.confirmedAt);
   const uploadedDateStr = candidate?.confirmedAt || candidate?.updatedAt;
   const formattedDate = uploadedDateStr
@@ -214,18 +240,6 @@ export default function ResumePage() {
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
       <div className="w-full max-w-[1176px] mx-auto px-4 lg:px-0 py-6 sm:py-8 space-y-6">
-        <ComingSoonView
-          title="Resume Management & Tailoring"
-          description="Resume uploads, automated fact extraction, and AI tailoring are coming soon."
-        />
-      </div>
-
-      <div className="hidden" aria-hidden="true">
-        <ProUpgradeScreen
-          title="Unlock CareerMonke Pro"
-          subtitle="Upgrade to Pro to upload your resume, compute compatibility scores, and generate AI tailored applications."
-        />
-        <div className="w-full max-w-[1176px] mx-auto px-4 lg:px-0 py-6 sm:py-8 space-y-6">
         {/* ================================================================= */}
         {/* PAGE HEADER: "RESUME" bold 24px                                   */}
         {/* ================================================================= */}
@@ -253,13 +267,13 @@ export default function ResumePage() {
             </span>
             <span>
               {candidate && candidate.confirmedAt
-                ? "You have 1 verified resume active for AI tailoring and fit scoring."
+                ? "You have 1 verified resume active for fit scoring."
                 : candidate
-                ? "Resume facts need review before AI tailoring and fit scoring are active."
-                : "No active resume. Upload a resume to ground AI tailoring and fit scoring."}
+                ? "Resume facts need review before fit scoring is active."
+                : "No active resume. Upload a resume to enable fit scoring."}
             </span>
             <span
-              title="CareerMonke uses your confirmed resume facts to calculate match scores and tailor applications."
+              title="CareerMonke uses your confirmed resume facts to calculate match scores."
               className="text-[#64748B] hover:text-[#0F172A] cursor-help inline-flex items-center"
             >
               ⓘ
@@ -631,24 +645,6 @@ export default function ResumePage() {
           </div>
         )}
 
-        {/* Explanation on Job Tailoring */}
-        <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-none space-y-1.5">
-          <div className="flex items-center gap-2 text-[#0F172A] font-bold text-[14px]">
-            <Sparkles className="w-4 h-4 text-[#2563EB]" />
-            <span>Role-Specific Resumes & Cover Letters</span>
-          </div>
-          <p className="text-[13px] text-[#475569] leading-relaxed">
-            AI resume tools are applied directly to specific roles. From your{" "}
-            <Link href="/dashboard" className="text-[#2563EB] font-semibold hover:underline">
-              Top 10 Jobs
-            </Link>{" "}
-            or the{" "}
-            <Link href="/jobs" className="text-[#2563EB] font-semibold hover:underline">
-              Jobs Feed
-            </Link>
-            , click <strong>&quot;AI Resume&quot;</strong> or <strong>&quot;Cover Letter&quot;</strong>. All generated content is strictly grounded in your confirmed profile facts.
-          </p>
-        </div>
       </div>
 
       
@@ -752,7 +748,6 @@ export default function ResumePage() {
           </div>
         </div>
       )}
-      </div>
     </LoggedInAppShell>
   );
 }

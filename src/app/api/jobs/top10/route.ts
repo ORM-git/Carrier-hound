@@ -94,17 +94,8 @@ function getTop10CacheKey(
  */
 export async function POST(req: Request) {
   return withRouteSpan("/api/jobs/top10", req, async () => {
-    // Launch scope gate: Top 10 matches are Coming Soon (evaluated before env checks so missing keys still return 503)
-    return NextResponse.json(
-      { error: "This feature is coming soon.", code: "FEATURE_COMING_SOON" },
-      { status: 503, headers: { "Content-Type": "application/json" } }
-    );
-  });
-}
-
-async function handleTop10Logic(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
-  try {
+    const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+    try {
     // 1. Verify Authorization Header (Bearer Supabase access token)
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -391,6 +382,5 @@ async function handleTop10Logic(req: Request) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+  });
 }
-
-void handleTop10Logic;

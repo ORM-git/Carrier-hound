@@ -91,10 +91,11 @@ check(
   Boolean(prefsButtonMatch && !prefsButtonMatch[0].includes("disabled")),
   "Settings: Confirmed gap - Save Preferences button currently lacks disabled attribute"
 );
-const notifButtonMatch = settingsSrc.match(/<button[^>]*onClick=\{handleSavePreferences\}[^>]*>[\s\S]*?Save Notification Settings[\s\S]*?<\/button>/);
+// The Notifications tab no longer has a save button: its only control was the AI matching
+// digest opt-in, which is intentionally not offered (stored choices are written back unchanged).
 check(
-  Boolean(notifButtonMatch && !notifButtonMatch[0].includes("disabled")),
-  "Settings: Confirmed gap - Save Notification Settings button currently lacks disabled attribute"
+  !settingsSrc.includes("Save Notification Settings") && !settingsSrc.includes("Daily AI Matching Digest"),
+  "Settings: Notifications tab has no AI digest control and no orphan save button"
 );
 
 // 1.4 Resume Upload Component (src/components/resume/ResumeUploadAndConfirm.tsx)
@@ -133,10 +134,15 @@ check(
 // 1.5 Tracker Page (src/app/tracker/page.tsx)
 const trackerSrc = fs.readFileSync(path.join(ROOT, "src/app/tracker/page.tsx"), "utf8");
 const addAppMatch = trackerSrc.match(/<button[^>]*type="submit"[^>]*>[\s\S]*?Save Application[\s\S]*?<\/button>/);
-// Launch scope: the tracker board is Coming Soon, so its forms no longer exist.
-check(!addAppMatch, "Tracker: Save Application form removed (Coming Soon)");
+check(
+  Boolean(addAppMatch && !addAppMatch[0].includes("disabled")),
+  "Tracker: Confirmed gap - Save Application submit button currently lacks disabled attribute"
+);
 const saveNotesMatch = trackerSrc.match(/<button[^>]*onClick=\{handleSaveNotes\}[^>]*>[\s\S]*?Save Notes[\s\S]*?<\/button>/);
-check(!saveNotesMatch, "Tracker: Save Notes form removed (Coming Soon)");
+check(
+  Boolean(saveNotesMatch && !saveNotesMatch[0].includes("disabled")),
+  "Tracker: Confirmed gap - Save Notes button currently lacks disabled attribute"
+);
 
 // 1.6 Audit Documentation Verification
 const auditDocPath = path.join(ROOT, "docs/forms-wiring-audit.md");

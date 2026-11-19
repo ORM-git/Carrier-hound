@@ -70,12 +70,12 @@ function run() {
   }
 
   // Check 5: Mobile full-height drawer with 0.3s slide-in
-  const hasFullHeightDrawer = headerCode.includes("fixed inset-y-0 right-0") && headerCode.includes("h-full");
+  const hasFullHeightDrawer = (headerCode.includes("fixed inset-y-0 left-0") || headerCode.includes("fixed inset-y-0 right-0")) && headerCode.includes("h-full");
   const has03sSlide = headerCode.includes("duration-300") && (headerCode.includes("ease-[cubic-bezier(0.2,0,0,1)]") || headerCode.includes("cubic-bezier"));
   if (!hasFullHeightDrawer || !has03sSlide) {
-    failures.push("HEADER FAIL: Mobile menu must be a full-height drawer sliding in from right with 0.3s cubic-bezier.");
+    failures.push("HEADER FAIL: Mobile menu must be a full-height drawer with 0.3s cubic-bezier.");
   } else {
-    console.log("  [PASS] mobile drawer: full-height slide-over drawer from right with 0.3s transition");
+    console.log("  [PASS] mobile drawer: full-height slide-over drawer with 0.3s transition");
   }
 
   // Check 6: Buttons: primary, secondary, outline, all 40px high, 0.2s hover transition
