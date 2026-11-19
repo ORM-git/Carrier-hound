@@ -242,7 +242,7 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
     );
   });
 
-  it("subscription route stays disabled (410) even when Cloudflare context enables AUTORENEW and has plan IDs", async () => {
+  it("subscription route reads AUTORENEW from Cloudflare context and refuses non-monthly plans", async () => {
     mockRequestContextEnv = {
       NEXT_PUBLIC_BILLING_ENABLED: "true",
       NEXT_PUBLIC_AUTORENEW_ENABLED: "true",
@@ -266,9 +266,8 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
     const res = await handleSubscription(req);
     const body = await res.json();
 
-    expect(res.status).toBe(410);
-    expect(body.code).toBe("RECURRING_DISABLED");
-    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(res.status).toBe(400);
+    expect(body.code).toBe("UNSUPPORTED_PLAN");
   });
 
   it("webhook route picks up RAZORPAY_WEBHOOK_SECRET and SUPABASE_SERVICE_ROLE_KEY present ONLY in Cloudflare request context", async () => {

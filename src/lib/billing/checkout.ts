@@ -1,5 +1,6 @@
 import { createClient } from "../supabase/client";
 import { openRazorpayCheckout, openRazorpaySubscription as openRazorpaySubscriptionGateway } from "./razorpay";
+import type { AutoRenewConsent } from "./types";
 
 export interface CheckoutResult {
   success: boolean;
@@ -88,6 +89,7 @@ export async function handleProCheckout(
 export async function openRazorpaySubscription(
   options: {
     planCode?: string;
+    consent?: AutoRenewConsent;
     redirectTarget?: string;
     onStart?: () => void;
     onError?: (errorMsg: string) => void;
@@ -105,12 +107,18 @@ export async function openRazorpaySubscription(
 
   const {
     planCode = "monthly",
+    consent,
     redirectTarget,
     onStart,
     onError,
     onSuccess,
     onDismiss,
   } = options;
+
+  if (!consent || !consent.agreed) {
+    options.onError?.("Explicit auto-renew consent is required to create a subscription.");
+    return;
+  }
 
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
@@ -133,6 +141,7 @@ export async function openRazorpaySubscription(
 
   await openRazorpaySubscriptionGateway({
     planCode,
+    consent,
     authToken: session?.access_token,
     userEmail: user.email,
     userName: user.user_metadata?.full_name,

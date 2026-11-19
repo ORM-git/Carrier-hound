@@ -568,7 +568,7 @@ function SettingsPageInner() {
 
               {isPro && subscription?.currentPeriodEnd && (
                 <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-                  {subscription.subscriptionId?.startsWith("sub_") || (subscription.planId === "monthly" && !subscription.cancelAtPeriodEnd) ? (
+                  {subscription.subscriptionId?.startsWith("sub_") ? (
                     subscription.cancelAtPeriodEnd ? (
                       <div>
                         <span className="text-amber-700 dark:text-amber-400 font-semibold block">
@@ -585,7 +585,7 @@ function SettingsPageInner() {
                             Auto-renews on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (₹499/month)
                           </span>
                           <span className="text-slate-400 text-[11px]">
-                            Renewal reminder will be sent 24-48h prior to billing.
+                            Renews monthly for up to 12 cycles unless cancelled. Cancel anytime before your renewal date.
                           </span>
                         </div>
                         <button

@@ -1,3 +1,4 @@
+import type { AutoRenewConsent } from "./types";
 
 
 import { createLogger } from "@/lib/observability/logger";
@@ -219,6 +220,7 @@ export async function verifyRazorpayWebhookSignature(
 
 export interface RazorpaySubscriptionOptions {
   planCode: string;
+  consent?: AutoRenewConsent;
   authToken?: string;
   userEmail?: string;
   userName?: string;
@@ -282,6 +284,7 @@ export async function openRazorpaySubscription(
       },
       body: JSON.stringify({
         planCode: options.planCode || "monthly",
+        consent: options.consent,
       }),
     });
 

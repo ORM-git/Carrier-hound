@@ -127,9 +127,16 @@ export default function PricingPage() {
         return;
       }
 
+      const consentRecord = {
+        agreed: true,
+        version: "2026-11-autorenew-v1",
+        timestamp: new Date().toISOString(),
+      };
+
       try {
         await openRazorpaySubscription({
           planCode: "monthly",
+          consent: consentRecord,
           redirectTarget: "/pricing",
           onError: (errMsg) => {
             resetLock();
@@ -312,7 +319,7 @@ export default function PricingPage() {
                         : "bg-[#090E34] text-white hover:bg-slate-800 dark:bg-white dark:text-[#090E34] dark:hover:bg-slate-200"
                     )}
                   >
-                    {isPopular && isAutoRenewEnabled ? "Subscribe Monthly" : `Buy ${plan.name}`}
+                    Buy {plan.name}
                   </button>
                 ) : (
                   <>

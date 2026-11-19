@@ -95,7 +95,7 @@ export default function TermsPage() {
             <strong>Add-on packs:</strong> additional generation sets can only be added for additional usage on an active subscription; add-on sets are used only after your plan quota is exhausted and expire together with the subscription.
           </li>
           <li>
-            <strong>Plans and renewal:</strong> Weekly and Quarterly plans are prepaid for a fixed period and do not renew automatically. Plan prices: {PREPAID_PRICE_SUMMARY}. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month. For the Monthly auto-renew subscription, your payment method is billed automatically at the end of each 30-day cycle until cancelled. An email renewal reminder is sent 24 to 48 hours prior to each renewal charge.
+            <strong>Plans and renewal:</strong> Weekly and Quarterly plans are prepaid for a fixed period and do not renew automatically. Plan prices: {PREPAID_PRICE_SUMMARY}. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month for up to 12 monthly billing cycles unless cancelled earlier. For the Monthly auto-renew subscription, your payment method is billed automatically at the end of each monthly billing cycle until cancelled or the 12-cycle maximum is reached. You can view your current cycle and cancel anytime before the next renewal date in Settings &gt; Billing.
           </li>
           <li>
             <strong>Payment gateway:</strong> Payments will open soon. When active, all transactions are processed in Indian Rupees (INR) through Razorpay, supporting UPI, NetBanking, and cards. We do not collect or store your complete card numbers, UPI PINs, or netbanking credentials.
@@ -122,7 +122,7 @@ export default function TermsPage() {
             <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               support@careermonke.com
             </a>
-            . Cancellation takes effect at the end of your current 30-day billing cycle: no further charges will be made, and you keep full Pro access until the cycle ends.
+            . Cancellation takes effect at the end of your current monthly billing cycle: no further charges will be made, and you keep full Pro access until the cycle ends.
           </li>
           <li>
             If you stop using the service before the period ends, you keep premium access until the end of the period you already paid for. We do not provide refunds or credits for unused time or unused generation sets, except the limited payment-failure cases described in the{" "}

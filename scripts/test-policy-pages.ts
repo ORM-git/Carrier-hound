@@ -109,7 +109,7 @@ async function main() {
     "Pricing page",
     "Weekly and Quarterly plans are prepaid for a fixed period and do not renew automatically",
     "Monthly plan is available as an auto-renewing subscription at flat ₹499 per month",
-    "renewal reminder",
+    "12 monthly billing cycles",
     "Add-on packs:",
     "expire together with the subscription",
     "Razorpay",
@@ -153,8 +153,9 @@ async function main() {
     assert.ok(/auto[\s-]?renew/i.test(text), `${route} must mention auto-renew`);
     assert.ok(text.includes("499"), `${route} must mention flat 499 price`);
     assert.ok(/cancel/i.test(text), `${route} must explain how to cancel`);
-    assert.ok(/reminder/i.test(text), `${route} must mention renewal reminder`);
-    console.log(`  [PASS-LOCAL] ${route} has no 799, no "first month", and correctly mentions 499 auto-renew, cancellation, and reminders`);
+    assert.ok(/12\s+monthly\s+cycles|12-cycle/i.test(text), `${route} must mention 12 monthly cycles limit`);
+    assert.ok(!/reminder/i.test(text), `${route} must NOT promise email renewal reminders without a real sender`);
+    console.log(`  [PASS-LOCAL] ${route} has no 799, no "first month", correctly mentions 499 auto-renew, 12 cycles, cancellation, and excludes false reminders`);
   }
 
   // Plan prices are final and rendered from the central config (PREPAID_PRICE_SUMMARY in src/config/plans.ts).

@@ -524,16 +524,16 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
     });
   });
 
-  describe("openGatewaySubscription (recurring path disabled)", () => {
-    it("fails closed without loading the SDK or calling fetch, even with AUTORENEW and BILLING on", async () => {
-      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
+  describe("openGatewaySubscription (auto-renew flag off)", () => {
+    it("fails closed without loading the SDK or calling fetch when AUTORENEW is off", async () => {
+      process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
       process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
       const fetchSpy = vi.fn();
       vi.stubGlobal("fetch", fetchSpy);
       const onError = vi.fn();
       await openGatewaySubscription({ planCode: "monthly", authToken: "tok", onError });
       expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining("Recurring subscriptions are disabled") })
+        expect.objectContaining({ message: expect.stringContaining("Auto-renew subscriptions are currently disabled") })
       );
       expect(fetchSpy).not.toHaveBeenCalled();
       vi.unstubAllGlobals();
@@ -663,8 +663,8 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
     });
   });
 
-  describe("openCheckoutSubscription (recurring path disabled)", () => {
-    it("fails closed without redirecting or starting checkout, even with AUTORENEW and BILLING on", async () => {
+  describe("openCheckoutSubscription (no consent)", () => {
+    it("fails closed without redirecting or starting checkout when explicit consent is missing", async () => {
       process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
       process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
       const getSession = vi.fn();
@@ -672,7 +672,7 @@ describe("Billing Checkout & Razorpay (Browser/JSDOM Environment)", () => {
       const onError = vi.fn();
       const onStart = vi.fn();
       await openCheckoutSubscription({ planCode: "monthly", onError, onStart });
-      expect(onError).toHaveBeenCalledWith(expect.stringContaining("Recurring subscriptions are disabled"));
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining("consent is required"));
       expect(onStart).not.toHaveBeenCalled();
       expect(getSession).not.toHaveBeenCalled();
       expect(mockLocation.href).toBe("http://localhost:3000/pricing");

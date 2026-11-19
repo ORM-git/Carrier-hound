@@ -9,6 +9,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import { handleSubscriptionCancellation } from "@/lib/billing/subscriptionCancellation";
+import { validateRazorpayPlan } from "@/lib/billing/validatePlan";
 
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/subscription" } });
 
@@ -260,7 +261,48 @@ export async function POST(req: Request) {
       );
     }
 
-    // 6. Plan ID from environment variables only — NEVER hardcoded
+    // 6. Explicit auto-renew consent validation (Blocker 2)
+    const consent = bodyJson?.consent;
+    if (
+      !consent ||
+      typeof consent !== "object" ||
+      consent.agreed !== true ||
+      typeof consent.version !== "string" ||
+      !consent.version.trim() ||
+      typeof consent.timestamp !== "string" ||
+      Number.isNaN(Date.parse(consent.timestamp))
+    ) {
+      return NextResponse.json(
+        {
+          error: "Explicit auto-renew consent is required to create a subscription",
+          code: "CONSENT_REQUIRED",
+        },
+        { status: 400 }
+      );
+    }
+
+    const consentTimestampMs = Date.parse(consent.timestamp);
+    if (
+      consentTimestampMs > Date.now() + 5 * 60 * 1000 ||
+      consentTimestampMs < Date.now() - 24 * 60 * 60 * 1000
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid consent timestamp",
+          code: "INVALID_CONSENT_TIMESTAMP",
+        },
+        { status: 400 }
+      );
+    }
+
+    const consentRecord = {
+      agreed: true,
+      version: consent.version.trim(),
+      timestamp: new Date(consentTimestampMs).toISOString(),
+      recorded_at: new Date().toISOString(),
+    };
+
+    // 7. Plan ID from environment variables only — NEVER hardcoded
     const razorpayPlanId =
       getRuntimeEnv("RAZORPAY_AUTORENEW_PLAN_MONTHLY", cfEnv) ||
       process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
@@ -276,10 +318,32 @@ export async function POST(req: Request) {
       );
     }
 
+    // 8. Validate plan attributes from Razorpay API before use (Blocker 4)
+    const planValidation = await validateRazorpayPlan(
+      razorpayPlanId,
+      keyId,
+      keySecret,
+      { fetchFn: deps.fetchFn, timeoutMs: deps.planValidationTimeoutMs }
+    );
+
+    if (!planValidation.valid) {
+      log.error("Razorpay plan validation failed", {
+        code: planValidation.code,
+        error: planValidation.error,
+      });
+      return NextResponse.json(
+        {
+          error: planValidation.error || "Subscription plan validation failed",
+          code: planValidation.code || "PLAN_INVALID",
+        },
+        { status: planValidation.code === "PLAN_NOT_CONFIGURED" ? 503 : 502 }
+      );
+    }
+
     const amountInPaise = PLAN_PRICING.monthly.price_paise; // 49900 paise = Rs 499
     const totalCount = 12;
 
-    // 7. Atomic single-flight per user & plan
+    // 9. Atomic single-flight per user & plan
     const flightKey = `sub_create:${user.id}:${planCode}`;
     const resultResponse = await singleFlight(flightKey, async () => {
       // Check for an active non-expired subscription
@@ -385,7 +449,7 @@ export async function POST(req: Request) {
 
       const subscriptionData = await rzpRes.json();
 
-      // Record pending subscription order in payment_orders
+      // Record pending subscription order in payment_orders with durable consent record
       const { error: orderInsertErr } = await supabaseAdmin
         .from("payment_orders")
         .insert({
@@ -397,6 +461,9 @@ export async function POST(req: Request) {
           currency: "INR",
           status: "created",
           mode: resolvedMode,
+          metadata: {
+            consent: consentRecord,
+          },
         });
 
       if (orderInsertErr) {
@@ -465,6 +532,7 @@ export async function POST(req: Request) {
               pending_plan_code: planCode,
               pending_mode: resolvedMode,
               pending_created_at: new Date().toISOString(),
+              pending_consent: consentRecord,
             },
           })
           .eq("user_id", user.id);

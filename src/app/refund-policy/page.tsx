@@ -33,7 +33,7 @@ export default function RefundPolicyPage() {
           1. Plans, Pricing, and Auto-Renewal
         </h2>
         <p className="mb-2">
-          CareerMonke offers prepaid plans (Weekly and Quarterly) as one-time, flat amounts: {PREPAID_PRICE_SUMMARY}. For these prepaid plans, there are no recurring charges and access ends when the period expires. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month. For the Monthly auto-renew subscription, your account is charged automatically at the end of each 30-day cycle until you cancel. Pre-renewal reminders are sent by email 24 to 48 hours before any recurring charge occurs.
+          CareerMonke offers prepaid plans (Weekly and Quarterly) as one-time, flat amounts: {PREPAID_PRICE_SUMMARY}. For these prepaid plans, there are no recurring charges and access ends when the period expires. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month for up to 12 monthly cycles unless cancelled earlier. For the Monthly auto-renew subscription, your account is charged automatically at the end of each monthly billing cycle until cancelled or the 12-cycle maximum is reached. You can view your current cycle and cancel anytime before the next renewal date from Settings &gt; Billing.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">2. Cancellation and Access After Cancellation</h2>
@@ -43,7 +43,7 @@ export default function RefundPolicyPage() {
             <a href="mailto:support@careermonke.com" className="text-blue-600 underline underline-offset-2 hover:text-blue-800 transition-colors">
               support@careermonke.com
             </a>
-            . Cancellation takes effect at the end of your current 30-day paid period. You will retain full Pro access until that date, and no further renewal charges will occur.
+            . Cancellation takes effect at the end of your current monthly paid period. You will retain full Pro access until that date, and no further renewal charges will occur.
           </li>
           <li>
             If you decide to stop using CareerMonke before your paid period ends, you keep full premium access until the end of the period you already paid for. We do not provide prorated or partial-month refunds.

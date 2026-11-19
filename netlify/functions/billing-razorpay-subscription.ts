@@ -4,6 +4,7 @@ import { normalizePlanCode } from "../../src/lib/billing/quota";
 import { PLAN_PRICING } from "../../src/config/plans";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { singleFlight } from "../../src/lib/cache/singleFlight";
+import { validateRazorpayPlan } from "../../src/lib/billing/validatePlan";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -220,30 +221,102 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         }
 
         const rzpSubId = sub.subscription_id || sub.metadata?.razorpay_subscription_id;
-        if (rzpSubId && typeof rzpSubId === "string" && rzpSubId.startsWith("sub_")) {
-          const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
-          const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-          if (keyId && keySecret) {
-            const credentials = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-            try {
-              await fetchCaller(
-                `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(rzpSubId)}/cancel`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Basic ${credentials}`,
-                  },
-                  body: JSON.stringify({ cancel_at_cycle_end: 1 }),
-                }
-              );
-            } catch (callErr) {
-              safeLog.warn("[Netlify /subscription cancel] Razorpay cancel API error (continuing DB update):", callErr);
-            }
-          }
+        // Fail-closed requirement: must be a recurring Razorpay subscription
+        if (!rzpSubId || typeof rzpSubId !== "string" || !rzpSubId.startsWith("sub_")) {
+          return {
+            statusCode: 400,
+            headers,
+            body: JSON.stringify({
+              error: "No active recurring subscription mandate found to cancel",
+              code: "NOT_A_RECURRING_SUBSCRIPTION",
+            }),
+          };
         }
 
+        const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
+        const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+        // Fail closed if payment credentials are not configured: keep DB unchanged
+        if (!keyId || !keySecret) {
+          safeLog.error("[Netlify /subscription cancel] Missing Razorpay credentials");
+          return {
+            statusCode: 503,
+            headers,
+            body: JSON.stringify({
+              error: "Payment gateway credentials are not configured",
+              code: "RAZORPAY_CONFIG_ERROR",
+            }),
+          };
+        }
+
+        const credentials = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+        const timeoutMs = (deps as any)?.timeoutMs ?? 10000;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        let rzpCancelRes: Response;
+        try {
+          rzpCancelRes = await fetchCaller(
+            `https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(rzpSubId)}/cancel`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Basic ${credentials}`,
+              },
+              body: JSON.stringify({ cancel_at_cycle_end: 1 }),
+              signal: controller.signal,
+            }
+          );
+        } catch (callErr: any) {
+          clearTimeout(timer);
+          const isTimeout =
+            callErr?.name === "AbortError" ||
+            callErr?.message?.toLowerCase().includes("timeout") ||
+            callErr?.message?.toLowerCase().includes("abort");
+
+          safeLog.error(
+            "[Netlify /subscription cancel] Razorpay cancel API network error or timeout (DB state kept intact):",
+            callErr
+          );
+
+          return {
+            statusCode: isTimeout ? 504 : 502,
+            headers,
+            body: JSON.stringify({
+              error: isTimeout
+                ? "Payment gateway cancellation request timed out. Please try again."
+                : "Failed to communicate with payment gateway. Please try again.",
+              code: isTimeout ? "GATEWAY_TIMEOUT" : "GATEWAY_ERROR",
+            }),
+          };
+        } finally {
+          clearTimeout(timer);
+        }
+
+        // Fail closed on non-2xx response: do NOT mark in DB
+        if (!rzpCancelRes.ok) {
+          const rzpErr = await rzpCancelRes.json().catch(() => ({}));
+          safeLog.error(
+            "[Netlify /subscription cancel] Razorpay API rejected subscription cancellation (DB state kept intact):",
+            { status: rzpCancelRes.status, error: rzpErr }
+          );
+
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error:
+                rzpErr?.error?.description ||
+                "Payment gateway rejected subscription cancellation. Please try again.",
+              code: "RAZORPAY_CANCEL_FAILED",
+              gatewayStatus: rzpCancelRes.status,
+            }),
+          };
+        }
+
+        // ONLY after Razorpay confirms cancellation: update DB
         const nowIso = new Date().toISOString();
         const updatedMetadata = {
           ...(sub.metadata || {}),
@@ -261,13 +334,21 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           .eq("id", sub.id);
 
         if (updateErr) {
-          safeLog.error("[Netlify /subscription cancel] DB update failed:", updateErr);
+          safeLog.error("[Netlify /subscription cancel] DB update failed after Razorpay confirmed cancel:", updateErr);
           return {
             statusCode: 500,
             headers,
             body: JSON.stringify({ error: "Failed to update subscription cancellation in database", code: "DATABASE_ERROR" }),
           };
         }
+
+        safeLog.info(
+          "[Netlify /subscription cancel] Subscription cancelled confirmed by Razorpay and updated in DB:",
+          JSON.stringify({
+            userId: user.id,
+            subscriptionId: rzpSubId,
+          })
+        );
 
         return {
           statusCode: 200,
@@ -382,6 +463,49 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
+      // Explicit auto-renew consent validation (Blocker 2)
+      const consent = body?.consent;
+      if (
+        !consent ||
+        typeof consent !== "object" ||
+        consent.agreed !== true ||
+        typeof consent.version !== "string" ||
+        !consent.version.trim() ||
+        typeof consent.timestamp !== "string" ||
+        Number.isNaN(Date.parse(consent.timestamp))
+      ) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Explicit auto-renew consent is required to create a subscription",
+            code: "CONSENT_REQUIRED",
+          }),
+        };
+      }
+
+      const consentTimestampMs = Date.parse(consent.timestamp);
+      if (
+        consentTimestampMs > Date.now() + 5 * 60 * 1000 ||
+        consentTimestampMs < Date.now() - 24 * 60 * 60 * 1000
+      ) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Invalid consent timestamp",
+            code: "INVALID_CONSENT_TIMESTAMP",
+          }),
+        };
+      }
+
+      const consentRecord = {
+        agreed: true,
+        version: consent.version.trim(),
+        timestamp: new Date(consentTimestampMs).toISOString(),
+        recorded_at: new Date().toISOString(),
+      };
+
       // Plan ID from environment variables only — NEVER hardcoded
       const razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
 
@@ -395,6 +519,29 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
           body: JSON.stringify({
             error: "Subscription plan is not configured on server",
             code: "PLAN_NOT_CONFIGURED",
+          }),
+        };
+      }
+
+      // Validate plan attributes from Razorpay API before use (Blocker 4)
+      const planValidation = await validateRazorpayPlan(
+        razorpayPlanId,
+        keyId,
+        keySecret,
+        { fetchFn: deps.fetchFn, timeoutMs: (deps as any)?.planValidationTimeoutMs }
+      );
+
+      if (!planValidation.valid) {
+        safeLog.error(
+          "[Netlify /billing-razorpay-subscription] Razorpay plan validation failed:",
+          planValidation.error
+        );
+        return {
+          statusCode: planValidation.code === "PLAN_NOT_CONFIGURED" ? 503 : 502,
+          headers,
+          body: JSON.stringify({
+            error: planValidation.error || "Subscription plan validation failed",
+            code: planValidation.code || "PLAN_INVALID",
           }),
         };
       }
@@ -525,6 +672,9 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             currency: "INR",
             status: "created",
             mode: resolvedMode,
+            metadata: {
+              consent: consentRecord,
+            },
           });
 
         if (orderInsertErr) {
@@ -603,6 +753,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 pending_plan_code: planCode,
                 pending_mode: resolvedMode,
                 pending_created_at: new Date().toISOString(),
+                pending_consent: consentRecord,
               },
             })
             .eq("user_id", user.id);

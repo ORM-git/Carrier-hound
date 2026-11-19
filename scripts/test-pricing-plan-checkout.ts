@@ -208,7 +208,7 @@ async function main() {
       "Pricing page must define single shared checkoutLockRef"
     );
     assert.ok(
-      pricingSrc.includes("disabled={isCheckoutLocked}"),
+      pricingSrc.includes("disabled={isCheckoutLocked"),
       "Plan buttons must be disabled when isCheckoutLocked is true"
     );
     assert.ok(

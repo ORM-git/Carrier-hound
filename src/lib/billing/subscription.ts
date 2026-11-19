@@ -409,8 +409,8 @@ export async function cancelAutoRenewSubscription(
       return { success: false, error: "Please sign in to cancel subscription." };
     }
 
-    const res = await fetch("/api/billing/razorpay/subscription/cancel", {
-      method: "POST",
+    const res = await fetch("/api/billing/razorpay/subscription", {
+      method: "DELETE",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
