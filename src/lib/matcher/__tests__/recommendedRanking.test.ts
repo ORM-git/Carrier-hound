@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeRecommendedRankingScore,
   compareByRecommendedRanking,
+  shouldApplyRecommendedRanking,
   RECOMMENDED_RANKING_WEIGHTS,
   type RecommendedRankingJobInput,
 } from "../scoring";
@@ -158,5 +159,76 @@ describe("compareByRecommendedRanking", () => {
     const sortedForward = [...jobs].sort((a, b) => compareByRecommendedRanking(a, b, confirmedCandidate, null));
     const sortedReversed = [...jobs].reverse().sort((a, b) => compareByRecommendedRanking(a, b, confirmedCandidate, null));
     expect(sortedForward).toEqual(sortedReversed);
+  });
+
+  it("final tie-break: equal score and equal postedAt order by id", () => {
+    const jobZ = baseJob({ id: "job-z", postedAt: hoursAgo(5) });
+    const jobA = baseJob({ id: "job-a", postedAt: hoursAgo(5) }); // identical score and date
+    const sorted = [jobZ, jobA].sort((a, b) => compareByRecommendedRanking(a, b, confirmedCandidate, null));
+    expect(sorted[0]).toBe(jobA);
+  });
+
+  it("accepts a fixed `now` snapshot so every comparison uses the same instant", () => {
+    const fixedNow = new Date("2026-01-01T00:00:00Z").getTime();
+    const older = baseJob({ postedAt: new Date(fixedNow - 10 * 60 * 60 * 1000).toISOString() });
+    const newer = baseJob({ postedAt: new Date(fixedNow - 1 * 60 * 60 * 1000).toISOString() });
+    const result = compareByRecommendedRanking(older, newer, confirmedCandidate, null, fixedNow);
+    expect(result).toBeGreaterThan(0); // newer should sort first (positive means a after b)
+  });
+});
+
+describe("shouldApplyRecommendedRanking", () => {
+  it("is true on the Recommended tab regardless of the local sort default", () => {
+    expect(shouldApplyRecommendedRanking("recommended", "newest")).toBe(true);
+  });
+
+  it("is true when the user explicitly picks Sort: Recommended on another tab", () => {
+    expect(shouldApplyRecommendedRanking("saved", "match")).toBe(true);
+  });
+
+  it("is false off the Recommended tab with the default local sort", () => {
+    expect(shouldApplyRecommendedRanking("saved", "newest")).toBe(false);
+  });
+});
+
+describe("integration: default Recommended tab with no resume", () => {
+  it("uses the ranking score to order jobs, not just recency, even with no candidate/resume", () => {
+    // Mirrors the Jobs page's exact wiring: activeTab defaults to "recommended",
+    // sortBy defaults to "newest" (never set to "match"), and there is no
+    // confirmed resume. The ranking must still apply (per shouldApplyRecommendedRanking)
+    // and must still produce a meaningful, non-recency-only order via the module's
+    // neutral fitScore fallback.
+    const activeTab = "recommended";
+    const sortBy = "newest";
+    const candidate = null; // no resume
+    const preferences = null; // no stated location/remote preference either
+
+    expect(shouldApplyRecommendedRanking(activeTab, sortBy)).toBe(true);
+
+    // Older but salaried + worldwide-remote should outrank a much newer listing
+    // that has neither — proving order is score-driven, not newest-first.
+    const olderButStronger = baseJob({
+      id: "older-stronger",
+      postedAt: hoursAgo(48),
+      salary: "$150,000/yr",
+      remote: true,
+      remoteScope: "worldwide",
+    });
+    const newerButWeaker = baseJob({
+      id: "newer-weaker",
+      postedAt: hoursAgo(1),
+      salary: "",
+      remote: false,
+      remoteScope: undefined,
+      country: "FR",
+    });
+
+    const now = Date.now();
+    const result = shouldApplyRecommendedRanking(activeTab, sortBy)
+      ? [newerButWeaker, olderButStronger].sort((a, b) => compareByRecommendedRanking(a, b, candidate, preferences, now))
+      : [newerButWeaker, olderButStronger];
+
+    expect(result[0]).toBe(olderButStronger);
+    expect(result[1]).toBe(newerButWeaker);
   });
 });

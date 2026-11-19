@@ -30,7 +30,7 @@ import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
-import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -1234,14 +1234,21 @@ function JobsPageInner() {
 
     // Sort: Recommended ranking (title/skills + experience fit, location/remote
     // eligibility, recency, salary-listed) via the scoring module's pure ranking
-    // function. Ranking only — nothing above this is excluded by score.
-    if (sortBy === "match" && candidate) {
+    // function. Ranking only — nothing above this is excluded by score. Runs
+    // whenever the Recommended tab is the effective sort (same condition the
+    // fetch uses above) or the user explicitly picks Sort: Recommended — not
+    // gated on a local "match" default — and with no candidate/resume, the
+    // module's own neutral fallback (fitScore 50) still orders by the other
+    // factors instead of skipping ranking entirely.
+    if (shouldApplyRecommendedRanking(activeTab, sortBy)) {
+      const now = Date.now(); // one snapshot for the whole sort pass, not per-comparison
       result = [...result].sort((a, b) =>
         compareByRecommendedRanking(
           a,
           b,
           candidate,
-          preferences ? { preferredCountryCode: preferences.countryCode, remotePreference: preferences.remotePreference } : null
+          preferences ? { preferredCountryCode: preferences.countryCode, remotePreference: preferences.remotePreference } : null,
+          now
         )
       );
     }

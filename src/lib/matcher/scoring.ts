@@ -728,6 +728,8 @@ const RECENCY_HALF_LIFE_HOURS = 72; // score halves roughly every 3 days
 const RECENCY_FLOOR = 10;
 
 export interface RecommendedRankingJobInput {
+  /** Stable identifier, used only as the final, deterministic tie-break. */
+  id?: string;
   title: string;
   company?: string;
   description?: string;
@@ -783,12 +785,14 @@ function computeLocationRemoteFit(
   return 30;
 }
 
-/** Exponential decay from 100 (just posted) down to a floor; unknown date is neutral (50). */
-function computeRecencyScore(postedAt?: string | null): number {
+/** Exponential decay from 100 (just posted) down to a floor; unknown date is neutral (50).
+ * `now` is a caller-supplied snapshot (ms epoch) so a whole sort pass compares every job
+ * against the same instant instead of re-reading the clock inside the comparator. */
+function computeRecencyScore(postedAt: string | null | undefined, now: number): number {
   if (!postedAt) return 50;
   const posted = new Date(postedAt).getTime();
   if (!Number.isFinite(posted)) return 50;
-  const hoursAgo = Math.max(0, (Date.now() - posted) / (1000 * 60 * 60));
+  const hoursAgo = Math.max(0, (now - posted) / (1000 * 60 * 60));
   const decayed = 100 * Math.pow(0.5, hoursAgo / RECENCY_HALF_LIFE_HOURS);
   return Math.max(RECENCY_FLOOR, decayed);
 }
@@ -798,11 +802,14 @@ function computeRecencyScore(postedAt?: string | null): number {
  * Reuses computeFitDiagnostics (title/skills + experience fit) when a confirmed
  * resume exists; falls back to a neutral midpoint otherwise so ranking still
  * works — driven by recency/salary/location — without fabricating a fit score.
+ * `now` defaults to the current time; pass one snapshot for an entire sort pass
+ * so every comparison is evaluated against the same instant.
  */
 export function computeRecommendedRankingScore(
   job: RecommendedRankingJobInput,
   candidate: CandidateProfile | null,
-  preferences?: RecommendedRankingPreferences | null
+  preferences?: RecommendedRankingPreferences | null,
+  now: number = Date.now()
 ): number {
   let fitScore = 50;
   if (candidate && candidate.confirmedAt) {
@@ -826,7 +833,7 @@ export function computeRecommendedRankingScore(
   }
 
   const locationRemoteFit = computeLocationRemoteFit(job, preferences);
-  const recency = computeRecencyScore(job.postedAt);
+  const recency = computeRecencyScore(job.postedAt, now);
   const salaryListed = job.salary && job.salary.trim() ? 100 : 0;
 
   const weighted =
@@ -839,22 +846,40 @@ export function computeRecommendedRankingScore(
 }
 
 /**
+ * True when the Recommended-feed ranking score should order the list: either the
+ * Recommended tab is the effective view (same condition the jobs list fetch uses),
+ * or the user explicitly chose Sort: Recommended. Never gated on the local sort
+ * state's default value ("newest") alone, so the ranking still applies on the
+ * default Recommended tab even before the user ever touches the Sort control.
+ */
+export function shouldApplyRecommendedRanking(activeTab: string, sortBy: string): boolean {
+  return activeTab === "recommended" || sortBy === "match";
+}
+
+/**
  * Deterministic comparator for the Recommended feed: higher ranking score first;
- * ties break by newest postedAt first, so ordering never depends on array/sort
- * stability quirks.
+ * ties break by newest postedAt, then by id, so ordering never depends on
+ * array/sort stability quirks. Pass one `now` snapshot for the whole sort pass
+ * (take it once before calling Array#sort, not inside this comparator) so every
+ * comparison is evaluated against the same instant.
  */
 export function compareByRecommendedRanking(
   a: RecommendedRankingJobInput,
   b: RecommendedRankingJobInput,
   candidate: CandidateProfile | null,
-  preferences?: RecommendedRankingPreferences | null
+  preferences?: RecommendedRankingPreferences | null,
+  now: number = Date.now()
 ): number {
-  const scoreA = computeRecommendedRankingScore(a, candidate, preferences);
-  const scoreB = computeRecommendedRankingScore(b, candidate, preferences);
+  const scoreA = computeRecommendedRankingScore(a, candidate, preferences, now);
+  const scoreB = computeRecommendedRankingScore(b, candidate, preferences, now);
   if (scoreB !== scoreA) return scoreB - scoreA;
 
   const dateA = a.postedAt ? new Date(a.postedAt).getTime() : 0;
   const dateB = b.postedAt ? new Date(b.postedAt).getTime() : 0;
-  return dateB - dateA;
+  if (dateB !== dateA) return dateB - dateA;
+
+  const idA = a.id || "";
+  const idB = b.id || "";
+  return idA < idB ? -1 : idA > idB ? 1 : 0;
 }
 
