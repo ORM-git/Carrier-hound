@@ -150,15 +150,17 @@ function run() {
     console.log("  [PASS] Meta grid purity: Empty cells stay empty, zero invented defaults");
   }
 
-  // Footer action buttons: Hide, Save, Tailor Resume, Apply
+  // Footer action buttons: Hide, Save, Apply (no AI/Tailor Resume CTA on the Jobs list, at any width)
   const hasFooterActions = jobsPageCode.includes("handleHideJob") &&
     jobsPageCode.includes("handleSaveJob") &&
-    jobsPageCode.includes("Tailor Resume") &&
     jobsPageCode.includes("Apply");
+  const hasNoTailorResumeCta = !jobsPageCode.includes("Tailor Resume");
   if (!hasFooterActions) {
-    failures.push("FOOTER ACTIONS FAIL: Footer action buttons (Hide, Save, Tailor Resume, Apply) must be present.");
+    failures.push("FOOTER ACTIONS FAIL: Footer action buttons (Hide, Save, Apply) must be present.");
+  } else if (!hasNoTailorResumeCta) {
+    failures.push("FOOTER ACTIONS FAIL: Jobs list must not show a Tailor Resume / AI CTA at any width.");
   } else {
-    console.log("  [PASS] Footer actions: Hide, Save, Tailor Resume, and Apply buttons preserved");
+    console.log("  [PASS] Footer actions: Hide, Save, and Apply buttons preserved; no Tailor Resume/AI CTA on Jobs list");
   }
 
   // Right panel preserved (listings-only Job Facts panel or legacy dark match panel)

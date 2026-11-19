@@ -2117,7 +2117,7 @@ function JobsPageInner() {
                                 {/* Horizontal divider 2: thin 1px light gray line */}
                                 <div className="border-b border-[#E2E8F0]" />
 
-                                {/* Footer with action buttons (Hide, Save, Tailor Resume, Apply) */}
+                                {/* Footer with action buttons (Hide, Save, Apply) */}
                                 <div className="flex items-center justify-end gap-2">
                                   <button
                                     type="button"
@@ -2148,16 +2148,6 @@ function JobsPageInner() {
                                   >
                                     <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
                                   </button>
-
-                                  <Link
-                                    href="/resume"
-                                    onClick={(e) => e.stopPropagation()}
-                                    aria-label="Tailor resume for this job"
-                                    className="lg:hidden w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#2563EB] text-xs font-bold transition shadow-none cursor-pointer"
-                                  >
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                    <span>Tailor Resume</span>
-                                  </Link>
 
                                   {isPro ? (
                                     <button
