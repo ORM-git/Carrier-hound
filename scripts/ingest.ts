@@ -412,6 +412,41 @@ export function recordSourceFailure(stats: SourceStats, err: unknown): void {
   stats.error = err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * True only when Postgres itself names the violated constraint as jobs_apply_url_unique:
+ * the driver-provided constraint field when present, otherwise the quoted constraint name
+ * anchored in the Postgres message. The details payload (row data) is never inspected: a 23505
+ * on another constraint can echo the string "jobs_apply_url_unique" inside its row values.
+ */
+function isApplyUrlUniqueViolation(err: { message?: string; constraint?: string }): boolean {
+  if (typeof err.constraint === 'string' && err.constraint.length > 0) {
+    return err.constraint === 'jobs_apply_url_unique';
+  }
+  const quoted = typeof err.message === 'string'
+    ? err.message.match(/violates unique constraint "([^"]+)"/)
+    : null;
+  return quoted?.[1] === 'jobs_apply_url_unique';
+}
+
+/**
+ * Per-row insert failure. The existing-row lookup is identity-scoped, so a jobs_apply_url_unique
+ * conflict means another source_job_id already owns this apply_url: skip it, don't fail the shard.
+ * Every other write error still counts as a real failure.
+ */
+export function recordInsertFailure(
+  stats: SourceStats,
+  item: { source_job_id?: string; apply_url?: string },
+  err: { code?: string; message?: string; details?: string; constraint?: string } | null | undefined
+): void {
+  if (err?.code === '23505' && isApplyUrlUniqueViolation(err)) {
+    stats.duplicateSkipped = (stats.duplicateSkipped || 0) + 1;
+    console.log(`   ↷ [Duplicate Skipped] ${stats.sourceName}: ${item.source_job_id} apply_url already owned by another job: ${item.apply_url}`);
+    return;
+  }
+  stats.failed++;
+  console.warn(`   ⚠️ [Write Error] ${stats.sourceName}: insert of ${item.source_job_id} failed: ${err?.message}`);
+}
+
 /** Only real per-job write failures fail a shard; source warnings do not. */
 export function shouldFailShard(summary: Pick<IngestionRunSummary, 'totalFailed'>): boolean {
   return summary.totalFailed > 0;
@@ -836,8 +871,7 @@ async function main() {
                       }
                     } else {
                       // Never fall back to an apply_url match: that row may belong to another identity.
-                      stats.failed++;
-                      console.warn(`   ⚠️ [Write Error] ${source.name}: insert of ${singleItem.source_job_id} failed: ${singleErr?.message}`);
+                      recordInsertFailure(stats, singleItem, singleErr);
                     }
                   }
                 }
@@ -983,7 +1017,7 @@ async function main() {
       const written = stats.inserted + stats.updated;
       const warnings = stats.warnings || 0;
       console.log(
-        `   📋 [Source Summary] ${source.name} (${source.type}): fetched=${stats.fetched}, written=${written}, skipped=${stats.skipped}, warnings=${warnings}`
+        `   📋 [Source Summary] ${source.name} (${source.type}): fetched=${stats.fetched}, written=${written}, skipped=${stats.skipped}, duplicate_skipped=${stats.duplicateSkipped || 0}, warnings=${warnings}`
       );
     }
 
@@ -993,6 +1027,7 @@ async function main() {
     summary.totalSkipped += stats.skipped;
     summary.totalFailed += stats.failed;
     summary.totalWarnings = (summary.totalWarnings || 0) + (stats.warnings || 0);
+    summary.totalDuplicateSkipped = (summary.totalDuplicateSkipped || 0) + (stats.duplicateSkipped || 0);
   }
 
   // Run sources with concurrency worker pool
@@ -1104,6 +1139,7 @@ async function main() {
   console.log(`Total Written:    ${summary.totalInserted + summary.totalUpdated} ${isDryRun ? '(dry-run)' : ''}`);
   console.log(`Total Skipped:    ${summary.totalSkipped}`);
   console.log(`Total Warnings:   ${summary.totalWarnings || 0}`);
+  console.log(`Duplicate Skipped: ${summary.totalDuplicateSkipped || 0}`);
   console.log(`Total Errors:     ${summary.totalFailed}`);
   if (!isSkipCleanup && supabase) {
     console.log(`Expired Marked:   ${summary.cleanup.markedExpired}`);
