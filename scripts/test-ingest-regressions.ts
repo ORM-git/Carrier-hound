@@ -433,6 +433,35 @@ async function runRegressionTests() {
   recordInsertFailure(dupStats, dupItem, null);
   assert(dupStats.failed === 3 && dupStats.duplicateSkipped === 1, 'Other unique violations and real write errors still fail the shard');
 
+  // Negative regression (reviewer HOLD on c3b5126b): a 23505 on jobs_source_source_job_id_key
+  // whose ROW DATA mentions jobs_apply_url_unique must NOT be treated as an apply_url duplicate.
+  const trapStats: any = { sourceName: 'SumUp', failed: 0 };
+  recordInsertFailure(trapStats, dupItem, {
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "jobs_source_source_job_id_key"',
+    details: 'Key (source, source_job_id)=(sumup, sumup-8592596002) already exists; conflicts with jobs_apply_url_unique backfill row.',
+  });
+  assert(
+    trapStats.failed === 1 && !trapStats.duplicateSkipped,
+    '23505 on another constraint fails the row even when details mention jobs_apply_url_unique'
+  );
+
+  // Constraint field (when the driver provides it) decides directly, never the details payload
+  const fieldStats: any = { sourceName: 'SumUp', failed: 0 };
+  recordInsertFailure(fieldStats, dupItem, {
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "jobs_apply_url_unique"',
+    constraint: 'jobs_apply_url_unique',
+  });
+  assert(fieldStats.duplicateSkipped === 1 && fieldStats.failed === 0, 'constraint field naming jobs_apply_url_unique is skipped as duplicate');
+  recordInsertFailure(fieldStats, dupItem, {
+    code: '23505',
+    message: 'duplicate key value violates unique constraint "jobs_apply_url_unique"',
+    details: 'row mentions jobs_apply_url_unique',
+    constraint: 'jobs_source_source_job_id_key',
+  });
+  assert(fieldStats.failed === 1 && fieldStats.duplicateSkipped === 1, 'constraint field naming another constraint still fails the row');
+
   // ---------------------------------------------------------------------------
   // TEST 9: Digest job scan pagination across a shared boundary timestamp (runs the real query logic)
   // ---------------------------------------------------------------------------
