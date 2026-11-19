@@ -221,6 +221,9 @@ export default function JobRadarGlobe() {
   const [isLoadingTelemetry, setIsLoadingTelemetry] = useState<boolean>(true);
   const [telemetryError, setTelemetryError] = useState<string | null>(null);
   const [textureLoaded, setTextureLoaded] = useState<boolean>(false);
+  // True once the initial earth texture load has settled (succeeded or failed), so the
+  // full-screen loading overlay can clear even when the texture itself failed to load.
+  const [textureLoadFailed, setTextureLoadFailed] = useState<boolean>(false);
 
   // Respect prefers-reduced-motion: no auto-rotate, no pulse animations
   const [prefersReducedMotion] = useState<boolean>(
@@ -875,7 +878,11 @@ export default function JobRadarGlobe() {
     const earthGeo = new THREE.SphereGeometry(5, isMobile ? 48 : 64, isMobile ? 48 : 64);
     disposablesRef.current.push(earthGeo);
 
-    const loadStyleTexture = (style: GlobeMapStyle, onReady: (tex: THREE.Texture) => void) => {
+    const loadStyleTexture = (
+      style: GlobeMapStyle,
+      onReady: (tex: THREE.Texture) => void,
+      onError?: () => void
+    ) => {
       const cached = globeTexturesRef.current[style];
       if (cached) {
         onReady(cached);
@@ -896,7 +903,9 @@ export default function JobRadarGlobe() {
         },
         undefined,
         () => {
-          /* leave fallback material in place on error */
+          // Leave the fallback wireframe mesh in place; let the caller settle any
+          // loading state so the UI doesn't wait forever on a texture that never arrives.
+          if (!isCancelled) onError?.();
         }
       );
     };
@@ -947,6 +956,11 @@ export default function JobRadarGlobe() {
           () => {}
         );
       }
+    }, () => {
+      // Texture failed to load: settle the loading state so the overlay clears and the
+      // fallback wireframe globe (already in the scene) is shown instead of waiting forever.
+      setTextureLoaded(true);
+      setTextureLoadFailed(true);
     });
 
     // Fresnel atmosphere glow: soft cyan rim, replaces the old flat backside-sphere halo
@@ -970,8 +984,10 @@ export default function JobRadarGlobe() {
         varying vec3 vNormal;
         varying vec3 vViewPos;
         void main() {
-          float fresnel = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0), 2.6);
-          gl_FragColor = vec4(glowColor, fresnel * 0.85);
+          float facing = clamp(dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0);
+          // Narrower, softer falloff than a plain pow() curve: a subtle glow rather than a solid ring.
+          float fresnel = smoothstep(0.75, 1.0, 1.0 - facing);
+          gl_FragColor = vec4(glowColor, fresnel * 0.5);
         }
       `,
       transparent: true,
@@ -1591,6 +1607,15 @@ export default function JobRadarGlobe() {
               Retry
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Small non-blocking note: the globe texture itself failed to load (city data and
+          interactions still work normally against the plain wireframe fallback globe). */}
+      {textureLoadFailed && (
+        <div className="absolute top-36 sm:top-28 right-3 z-30 pointer-events-none flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/85 border border-amber-500/30 backdrop-blur-md text-[11px] text-amber-300 shadow-lg">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>Globe imagery failed to load — showing wireframe view</span>
         </div>
       )}
 
