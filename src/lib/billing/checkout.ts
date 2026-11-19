@@ -1,5 +1,5 @@
 import { createClient } from "../supabase/client";
-import { openRazorpayCheckout } from "./razorpay";
+import { openRazorpayCheckout, openRazorpaySubscription as openRazorpaySubscriptionGateway } from "./razorpay";
 
 export interface CheckoutResult {
   success: boolean;
@@ -79,9 +79,11 @@ export async function handleProCheckout(
 }
 
 /**
- * Recurring (auto-renew) subscriptions are disabled for launch: every plan is a
- * one-time prepaid order (see handleProCheckout). This always fails closed without
- * any auth lookup or network call, regardless of NEXT_PUBLIC_AUTORENEW_ENABLED.
+ * High-level Auto-Renew Subscription checkout orchestrator.
+ * 1. Checks NEXT_PUBLIC_AUTORENEW_ENABLED and NEXT_PUBLIC_BILLING_ENABLED flags.
+ * 2. Verifies authentication state (redirects to /login if signed out).
+ * 3. Opens Razorpay modal in subscription mode.
+ * 4. Unreachable when the auto-renew flag is off.
  */
 export async function openRazorpaySubscription(
   options: {
@@ -93,5 +95,58 @@ export async function openRazorpaySubscription(
     onDismiss?: () => void;
   } = {}
 ) {
-  options.onError?.("Recurring subscriptions are disabled. All plans are one-time prepaid purchases.");
+  if (
+    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED !== "true" ||
+    process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true"
+  ) {
+    options.onError?.("Auto-renew subscriptions are currently disabled.");
+    return;
+  }
+
+  const {
+    planCode = "monthly",
+    redirectTarget,
+    onStart,
+    onError,
+    onSuccess,
+    onDismiss,
+  } = options;
+
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user || (await supabase.auth.getUser()).data.user;
+
+  const currentPath = typeof window !== "undefined"
+    ? window.location.pathname + window.location.search
+    : "/pricing";
+  const target = redirectTarget || currentPath;
+
+  if (!user) {
+    const loginUrl = `/login?next=${encodeURIComponent(target)}`;
+    if (typeof window !== "undefined") {
+      window.location.href = loginUrl;
+    }
+    return;
+  }
+
+  onStart?.();
+
+  await openRazorpaySubscriptionGateway({
+    planCode,
+    authToken: session?.access_token,
+    userEmail: user.email,
+    userName: user.user_metadata?.full_name,
+    onSuccess: () => {
+      onSuccess?.();
+      if (typeof window !== "undefined") {
+        window.location.href = target;
+      }
+    },
+    onError: (err: any) => {
+      onError?.(err?.message || "Subscription processing failed. Please try again.");
+    },
+    onDismiss: () => {
+      onDismiss?.();
+    },
+  });
 }

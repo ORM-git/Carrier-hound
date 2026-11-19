@@ -9,7 +9,7 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
-import { getUserSubscription } from "@/lib/billing/subscription";
+import { getUserSubscription, cancelAutoRenewSubscription } from "@/lib/billing/subscription";
 import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
@@ -58,6 +58,25 @@ function SettingsPageInner() {
   // Billing state
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
+  const [isCancellingAutoRenew, setIsCancellingAutoRenew] = useState(false);
+
+  const handleCancelAutoRenew = async () => {
+    if (isCancellingAutoRenew) return;
+    setIsCancellingAutoRenew(true);
+    try {
+      const res = await cancelAutoRenewSubscription();
+      if (res.success) {
+        toast.success("Auto-renewal cancelled. Pro access remains active until the end of your billing cycle.");
+        setSubscription((prev) => (prev ? { ...prev, cancelAtPeriodEnd: true } : null));
+      } else {
+        toast.error(res.error || "Failed to cancel auto-renewal. Please contact support.");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to cancel auto-renewal.");
+    } finally {
+      setIsCancellingAutoRenew(false);
+    }
+  };
 
   // Derive plan & pricing from central normalized plan ID and real subscription record
   const normalizedPlan = normalizePlanCode(subscription?.planId);
@@ -548,10 +567,42 @@ function SettingsPageInner() {
               </div>
 
               {isPro && subscription?.currentPeriodEnd && (
-                <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-600">
-                    Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (plans do not auto-renew)
-                  </span>
+                <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                  {subscription.subscriptionId?.startsWith("sub_") || (subscription.planId === "monthly" && !subscription.cancelAtPeriodEnd) ? (
+                    subscription.cancelAtPeriodEnd ? (
+                      <div>
+                        <span className="text-amber-700 dark:text-amber-400 font-semibold block">
+                          Auto-renewal cancelled
+                        </span>
+                        <span className="text-slate-500">
+                          Your Pro access remains active until <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong>.
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <span className="text-slate-600 block">
+                            Auto-renews on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (₹499/month)
+                          </span>
+                          <span className="text-slate-400 text-[11px]">
+                            Renewal reminder will be sent 24-48h prior to billing.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleCancelAutoRenew}
+                          disabled={isCancellingAutoRenew}
+                          className="self-start sm:self-auto px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-semibold transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          {isCancellingAutoRenew ? "Cancelling..." : "Cancel Auto-Renewal"}
+                        </button>
+                      </>
+                    )
+                  ) : (
+                    <span className="text-slate-600">
+                      Pro access ends on: <strong>{new Date(subscription.currentPeriodEnd).toLocaleDateString()}</strong> (plans do not auto-renew)
+                    </span>
+                  )}
                 </div>
               )}
             </div>
