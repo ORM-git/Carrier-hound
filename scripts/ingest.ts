@@ -12,8 +12,10 @@ import {
   SourceConfig,
   SourceStats,
 } from './types';
-import { detectCategory, slugify } from './utils/sanitizer';
+import { detectCategory } from './utils/sanitizer';
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
+import { assertCanonicalSourceIds, buildSourceId, RequisitionTracker } from '../src/lib/jobs/highVolumeEnrichment';
+import { findExistingJobs, probeJobsColumn } from './utils/canonicalJobWrite';
 import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
@@ -195,6 +197,7 @@ let hasJobDescriptionsTable = false;
 let hasIngestRunsTable = false;
 let hasVerifiedColumn = false;
 let hasCoverageColumn = false;
+let hasSourceIdColumn = false;
 
 // Entry-count guard, not a measured performance claim. Evicted companies
 // follow the existing DB lookup path; correctness does not depend on a hit.
@@ -249,10 +252,16 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
     const { error: verErr } = await supabase.from('jobs').select('verified').limit(1);
     hasVerifiedColumn = !verErr;
 
-    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}`);
   } catch (err: any) {
     console.warn(`[Schema Detection Warning]: ${err.message}`);
   }
+
+  // 20261116d adds jobs.source_id; once present every write must carry it (see assertCanonicalSourceIds).
+  // Outside the best-effort try above: false only when the column is truly missing; a transient probe
+  // error is retried and then aborts the run, never falling back to writes without source_id.
+  hasSourceIdColumn = await probeJobsColumn(supabase, 'source_id');
+
+  console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}, source_id_col=${hasSourceIdColumn}`);
 }
 
 // Resolve or create company record in companies table with logo resolution
@@ -577,8 +586,8 @@ async function main() {
     cleanup: { markedExpired: 0, permanentlyDeleted: 0 },
   };
 
-  const seenApplyUrls = new Set<string>();
-  const seenAtsRoles = new Set<string>(); // dedupeKey for Tier 1: slugify(company)::slugify(title)::(country_code || 'any')
+  // In-run dedupe by requisition identity (same source+id, or apply URL held by another source)
+  const seenRequisitions = new RequisitionTracker();
   let totalAccumulatedJobs = 0;
 
   async function processSource(source: SourceConfig, sourceIndex: number): Promise<void> {
@@ -618,25 +627,13 @@ async function main() {
           continue;
         }
 
-        // Intra-run deduplication on apply_url
-        if (seenApplyUrls.has(job.apply_url)) {
+        // Intra-run dedupe (ATS vs feed included) needs matching identity; listing text alone never drops a job.
+        if (seenRequisitions.isDuplicate(job)) {
           stats.skipped++;
           continue;
         }
 
-        // Cross-source deduplication: Tier 1 ATS direct vs Tier 2 Aggregator feeds
-        const roleDedupeKey = `${slugify(job.company)}::${slugify(job.title)}::${job.country_code || 'any'}`;
-        if (isAtsSource(source.type)) {
-          seenAtsRoles.add(roleDedupeKey);
-        } else {
-          // If a verified ATS role already exists, drop the feed duplicate
-          if (seenAtsRoles.has(roleDedupeKey)) {
-            stats.skipped++;
-            continue;
-          }
-        }
-
-        seenApplyUrls.add(job.apply_url);
+        seenRequisitions.add(job);
         validJobs.push(job);
         totalAccumulatedJobs++;
         if (MAX_PER_SOURCE && validJobs.length >= MAX_PER_SOURCE) break;
@@ -690,6 +687,7 @@ async function main() {
               const row: any = {
                 source: j.source,
                 source_job_id: j.source_job_id,
+                ...(hasSourceIdColumn ? { source_id: buildSourceId(source.type, source.target) } : {}),
                 title: j.title,
                 company: j.company,
                 location: j.location,
@@ -734,13 +732,20 @@ async function main() {
               return row;
             });
 
-            // Upsert jobs into Supabase
-            const { data: upsertedRows, error: upsertErr } = await supabase
-              .from('jobs')
-              .upsert(jobsPayload, { onConflict: 'source,source_job_id' })
-              .select('id, source_job_id');
+            if (hasSourceIdColumn) assertCanonicalSourceIds(jobsPayload);
 
-            if (!upsertErr) {
+            // Legacy schema (no source_id column) upserts on (source, source_job_id). With source_id the
+            // partial canonical index cannot be an ON CONFLICT target, so the identity lookup below is the write key.
+            let upsertedRows: Array<{ id: string; source_job_id: string }> | null = null;
+            let upsertErr: any = null;
+            if (!hasSourceIdColumn) {
+              ({ data: upsertedRows, error: upsertErr } = await supabase
+                .from('jobs')
+                .upsert(jobsPayload, { onConflict: 'source,source_job_id' })
+                .select('id, source_job_id'));
+            }
+
+            if (!hasSourceIdColumn && !upsertErr) {
               stats.inserted += jobsPayload.length;
 
               // If job_descriptions table exists, insert/upsert descriptions
@@ -762,30 +767,9 @@ async function main() {
                 }
               }
             } else {
-              // High-Performance Fallback: Lookup existing by apply_url & source_job_id
-              const ids = jobsPayload.map((b: any) => b.source_job_id).filter(Boolean);
-              const urls = jobsPayload.map((b: any) => b.apply_url).filter(Boolean);
-
-              const [resUrl, resId] = await Promise.all([
-                supabase.from('jobs').select('id, source_job_id, apply_url').in('apply_url', urls),
-                supabase.from('jobs').select('id, source_job_id, apply_url').in('source_job_id', ids),
-              ]);
-
-              const existingIdMap = new Map<string, string>();
-              const existingUrlMap = new Map<string, string>();
-
-              if (resUrl.data) {
-                for (const row of resUrl.data) {
-                  if (row.apply_url) existingUrlMap.set(row.apply_url, row.id);
-                  if (row.source_job_id) existingIdMap.set(row.source_job_id, row.id);
-                }
-              }
-              if (resId.data) {
-                for (const row of resId.data) {
-                  if (row.source_job_id) existingIdMap.set(row.source_job_id, row.id);
-                  if (row.apply_url) existingUrlMap.set(row.apply_url, row.id);
-                }
-              }
+              // Identity-scoped lookup: canonical (source_id, source_job_id), or (source, source_job_id) on the
+              // legacy schema. Never by apply URL, so it cannot pick a row that belongs to another identity.
+              const existing = await findExistingJobs(supabase, jobsPayload, { canonical: hasSourceIdColumn });
 
               const toInsert: any[] = [];
               const toUpdate: Array<{ id: string; item: any; original: NormalizedJob }> = [];
@@ -793,11 +777,11 @@ async function main() {
               for (let jIdx = 0; jIdx < jobsPayload.length; jIdx++) {
                 const item = jobsPayload[jIdx];
                 const originalJob = batchChunk[jIdx];
-                const existingId =
-                  existingIdMap.get(item.source_job_id) || existingUrlMap.get(item.apply_url);
+                const hit = existing[jIdx];
 
-                if (existingId) {
-                  toUpdate.push({ id: existingId, item, original: originalJob });
+                if (hit) {
+                  // Keep the existing row's source so the legacy (source, source_job_id) key never collides.
+                  toUpdate.push({ id: hit.id, item: { ...item, source: hit.source }, original: originalJob });
                 } else {
                   toInsert.push(item);
                 }
@@ -851,19 +835,9 @@ async function main() {
                         }
                       }
                     } else {
-                      // If it already exists by apply_url, update it
-                      const { error: urlUpdErr } = await supabase
-                        .from('jobs')
-                        .update({
-                          ...singleItem,
-                          last_seen_at: new Date().toISOString(),
-                          is_active: true,
-                          status: 'active',
-                        })
-                        .eq('apply_url', singleItem.apply_url);
-
-                      if (!urlUpdErr) stats.updated++;
-                      else stats.failed++;
+                      // Never fall back to an apply_url match: that row may belong to another identity.
+                      stats.failed++;
+                      console.warn(`   ⚠️ [Write Error] ${source.name}: insert of ${singleItem.source_job_id} failed: ${singleErr?.message}`);
                     }
                   }
                 }

@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "generated": "2026-11-17",
+  "generated": "2026-11-18",
   "files": {
     "netlify.toml": "b6df1050ac87c3aa2461a04a62409ac14baf45b97d9ccafc50ea2810322b8721",
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
-    "package.json": "9c30dd2dccd72c6140615e54de327446ca0bfdd1f89f81e8c061176fd20beb2f",
+    "package.json": "6493466be0446b9d1958abaacd4f92826edaf6ab8a445635fd255eb1ca9e5c75",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
     ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
-    ".github/workflows/ci.yml": "9deb8716faa81cb9fbb32da8160e374461be0c8c71acd06c8f68acb1724e87d8",
+    ".github/workflows/ci.yml": "256f002cf60dca2f5db0cc00e998f176dc63671ce574225696d6de51b62f7033",
     ".github/workflows/daily-digest-cron.yml": "3bc0da18fe530e53d51cc05923a126307e94fd1387fb40a4a5148f34ddfd1cb4",
     ".github/workflows/early-access-digest-cron.yml": "e4bc35949c06fb612e642a936968c403bba0960ce3082e59b3e449fe1c9e3dfd",
     ".github/workflows/ingest.yml": "6d4243354bdf4add0c36699ceb6694376ce585368ca6ae8d33d24f4fa8893c2f",

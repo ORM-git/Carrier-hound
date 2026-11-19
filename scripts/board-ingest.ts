@@ -25,7 +25,7 @@
  * - Live-write mode: OFF by default. Requires explicit --live-write AND --confirm-prod-write.
  *   Credentials read from local env only; never logged, never in CI/workflows (workflows stay dry-run only).
  * - Safety controls: --max-jobs N, batches of 500, --boards N, --dry-plan, abort if estimated DB growth > 150 MB without --allow-large.
- * - Writes go through standard upsert (onConflict: 'source,source_job_id', set last_seen_at).
+ * - Writes are keyed on canonical (source_id, source_job_id) via utils/canonicalJobWrite (set last_seen_at).
  *   No new tables/columns, do NOT depend on consecutive_misses migration. Skip closed-job logic in live-write.
  */
 
@@ -45,10 +45,19 @@ import {
   detectJobType,
   detectSeniority,
   detectCategory,
-  slugify,
   parseSalary,
   formatSalary,
 } from './utils/sanitizer';
+import {
+  addRoleSource,
+  assertCanonicalSourceIds,
+  boardRoleKey,
+  boardSourceId,
+  isCrossRoleDuplicate,
+  RequisitionTracker,
+} from '../src/lib/jobs/highVolumeEnrichment';
+
+import { writeJobsByCanonicalIdentity } from './utils/canonicalJobWrite';
 import { politeFetchJson, politeFetchText, isForbiddenDomain } from './utils/polite-fetch';
 import {
   loadBoardWatermarks,
@@ -866,15 +875,11 @@ export function normalizeAtsJob(
  */
 export function dedupJobs(
   jobs: NormalizedJob[],
-  existingSeenUrls?: Set<string>,
-  existingSeenRoles?: Set<string>
+  seen: RequisitionTracker = new RequisitionTracker()
 ): {
   accepted: NormalizedJob[];
   duplicates: number;
 } {
-  const seenUrls = existingSeenUrls || new Set<string>();
-  const seenRoles = existingSeenRoles || new Set<string>();
-  const seenAtsIds = new Set<string>();
   const accepted: NormalizedJob[] = [];
   let duplicates = 0;
 
@@ -884,29 +889,14 @@ export function dedupJobs(
       continue;
     }
 
-    // 1. Stable ATS ID key
-    const atsKey = `${job.source}:${job.source_job_id}`;
-    if (seenAtsIds.has(atsKey)) {
+    // Same (source, source_job_id), or apply URL held by another source. Same-source jobs with
+    // different ids are distinct requisitions and are kept (identical text or shared URL included).
+    if (seen.isDuplicate(job)) {
       duplicates++;
       continue;
     }
 
-    // 2. Strict apply URL deduplication
-    if (seenUrls.has(job.apply_url)) {
-      duplicates++;
-      continue;
-    }
-
-    // 3. Cross-source / duplicate role key: normalized company + title + location
-    const roleKey = `${slugify(job.company)}::${slugify(job.title)}::${slugify(job.location || 'unspecified')}`;
-    if (seenRoles.has(roleKey)) {
-      duplicates++;
-      continue;
-    }
-
-    seenAtsIds.add(atsKey);
-    seenUrls.add(job.apply_url);
-    seenRoles.add(roleKey);
+    seen.add(job);
     accepted.push(job);
   }
 
@@ -1157,8 +1147,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
     errors: [],
   };
 
-  const seenUrls = new Set<string>();
-  const seenRoles = new Set<string>();
+  const seenRequisitions = new RequisitionTracker();
   const allAcceptedJobs: NormalizedJob[] = [];
 
   for (let i = 0; i < targets.length; i++) {
@@ -1192,7 +1181,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             .map((item) => normalizeAtsJob(item, target.ats, target.company || target.token, target.token))
             .filter((j): j is NormalizedJob => j !== null);
 
-          const dedupRes = dedupJobs(normalized, seenUrls, seenRoles);
+          const dedupRes = dedupJobs(normalized, seenRequisitions);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
@@ -1238,7 +1227,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             }
           }
 
-          const dedupRes = dedupJobs(candidateJobs, seenUrls, seenRoles);
+          const dedupRes = dedupJobs(candidateJobs, seenRequisitions);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
           fetchSucceeded = true;
@@ -1264,7 +1253,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
             }
           }
 
-          const dedupRes = dedupJobs(candidateItems, seenUrls, seenRoles);
+          const dedupRes = dedupJobs(candidateItems, seenRequisitions);
           acceptedForCompany = dedupRes.accepted;
           duplicates = dedupRes.duplicates;
         }
@@ -1339,7 +1328,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
   if (supabase && allAcceptedJobs.length > 0) {
     const uniqueCompanyNames = Array.from(new Set(allAcceptedJobs.map((j) => j.company)));
-    const existingDbRoles = new Set<string>();
+    const existingDbRoles = new Map<string, Set<string>>(); // role key -> sources holding it
     const existingDbSourceIds = new Set<string>();
 
     // Chunk company lookups in groups of 50 to avoid query size limits
@@ -1350,28 +1339,31 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       const compSlice = uniqueCompanyNames.slice(i, i + compChunkSize);
       const { data: dbRows, error: dbErr } = await supabase
         .from('jobs')
-        .select('id, company, title, location, source, source_job_id, apply_url, posted_at, discovered_at')
+        .select('id, company, title, location, source, source_id, source_job_id, apply_url, posted_at, discovered_at')
         .in('company', compSlice);
 
       if (!dbErr && Array.isArray(dbRows)) {
         for (const row of dbRows) {
-          const roleKey = `${slugify(row.company)}::${slugify(row.title)}::${slugify(row.location || 'unspecified')}`;
-          existingDbRoles.add(roleKey);
-          const sourceIdKey = `${row.source}:${row.source_job_id}`;
-          existingDbSourceIds.add(sourceIdKey);
-          existingDbJobsMap.set(sourceIdKey, {
-            posted_at: row.posted_at || null,
-            discovered_at: row.discovered_at || null,
-          });
+          addRoleSource(existingDbRoles, boardRoleKey(row), row.source);
+          const meta = { posted_at: row.posted_at || null, discovered_at: row.discovered_at || null };
+          // Index each row by legacy key and by canonical key (a greenhouse row is the same requisition
+          // as its greenhouse-board twin: same source_id + source_job_id).
+          for (const key of [`${row.source}:${row.source_job_id}`, row.source_id && `canon:${row.source_id}:${row.source_job_id}`]) {
+            if (!key) continue;
+            existingDbSourceIds.add(key);
+            existingDbJobsMap.set(key, meta);
+          }
         }
       }
     }
 
-    const seenLocalRoles = new Set<string>();
+    const seenLocalRoles = new Map<string, Set<string>>();
 
     for (const job of allAcceptedJobs) {
-      const sourceIdKey = `${job.source}:${job.source_job_id}`;
-      const roleKey = `${slugify(job.company)}::${slugify(job.title)}::${slugify(job.location || 'unspecified')}`;
+      const legacyKey = `${job.source}:${job.source_job_id}`;
+      const canonicalKey = job.company_slug ? `canon:${boardSourceId(job)}:${job.source_job_id}` : null;
+      const sourceIdKey = canonicalKey && existingDbSourceIds.has(canonicalKey) ? canonicalKey : legacyKey;
+      const roleKey = boardRoleKey(job);
 
       if (existingDbSourceIds.has(sourceIdKey)) {
         // Exists with identical source + source_job_id -> UPDATE
@@ -1384,8 +1376,11 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           last_seen_at: nowIso,
         };
         rowsToUpdate.push(updatedJob);
-      } else if (existingDbRoles.has(roleKey) || seenLocalRoles.has(roleKey)) {
-        // Role (company + title + location) already exists under different ID -> DEDUP SKIP
+      } else if (
+        isCrossRoleDuplicate(existingDbRoles, roleKey, job.source) ||
+        isCrossRoleDuplicate(seenLocalRoles, roleKey, job.source)
+      ) {
+        // Same role + apply URL already held by another source -> DEDUP SKIP
         dedupSkipped++;
       } else {
         // Brand new job -> INSERT
@@ -1397,7 +1392,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           last_seen_at: nowIso,
         };
         rowsToInsert.push(newJob);
-        seenLocalRoles.add(roleKey);
+        addRoleSource(seenLocalRoles, roleKey, job.source);
       }
     }
   } else {
@@ -1505,6 +1500,9 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       console.log(`🛡️ [Insert-Only] ${skippedUpdateCount} existing rows skipped (pass --allow-updates to enable updates).\n`);
     }
 
+    // Validate every row's canonical source_id before the first write, so nothing is half-written.
+    jobsToWrite.forEach(boardSourceId);
+
     const BATCH_SIZE = customBatchSize && customBatchSize > 0 ? customBatchSize : 500;
     let totalWritten = 0;
     let batchesCount = 0;
@@ -1515,6 +1513,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       const payload = chunk.map((j) => ({
         source: j.source,
+        source_id: boardSourceId(j),
         source_job_id: j.source_job_id,
         title: j.title,
         company: j.company,
@@ -1545,14 +1544,12 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         salary_period: j.salary_period || null,
       }));
 
+      assertCanonicalSourceIds(payload);
       try {
-        const { error: writeErr } = allowUpdates
-          ? await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id' })
-          : await supabase.from('jobs').upsert(payload, { ignoreDuplicates: true });
-
-        if (writeErr) {
-          throw new Error(`Database write error in batch ${batchesCount}: ${writeErr.message}`);
-        }
+        // Keyed on canonical (source_id, source_job_id); insert-only mode skips rows that already exist.
+        await writeJobsByCanonicalIdentity(supabase, payload, { allowUpdates }).catch((e: any) => {
+          throw new Error(`Database write error in batch ${batchesCount}: ${e.message}`);
+        });
       } catch (err: any) {
         console.error('\n======================================================');
         console.error(`🚨 BATCH ${batchesCount} FAILED: ABORTED DURING LIVE-WRITE`);

@@ -52,7 +52,8 @@ async function runTests() {
   assert(hasImmediateClear, "timeoutId is cleared immediately upon fetch resolution");
 
   // Verify that multi-batch DB writes are outside the timeoutPromise
-  const dbWriteAfterFetch = ingestCode.indexOf(".from('jobs')\n              .upsert(jobsPayload");
+  const dbWriteMatch = ingestCode.match(/\.from\(['"]jobs['"]\)\s*\.upsert\(\s*jobsPayload/);
+  const dbWriteAfterFetch = dbWriteMatch?.index ?? -1;
   const fetchTimeoutIndex = ingestCode.indexOf("await fetchWithTimeout(");
   assert(
     dbWriteAfterFetch > fetchTimeoutIndex,
