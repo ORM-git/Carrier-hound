@@ -220,7 +220,7 @@ export default function JobFunctionBottomSheet({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Please select/enter your expected job function"
-              className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:focus:ring-brand-500"
             />
             {searchQuery && (
               <button
@@ -237,24 +237,24 @@ export default function JobFunctionBottomSheet({
 
         {/* Selected Roles Preview Row (if any selected) */}
         {selectedRoles.length > 0 && (
-          <div className="px-5 py-2.5 bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30 flex items-center gap-2 overflow-x-auto">
-            <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex-shrink-0">
+          <div className="px-5 py-2.5 bg-emerald-50/50 lg:bg-brand-50/50 dark:bg-emerald-950/20 lg:dark:bg-brand-900/20 border-b border-emerald-100 lg:border-brand-100 dark:border-emerald-900/30 lg:dark:border-brand-900/30 flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs font-semibold text-emerald-800 lg:text-brand-800 dark:text-emerald-300 lg:dark:text-brand-300 flex-shrink-0">
               Selected ({selectedRoles.length}):
             </span>
             <div className="flex items-center gap-1.5 flex-nowrap">
               {selectedRoles.map((role) => (
                 <span
                   key={role}
-                  className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-300 dark:border-emerald-800 flex-shrink-0"
+                  className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 lg:bg-brand-100 dark:bg-emerald-900/60 lg:dark:bg-brand-900/60 text-emerald-900 lg:text-brand-900 dark:text-emerald-100 lg:dark:text-brand-100 border border-emerald-300 lg:border-brand-300 dark:border-emerald-800 lg:dark:border-brand-800 flex-shrink-0"
                 >
                   <span>{role}</span>
                   <button
                     type="button"
                     onClick={() => onToggleRole(role)}
                     aria-label={`Remove ${role}`}
-                    className="p-0.5 hover:bg-emerald-200 dark:hover:bg-emerald-800 rounded-full"
+                    className="p-0.5 hover:bg-emerald-200 lg:hover:bg-brand-200 dark:hover:bg-emerald-800 lg:dark:hover:bg-brand-800 rounded-full"
                   >
-                    <X className="w-3 h-3 text-emerald-700 dark:text-emerald-200" />
+                    <X className="w-3 h-3 text-emerald-700 lg:text-brand-700 dark:text-emerald-200 lg:dark:text-brand-200" />
                   </button>
                 </span>
               ))}
@@ -270,7 +270,7 @@ export default function JobFunctionBottomSheet({
               {searchResults && searchResults.length > 0 ? (
                 searchResults.map((cat) => (
                   <div key={cat.id} className="space-y-3">
-                    <h3 className="text-sm font-bold text-emerald-700 dark:text-emerald-400 border-b border-emerald-100 dark:border-emerald-900/40 pb-1">
+                    <h3 className="text-sm font-bold text-emerald-700 lg:text-brand-700 dark:text-emerald-400 lg:dark:text-brand-400 border-b border-emerald-100 lg:border-brand-100 dark:border-emerald-900/40 lg:dark:border-brand-900/40 pb-1">
                       {cat.name}
                     </h3>
                     <div className="space-y-3 pl-2">
@@ -289,7 +289,7 @@ export default function JobFunctionBottomSheet({
                                   onClick={() => onToggleRole(role)}
                                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
                                     isSelected
-                                      ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
+                                      ? "bg-emerald-100 lg:bg-brand-100 dark:bg-emerald-900/60 lg:dark:bg-brand-900/60 text-emerald-900 lg:text-brand-900 dark:text-emerald-100 lg:dark:text-brand-100 border border-emerald-500/50 lg:border-brand-500/50 shadow-xs font-semibold"
                                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700"
                                   }`}
                                 >
@@ -328,21 +328,21 @@ export default function JobFunctionBottomSheet({
                           onClick={() => setSelectedCatId(cat.id)}
                           className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left text-sm transition ${
                             isSelected
-                              ? "bg-emerald-100/70 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-100 font-bold shadow-xs border-r-4 border-emerald-600"
+                              ? "bg-brand-100/70 dark:bg-brand-900/60 text-brand-900 dark:text-brand-100 font-bold shadow-xs border-r-4 border-brand-600"
                               : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 font-medium"
                           }`}
                         >
                           <span className="truncate pr-2">{cat.name}</span>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             {count > 0 && (
-                              <span className="text-[11px] px-1.5 py-0.2 bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 rounded-full font-bold">
+                              <span className="text-[11px] px-1.5 py-0.2 bg-brand-200 dark:bg-brand-900 text-brand-900 dark:text-brand-100 rounded-full font-bold">
                                 {count}
                               </span>
                             )}
                             <ChevronRight
                               className={`w-4 h-4 ${
                                 isSelected
-                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  ? "text-brand-600 dark:text-brand-400"
                                   : "text-zinc-400"
                               }`}
                             />
@@ -377,7 +377,7 @@ export default function JobFunctionBottomSheet({
                                 onClick={() => onToggleRole(role)}
                                 className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition ${
                                   isSelected
-                                    ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
+                                    ? "bg-brand-100 dark:bg-brand-900/60 text-brand-900 dark:text-brand-100 border border-brand-500/50 shadow-xs font-semibold"
                                     : "bg-zinc-100 dark:bg-zinc-800/80 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700/80"
                                 }`}
                               >
@@ -479,7 +479,7 @@ export default function JobFunctionBottomSheet({
             {selectedRoles.length === 0 ? (
               <span>Select at least 1 role</span>
             ) : (
-              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="font-semibold text-emerald-600 lg:text-brand-600 dark:text-emerald-400 lg:dark:text-brand-400">
                 {selectedRoles.length} {selectedRoles.length === 1 ? "role" : "roles"} selected
               </span>
             )}

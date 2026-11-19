@@ -481,17 +481,17 @@ export default function OnboardingStep2({
           ============================================================ */}
       <div className="hidden lg:flex min-h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
         {/* 1. LEFT WELCOME PANEL (Consistent split shell with Step 1) */}
-        <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-emerald-50/90 via-teal-50/70 to-emerald-100/50 dark:from-zinc-950 dark:via-emerald-950/20 dark:to-zinc-900 border-r border-emerald-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
+        <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-brand-50/90 via-brand-50/70 to-brand-100/50 dark:from-zinc-950 dark:via-brand-900/20 dark:to-zinc-900 border-r border-brand-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
           <div>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-emerald-500/20 shadow-xs flex items-center justify-center p-2 text-emerald-600">
+              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-brand-500/20 shadow-xs flex items-center justify-center p-2 text-brand-600">
                 <BrandIcon className="w-6 h-6" />
               </div>
               <div>
                 <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
                   CareerMonke
                 </span>
-                <span className="block text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                <span className="block text-[11px] font-semibold text-brand-700 dark:text-brand-400">
                   Profile & Resume
                 </span>
               </div>
@@ -500,8 +500,8 @@ export default function OnboardingStep2({
 
           {/* Welcome Block */}
           <div className="space-y-4 max-w-md">
-            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-emerald-200/80 dark:border-emerald-800/50 shadow-xs">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-brand-200/80 dark:border-brand-800/50 shadow-xs">
+              <div className="w-2 h-2 rounded-full bg-brand-500" />
               <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
                 Personalized Matching
               </span>
@@ -556,7 +556,7 @@ export default function OnboardingStep2({
                 <div className="space-y-4">
                   {[
                     { title: "LinkedIn profile", icon: <LinkedInIcon className="w-5 h-5 text-[#0077b5]" /> },
-                    { title: "Upload resume", icon: <FileText className="w-5 h-5 text-emerald-600" /> },
+                    { title: "Upload resume", icon: <FileText className="w-5 h-5 text-brand-600" /> },
                   ].map((c) => (
                     <div key={c.title} className={`${cardClass} opacity-80 flex flex-row items-center gap-3`}>
                       {c.icon}
@@ -579,7 +579,7 @@ export default function OnboardingStep2({
                   {/* CARD 1: Resume or LinkedIn "Save to PDF" upload */}
                   <section data-testid="card-resume" aria-labelledby="resume-card-title" className={cardClass}>
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 flex-shrink-0">
+                      <div className="w-10 h-10 rounded-2xl bg-brand-500/10 flex items-center justify-center text-brand-600 flex-shrink-0">
                         <FileText className="w-5 h-5" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -590,7 +590,7 @@ export default function OnboardingStep2({
                       </div>
                       <div className="flex-shrink-0">
                         {resumeName ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 dark:text-brand-400">
                             <Check className="w-3 h-3" /> Saved
                           </span>
                         ) : resumeSkipped ? (
@@ -637,15 +637,15 @@ export default function OnboardingStep2({
                           }}
                           className={`w-full border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition flex flex-col items-center justify-center min-h-[160px] ${
                             isDragging
-                              ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
-                              : "border-zinc-300 dark:border-zinc-700 hover:border-emerald-500/80 bg-zinc-50/50 dark:bg-zinc-800/40"
+                              ? "border-brand-500 bg-brand-50/50 dark:bg-brand-900/30"
+                              : "border-zinc-300 dark:border-zinc-700 hover:border-brand-500/80 bg-zinc-50/50 dark:bg-zinc-800/40"
                           }`}
                         >
                           {resumeName ? (
                             <span className="flex flex-col items-center gap-1.5">
-                              <FileCheck className="w-7 h-7 text-emerald-600" />
+                              <FileCheck className="w-7 h-7 text-brand-600" />
                               <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 break-all">{resumeName}</span>
-                              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Choose another file to replace</span>
+                              <span className="text-[11px] text-brand-600 dark:text-brand-400 font-medium">Choose another file to replace</span>
                             </span>
                           ) : (
                             <span className="flex flex-col items-center gap-1.5">
@@ -707,7 +707,7 @@ export default function OnboardingStep2({
                       </div>
                       <div className="flex-shrink-0">
                         {linkedinSaved ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 dark:text-brand-400">
                             <Check className="w-3 h-3" /> Saved
                           </span>
                         ) : linkedinSkipped ? (
@@ -736,7 +736,7 @@ export default function OnboardingStep2({
                               setLinkedinSaved(false);
                             }}
                             placeholder="https://www.linkedin.com/in/your-profile"
-                            className="w-full px-4 py-2.5 sm:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            className="w-full px-4 py-2.5 sm:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
                           />
                           {linkedinError && (
                             <p
@@ -772,7 +772,7 @@ export default function OnboardingStep2({
           <div className="w-full bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-100 dark:border-zinc-800 p-6 mt-6">
             <div className="max-w-xl mx-auto space-y-3">
               <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full rounded-full" style={{ width: "100%" }} />
+                <div className="bg-brand-500 h-full rounded-full" style={{ width: "100%" }} />
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-sm font-semibold text-zinc-400 dark:text-zinc-500">Step 2 of 2</span>

@@ -8,7 +8,7 @@ import CountryPickerModal from "./CountryPickerModal";
 import { JOB_TYPE_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 
 const HELP_BUTTON_CLASS =
-  "p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 transition-colors";
+  "p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 lg:focus-visible:ring-brand-500 transition-colors";
 
 interface OnboardingStep1Props {
   roles: string[];
@@ -378,18 +378,18 @@ export default function OnboardingStep1({
           ============================================================ */}
       <div className="hidden lg:flex min-h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
         {/* 1. LEFT WELCOME PANEL (Desktop full-height sticky split shell) */}
-        <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-emerald-50/90 via-teal-50/70 to-emerald-100/50 dark:from-zinc-950 dark:via-emerald-950/20 dark:to-zinc-900 border-r border-emerald-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
+        <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-brand-50/90 via-brand-50/70 to-brand-100/50 dark:from-zinc-950 dark:via-brand-900/20 dark:to-zinc-900 border-r border-brand-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
           {/* Brand Bar */}
           <div>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-emerald-500/20 shadow-xs flex items-center justify-center p-2 text-emerald-600">
+              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-brand-500/20 shadow-xs flex items-center justify-center p-2 text-brand-600">
                 <BrandIcon className="w-6 h-6" />
               </div>
               <div>
                 <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
                   CareerMonke
                 </span>
-                <span className="block text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                <span className="block text-[11px] font-semibold text-brand-700 dark:text-brand-400">
                   {isEditMode ? "Preferences Editor" : "Job Discovery"}
                 </span>
               </div>
@@ -399,8 +399,8 @@ export default function OnboardingStep1({
           {/* Welcome Block (Non-AI CM Welcome & Reference Typography) */}
           <div className="space-y-4 max-w-md">
             {/* Reference-style speech badge treatment */}
-            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-emerald-200/80 dark:border-emerald-800/50 shadow-xs">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-brand-200/80 dark:border-brand-800/50 shadow-xs">
+              <div className="w-2 h-2 rounded-full bg-brand-500" />
               <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
                 CareerMonke Guide
               </span>
@@ -462,10 +462,10 @@ export default function OnboardingStep1({
                       setActiveJobTrigger(e.currentTarget);
                       setIsBottomSheetOpen(true);
                     }}
-                    className="w-full py-3.5 px-4 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl flex items-center justify-between text-left text-sm text-zinc-400 dark:text-zinc-500 bg-zinc-50/50 dark:bg-zinc-900/50 hover:bg-emerald-50/30 transition group"
+                    className="w-full py-3.5 px-4 border border-zinc-200 dark:border-zinc-800 hover:border-brand-500 dark:hover:border-brand-500 rounded-2xl flex items-center justify-between text-left text-sm text-zinc-400 dark:text-zinc-500 bg-zinc-50/50 dark:bg-zinc-900/50 hover:bg-brand-50/30 transition group"
                   >
                     <span>Please select/enter your expected job function</span>
-                    <Plus className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 transition" />
+                    <Plus className="w-4 h-4 text-zinc-400 group-hover:text-brand-600 transition" />
                   </button>
                 ) : (
                   <div className="space-y-2.5">
@@ -473,14 +473,14 @@ export default function OnboardingStep1({
                       {roles.map((r) => (
                         <span
                           key={r}
-                          className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30"
+                          className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold bg-brand-50 dark:bg-brand-900/50 text-brand-800 dark:text-brand-200 border border-brand-500/30"
                         >
                           <span>{r}</span>
                           <button
                             type="button"
                             onClick={() => onRemoveRole(r)}
                             aria-label={`Remove ${r}`}
-                            className="p-0.5 text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-100 rounded-full hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 transition"
+                            className="p-0.5 text-brand-600 hover:text-brand-900 dark:hover:text-brand-100 rounded-full hover:bg-brand-200/50 dark:hover:bg-brand-800/50 transition"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -493,7 +493,7 @@ export default function OnboardingStep1({
                         setActiveJobTrigger(e.currentTarget);
                         setIsBottomSheetOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-0.5"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline pt-0.5"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Add more roles</span>
@@ -519,14 +519,14 @@ export default function OnboardingStep1({
                         onClick={() => onToggleEmploymentType(jt.id)}
                         className={`flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
                           isChecked
-                            ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                            ? "bg-brand-500/10 border-brand-500 text-brand-900 dark:text-brand-100 shadow-xs"
                             : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
                         }`}
                       >
                         <div
                           className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
                             isChecked
-                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              ? "bg-brand-600 border-brand-600 text-white"
                               : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
                           }`}
                         >
@@ -555,10 +555,10 @@ export default function OnboardingStep1({
                         setActiveCountryTrigger(e.currentTarget);
                         setIsCountryPickerOpen(true);
                       }}
-                      className="w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-emerald-500 dark:hover:border-emerald-500 transition"
+                      className="w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-brand-500 dark:hover:border-brand-500 transition"
                     >
                       <div className="flex items-center gap-2.5 truncate">
-                        <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <Globe className="w-4 h-4 text-brand-600 flex-shrink-0" />
                         {country ? (
                           <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
                             {country}
@@ -569,7 +569,7 @@ export default function OnboardingStep1({
                           </span>
                         )}
                       </div>
-                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0 ml-2">
+                      <span className="text-xs font-semibold text-brand-600 dark:text-brand-400 flex-shrink-0 ml-2">
                         {country ? "Change" : "Select"}
                       </span>
                     </button>
@@ -580,7 +580,7 @@ export default function OnboardingStep1({
                     <div
                       className={`w-full h-[50px] flex items-center justify-between p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
                         openToRemote
-                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100"
+                          ? "bg-brand-500/10 border-brand-500 text-brand-900 dark:text-brand-100"
                           : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
                       }`}
                     >
@@ -592,7 +592,7 @@ export default function OnboardingStep1({
                         <div
                           className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
                             openToRemote
-                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              ? "bg-brand-600 border-brand-600 text-white"
                               : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
                           }`}
                         >
@@ -654,14 +654,14 @@ export default function OnboardingStep1({
                         onClick={() => onSelectWorkAuth(opt.label)}
                         className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
                           isSelected
-                            ? "bg-emerald-500/10 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                            ? "bg-brand-500/10 border-brand-500 text-brand-900 dark:text-brand-100 shadow-xs"
                             : "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
                         }`}
                       >
                         <div
                           className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors flex-shrink-0 ${
                             isSelected
-                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              ? "bg-brand-600 border-brand-600 text-white"
                               : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
                           }`}
                         >
@@ -682,7 +682,7 @@ export default function OnboardingStep1({
               {/* Progress Bar (Step 1 of 2 -> 50%) */}
               <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2 rounded-full overflow-hidden">
                 <div
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                  className="bg-brand-500 h-full rounded-full transition-all duration-300"
                   style={{ width: "50%" }}
                 />
               </div>
