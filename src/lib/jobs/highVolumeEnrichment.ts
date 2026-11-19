@@ -32,7 +32,18 @@ export function buildSourceId(vendor: string, boardToken: string): string {
   return `${vendor.trim().toLowerCase()}:${boardToken.trim().toLowerCase()}`;
 }
 
-const WHITESPACE_REGEX = /[ \t\n\r\f\v\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
+/**
+ * Write gate: every jobs row must carry a canonical source_id. The unique index on
+ * (source_id, source_job_id) is partial (source_id IS NOT NULL), so a NULL row would bypass it.
+ */
+export function assertCanonicalSourceIds(rows: Array<{ source_id?: string | null }>): void {
+  const missing = rows.filter((r) => typeof r.source_id !== 'string' || !r.source_id.trim()).length;
+  if (missing > 0) {
+    throw new Error(`Refusing jobs write: ${missing} row(s) have no canonical source_id`);
+  }
+}
+
+const WHITESPACE_REGEX =/[ \t\n\r\f\v\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g;
 const COMPANY_SUFFIX_REGEX = new RegExp(
   '(?<![\\p{L}\\p{N}_])(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\\.?(?![\\p{L}\\p{N}_])',
   'gui'
@@ -184,6 +195,67 @@ export function dedupeKey(
   return computeSimilarityHashV2(company, title, country, location);
 }
 
+/**
+ * Apply URL as a requisition identity: drops the fragment and a trailing slash, keeps the
+ * query (it often carries the requisition id, e.g. ?gh_jid=123). '' when absent.
+ */
+export function normalizeApplyUrl(url?: string | null): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    u.hash = '';
+    u.pathname = u.pathname.replace(/\/+$/, '');
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Same-role key that also carries requisition identity (apply URL). Two postings with
+ * identical listing text but different apply URLs never share a key.
+ */
+export function requisitionDedupeKey(textKey: string | null, applyUrl?: string | null): string | null {
+  return textKey && `${textKey}|${normalizeApplyUrl(applyUrl)}`;
+}
+
+/**
+ * Role key (company + title + full location + apply URL), Unicode-safe. Null when company or title
+ * is empty/too short: such jobs are never deduped (ASCII slugs collapsed non-Latin roles together).
+ * The apply URL keeps two requisitions with identical listing text apart.
+ */
+export function boardRoleKey(j: {
+  company?: string | null;
+  title?: string | null;
+  location?: string | null;
+  apply_url?: string | null;
+}): string | null {
+  const k = dedupeKey(j.company, j.title);
+  return requisitionDedupeKey(k && `${k}::${cleanLocationKey(j.location || 'unspecified')}`, j.apply_url);
+}
+
+/**
+ * Cross-role dedup skip: the role key is already held by a DIFFERENT source. A holder from the
+ * same source has a different source_job_id, so it is a distinct requisition and never skips.
+ */
+export function isCrossRoleDuplicate(roleSources: Map<string, Set<string>>, roleKey: string | null, source: string): boolean {
+  const holders = roleKey ? roleSources.get(roleKey) : undefined;
+  return !!holders && !holders.has(source);
+}
+
+/** Canonical `<vendor>:<board_token>` for a board row; throws when the board slug is missing. */
+export function boardSourceId(j: { source: string; company_slug?: string }): string {
+  return buildSourceId(j.source.replace(/-board$/, ''), j.company_slug || '');
+}
+
+export function addRoleSource(roleSources: Map<string, Set<string>>, roleKey: string | null, source: string): void {
+  if (!roleKey) return;
+  const holders = roleSources.get(roleKey);
+  if (holders) holders.add(source);
+  else roleSources.set(roleKey, new Set([source]));
+}
+
 export interface DedupeRow {
   id: string;
   company?: string | null;
@@ -191,6 +263,10 @@ export interface DedupeRow {
   country?: string | null;
   location?: string | null;
   last_seen_at?: string | null;
+  /** Requisition identity: (source, source_job_id) is unique, so two rows of one source are distinct requisitions. */
+  source?: string | null;
+  source_job_id?: string | null;
+  apply_url?: string | null;
   descLen: number;
 }
 
@@ -203,6 +279,8 @@ export interface DuplicateExpiryPlan {
   toExpire: ExpiryItem[];
   /** Rows skipped because their key was empty or too short. */
   ineligible: number;
+  /** Rows kept because their text-matching group holds distinct requisitions (same source, different job id). */
+  distinctRequisitions: number;
   /** 1% of the active rows scanned (floored). */
   onePercent: number;
   /** True when duplicates exceed 1% of active rows and the override flag was not given. */
@@ -210,9 +288,10 @@ export interface DuplicateExpiryPlan {
 }
 
 /**
- * Plans duplicate expiry: groups active rows by dedupeKey, keeps the row with the longest
- * description (then latest last_seen_at), and caps the run at maxExpire. Refuses (blocked)
- * when duplicates exceed 1% of the active rows unless allowOverOnePercent is set.
+ * Plans duplicate expiry: groups active rows by requisitionDedupeKey (listing text + apply URL),
+ * keeps the row with the longest description (then latest last_seen_at), and caps the run at
+ * maxExpire. A group with two rows from the same source is distinct requisitions and is never
+ * expired. Refuses (blocked) when duplicates exceed 1% of the active rows unless allowOverOnePercent.
  */
 export function planDuplicateExpiry(
   activeRows: DedupeRow[],
@@ -220,8 +299,9 @@ export function planDuplicateExpiry(
 ): DuplicateExpiryPlan {
   const groups = new Map<string, DedupeRow[]>();
   let ineligible = 0;
+  let distinctRequisitions = 0;
   for (const r of activeRows) {
-    const key = dedupeKey(r.company, r.title, r.country, r.location);
+    const key = requisitionDedupeKey(dedupeKey(r.company, r.title, r.country, r.location), r.apply_url);
     if (!key) {
       ineligible++;
       continue;
@@ -234,6 +314,11 @@ export function planDuplicateExpiry(
   const candidates: ExpiryItem[] = [];
   groups.forEach((group, key) => {
     if (group.length < 2) return;
+    const sources = new Set(group.map((r) => (r.source || '').trim().toLowerCase()));
+    if (sources.size < group.length) {
+      distinctRequisitions += group.length;
+      return;
+    }
     group.sort((a, b) => b.descLen - a.descLen || (b.last_seen_at || '').localeCompare(a.last_seen_at || ''));
     for (let i = 1; i < group.length; i++) candidates.push({ id: group[i].id, keptId: group[0].id, key });
   });
@@ -241,7 +326,7 @@ export function planDuplicateExpiry(
   const onePercent = Math.floor(activeRows.length * 0.01);
   const blocked = candidates.length > onePercent && !opts.allowOverOnePercent;
   const toExpire = blocked ? [] : candidates.slice(0, Math.max(0, opts.maxExpire));
-  return { candidates, toExpire, ineligible, onePercent, blocked };
+  return { candidates, toExpire, ineligible, distinctRequisitions, onePercent, blocked };
 }
 
 // ============================================================================

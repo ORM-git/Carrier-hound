@@ -15,6 +15,7 @@ import {
 import { detectCategory } from './utils/sanitizer';
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { roleDedupeKey } from './utils/crossSourceDedupe';
+import { assertCanonicalSourceIds, buildSourceId } from '../src/lib/jobs/highVolumeEnrichment';
 import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
@@ -196,6 +197,7 @@ let hasJobDescriptionsTable = false;
 let hasIngestRunsTable = false;
 let hasVerifiedColumn = false;
 let hasCoverageColumn = false;
+let hasSourceIdColumn = false;
 
 // Entry-count guard, not a measured performance claim. Evicted companies
 // follow the existing DB lookup path; correctness does not depend on a hit.
@@ -250,7 +252,11 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
     const { error: verErr } = await supabase.from('jobs').select('verified').limit(1);
     hasVerifiedColumn = !verErr;
 
-    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}`);
+    // 20261116d adds jobs.source_id; once present every write must carry it (see assertCanonicalSourceIds).
+    const { error: srcIdErr } = await supabase.from('jobs').select('source_id').limit(1);
+    hasSourceIdColumn = !srcIdErr;
+
+    console.log(`Schema capabilities: companies=${hasCompaniesTable}, job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}, source_id_col=${hasSourceIdColumn}`);
   } catch (err: any) {
     console.warn(`[Schema Detection Warning]: ${err.message}`);
   }
@@ -688,6 +694,7 @@ async function main() {
               const row: any = {
                 source: j.source,
                 source_job_id: j.source_job_id,
+                ...(hasSourceIdColumn ? { source_id: buildSourceId(source.type, source.target) } : {}),
                 title: j.title,
                 company: j.company,
                 location: j.location,
@@ -731,6 +738,8 @@ async function main() {
 
               return row;
             });
+
+            if (hasSourceIdColumn) assertCanonicalSourceIds(jobsPayload);
 
             // Upsert jobs into Supabase
             const { data: upsertedRows, error: upsertErr } = await supabase

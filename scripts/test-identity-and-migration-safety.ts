@@ -314,24 +314,57 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   assert.ok(fs.existsSync(migrationEPath), `Migration file 20261116e must exist at: ${migrationEPath}`);
   const migrationERaw = fs.readFileSync(migrationEPath, "utf8");
 
-  console.log("  Applying 20261116e Concurrent Indexes individually outside transaction block...");
-  const statementsE = migrationERaw
-    .split(";")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
-  for (const stmt of statementsE) {
-    // Strip leading comments to ensure clean statement execution
-    const cleanStmt = stmt
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n")
-      .trim();
-    if (cleanStmt) {
-      await db.exec(cleanStmt);
+  // One statement per exec (CONCURRENTLY cannot run in a transaction); `;` inside $$ bodies does not split.
+  const statementsE: string[] = [];
+  let current: string[] = [];
+  let inDollar = false;
+  for (const line of migrationERaw.split("\n")) {
+    if (!inDollar && line.trim().startsWith("--")) continue;
+    current.push(line);
+    if ((line.match(/\$\$/g) || []).length % 2 === 1) inDollar = !inDollar;
+    if (!inDollar && line.trim().endsWith(";")) {
+      statementsE.push(current.join("\n").trim());
+      current = [];
     }
   }
-  console.log("  [PASS] 20261116e applied successfully.");
+  const applyMigrationE = async () => {
+    for (const stmt of statementsE) await db.exec(stmt);
+  };
+
+  // Counterexamples: a same-name NON-UNIQUE index (what IF NOT EXISTS would silently keep) plus
+  // duplicate authoritative keys. The repair must refuse loudly first, then rebuild the index.
+  await db.exec(`
+    CREATE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs (source_id, source_job_id);
+    INSERT INTO public.jobs (id, title, company, source_id, source_job_id, is_active, status) VALUES
+      ('dddddddd-0000-0000-0000-000000000001', 'Dup A', 'Acme', 'greenhouse:acme', 'acme-1', true, 'active'),
+      ('dddddddd-0000-0000-0000-000000000002', 'Dup B', 'Acme', 'greenhouse:acme', 'acme-1', true, 'active');
+  `);
+  await assert.rejects(applyMigrationE(), /duplicate \(source_id, source_job_id\) keys/,
+    "20261116e must fail loudly when duplicate authoritative keys exist");
+  console.log("  [PASS] 20261116e refuses to build the unique index over duplicate authoritative keys.");
+  await db.exec("DELETE FROM public.jobs WHERE id::text LIKE 'dddddddd-%';");
+
+  console.log("  Applying 20261116e Concurrent Indexes individually outside transaction block...");
+  await applyMigrationE();
+  await applyMigrationE(); // idempotent re-run
+  const uniqIdx = await db.query<{ indisunique: boolean; indisvalid: boolean; indisready: boolean }>(`
+    SELECT i.indisunique, i.indisvalid, i.indisready FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'idx_jobs_source_id_source_job_id_uniq';
+  `);
+  assert.strictEqual(uniqIdx.rows.length, 1, "idx_jobs_source_id_source_job_id_uniq must exist exactly once");
+  assert.deepStrictEqual({ ...uniqIdx.rows[0] }, { indisunique: true, indisvalid: true, indisready: true },
+    "Same-name non-unique index must be detected and rebuilt as a valid UNIQUE index");
+  const leftovers = await db.query(
+    "SELECT relname FROM pg_class WHERE relname LIKE '%_broken' UNION ALL SELECT proname FROM pg_proc WHERE proname = 'repair_645_expected_indexes';"
+  );
+  assert.strictEqual(leftovers.rows.length, 0, "No _broken index or helper function may remain");
+  await assert.rejects(
+    db.exec(`INSERT INTO public.jobs (id, title, company, source_id, source_job_id, is_active, status) VALUES
+      ('dddddddd-0000-0000-0000-000000000003', 'A', 'Acme', 'greenhouse:acme', 'acme-9', true, 'active'),
+      ('dddddddd-0000-0000-0000-000000000004', 'B', 'Acme', 'greenhouse:acme', 'acme-9', true, 'active');`),
+    "Rebuilt unique index must reject duplicate (source_id, source_job_id)"
+  );
+  console.log("  [PASS] 20261116e applied: same-name non-unique index detected and rebuilt UNIQUE, idempotent.");
 
   // 6. Execute Split Migration Phase 3: 20261116f (Bounded Batch Backfill)
   const migrationFPath = path.resolve(__dirname, "../supabase/migrations/20261116f_repair_642_batch_backfill.sql");
@@ -350,7 +383,8 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
     VALUES
       ('bbbbbbbb-1111-0000-0000-000000000001', 'Engineer 1', 'Test Company 1', 'US', 'New York', 'greenhouse', 'ats', true, 'active'),
       ('bbbbbbbb-2222-0000-0000-000000000002', 'Engineer 2', 'Test Company 2', 'US', 'Austin', 'manual', 'direct', true, 'active'),
-      ('bbbbbbbb-3333-0000-0000-000000000003', 'Engineer 3', 'Test Company 3', 'US', 'Remote', 'lever', 'ats', true, 'active');
+      ('bbbbbbbb-3333-0000-0000-000000000003', 'Engineer 3', 'Test Company 3', 'US', 'Remote', 'lever', 'ats', true, 'active'),
+      ('bbbbbbbb-4444-0000-0000-000000000004', 'Engineer 4', 'Test Company 3', 'US', 'Remote', 'adzuna', 'api', true, 'active');
   `);
 
   console.log("  Applying 20261116f Bounded Batch Backfill...");
@@ -384,6 +418,26 @@ export async function runIdentityAndMigrationSafetyTest(): Promise<void> {
   assert.strictEqual(Number((pendingPriorities.rows[0] as any).count), 0, "Zero pending source_priority after resumable backfill");
   assert.strictEqual(Number((pendingHashes.rows[0] as any).count), 0, "Zero pending similarity_hash_v2 after resumable backfill");
   console.log("  [PASS] Resumable backfill verified: 0 pending rows remaining across all batched targets.");
+
+  // Counterexample: these rows were inserted after 20261116d, so DEFAULT 2 filled source_priority.
+  const priorities = await db.query<{ id: string; source_priority: number }>(
+    "SELECT id, source_priority FROM public.jobs WHERE id::text LIKE 'bbbbbbbb-%' ORDER BY id;"
+  );
+  assert.deepStrictEqual(
+    priorities.rows.map((r) => [r.id.slice(0, 13), Number(r.source_priority)]),
+    [["bbbbbbbb-1111", 1], ["bbbbbbbb-2222", 1], ["bbbbbbbb-3333", 1], ["bbbbbbbb-4444", 2]],
+    "ATS/direct rows (greenhouse, direct, lever) must end at priority 1 despite DEFAULT 2; aggregator stays 2"
+  );
+  console.log("  [PASS] ATS greenhouse/lever rows end at source_priority 1 (DEFAULT 2 overridden).");
+
+  for (const bad of ["NULL", "0", "-1", "5001"]) {
+    await assert.rejects(
+      db.exec(`CALL public.repair_645_run_resumable_backfill(${bad});`),
+      /p_batch_size must be between 1 and 5000/,
+      `Batch size ${bad} must be rejected`
+    );
+  }
+  console.log("  [PASS] Backfill batch size rejects NULL, <1 and >5000.");
 
   // 7. Containment Assertions
   const triggerCheck = await db.query(

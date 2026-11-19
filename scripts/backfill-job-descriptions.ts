@@ -66,7 +66,7 @@ async function deduplicateExistingJobs(supabase: SupabaseClient): Promise<number
   while (true) {
     const { data: batch, error } = await supabase
       .from('jobs')
-      .select('id, company, title, country, location, last_seen_at, description')
+      .select('id, company, title, country, location, last_seen_at, description, source, source_job_id, apply_url')
       .eq('is_active', true)
       .range(offset, offset + pageSize - 1);
 
@@ -87,7 +87,7 @@ async function deduplicateExistingJobs(supabase: SupabaseClient): Promise<number
   const byId = new Map(rows.map((r) => [r.id, r]));
   console.log(
     `Active rows: ${rows.length} | duplicates found: ${plan.candidates.length} | ` +
-      `never deduped (empty/short key): ${plan.ineligible} | 1% limit: ${plan.onePercent} | cap: ${MAX_EXPIRE}`
+      `never deduped (empty/short key): ${plan.ineligible} | distinct requisitions kept: ${plan.distinctRequisitions} | 1% limit: ${plan.onePercent} | cap: ${MAX_EXPIRE}`
   );
 
   if (plan.blocked) {

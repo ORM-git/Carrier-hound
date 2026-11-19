@@ -32,6 +32,10 @@ DECLARE
   v_batch_count integer := 0;
   v_phase_total integer := 0;
 BEGIN
+  IF p_batch_size IS NULL OR p_batch_size < 1 OR p_batch_size > 5000 THEN
+    RAISE EXCEPTION 'repair_645_run_resumable_backfill: p_batch_size must be between 1 and 5000, got %', p_batch_size;
+  END IF;
+
   SET careermonke.skip_touch_last_seen = 'on';
 
   -- Phase 1: Bounded batched backfill of companies.canonical_domain
@@ -62,21 +66,25 @@ BEGIN
     COMMIT;
   END LOOP;
 
-  -- Phase 2: Bounded batched backfill of jobs.source_priority
+  -- Phase 2: Bounded batched backfill of jobs.source_priority.
+  -- 20261116d adds the column with DEFAULT 2, so existing ATS rows already read 2 (not NULL):
+  -- also pick up ATS rows not yet at 1. Only ever upgrades to 1; never downgrades a row.
   v_phase_total := 0;
   LOOP
     WITH batch AS (
-      SELECT id,
-        CASE
-          WHEN source_type IN ('ats', 'direct', 'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'amazon', 'microsoft')
-            OR lower(COALESCE(source, '')) IN ('greenhouse', 'lever', 'ashby', 'smartrecruiters', 'recruitee', 'workable', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join')
+      SELECT j.id, p.new_priority
+      FROM public.jobs j
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN j.source_type IN ('ats', 'direct', 'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'amazon', 'microsoft')
+            OR lower(COALESCE(j.source, '')) IN ('greenhouse', 'lever', 'ashby', 'smartrecruiters', 'recruitee', 'workable', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join')
           THEN 1
           ELSE 2
         END AS new_priority
-      FROM public.jobs
-      WHERE source_priority IS NULL
+      ) p
+      WHERE j.source_priority IS NULL OR (p.new_priority = 1 AND j.source_priority <> 1)
       LIMIT p_batch_size
-      FOR UPDATE SKIP LOCKED
+      FOR UPDATE OF j SKIP LOCKED
     )
     UPDATE public.jobs j
     SET source_priority = b.new_priority

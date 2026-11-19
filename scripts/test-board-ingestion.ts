@@ -451,8 +451,10 @@ async function runTests() {
   ];
 
   const dedupResult = dedupJobs(rawBatch);
-  assert(dedupResult.accepted.length === 3, `Deduplication reduces 5 items (with 2 duplicates) to 3 unique jobs (got: ${dedupResult.accepted.length})`);
-  assert(dedupResult.duplicates === 2, `Duplicates dropped count is 2 (got: ${dedupResult.duplicates})`);
+  // Row 2 repeats the ATS id -> dropped. Row 3 has identical text but a different apply URL, so it is a
+  // distinct requisition and must never be skipped (PR #645 review blocker 1).
+  assert(dedupResult.accepted.length === 4, `Deduplication reduces 5 items (with 1 duplicate) to 4 jobs (got: ${dedupResult.accepted.length})`);
+  assert(dedupResult.duplicates === 1, `Duplicates dropped count is 1 (got: ${dedupResult.duplicates})`);
 
   // ---------------------------------------------------------------------------
   // 6. Closed-Job Handling: Non-Empty Fetch Check, source+company_slug scope, 2 misses

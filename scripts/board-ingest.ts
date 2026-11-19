@@ -48,16 +48,14 @@ import {
   parseSalary,
   formatSalary,
 } from './utils/sanitizer';
-import { cleanLocationKey, dedupeKey } from '../src/lib/jobs/highVolumeEnrichment';
+import {
+  addRoleSource,
+  assertCanonicalSourceIds,
+  boardRoleKey,
+  boardSourceId,
+  isCrossRoleDuplicate,
+} from '../src/lib/jobs/highVolumeEnrichment';
 
-/**
- * Role key (company + title + full location), Unicode-safe. Null when company or title is
- * empty/too short: such jobs are never deduped (ASCII slugs collapsed non-Latin roles together).
- */
-function boardRoleKey(j: { company?: string | null; title?: string | null; location?: string | null }): string | null {
-  const k = dedupeKey(j.company, j.title);
-  return k && `${k}::${cleanLocationKey(j.location || 'unspecified')}`;
-}
 import { politeFetchJson, politeFetchText, isForbiddenDomain } from './utils/polite-fetch';
 import {
   loadBoardWatermarks,
@@ -1348,7 +1346,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
   if (supabase && allAcceptedJobs.length > 0) {
     const uniqueCompanyNames = Array.from(new Set(allAcceptedJobs.map((j) => j.company)));
-    const existingDbRoles = new Set<string>();
+    const existingDbRoles = new Map<string, Set<string>>(); // role key -> sources holding it
     const existingDbSourceIds = new Set<string>();
 
     // Chunk company lookups in groups of 50 to avoid query size limits
@@ -1364,8 +1362,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       if (!dbErr && Array.isArray(dbRows)) {
         for (const row of dbRows) {
-          const roleKey = boardRoleKey(row);
-          if (roleKey) existingDbRoles.add(roleKey);
+          addRoleSource(existingDbRoles, boardRoleKey(row), row.source);
           const sourceIdKey = `${row.source}:${row.source_job_id}`;
           existingDbSourceIds.add(sourceIdKey);
           existingDbJobsMap.set(sourceIdKey, {
@@ -1376,7 +1373,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       }
     }
 
-    const seenLocalRoles = new Set<string>();
+    const seenLocalRoles = new Map<string, Set<string>>();
 
     for (const job of allAcceptedJobs) {
       const sourceIdKey = `${job.source}:${job.source_job_id}`;
@@ -1393,8 +1390,11 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           last_seen_at: nowIso,
         };
         rowsToUpdate.push(updatedJob);
-      } else if (roleKey && (existingDbRoles.has(roleKey) || seenLocalRoles.has(roleKey))) {
-        // Role (company + title + location) already exists under different ID -> DEDUP SKIP
+      } else if (
+        isCrossRoleDuplicate(existingDbRoles, roleKey, job.source) ||
+        isCrossRoleDuplicate(seenLocalRoles, roleKey, job.source)
+      ) {
+        // Same role + apply URL already held by another source -> DEDUP SKIP
         dedupSkipped++;
       } else {
         // Brand new job -> INSERT
@@ -1406,7 +1406,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
           last_seen_at: nowIso,
         };
         rowsToInsert.push(newJob);
-        if (roleKey) seenLocalRoles.add(roleKey);
+        addRoleSource(seenLocalRoles, roleKey, job.source);
       }
     }
   } else {
@@ -1514,6 +1514,9 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
       console.log(`🛡️ [Insert-Only] ${skippedUpdateCount} existing rows skipped (pass --allow-updates to enable updates).\n`);
     }
 
+    // Validate every row's canonical source_id before the first write, so nothing is half-written.
+    jobsToWrite.forEach(boardSourceId);
+
     const BATCH_SIZE = customBatchSize && customBatchSize > 0 ? customBatchSize : 500;
     let totalWritten = 0;
     let batchesCount = 0;
@@ -1524,6 +1527,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       const payload = chunk.map((j) => ({
         source: j.source,
+        source_id: boardSourceId(j),
         source_job_id: j.source_job_id,
         title: j.title,
         company: j.company,
@@ -1554,6 +1558,7 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
         salary_period: j.salary_period || null,
       }));
 
+      assertCanonicalSourceIds(payload);
       try {
         const { error: writeErr } = allowUpdates
           ? await supabase.from('jobs').upsert(payload, { onConflict: 'source,source_job_id' })
