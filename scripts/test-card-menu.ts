@@ -150,23 +150,28 @@ function run() {
     console.log("  [PASS] Meta grid purity: Empty cells stay empty, zero invented defaults");
   }
 
-  // Footer action buttons: Hide, Save, Apply (Tailor Resume removed under restore-product-no-ai)
+  // Footer action buttons: Hide, Save, Apply (no AI/Tailor Resume CTA on the Jobs list, at any width)
   const hasFooterActions = jobsPageCode.includes("handleHideJob") &&
     jobsPageCode.includes("handleSaveJob") &&
     jobsPageCode.includes("Apply");
+  const hasNoTailorResumeCta = !jobsPageCode.includes("Tailor Resume");
   if (!hasFooterActions) {
     failures.push("FOOTER ACTIONS FAIL: Footer action buttons (Hide, Save, Apply) must be present.");
+  } else if (!hasNoTailorResumeCta) {
+    failures.push("FOOTER ACTIONS FAIL: Jobs list must not show a Tailor Resume / AI CTA at any width.");
   } else {
-    console.log("  [PASS] Footer actions: Hide, Save, and Apply buttons preserved");
+    console.log("  [PASS] Footer actions: Hide, Save, and Apply buttons preserved; no Tailor Resume/AI CTA on Jobs list");
   }
 
-  // Dark match panel on the right preserved
-  const hasDarkMatchPanel = jobsPageCode.includes("w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E]") ||
+  // Right panel preserved (listings-only Job Facts panel or legacy dark match panel)
+  const hasDarkMatchPanel =
+    jobsPageCode.includes("w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px]") ||
+    jobsPageCode.includes("Job Facts") ||
     jobsPageCode.includes("CircularMatchRing");
   if (!hasDarkMatchPanel) {
-    failures.push("MATCH PANEL FAIL: Right dark match panel must be preserved unchanged.");
+    failures.push("MATCH PANEL FAIL: Right dark match panel or Job Facts panel must be preserved.");
   } else {
-    console.log("  [PASS] Match panel: Right dark match panel preserved unchanged");
+    console.log("  [PASS] Match panel: Right panel geometry preserved");
   }
 
   // Mobile below 640px preserved

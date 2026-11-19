@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import { X, Search, ChevronDown, ChevronUp, Check, Plus } from "lucide-react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { X, Search, ChevronRight, Check, ArrowLeft } from "lucide-react";
 import { ONBOARDING_CATEGORIES, OnboardingCategory } from "@/data/onboardingCategories";
 
 interface JobFunctionBottomSheetProps {
@@ -9,6 +9,7 @@ interface JobFunctionBottomSheetProps {
   onClose: () => void;
   selectedRoles: string[];
   onToggleRole: (role: string) => void;
+  openerElement?: HTMLElement | null;
 }
 
 export default function JobFunctionBottomSheet({
@@ -16,14 +17,44 @@ export default function JobFunctionBottomSheet({
   onClose,
   selectedRoles,
   onToggleRole,
+  openerElement,
 }: JobFunctionBottomSheetProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const focusReturnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
-    "software-internet-ai": true,
-    "human-resource-administrative-legal": false,
-  });
+  const [selectedCatId, setSelectedCatId] = useState<string>("software-internet-ai");
+  const [mobileDrilldownCat, setMobileDrilldownCat] = useState<OnboardingCategory | null>(null);
+
+  // Focus return handler
+  const handleClose = useCallback(() => {
+    onClose();
+    // Return focus to opener element
+    const target = openerElement || openerRef.current;
+    if (target && typeof target.focus === "function") {
+      if (focusReturnTimeoutRef.current) clearTimeout(focusReturnTimeoutRef.current);
+      focusReturnTimeoutRef.current = setTimeout(() => {
+        target.focus();
+      }, 50);
+    }
+  }, [onClose, openerElement]);
+
+  // Capture active opener on mount/open
+  useEffect(() => {
+    if (isOpen) {
+      if (document.activeElement instanceof HTMLElement) {
+        openerRef.current = document.activeElement;
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (focusReturnTimeoutRef.current) clearTimeout(focusReturnTimeoutRef.current);
+    };
+  }, []);
 
   // Focus trap & Escape key listener
   useEffect(() => {
@@ -37,7 +68,7 @@ export default function JobFunctionBottomSheet({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        handleClose();
         return;
       }
 
@@ -70,19 +101,20 @@ export default function JobFunctionBottomSheet({
       clearTimeout(timer);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
-  const toggleCategory = (catId: string) => {
-    setExpandedCategories((prev) => ({
-      ...prev,
-      [catId]: !prev[catId],
-    }));
-  };
+  // Active category for desktop right pane
+  const currentCategory = useMemo(() => {
+    return (
+      ONBOARDING_CATEGORIES.find((c) => c.id === selectedCatId) ||
+      ONBOARDING_CATEGORIES[0]
+    );
+  }, [selectedCatId]);
 
-  // Filtered categories based on search
-  const filteredCategories = useMemo(() => {
+  // Search filtering across all categories and taxonomy groups
+  const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return ONBOARDING_CATEGORIES;
+    if (!q) return null;
 
     return ONBOARDING_CATEGORIES.map((cat) => {
       const catMatches = cat.name.toLowerCase().includes(q);
@@ -109,7 +141,26 @@ export default function JobFunctionBottomSheet({
     }).filter((cat) => cat.subgroups.length > 0);
   }, [searchQuery]);
 
+  // Counts of selected roles per category
+  const roleCountsByCat = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const cat of ONBOARDING_CATEGORIES) {
+      let count = 0;
+      for (const sg of cat.subgroups) {
+        for (const role of sg.roles) {
+          if (selectedRoles.includes(role)) {
+            count++;
+          }
+        }
+      }
+      map.set(cat.id, count);
+    }
+    return map;
+  }, [selectedRoles]);
+
   if (!isOpen) return null;
+
+  const isSearching = Boolean(searchQuery.trim());
 
   return (
     <div
@@ -124,28 +175,33 @@ export default function JobFunctionBottomSheet({
         aria-label="Close dialog backdrop"
         tabIndex={-1}
         className="fixed inset-0 cursor-default bg-transparent border-0"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
-      {/* Bottom sheet on mobile, Modal on desktop */}
+      {/* Modal / Bottom Sheet Window */}
       <div
         ref={modalRef}
-        className="relative z-10 w-full sm:max-w-xl max-h-[88vh] sm:max-h-[82vh] flex flex-col bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-5 duration-200"
+        className="relative z-10 w-full sm:max-w-3xl lg:max-w-4xl max-h-[92vh] sm:max-h-[85vh] flex flex-col bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-5 duration-200"
       >
         {/* Handle for mobile pull affordance */}
         <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto mt-3 mb-1 sm:hidden" />
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
-          <h2
-            id="job-function-dialog-title"
-            className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
-          >
-            Job Function
-          </h2>
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <h2
+              id="job-function-dialog-title"
+              className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
+            >
+              Job Function
+            </h2>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 hidden sm:inline">
+              (Choose roles matching your expertise)
+            </span>
+          </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close dialog"
             className="p-1.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
           >
@@ -153,8 +209,8 @@ export default function JobFunctionBottomSheet({
           </button>
         </div>
 
-        {/* Search input */}
-        <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        {/* Search Bar */}
+        <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
           <div className="relative">
             <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -163,7 +219,7 @@ export default function JobFunctionBottomSheet({
               aria-label="Search expected job function or role"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search expected job function or role..."
+              placeholder="Please select/enter your expected job function"
               className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             {searchQuery && (
@@ -179,57 +235,51 @@ export default function JobFunctionBottomSheet({
           </div>
         </div>
 
-        {/* Accordion List */}
-        <div className="flex-1 overflow-y-auto px-5 py-3 divide-y divide-zinc-100 dark:divide-zinc-800/80">
-          {filteredCategories.length === 0 ? (
-            <div className="py-12 text-center text-sm text-zinc-500 dark:text-zinc-400">
-              No matching job functions found for &ldquo;{searchQuery}&rdquo;.
-            </div>
-          ) : (
-            filteredCategories.map((cat) => {
-              const isExpanded =
-                Boolean(expandedCategories[cat.id]) || Boolean(searchQuery.trim());
-              const countInCat = cat.subgroups.reduce((acc, sg) => {
-                return (
-                  acc + sg.roles.filter((r) => selectedRoles.includes(r)).length
-                );
-              }, 0);
-
-              return (
-                <div key={cat.id} className="py-2.5 first:pt-1 last:pb-1">
-                  {/* Category accordion header */}
+        {/* Selected Roles Preview Row (if any selected) */}
+        {selectedRoles.length > 0 && (
+          <div className="px-5 py-2.5 bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30 flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex-shrink-0">
+              Selected ({selectedRoles.length}):
+            </span>
+            <div className="flex items-center gap-1.5 flex-nowrap">
+              {selectedRoles.map((role) => (
+                <span
+                  key={role}
+                  className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-300 dark:border-emerald-800 flex-shrink-0"
+                >
+                  <span>{role}</span>
                   <button
                     type="button"
-                    onClick={() => toggleCategory(cat.id)}
-                    aria-expanded={isExpanded}
-                    className="w-full flex items-center justify-between py-2 text-left text-sm font-semibold text-zinc-900 dark:text-zinc-100 hover:text-emerald-600 dark:hover:text-emerald-400 transition"
+                    onClick={() => onToggleRole(role)}
+                    aria-label={`Remove ${role}`}
+                    className="p-0.5 hover:bg-emerald-200 dark:hover:bg-emerald-800 rounded-full"
                   >
-                    <span className="flex items-center gap-2">
-                      {cat.name}
-                      {countInCat > 0 && (
-                        <span className="text-xs px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold rounded-full">
-                          {countInCat}
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-zinc-400">
-                      {isExpanded ? (
-                        <ChevronUp className="w-4 h-4" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4" />
-                      )}
-                    </span>
+                    <X className="w-3 h-3 text-emerald-700 dark:text-emerald-200" />
                   </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
-                  {/* Subgroups & Role Chips */}
-                  {isExpanded && (
-                    <div className="mt-2 pl-1 pb-3 space-y-4 animate-in fade-in-50 duration-150">
+        {/* Desktop Two-Pane Layout / Mobile Drill-in Layout */}
+        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-[380px] sm:min-h-[420px] max-h-[62vh]">
+          {/* SEARCH RESULTS VIEW (Applies to both Desktop and Mobile when searching) */}
+          {isSearching ? (
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              {searchResults && searchResults.length > 0 ? (
+                searchResults.map((cat) => (
+                  <div key={cat.id} className="space-y-3">
+                    <h3 className="text-sm font-bold text-emerald-700 dark:text-emerald-400 border-b border-emerald-100 dark:border-emerald-900/40 pb-1">
+                      {cat.name}
+                    </h3>
+                    <div className="space-y-3 pl-2">
                       {cat.subgroups.map((sg) => (
                         <div key={sg.name} className="space-y-2">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             {sg.name}
                           </h4>
-                          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                          <div className="flex flex-wrap gap-2">
                             {sg.roles.map((role) => {
                               const isSelected = selectedRoles.includes(role);
                               return (
@@ -237,18 +287,14 @@ export default function JobFunctionBottomSheet({
                                   key={role}
                                   type="button"
                                   onClick={() => onToggleRole(role)}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
                                     isSelected
-                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700/80 hover:border-zinc-300 dark:hover:border-zinc-600"
+                                      ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
+                                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700"
                                   }`}
                                 >
-                                  {isSelected ? (
-                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  ) : (
-                                    <Plus className="w-3 h-3 text-zinc-400" />
-                                  )}
-                                  {role}
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                                  <span>{role}</span>
                                 </button>
                               );
                             })}
@@ -256,28 +302,192 @@ export default function JobFunctionBottomSheet({
                         </div>
                       ))}
                     </div>
-                  )}
+                  </div>
+                ))
+              ) : (
+                <div className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                  No matching job functions found for &ldquo;{searchQuery}&rdquo;.
                 </div>
-              );
-            })
+              )}
+            </div>
+          ) : (
+            <>
+              {/* DESKTOP VIEW: Left category navigation list + Right grouped role chips */}
+              <div className="hidden lg:flex w-full h-full overflow-hidden">
+                {/* Left pane: Category navigation */}
+                <div className="w-1/3 min-w-[240px] max-w-[280px] border-r border-zinc-200 dark:border-zinc-800 overflow-y-auto bg-zinc-50/50 dark:bg-zinc-900/40 py-2">
+                  <div className="space-y-0.5 px-2">
+                    {ONBOARDING_CATEGORIES.map((cat) => {
+                      const isSelected = cat.id === selectedCatId;
+                      const count = roleCountsByCat.get(cat.id) || 0;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          data-testid={`category-nav-${cat.id}`}
+                          onClick={() => setSelectedCatId(cat.id)}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left text-sm transition ${
+                            isSelected
+                              ? "bg-emerald-100/70 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-100 font-bold shadow-xs border-r-4 border-emerald-600"
+                              : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 font-medium"
+                          }`}
+                        >
+                          <span className="truncate pr-2">{cat.name}</span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {count > 0 && (
+                              <span className="text-[11px] px-1.5 py-0.2 bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 rounded-full font-bold">
+                                {count}
+                              </span>
+                            )}
+                            <ChevronRight
+                              className={`w-4 h-4 ${
+                                isSelected
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-zinc-400"
+                              }`}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right pane: Grouped role chips for active category */}
+                <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 bg-white dark:bg-zinc-900">
+                  <div className="border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                      {currentCategory.name}
+                    </h3>
+                  </div>
+
+                  <div className="space-y-5">
+                    {currentCategory.subgroups.map((sg) => (
+                      <div key={sg.name} className="space-y-2.5">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                          {sg.name}
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {sg.roles.map((role) => {
+                            const isSelected = selectedRoles.includes(role);
+                            return (
+                              <button
+                                key={role}
+                                type="button"
+                                onClick={() => onToggleRole(role)}
+                                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition ${
+                                  isSelected
+                                    ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
+                                    : "bg-zinc-100 dark:bg-zinc-800/80 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700/80"
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                                <span>{role}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* MOBILE VIEW: Drill-down pattern with Back button */}
+              <div className="lg:hidden flex-1 overflow-y-auto">
+                {mobileDrilldownCat ? (
+                  /* Drill-in View: Subgroups & Chips */
+                  <div className="p-4 space-y-4">
+                    <button
+                      type="button"
+                      onClick={() => setMobileDrilldownCat(null)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to categories</span>
+                    </button>
+
+                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                      {mobileDrilldownCat.name}
+                    </h3>
+
+                    <div className="space-y-4 pt-1">
+                      {mobileDrilldownCat.subgroups.map((sg) => (
+                        <div key={sg.name} className="space-y-2">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                            {sg.name}
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {sg.roles.map((role) => {
+                              const isSelected = selectedRoles.includes(role);
+                              return (
+                                <button
+                                  key={role}
+                                  type="button"
+                                  onClick={() => onToggleRole(role)}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition ${
+                                    isSelected
+                                      ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
+                                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700"
+                                  }`}
+                                >
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                                  <span>{role}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* Categories List View */
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80 px-4 py-2">
+                    {ONBOARDING_CATEGORIES.map((cat) => {
+                      const count = roleCountsByCat.get(cat.id) || 0;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          data-testid={`mobile-cat-${cat.id}`}
+                          onClick={() => setMobileDrilldownCat(cat)}
+                          className="w-full flex items-center justify-between py-3.5 text-left text-sm font-semibold text-zinc-800 dark:text-zinc-200 hover:text-emerald-600 transition"
+                        >
+                          <span>{cat.name}</span>
+                          <div className="flex items-center gap-2">
+                            {count > 0 && (
+                              <span className="text-xs px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 font-bold rounded-full">
+                                {count}
+                              </span>
+                            )}
+                            <ChevronRight className="w-4 h-4 text-zinc-400" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
 
-        {/* Footer */}
+        {/* Modal Footer */}
         <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/90 flex items-center justify-between gap-3">
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
             {selectedRoles.length === 0 ? (
               <span>Select at least 1 role</span>
             ) : (
-              <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
                 {selectedRoles.length} {selectedRoles.length === 1 ? "role" : "roles"} selected
               </span>
             )}
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition"
+            onClick={handleClose}
+            className="px-6 py-2.5 text-sm font-bold rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 text-white shadow-sm transition"
           >
             Done
           </button>

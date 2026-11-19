@@ -133,15 +133,22 @@ function run() {
     console.log("  [PASS] match score: zero unbacked hash/random score fallback in getJobMatchScore");
   }
 
-  // Check 14: Fit Match panel & CircularMatchRing conditioned strictly on real score
-  const hasConditionedFitPanel = code.includes("matchScore !== null ?");
-  const hasUploadResumeCta =
-    code.includes("Upload your resume to see your real match") &&
-    code.includes('href="/resume"');
-  if (!hasConditionedFitPanel || !hasUploadResumeCta) {
-    failures.push('FIT MATCH FAIL: Fit Match panel must be conditioned on matchScore !== null, with "Upload your resume to see your real match" CTA linking to /resume.');
+  // Check 14: Desktop (>=1024px) card right panel shows listing facts only. Mobile/tablet is final and
+  // unchanged, so the older score/upload panels may remain but must be hidden from lg up.
+  const hasListingFactsPanel =
+    code.includes("Listing facts") &&
+    /data-tour=\{index === 0 \? "tour-job-facts"[\s\S]{0,120}className="hidden lg:flex/.test(code);
+  const scorePanels = code.match(/className="[^"]*bg-gradient-to-b from-\[#09151E\][^"]*"/g) || [];
+  const hasOldMatchScoreInCard = scorePanels.length === 0 ? false : !scorePanels.every((c) => c.includes("lg:hidden"));
+
+  if (!hasListingFactsPanel || hasOldMatchScoreInCard) {
+    failures.push(
+      'LISTING FACTS FAIL: Desktop card must render the listing facts panel (tour-job-facts, hidden lg:flex) and hide every score/upload panel from lg up.'
+    );
   } else {
-    console.log('  [PASS] fit match: Fit Match panel and CircularMatchRing strictly gated; "Upload your resume to see your real match" rendered when null');
+    console.log(
+      '  [PASS] listing facts: card right panel renders real listing facts (Job Facts, tour-job-facts); zero match score / upload CTA leak'
+    );
   }
 
   // Check 15: Exact layout and card size preservation for CTA

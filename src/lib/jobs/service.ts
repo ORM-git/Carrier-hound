@@ -7,6 +7,11 @@ import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/securit
 import { getCountryFilterClause } from "@/lib/countries";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import { rankJobsByRecommendation, hasOnboardingAnswers } from "./recommendations";
+import {
+  applyExperienceLevelQuery,
+  formatExperienceLevels,
+  parseExperienceLevels,
+} from "./experienceLevels";
 
 export interface LiveJob {
   id: string;
@@ -393,7 +398,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (category && category !== "all") recParams.set("category", category);
         if (remoteOnly) recParams.set("remoteOnly", "true");
         if (location && location !== "all") recParams.set("location", location);
-        if (level && level !== "all") recParams.set("level", level);
+        if (level && level !== "all") {
+          const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+          if (normLevel) recParams.set("level", normLevel);
+        }
         if (jobType && jobType !== "all") recParams.set("jobType", jobType);
         if (workModel && workModel !== "all") recParams.set("workModel", workModel);
         if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
@@ -447,7 +455,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (category && category !== "all") params.set("category", category);
       if (remoteOnly) params.set("remoteOnly", "true");
       if (location && location !== "all") params.set("location", location);
-      if (level && level !== "all") params.set("level", level);
+      if (level && level !== "all") {
+        const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+        if (normLevel) params.set("level", normLevel);
+      }
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
@@ -588,23 +599,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
 
     if (level && level.trim() && level.toLowerCase() !== "all") {
-      const lvl = level.trim().toLowerCase();
-      if (lvl.includes("lead") || lvl.includes("staff")) {
-        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-      } else if (lvl.includes("senior")) {
-        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-      } else if (lvl.includes("entry") || lvl.includes("junior")) {
-        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-      } else if (lvl.includes("mid")) {
-        query = query
-          .not("title", "ilike", "%senior%")
-          .not("title", "ilike", "%sr.%")
-          .not("title", "ilike", "%staff%")
-          .not("title", "ilike", "%principal%")
-          .not("title", "ilike", "%lead%")
-          .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%");
-      }
+      query = applyExperienceLevelQuery(query, level);
     }
 
     if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
@@ -740,23 +735,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           }
         }
         if (level && level.trim() && level.toLowerCase() !== "all") {
-          const lvl = level.trim().toLowerCase();
-          if (lvl.includes("lead") || lvl.includes("staff")) {
-            catQuery = catQuery.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-          } else if (lvl.includes("senior")) {
-            catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
-          } else if (lvl.includes("entry") || lvl.includes("junior")) {
-            catQuery = catQuery.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%");
-          } else if (lvl.includes("mid")) {
-            catQuery = catQuery
-              .not("title", "ilike", "%senior%")
-              .not("title", "ilike", "%sr.%")
-              .not("title", "ilike", "%staff%")
-              .not("title", "ilike", "%principal%")
-              .not("title", "ilike", "%lead%")
-              .not("title", "ilike", "%junior%")
-              .not("title", "ilike", "%entry%");
-          }
+          catQuery = applyExperienceLevelQuery(catQuery, level);
         }
 
         if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
