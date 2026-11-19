@@ -26,6 +26,11 @@
  *    - Same source with duplicate external ID is rejected by unique constraint.
  * 7. Negative Control:
  *    - Running with --negative-control forces an assertion failure and exits non-zero.
+ *    - Extended (rehearsal PR): the negative control now sabotages the migrated DB (grants anon SELECT on
+ *      internal_ingestion) and requires the TEST 3 isolation assertion to catch it. If no assertion
+ *      catches the sabotage it prints NEGATIVE CONTROL NOT DETECTED and exits 0, so a blind suite fails CI.
+ * 8. #645 containment (rehearsal PR): no UNIQUE idx_jobs_active_dedupe_hash_uniq on public.jobs, and two
+ *    active rows from different sources sharing one dedupe_hash both insert (no unique failure, no merge).
  */
 
 import assert from "node:assert";
@@ -33,10 +38,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 
-// Negative control check
-if (process.argv.includes("--negative-control")) {
+// Negative control: sabotage after the migration; an existing assertion must catch it (see runFixtures)
+const NEGATIVE_CONTROL = process.argv.includes("--negative-control");
+if (NEGATIVE_CONTROL) {
   console.error("Deliberate negative control failure triggered.");
-  process.exit(1);
 }
 
 const MIGRATION_PATH = path.resolve(__dirname, "../supabase/migrations/20261116b_ten_million_system_design_schema.sql");
@@ -170,6 +175,12 @@ async function runFixtures() {
   const pgliteSafeMigration = migrationSql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;/gi, "-- pgcrypto built-in");
   await db.exec(pgliteSafeMigration);
   console.log("  -> [PASS] Migration DDL executed successfully in PGlite.");
+
+  if (NEGATIVE_CONTROL) {
+    // Sabotage that the internal_ingestion isolation assertion (TEST 3) must detect
+    await db.exec(`GRANT SELECT ON internal_ingestion.ingestion_sources TO anon;`);
+    console.error("[NEGATIVE CONTROL] Granted anon SELECT on internal_ingestion.ingestion_sources; TEST 3 must fail.");
+  }
 
   // 4. Assertion Suite 1: Backward Compatibility of Old Queries
   console.log("\n[TEST 1] Backward Compatibility of Existing Production Queries...");
@@ -312,12 +323,35 @@ async function runFixtures() {
   assert.ok(duplicateRejected, "Duplicate external ID within same source must be rejected");
   console.log("  -> [PASS] Duplicate within the same source correctly rejected by idx_job_postings_source_id_external_id_uniq.");
 
+  // 10. Assertion Suite 8: #645 containment, dedupe_hash is advisory (never unique) on public.jobs
+  console.log("\n[TEST 8] Verifying #645 containment: cross-source duplicates are not rejected or merged...");
+  const destructiveIdx = await db.query(
+    `SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_jobs_active_dedupe_hash_uniq'`
+  );
+  assert.strictEqual(destructiveIdx.rows.length, 0, "UNIQUE idx_jobs_active_dedupe_hash_uniq must not exist (#645 dropped it)");
+  await db.exec(`
+    INSERT INTO public.jobs (title, company, source, source_job_id, dedupe_hash, is_active)
+    VALUES ('Data Engineer', 'Same Co', 'greenhouse', 'gh-77', 'simhash-same-posting', true),
+           ('Data Engineer', 'Same Co', 'lever', 'lv-77', 'simhash-same-posting', true);
+  `);
+  const sameHash = await db.query(`SELECT count(*) AS n FROM public.jobs WHERE dedupe_hash = 'simhash-same-posting' AND is_active`);
+  assert.strictEqual(Number(sameHash.rows[0].n), 2, "Both cross-source rows must stay active (no unique failure, no merge)");
+  console.log("  -> [PASS] Cross-source rows sharing a dedupe_hash both insert and stay active.");
+
   console.log("\n================================================================================");
   console.log("ALL 10M SCHEMA STEP 1 OFFLINE FIXTURES & CHECKS PASSED [PASS-LOCAL]");
   console.log("================================================================================\n");
 }
 
-runFixtures().catch((err) => {
-  console.error("Test failed with error:", err);
-  process.exit(1);
-});
+runFixtures()
+  .then(() => {
+    if (NEGATIVE_CONTROL) {
+      console.error("NEGATIVE CONTROL NOT DETECTED: the sabotage passed every assertion.");
+      process.exit(0);
+    }
+  })
+  .catch((err) => {
+    if (NEGATIVE_CONTROL) console.error("[NEGATIVE CONTROL] Sabotage caught by an assertion (expected).");
+    console.error("Test failed with error:", err);
+    process.exit(1);
+  });

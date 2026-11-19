@@ -10365,9 +10365,13 @@ CREATE INDEX IF NOT EXISTS idx_jobs_top_keywords_gin
   ON public.jobs USING gin (top_keywords)
   WHERE is_active = TRUE;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_dedupe_hash_uniq
-  ON public.jobs (dedupe_hash)
-  WHERE is_active = TRUE AND dedupe_hash IS NOT NULL;
+-- REHEARSAL REPAIR (docs/10m-schema-step1-rehearsal.md, blocker 1):
+-- idx_jobs_active_dedupe_hash_uniq is intentionally NOT created. Repair #645
+-- (20261116d) drops it as a destructive index: after #645 dedupe_hash is an
+-- advisory similarity hash, and the same posting may be active from two sources.
+-- On the populated post-#645 rehearsal DB this CREATE UNIQUE INDEX failed
+-- ("could not create unique index"), aborting the whole migration; had it
+-- succeeded, it would reject legitimate cross-source rows at ingest time.
 
 -- ----------------------------------------------------------------------------
 -- CROSS-VENDOR UNIQUE CONSTRAINT SAFEGUARD (jobs table)
