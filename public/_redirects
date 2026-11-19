@@ -10,5 +10,7 @@
 /terms /terms-and-conditions 301!
 /early-access /signup 301!
 /early-access/* /signup 301!
+/jobs/*/interview-pack /jobs 301!
+/jobs/*/skill-what-if /jobs 301!
 /jobs/* /jobs/detail 200
 /* /404.html 404

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { extractSkillsFromJob } from '../src/lib/matcher/scoring';
+import { planDuplicateExpiry, type DedupeRow } from '../src/lib/jobs/highVolumeEnrichment';
 import { cleanAndTruncateDescription, slugify } from './utils/sanitizer';
 import { politeFetchJson } from './utils/polite-fetch';
 import { SourceConfig } from './types';
@@ -20,6 +21,15 @@ const isDryRun = args.includes('--dry') || args.includes('-d');
 const limitIdx = args.findIndex((a) => a === '--limit' || a === '-l');
 const MAX_LIMIT = limitIdx !== -1 && args[limitIdx + 1] ? parseInt(args[limitIdx + 1], 10) : null;
 const BATCH_SIZE = 100;
+// Duplicate expiry is dry-run unless explicitly enabled, capped per run, and refuses >1% of active jobs.
+const EXPIRE_DUPLICATES = args.includes('--expire-duplicates') && !isDryRun;
+const ALLOW_OVER_1PCT = args.includes('--allow-over-1pct');
+const HARD_MAX_EXPIRE = 1000;
+const maxExpireIdx = args.indexOf('--max-expire');
+const MAX_EXPIRE = Math.min(
+  HARD_MAX_EXPIRE,
+  maxExpireIdx !== -1 ? Math.max(0, parseInt(args[maxExpireIdx + 1], 10) || 0) : 100
+);
 
 function getSupabaseClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -42,88 +52,83 @@ function isStubDescription(desc: string | null | undefined): boolean {
 }
 
 /**
- * Stage 1: Ingestion Deduplication on Existing DB Records
- * Normalizes title + company + location and deactivates duplicate rows.
+ * Stage 1: Duplicate expiry on existing active rows.
+ * Groups by the Unicode-safe dedupeKey (rows with an empty/too-short key are never deduped).
+ * Dry-run unless --expire-duplicates; capped at --max-expire; refuses >1% of active jobs
+ * unless --allow-over-1pct. Always prints what it would expire.
  */
 async function deduplicateExistingJobs(supabase: SupabaseClient): Promise<number> {
-  console.log('\n--- STAGE 1: Database Ingestion Deduplication ---');
-  let dedupedCount = 0;
+  console.log('\n--- STAGE 1: Duplicate Expiry ---');
 
-  // Fetch all active jobs in batches to group by normalized title+company+location
+  const rows: DedupeRow[] = [];
   let offset = 0;
   const pageSize = 1000;
-  const roleGroups = new Map<string, Array<{ id: string; last_seen_at: string; descLen: number }>>();
-
   while (true) {
     const { data: batch, error } = await supabase
       .from('jobs')
-      .select('id, company, title, location, last_seen_at, description')
+      .select('id, company, title, country, location, last_seen_at, description, source, source_job_id, apply_url')
       .eq('is_active', true)
       .range(offset, offset + pageSize - 1);
 
     if (error) {
-      console.error(`Failed reading jobs batch at offset ${offset}:`, error.message);
-      break;
+      // A partial read could misjudge the 1% guard; never expire on incomplete data.
+      console.error(`Failed reading jobs batch at offset ${offset}: ${error.message}. Skipping duplicate expiry.`);
+      return 0;
     }
     if (!batch || batch.length === 0) break;
-
     for (const j of batch) {
-      const key = `${slugify(j.company)}::${slugify(j.title)}::${slugify(j.location || 'unspecified')}`;
-      const list = roleGroups.get(key) || [];
-      list.push({
-        id: j.id,
-        last_seen_at: j.last_seen_at || '',
-        descLen: j.description ? j.description.length : 0,
-      });
-      roleGroups.set(key, list);
+      rows.push({ ...j, descLen: j.description ? j.description.length : 0 });
     }
-
     offset += batch.length;
     if (batch.length < pageSize) break;
   }
 
-  const duplicatesToDeactivate: string[] = [];
-  for (const [key, group] of roleGroups.entries()) {
-    if (group.length > 1) {
-      // Sort group: prefer row with full description, then latest last_seen_at
-      group.sort((a, b) => {
-        if (b.descLen !== a.descLen) return b.descLen - a.descLen;
-        return b.last_seen_at.localeCompare(a.last_seen_at);
-      });
-      // Keep first (primary), mark rest as duplicates
-      for (let i = 1; i < group.length; i++) {
-        duplicatesToDeactivate.push(group[i].id);
-      }
-    }
+  const plan = planDuplicateExpiry(rows, { maxExpire: MAX_EXPIRE, allowOverOnePercent: ALLOW_OVER_1PCT });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  console.log(
+    `Active rows: ${rows.length} | duplicates found: ${plan.candidates.length} | ` +
+      `never deduped (empty/short key): ${plan.ineligible} | distinct requisitions kept: ${plan.distinctRequisitions} | 1% limit: ${plan.onePercent} | cap: ${MAX_EXPIRE}`
+  );
+
+  if (plan.blocked) {
+    console.warn(
+      `🛑 Refusing: ${plan.candidates.length} duplicates exceed 1% of active jobs (${plan.onePercent}). ` +
+        `Review the data, then re-run with --allow-over-1pct to override.`
+    );
   }
 
-  console.log(`Found ${duplicatesToDeactivate.length} duplicate active rows across ${roleGroups.size} unique roles.`);
+  const listed = plan.blocked ? plan.candidates.slice(0, MAX_EXPIRE) : plan.toExpire;
+  for (const c of listed) {
+    const r = byId.get(c.id);
+    console.log(`   would expire ${c.id} (keeps ${c.keptId}) | ${r?.company ?? ''} | ${r?.title ?? ''} | ${r?.location ?? ''}`);
+  }
+  if (plan.candidates.length > listed.length) {
+    console.log(`   ... ${plan.candidates.length - listed.length} more duplicates not in this run (cap ${MAX_EXPIRE}).`);
+  }
 
-  if (duplicatesToDeactivate.length > 0) {
-    dedupedCount = duplicatesToDeactivate.length;
-    if (isDryRun) {
-      console.log(`[DRY RUN] Would mark ${dedupedCount} duplicate rows as is_active = false / expired.`);
+  if (plan.toExpire.length === 0) return 0;
+  if (!EXPIRE_DUPLICATES) {
+    console.log(`[DRY RUN] Would expire ${plan.toExpire.length} rows. Pass --expire-duplicates to apply.`);
+    return 0;
+  }
+
+  let expired = 0;
+  const ids = plan.toExpire.map((c) => c.id);
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const chunk = ids.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase
+      .from('jobs')
+      .update({ is_active: false, status: 'expired', expires_at: new Date().toISOString() })
+      .in('id', chunk)
+      .eq('is_active', true);
+    if (error) {
+      console.error(`Error expiring duplicates chunk: ${error.message}`);
     } else {
-      for (let i = 0; i < duplicatesToDeactivate.length; i += BATCH_SIZE) {
-        const chunk = duplicatesToDeactivate.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase
-          .from('jobs')
-          .update({
-            is_active: false,
-            status: 'expired',
-            expires_at: new Date().toISOString(),
-          })
-          .in('id', chunk);
-
-        if (error) {
-          console.error(`Error deactivating duplicates chunk:`, error.message);
-        }
-      }
-      console.log(`✅ Deactivated ${dedupedCount} duplicate jobs.`);
+      expired += chunk.length;
     }
   }
-
-  return dedupedCount;
+  console.log(`✅ Expired ${expired} duplicate jobs.`);
+  return expired;
 }
 
 /**

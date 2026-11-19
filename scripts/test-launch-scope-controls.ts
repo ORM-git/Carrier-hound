@@ -192,17 +192,15 @@ async function runSuite() {
     assert.ok(netTop10Res.statusCode === 401 || netTop10Res.statusCode === 403, `Netlify jobs-top10 anonymous must be 401/403, got ${netTop10Res.statusCode}`);
     console.log(`  [PASS] Netlify jobs-top10 anonymous -> ${netTop10Res.statusCode}`);
 
-    // Routes whose auth/entitlement paths are exercised by their own suites
-    // (test-interview-pack, test-skill-what-if): no Coming Soon gate may remain in source.
+    // Routes whose auth/entitlement paths are exercised by their own suites:
+    // no Coming Soon gate may remain in source.
     for (const rel of [
       "src/app/api/radar/route.ts",
-      "src/app/api/jobs/interview-pack/route.ts",
-      "src/app/api/jobs/skill-what-if/route.ts",
     ]) {
       const src = fs.readFileSync(path.resolve(__dirname, "..", rel), "utf-8");
       assert.ok(!src.includes("FEATURE_COMING_SOON"), `${rel} must not keep the #644 Coming Soon gate`);
     }
-    console.log("  [PASS] radar / interview-pack / skill-what-if routes carry no Coming Soon gate");
+    console.log("  [PASS] radar route carries no Coming Soon gate");
 
     // 1.3 Daily matching/digest workflow stays gated (intentional exception: the AI digest is not restored)
     const digestStats = await runDailyDigestCron({ dryRun: true });
@@ -753,13 +751,20 @@ async function runSuite() {
     assert.ok(!trackerSrc.includes("Run AI Scan") && !trackerSrc.includes("Daily AI Matching Digest"), "Tracker must not offer the AI digest scan");
     console.log("  [PASS] 5.1 /tracker: real board restored, no AI digest scan");
 
-    for (const rel of ["src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx", "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx"]) {
-      const src = read(rel);
-      assert.ok(!src.includes("ComingSoonView"), `${rel} must be the restored client`);
-      assert.ok(!src.includes('"/dashboard"'), `${rel} must not redirect to the retired Dashboard`);
-      assert.ok(src.includes("getProAccessStatus"), `${rel} must keep its Pro entitlement check`);
+    // 5.2 Interview Pack & Skill What-If pages/clients removed; redirects configured
+    for (const rel of [
+      "src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx",
+      "src/app/jobs/[id]/interview-pack/page.tsx",
+      "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx",
+      "src/app/jobs/[id]/skill-what-if/page.tsx",
+      "src/app/api/jobs/interview-pack/route.ts",
+      "src/app/api/jobs/skill-what-if/route.ts",
+    ]) {
+      assert.ok(!fs.existsSync(path.resolve(__dirname, "..", rel)), `${rel} must be removed from the product`);
     }
-    console.log("  [PASS] 5.2 Interview Pack & Skill What-If clients restored with entitlement checks");
+    const mwSrc = read("src/middleware.ts");
+    assert.ok(mwSrc.includes("/interview-pack") && mwSrc.includes("/skill-what-if"), "middleware must redirect interview-pack and skill-what-if to /jobs");
+    console.log("  [PASS] 5.2 Interview Pack & Skill What-If removed and redirected to /jobs");
 
     const dashSrc = read("src/app/dashboard/page.tsx");
     assert.ok(dashSrc.includes('router.replace("/jobs")'), "/dashboard must redirect to /jobs");

@@ -38,6 +38,14 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Setup Python & pytest
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest
+        run: pip install pytest
+
       - name: Error Budget Policy Check
         run: npx tsx scripts/test-error-budget-policy.ts
 

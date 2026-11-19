@@ -15,6 +15,7 @@
     "cron:digest": "tsx scripts/daily-digest-cron.ts",
     "cron:digest:dry": "tsx scripts/daily-digest-cron.ts --dry",
     "test:filters": "tsx scripts/test-filters.ts",
+    "test:identity": "tsx scripts/test-identity-and-migration-safety.ts && tsx scripts/test-python-identity-contract.ts",
     "test:all": "tsx scripts/suite-runner.ts && vitest run",
     "prepare": "husky",
     "format:check": "prettier --check .",

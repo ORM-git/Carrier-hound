@@ -544,6 +544,14 @@ async function middlewareImpl(request: NextRequest) {
     return NextResponse.redirect(new URL("/jobs", request.url), 301);
   }
 
+  // 1a''. Retired features: redirect old Interview Pack and Skill What-If URLs to /jobs
+  if (
+    pathname.includes("/interview-pack") ||
+    pathname.includes("/skill-what-if")
+  ) {
+    return NextResponse.redirect(new URL("/jobs", request.url), 301);
+  }
+
   // 1b. CSRF same-origin barrier (Backend sheet rank 60): reject mutating
   // /api requests whose Origin header names a different host. Browsers always
   // send Origin on cross-site POSTs; Origin-less requests (webhooks, cron,

@@ -43,23 +43,49 @@ function fakeSupabase(rows: any[], opts: { error?: boolean; throws?: boolean } =
 }
 
 async function main() {
+  const ACME = "https://boards.greenhouse.io/acme/jobs/1";
+  const GLOBEX = "https://jobs.lever.co/globex/2";
   const dbRows = [
-    { company: "Acme Inc", title: "Senior Engineer", country_code: "IN" },
-    { company: "Globex", title: "Designer", country_code: null },
+    { company: "Acme Inc", title: "Senior Engineer", country_code: "IN", apply_url: ACME },
+    { company: "Globex", title: "Designer", country_code: null, apply_url: GLOBEX },
   ];
   const feed = [
-    { company: "Acme, Inc", title: "Senior  Engineer", country_code: "IN", id: 1 }, // same role, punctuation/spacing differ
-    { company: "Acme Inc", title: "Senior Engineer", country_code: "US", id: 2 },   // different country -> keep
-    { company: "Globex", title: "Designer", country_code: undefined, id: 3 },        // 'any' vs 'any' -> drop
-    { company: "Initech", title: "Analyst", country_code: "IN", id: 4 },             // no ATS row -> keep
+    { company: "ACME Inc.", title: "Senior  Engineer ", country_code: "IN", apply_url: ACME, id: 1 }, // same role + URL -> drop
+    { company: "Acme Inc", title: "Senior Engineer", country_code: "US", apply_url: ACME, id: 2 },    // different country -> keep
+    { company: "Globex", title: "Designer", country_code: undefined, apply_url: GLOBEX, id: 3 },      // 'any' vs 'any' -> drop
+    { company: "Initech", title: "Analyst", country_code: "IN", apply_url: "https://i.co/9", id: 4 }, // no ATS row -> keep
+    // Counterexample (PR #645): same text as the ATS row but a DIFFERENT apply URL = another requisition -> keep
+    { company: "Acme Inc", title: "Senior Engineer", country_code: "IN", apply_url: "https://boards.greenhouse.io/acme/jobs/2", id: 5 },
+    { company: "Acme Inc", title: "Senior Engineer", country_code: "IN", id: 6 },                     // no URL -> never inferred, keep
   ];
   const { client, calls } = fakeSupabase(dbRows);
   const res = await dropFeedJobsAlreadyCoveredByAts(client, feed);
-  check("covered feed jobs dropped", res.dropped === 2 && res.kept.map((j) => j.id).join(",") === "2,4");
+  check("covered feed jobs dropped", res.dropped === 2 && res.kept.map((j) => j.id).join(",") === "2,4,5,6");
+  check("feed row with a different apply URL is not dropped", res.kept.some((j) => j.id === 5));
   check("check ran", res.checked === true);
   check("query filters active + verified rows on jobs", calls.length === 1 && calls[0].table === "jobs" &&
     calls[0].eq.some(([c, v]) => c === "is_active" && v === true) && calls[0].eq.some(([c, v]) => c === "verified" && v === true));
-  check("role key shape matches in-run key", roleDedupeKey({ company: "Acme, Inc", title: "Senior  Engineer", country_code: null }) === "acme-inc::senior-engineer::any");
+  check("role key ignores case, spacing and legal suffix",
+    roleDedupeKey({ company: "ACME Inc.", title: " senior engineer", country_code: null, apply_url: ACME }) ===
+      roleDedupeKey({ company: "Acme", title: "Senior  Engineer", country_code: null, apply_url: ACME }));
+  check("role key is null without an apply URL (identity never inferred from text)",
+    roleDedupeKey({ company: "Acme", title: "Senior Engineer", country_code: null }) === null);
+  check("non-Latin titles keep distinct keys (no shared empty slug)",
+    roleDedupeKey({ company: "टाटा", title: "सॉफ्टवेयर इंजीनियर", country_code: "IN", apply_url: ACME }) !==
+      roleDedupeKey({ company: "टाटा", title: "डेटा विश्लेषक", country_code: "IN", apply_url: ACME }));
+  check("empty or 1-char company/title is never deduped",
+    roleDedupeKey({ company: "Acme", title: "", country_code: "IN" }) === null &&
+      roleDedupeKey({ company: "Inc.", title: "Engineer", country_code: "IN" }) === null &&
+      roleDedupeKey({ company: "Acme", title: "😀", country_code: "IN" }) === null);
+  const hi = await dropFeedJobsAlreadyCoveredByAts(
+    fakeSupabase([{ company: "阿里巴巴", title: "软件工程师", country_code: "CN", apply_url: ACME }, { company: "Acme", title: "", country_code: "IN", apply_url: ACME }]).client,
+    [
+      { company: "阿里巴巴", title: "产品经理", country_code: "CN", apply_url: ACME, id: 1 },   // different Chinese role -> keep
+      { company: "阿里巴巴", title: "软件工程师", country_code: "CN", apply_url: ACME, id: 2 }, // same Chinese role + URL -> drop
+      { company: "Acme", title: "", country_code: "IN", apply_url: ACME, id: 3 },              // empty title -> never deduped
+    ]
+  );
+  check("non-Latin: only the identical role is dropped", hi.dropped === 1 && hi.kept.map((j) => j.id).join(",") === "1,3");
 
   const many = [];
   for (let i = 0; i < 120; i++) many.push({ company: `C${i}`, title: "T", country_code: "IN" });
@@ -69,12 +95,12 @@ async function main() {
 
   const errClient = fakeSupabase([], { error: true });
   const e1 = await dropFeedJobsAlreadyCoveredByAts(errClient.client, feed);
-  check("query error fails open (keeps everything)", e1.kept.length === 4 && e1.dropped === 0 && e1.checked === false);
+  check("query error fails open (keeps everything)", e1.kept.length === 6 && e1.dropped === 0 && e1.checked === false);
   const thr = fakeSupabase([], { throws: true });
   const e2 = await dropFeedJobsAlreadyCoveredByAts(thr.client, feed);
-  check("thrown error fails open", e2.kept.length === 4 && e2.dropped === 0);
+  check("thrown error fails open", e2.kept.length === 6 && e2.dropped === 0);
   const e3 = await dropFeedJobsAlreadyCoveredByAts(null, feed);
-  check("no client keeps everything", e3.kept.length === 4 && e3.checked === false);
+  check("no client keeps everything", e3.kept.length === 6 && e3.checked === false);
   const e4 = await dropFeedJobsAlreadyCoveredByAts(client, []);
   check("empty input is a no-op", e4.kept.length === 0 && e4.dropped === 0);
 

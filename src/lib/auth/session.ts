@@ -71,6 +71,13 @@ export function getValidReturnUrl(targetUrl: string | null | undefined, fallback
     return "/jobs";
   }
 
+  if (
+    pathOnly.includes("/interview-pack") ||
+    pathOnly.includes("/skill-what-if")
+  ) {
+    return "/jobs";
+  }
+
   return trimmed;
 }
 

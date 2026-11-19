@@ -106,4 +106,40 @@ describe("Product Restore: Navigation, Redirects, and Safe Return URLs", () => {
       expect(getValidReturnUrl("javascript:alert(1)")).toBe("/jobs");
     });
   });
+
+  describe("Removed Interview Pack & Skill What-If URLs redirect to /jobs", () => {
+    it("redirects /jobs/:id/interview-pack to /jobs with 301 in middleware", async () => {
+      const req = new NextRequest("https://careermonke.com/jobs/job-123/interview-pack");
+      const res = await middleware(req);
+      expect(res.status).toBe(301);
+      expect(res.headers.get("location")).toBe("https://careermonke.com/jobs");
+    });
+
+    it("redirects /jobs/:id/skill-what-if to /jobs with 301 in middleware", async () => {
+      const req = new NextRequest("https://careermonke.com/jobs/job-123/skill-what-if");
+      const res = await middleware(req);
+      expect(res.status).toBe(301);
+      expect(res.headers.get("location")).toBe("https://careermonke.com/jobs");
+    });
+
+    it("normalizes /jobs/:id/interview-pack and skill-what-if in getValidReturnUrl to /jobs", () => {
+      expect(getValidReturnUrl("/jobs/job-123/interview-pack")).toBe("/jobs");
+      expect(getValidReturnUrl("/jobs/job-123/skill-what-if")).toBe("/jobs");
+    });
+
+    it("configures static 301 redirects for interview-pack and skill-what-if in public/_redirects", () => {
+      const redirectsPath = path.resolve(process.cwd(), "public/_redirects");
+      const content = fs.readFileSync(redirectsPath, "utf-8");
+      expect(content).toMatch(/^\/jobs\/\*\/interview-pack\s+\/jobs\s+301!?/m);
+      expect(content).toMatch(/^\/jobs\/\*\/skill-what-if\s+\/jobs\s+301!?/m);
+    });
+
+    it("configures static 301 redirects for interview-pack and skill-what-if in netlify.toml", () => {
+      const tomlPath = path.resolve(process.cwd(), "netlify.toml");
+      const content = fs.readFileSync(tomlPath, "utf-8");
+      expect(content).toContain('from = "/jobs/:id/interview-pack"');
+      expect(content).toContain('from = "/jobs/:id/skill-what-if"');
+      expect(content).toContain('to = "/jobs"');
+    });
+  });
 });

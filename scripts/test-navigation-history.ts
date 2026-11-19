@@ -62,24 +62,6 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
     expectedCount: 1,
     requiredSnippets: ["router.replace(target)"],
   },
-  // Feature-flag & auth mount guards on interview-pack replace blocked URL with `/jobs` or `/login`
-  {
-    file: "src/app/jobs/[id]/interview-pack/InterviewPackClient.tsx",
-    expectedCount: 2,
-    requiredSnippets: [
-      'router.replace("/jobs")',
-      "router.replace(`/login?returnTo=/jobs/${jobId}/interview-pack`)",
-    ],
-  },
-  // Feature-flag & auth mount guards on skill-what-if replace blocked URL with `/jobs` or `/login`
-  {
-    file: "src/app/jobs/[id]/skill-what-if/SkillWhatIfClient.tsx",
-    expectedCount: 2,
-    requiredSnippets: [
-      'router.replace("/jobs")',
-      "router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`)",
-    ],
-  },
   // State-only filter/reset URL sync (2 sites) on `/jobs`
   {
     file: "src/app/jobs/page.tsx",
@@ -329,7 +311,7 @@ function main() {
 
   // 2. Every allowlist entry matches actual source file and count (prevents stale allowlist entries)
   check("Allowlist entries are non-empty, accurate, and have non-empty snippet matchers", () => {
-    assert.ok(ROUTER_REPLACE_ALLOWLIST.length >= 17, "Expected all 17 allowlisted files");
+    assert.ok(ROUTER_REPLACE_ALLOWLIST.length >= 15, "Expected all 15 allowlisted files");
     const byFile = new Map<string, RouterReplaceMatch[]>();
     for (const m of realMatches) {
       const list = byFile.get(m.file) ?? [];
