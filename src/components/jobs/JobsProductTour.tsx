@@ -19,12 +19,6 @@ export const TOUR_STEPS: TourStepDefinition[] = [
     description: "Narrow the list anytime by location, job type, work model and experience level.",
   },
   {
-    id: "facts",
-    anchorSelector: '[data-tour="tour-job-facts"]',
-    title: "Job Information",
-    description: "Each card lists the location, work model, job type and when it was posted.",
-  },
-  {
     id: "details",
     anchorSelector: '[data-tour="tour-job-details"]',
     title: "View Job Details",

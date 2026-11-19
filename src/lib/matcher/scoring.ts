@@ -705,3 +705,156 @@ export function getDiagnosticsSummary(diagnostics: FitDiagnosticsResult): string
   return "Evaluated against your confirmed resume facts and requirements.";
 }
 
+// =============================================================================
+// RECOMMENDED-FEED RANKING SCORE
+// Pure, deterministic 0-100 ranking score for ordering the "Recommended" tab.
+// Ranking only: it never excludes a job, it only orders them. No LLM, no
+// embeddings — every input below is a plain, inspectable number.
+// =============================================================================
+
+/** One constants object for every ranking weight; must sum to 1. */
+export const RECOMMENDED_RANKING_WEIGHTS = {
+  /** Title/skills + experience-level fit, from the existing computeFitDiagnostics score. */
+  fitScore: 0.45,
+  /** Preferred country match, or worldwide-remote eligibility. */
+  locationRemoteFit: 0.2,
+  /** How recently the job was posted/discovered. */
+  recency: 0.2,
+  /** Whether the listing states a salary at all (not its amount). */
+  salaryListed: 0.15,
+} as const;
+
+const RECENCY_HALF_LIFE_HOURS = 72; // score halves roughly every 3 days
+const RECENCY_FLOOR = 10;
+
+export interface RecommendedRankingJobInput {
+  title: string;
+  company?: string;
+  description?: string;
+  skills?: string[];
+  category?: string;
+  location?: string;
+  /** ISO alpha-2 country code of the listing, if known. */
+  country?: string | null;
+  remote?: boolean;
+  remoteScope?: string;
+  remoteEligibility?: string;
+  /** Display salary text; empty/undefined means "not listed". */
+  salary?: string | null;
+  /** Most recent known timestamp for the listing (posted/discovered), ISO string. */
+  postedAt?: string | null;
+}
+
+export interface RecommendedRankingPreferences {
+  /** The candidate's preferred country code from onboarding, e.g. UserPreferences.countryCode. */
+  preferredCountryCode?: string | null;
+  /** The candidate's remote preference from onboarding, e.g. UserPreferences.remotePreference. */
+  remotePreference?: "remote" | "hybrid" | "onsite" | "any" | string | null;
+}
+
+function clamp0to100(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function isWorldwideRemoteEligible(job: RecommendedRankingJobInput): boolean {
+  const scope = (job.remoteScope || "").toLowerCase();
+  const eligibility = (job.remoteEligibility || "").toLowerCase();
+  if (scope === "worldwide" || eligibility === "worldwide" || eligibility === "unrestricted") return true;
+  return Boolean(job.remote) && !scope && !eligibility;
+}
+
+/** 100 when the listing is worldwide-remote-eligible or matches the preferred country; a
+ * smaller non-zero score otherwise (ranking only — never used to exclude a job). */
+function computeLocationRemoteFit(
+  job: RecommendedRankingJobInput,
+  preferences?: RecommendedRankingPreferences | null
+): number {
+  if (isWorldwideRemoteEligible(job)) return 100;
+
+  const preferredCountry = (preferences?.preferredCountryCode || "").toUpperCase();
+  const jobCountry = (job.country || "").toUpperCase();
+  if (preferredCountry && jobCountry && preferredCountry === jobCountry) return 100;
+
+  const wantsRemote = preferences?.remotePreference === "remote" || preferences?.remotePreference === "any";
+  if (wantsRemote && job.remote) return 70;
+
+  if (!preferredCountry) return 50; // no stated preference: neutral, don't penalize
+  return 30;
+}
+
+/** Exponential decay from 100 (just posted) down to a floor; unknown date is neutral (50). */
+function computeRecencyScore(postedAt?: string | null): number {
+  if (!postedAt) return 50;
+  const posted = new Date(postedAt).getTime();
+  if (!Number.isFinite(posted)) return 50;
+  const hoursAgo = Math.max(0, (Date.now() - posted) / (1000 * 60 * 60));
+  const decayed = 100 * Math.pow(0.5, hoursAgo / RECENCY_HALF_LIFE_HOURS);
+  return Math.max(RECENCY_FLOOR, decayed);
+}
+
+/**
+ * Pure, deterministic 0-100 ranking score for the Recommended feed's sort step.
+ * Reuses computeFitDiagnostics (title/skills + experience fit) when a confirmed
+ * resume exists; falls back to a neutral midpoint otherwise so ranking still
+ * works — driven by recency/salary/location — without fabricating a fit score.
+ */
+export function computeRecommendedRankingScore(
+  job: RecommendedRankingJobInput,
+  candidate: CandidateProfile | null,
+  preferences?: RecommendedRankingPreferences | null
+): number {
+  let fitScore = 50;
+  if (candidate && candidate.confirmedAt) {
+    try {
+      const diagnostics = computeFitDiagnostics(candidate, {
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
+        category: job.category,
+        skills: job.skills,
+        description: job.description,
+        salary_text: job.salary || undefined,
+      });
+      if (typeof diagnostics?.score === "number" && !Number.isNaN(diagnostics.score)) {
+        fitScore = diagnostics.score;
+      }
+    } catch {
+      // Keep the neutral fallback; ranking must never throw.
+    }
+  }
+
+  const locationRemoteFit = computeLocationRemoteFit(job, preferences);
+  const recency = computeRecencyScore(job.postedAt);
+  const salaryListed = job.salary && job.salary.trim() ? 100 : 0;
+
+  const weighted =
+    clamp0to100(fitScore) * RECOMMENDED_RANKING_WEIGHTS.fitScore +
+    locationRemoteFit * RECOMMENDED_RANKING_WEIGHTS.locationRemoteFit +
+    recency * RECOMMENDED_RANKING_WEIGHTS.recency +
+    salaryListed * RECOMMENDED_RANKING_WEIGHTS.salaryListed;
+
+  return Math.round(clamp0to100(weighted));
+}
+
+/**
+ * Deterministic comparator for the Recommended feed: higher ranking score first;
+ * ties break by newest postedAt first, so ordering never depends on array/sort
+ * stability quirks.
+ */
+export function compareByRecommendedRanking(
+  a: RecommendedRankingJobInput,
+  b: RecommendedRankingJobInput,
+  candidate: CandidateProfile | null,
+  preferences?: RecommendedRankingPreferences | null
+): number {
+  const scoreA = computeRecommendedRankingScore(a, candidate, preferences);
+  const scoreB = computeRecommendedRankingScore(b, candidate, preferences);
+  if (scoreB !== scoreA) return scoreB - scoreA;
+
+  const dateA = a.postedAt ? new Date(a.postedAt).getTime() : 0;
+  const dateB = b.postedAt ? new Date(b.postedAt).getTime() : 0;
+  return dateB - dateA;
+}
+
