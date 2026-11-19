@@ -139,3 +139,19 @@ export function applyExperienceLevelQuery<T extends { or: (expr: string) => T }>
   const clause = buildExperienceLevelOrClause(rawLevel);
   return clause ? query.or(clause) : query;
 }
+
+// --- Early-career (intern / new grad / fresher / junior) classifier -------------------------------
+// One word list shared by recommendation ranking and the explicit Experience filter, so an "intern"
+// seeker and an "entry" filter agree on what counts. Whole-word match: "Internal Audit" is not an intern role.
+const EARLY_CAREER_WORDS = ["intern", "internship", "graduate", "grad", "fresher", "junior", "entry", "associate"] as const;
+const EARLY_CAREER_RE = new RegExp(`\\b(${EARLY_CAREER_WORDS.join("|")})\\b`, "i");
+
+export function isEarlyCareerJob(title?: string | null, jobType?: string | null): boolean {
+  return (jobType || "").trim().toLowerCase() === INTERN_JOB_TYPE || EARLY_CAREER_RE.test(title || "");
+}
+
+/** PostgREST `or` expression equivalent to isEarlyCareerJob. */
+export const EARLY_CAREER_OR_CLAUSE = [
+  ...EARLY_CAREER_WORDS.map((w) => `title.imatch.\\y${w}\\y`),
+  `job_type.eq.${INTERN_JOB_TYPE}`,
+].join(",");

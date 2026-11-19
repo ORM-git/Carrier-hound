@@ -83,9 +83,9 @@ describe("resume boost (soft ranking only)", () => {
     const withoutResume2 = rankJobsByRecommendation(jobsList, baseAnswers);
     const withResume2 = rankJobsByRecommendation(jobsList, { ...baseAnswers, resumeProfile: resume });
     expect(withResume2.map((j) => j.id).sort()).toEqual(withoutResume2.map((j) => j.id).sort());
-    // Ensure onsite and senior architect are still excluded by hard preferences
+    // Seniority is still a hard preference; Open to Remote is additive, so the onsite job stays
     expect(withResume2.map((j) => j.id)).not.toContain("j4"); // Senior excluded for entry
-    expect(withResume2.map((j) => j.id)).not.toContain("j5"); // Onsite excluded for remote
+    expect(withResume2.map((j) => j.id)).toContain("j5"); // Onsite kept: remote preference is additive
   });
 
   it("ranks resume-matching jobs above equal jobs that don't match", () => {
@@ -98,12 +98,17 @@ describe("resume boost (soft ranking only)", () => {
     expect(ranked.map((j) => j.id)).toEqual(expect.arrayContaining(["a", "c"])); // nothing dropped by the resume
   });
 
-  it("never overrides the user's hard preferences (remote / seniority)", () => {
-    const answers = { remotePreference: "remote", experienceLevel: "entry", resumeProfile: resume };
-    const ranked = rankJobsByRecommendation(
-      [job("onsite", "Data Analyst", { remote: false, remote_scope: "onsite", location: "Pune" }), job("senior", "Senior Data Analyst")],
-      answers
-    );
-    expect(ranked).toEqual([]);
+  it("never overrides the user's hard preferences (seniority, not open to remote)", () => {
+    const senior = rankJobsByRecommendation([job("senior", "Senior Data Analyst")], {
+      remotePreference: "remote",
+      experienceLevel: "entry",
+      resumeProfile: resume,
+    });
+    expect(senior).toEqual([]);
+    const onsiteOnly = rankJobsByRecommendation([job("remote", "Data Analyst")], {
+      remotePreference: "onsite",
+      resumeProfile: resume,
+    });
+    expect(onsiteOnly).toEqual([]);
   });
 });

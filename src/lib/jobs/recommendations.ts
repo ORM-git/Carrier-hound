@@ -16,6 +16,7 @@
 
 
 import { isJobEligible } from "./eligibility";
+import { isEarlyCareerJob } from "./experienceLevels";
 import { detectPayPeriod, parseSalary } from "../salary/parser";
 import { convertCurrency } from "../salary/fx";
 
@@ -226,29 +227,17 @@ export function scoreJobRecommendation(
 
   // --- HARD FILTERS & STRONG RANKING SIGNALS ---
 
-  // 1. Work Model Hard Filter: 100% remote seeker must NEVER match on-site jobs
+  // 1. Work model: a saved "remote" preference (onboarding "Open to Remote") is additive. Remote roles
+  // are boosted below, but eligible preferred-location jobs stay. Only the explicit workModel feed filter
+  // restricts to remote.
   const userRemote = (answers.remotePreference || "").toLowerCase().trim();
-  if (userRemote === "remote" && !isRemote) {
-    return {
-      job,
-      score: 0,
-      breakdown: {
-        roleScore: 0,
-        locationScore: 0,
-        experienceScore: 0,
-        jobTypeScore: 0,
-        recencyScore: 0,
-      },
-      reasons: ["Work model mismatch: on-site job for 100% remote seeker"],
-    };
-  }
 
   // 2. Seniority Level Hard Filter:
   // An entry-level seeker must NEVER match Senior, Staff, Lead, Principal, Director, Manager roles
   const userExp = (answers.experienceLevel || "").toLowerCase().trim();
   const isLeadOrPrincipal = /\b(lead|staff|principal|head|director|architect|manager|vp|chief)\b/i.test(title);
   const isSenior = /\b(senior|sr\.?)\b/i.test(title);
-  const isJuniorOrEntry = /\b(junior|entry|associate|graduate|fresher|intern|internship)\b/i.test(title);
+  const isJuniorOrEntry = isEarlyCareerJob(job.title, job.job_type);
 
   if ((userExp === "entry" || userExp === "intern") && (isSenior || isLeadOrPrincipal)) {
     return {
@@ -680,17 +669,14 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
         (job.remoteScope || "").toLowerCase() === "worldwide" ||
         location.includes("remote");
 
-      // 1. Remote hard preference: if remote, must be remote
-      if (userRemote === "remote" && !isRemote) {
-        return false;
-      }
+      // 1. Work model: "remote" is additive (see scoreJobRecommendation); only "onsite" (not open to remote) excludes.
       if (userRemote === "onsite" && isRemote) {
         return false;
       }
 
       // 2. Experience hard preference
       const isSeniorOrLead = /\b(lead|staff|principal|head|director|architect|manager|vp|chief|senior|sr\.?)\b/i.test(title);
-      const isJuniorOrEntry = /\b(junior|entry|associate|graduate|fresher|intern|internship)\b/i.test(title);
+      const isJuniorOrEntry = isEarlyCareerJob(job.title, job.job_type);
       if ((userExp === "entry" || userExp === "intern") && isSeniorOrLead) {
         return false;
       }

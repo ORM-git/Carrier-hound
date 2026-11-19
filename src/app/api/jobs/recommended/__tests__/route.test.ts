@@ -629,10 +629,10 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(res.jobs.some((j) => j.remote === false)).toBe(false);
     });
 
-    it("Route-level test: with experienceLevel=entry&remotePreference=remote&pageSize=100, assert no returned row has remote=false or matchScore=0", async () => {
+    it("Route-level test: explicit workModel=remote&experience=entry hard filters, assert no returned row has remote=false or matchScore=0", async () => {
       const res = await recommendedRoute(
         req(
-          "http://localhost/api/jobs/recommended?experienceLevel=entry&remotePreference=remote&pageSize=100",
+          "http://localhost/api/jobs/recommended?experience=entry&workModel=remote&pageSize=100",
           "tok-user-no-answers"
         )
       );
@@ -836,5 +836,333 @@ describe("explicit Level filter on the current recommended feed (multi-level OR)
     for (const j of filtered.jobs) {
       if (scoreById.has(j.id)) expect(j.matchScore, j.title).toBe(scoreById.get(j.id));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Signed-in Free user, no subscription: India + Open to Remote + intern (the "Recommended disappears" bug).
+// UI layer = the exact getLiveJobs() call the Jobs page makes on the Recommended tab (empty filter defaults,
+// sortBy "match", saved preferences), dispatched through the service into the real route handler.
+// ---------------------------------------------------------------------------------------------------
+describe("5. Signed-in Free (no subscription): India + Open to Remote + intern", () => {
+  const TOKEN = "tok-free-india";
+  const USER_ID = "u_free_india";
+  const day = 864e5;
+  const mk = (id: string, title: string, extra: Record<string, unknown>, ageDays = 1) => ({
+    id,
+    title,
+    company: `Company ${id}`,
+    company_id: `co_${id}`,
+    category: "engineering",
+    job_type: "full-time",
+    remote: false,
+    remote_scope: "onsite",
+    remote_eligibility: null,
+    country_code: null,
+    status: "active",
+    is_active: true,
+    posted_at: new Date(Date.now() - ageDays * day).toISOString(),
+    created_at: new Date(Date.now() - ageDays * day).toISOString(),
+    salary_min: 30000,
+    salary_max: 40000,
+    currency: "INR",
+    salary_period: "month",
+    salary_text: "₹30k - ₹40k / month",
+    apply_url: `https://careers.example.com/${id}`,
+    description: `Description for ${id}`,
+    skills: ["Python", "SQL"],
+    logo_url: `https://cdn.example.com/${id}.png`,
+    ...extra,
+  });
+
+  // Eligible for an India + Open to Remote + intern seeker
+  const ELIGIBLE = {
+    inIntern: mk("in-intern", "Software Engineering Intern", { location: "Bengaluru, India", country_code: "IN", job_type: "internship" }),
+    wwGrad: mk("ww-grad", "Graduate Software Engineer", { location: "Remote (Worldwide)", remote: true, remote_scope: "worldwide" }, 2),
+    unrestrictedRemote: mk("remote-junior", "Junior Data Analyst", { location: "Remote", remote: true, remote_scope: "remote" }, 3),
+    inInternal: mk("in-internal", "Internal Tools Engineer", { location: "Pune, India", country_code: "IN" }, 4),
+  };
+  // Must never appear: restricted elsewhere, Indiana (not India), or senior
+  const EXCLUDED = {
+    usRemoteRestricted: mk("us-remote-intern", "Software Engineer Intern", {
+      location: "Remote, United States",
+      country_code: "US",
+      remote: true,
+      remote_scope: "remote",
+      remote_eligibility: "country_restricted",
+      job_type: "internship",
+    }),
+    indiana: mk("indiana-intern", "Software Engineer Intern", { location: "Indianapolis, Indiana", country_code: "US", job_type: "internship" }),
+    inSenior: mk("in-senior", "Senior Software Engineer", { location: "Bengaluru, India", country_code: "IN" }),
+  };
+  const usOnsite = Array.from({ length: 30 }, (_, i) =>
+    mk(`us-ae-${i}`, `Account Executive ${i}`, { location: "Austin, TX", country_code: "US", category: "sales" }, 0.5)
+  );
+
+  // What the Jobs page passes as `preferences` (getUserPreferences shape) for this account
+  const indiaPrefs: any = {
+    roles: ["Software Engineer"],
+    experienceLevel: "intern",
+    remotePreference: "remote", // onboarding "Open to Remote" on
+    locations: ["India"],
+    country: "India",
+    countryCode: "IN",
+    employmentTypes: ["internship", "full-time"],
+  };
+  // Exact Recommended-tab call from src/app/jobs/page.tsx with its empty filter defaults
+  const pageCall = (overrides: Record<string, unknown> = {}) => ({
+    baseUrl: "http://localhost",
+    page: 1,
+    pageSize: 25,
+    category: "",
+    search: "",
+    remoteOnly: false,
+    location: "",
+    level: "",
+    jobType: "",
+    countryCode: "",
+    workModel: "",
+    datePosted: "",
+    experience: "",
+    salaryMin: undefined,
+    sourceType: "",
+    company: "",
+    isPro: false,
+    sortBy: "match" as const,
+    candidate: null,
+    preferences: indiaPrefs,
+    ...overrides,
+  });
+
+  let recommendedUrls: string[] = [];
+
+  beforeEach(async () => {
+    const jobs = [...Object.values(ELIGIBLE), ...Object.values(EXCLUDED), ...usOnsite];
+    state.tables.jobs = jobs;
+    state.tables.jobs_public = jobs;
+    state.users[TOKEN] = { id: USER_ID, email: "free-india@example.com", user_metadata: {} };
+    // No subscriptions row for this user: a signed-in Free account
+    state.tables.user_preferences = [
+      ...state.tables.user_preferences,
+      {
+        user_id: USER_ID,
+        roles: ["Software Engineer"],
+        experience_level: "intern",
+        remote_preference: "remote",
+        locations: ["India"],
+        employment_types: ["internship", "full-time"],
+        categories: [],
+        onboarding_completed: true,
+      },
+    ];
+
+    // Signed-in browser session -> service sends Authorization: Bearer <token>
+    const { createClient } = await import("@supabase/supabase-js");
+    const db: any = (createClient as any)();
+    (globalThis as any).__mockSupabaseClient = {
+      ...db,
+      from: db.from,
+      auth: { ...db.auth, getSession: async () => ({ data: { session: { access_token: TOKEN } }, error: null }) },
+    };
+
+    recommendedUrls = [];
+    const routeFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: any, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/api/jobs/recommended")) recommendedUrls.push(url);
+      return routeFetch(input, init);
+    });
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).__mockSupabaseClient;
+    delete process.env.NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED;
+  });
+
+  const ids = (jobs: any[]) => new Set(jobs.map((j) => j.id));
+  const expectEligibleMasked = (jobs: any[]) => {
+    const got = ids(jobs);
+    for (const j of Object.values(ELIGIBLE)) expect(got.has(j.id), `missing eligible ${j.id}`).toBe(true);
+    for (const j of Object.values(EXCLUDED)) expect(got.has(j.id), `leaked ${j.id}`).toBe(false);
+    expect(jobs.some((j) => String(j.id).startsWith("us-ae-"))).toBe(false);
+    for (const j of jobs) {
+      // Server-side masking for Free: no company, salary, apply link, description or skills
+      expect(j.company).toBe("Verified Employer");
+      expect(j.applyUrl).toBe("");
+      expect(j.salary).toBe("");
+      expect(j.description).toBe("");
+      expect(j.skills).toEqual([]);
+      expect(j.logoUrl).toBeNull();
+    }
+  };
+
+  it("no resume: masked eligible cards appear (India jobs + worldwide/unrestricted remote, interns included)", async () => {
+    const res = await getLiveJobs(pageCall() as any);
+
+    expect(res.isDegraded).toBe(false);
+    expect(res.error).toBeUndefined();
+    expect(res.jobs.length).toBe(Object.keys(ELIGIBLE).length);
+    expect(res.totalCount).toBe(Object.keys(ELIGIBLE).length);
+    expectEligibleMasked(res.jobs);
+
+    // Saved preferences travel as ranking params; none of them is an explicit hard-filter param
+    const url = new URL(recommendedUrls[0]);
+    expect(url.searchParams.get("experienceLevel")).toBe("intern");
+    expect(url.searchParams.get("countryCode")).toBe("India"); // saved country, a ranking preference
+    expect(url.searchParams.get("remotePreference")).toBe("remote");
+    for (const hard of ["experience", "country_code", "workModel", "level", "location"]) {
+      expect(url.searchParams.has(hard), hard).toBe(false);
+    }
+  });
+
+  it("owner-shaped request straight to the endpoint (Bearer Free token, saved prefs as params) returns masked eligible jobs", async () => {
+    const res = await recommendedRoute(
+      req(
+        "http://localhost/api/jobs/recommended?page=1&pageSize=25&roles=Software%20Engineer&experienceLevel=intern&remotePreference=remote&locations=India&employmentTypes=internship%2Cfull-time&countryCode=IN",
+        TOKEN
+      )
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.isPro).toBe(false);
+    expect(body.personalized).toBe(true);
+    expectEligibleMasked(body.jobs);
+  });
+
+  it("with parsed onboarding resume (Step 2 flag on): same eligible masked set, resume only reorders", async () => {
+    process.env.NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED = "true";
+    const path = `${USER_ID}/onboarding/current.pdf`;
+    state.tables.onboarding_resume_uploads = [{ user_id: USER_ID, storage_path: path }];
+    state.tables.onboarding_resume_profiles = [
+      {
+        user_id: USER_ID,
+        parse_status: "parsed",
+        source_storage_path: path,
+        profile: { jobTitles: ["Data Analyst"], skills: ["SQL", "Python"], preferredRoles: [], education: [], yearsOfExperience: 0, location: "India" },
+      },
+    ];
+    const res = await getLiveJobs(pageCall() as any);
+    expect(res.isDegraded).toBe(false);
+    expect(res.jobs.length).toBe(Object.keys(ELIGIBLE).length);
+    expectEligibleMasked(res.jobs);
+  });
+
+  it("with a confirmed resume profile (client ranking path): eligible masked jobs, no restricted or foreign jobs", async () => {
+    const candidate: any = {
+      headline: "Software Engineer",
+      skills: ["Python", "SQL"],
+      experience: [{ role: "Software Engineering Intern" }],
+      confirmedAt: new Date().toISOString(),
+    };
+    const res = await getLiveJobs(pageCall({ candidate }) as any);
+    expect(res.isDegraded).not.toBe(true);
+    expect(res.error).toBeUndefined();
+    expect(res.jobs.length).toBeGreaterThan(0);
+    const got = ids(res.jobs);
+    expect(got.has(ELIGIBLE.inIntern.id)).toBe(true);
+    expect(got.has(ELIGIBLE.wwGrad.id)).toBe(true);
+    for (const j of Object.values(EXCLUDED)) expect(got.has(j.id), `leaked ${j.id}`).toBe(false);
+    expect(res.jobs.some((j: any) => String(j.id).startsWith("us-ae-"))).toBe(false);
+    for (const j of res.jobs) {
+      expect(j.company).toBe("Verified Employer");
+      expect(j.applyUrl).toBe("");
+    }
+  });
+
+  it("explicit filters still restrict: country_code=IN drops worldwide remote; workModel=remote drops on-site India", async () => {
+    const inOnly = await getLiveJobs(pageCall({ countryCode: "IN" }) as any);
+    expect(Array.from(ids(inOnly.jobs)).sort()).toEqual([ELIGIBLE.inIntern.id, ELIGIBLE.inInternal.id].sort());
+
+    const remoteOnly = await getLiveJobs(pageCall({ workModel: "remote" }) as any);
+    expect(Array.from(ids(remoteOnly.jobs)).sort()).toEqual([ELIGIBLE.unrestrictedRemote.id, ELIGIBLE.wwGrad.id].sort());
+  });
+
+  it("explicit Experience=intern uses the shared early-career classifier (interns + graduates, not 'Internal')", async () => {
+    const res = await getLiveJobs(pageCall({ experience: "intern" }) as any);
+    const got = ids(res.jobs);
+    expect(got.has(ELIGIBLE.inIntern.id)).toBe(true);
+    expect(got.has(ELIGIBLE.wwGrad.id)).toBe(true);
+    expect(got.has(ELIGIBLE.unrestrictedRemote.id)).toBe(true);
+    expect(got.has(ELIGIBLE.inInternal.id)).toBe(false);
+  });
+
+  it("explicit Level=intern keeps its own meaning (job_type internship only)", async () => {
+    const res = await getLiveJobs(pageCall({ level: "intern" }) as any);
+    expect(Array.from(ids(res.jobs))).toEqual([ELIGIBLE.inIntern.id]);
+  });
+
+  it("genuine zero results stay honest: no eligible jobs -> empty, not degraded, nothing invented", async () => {
+    const onlyIneligible = [...Object.values(EXCLUDED), ...usOnsite];
+    state.tables.jobs = onlyIneligible;
+    state.tables.jobs_public = onlyIneligible;
+    const res = await getLiveJobs(pageCall() as any);
+    expect(res.isDegraded).toBe(false);
+    expect(res.error).toBeUndefined();
+    expect(res.jobs).toEqual([]);
+    expect(res.totalCount).toBe(0);
+  });
+
+  it("an explicit filter with no matches is honest and is never silently cleared", async () => {
+    const res = await getLiveJobs(pageCall({ search: "Quantum Chef" }) as any);
+    expect(res.isDegraded).toBe(false);
+    expect(res.jobs).toEqual([]);
+    expect(new URL(recommendedUrls[0]).searchParams.get("search")).toBe("Quantum Chef");
+  });
+});
+
+describe("6. Non-success HTTP from /api/jobs/recommended is a retryable error, not an empty feed", () => {
+  const prefs: any = { roles: ["Software Engineer"], experienceLevel: "intern", remotePreference: "remote", locations: ["India"] };
+  const call = () => getLiveJobs({ baseUrl: "http://localhost", sortBy: "match", page: 1, pageSize: 25, candidate: null, preferences: prefs });
+  // Only the recommended endpoint fails; the public fallback data stays reachable, so a silent
+  // fallback (unpersonalized jobs shown as a normal feed) would be visible here.
+  const failRecommended = (make: () => Promise<Response>) => {
+    globalThis.fetch = vi.fn(async (input: any) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/api/jobs/recommended")) return make();
+      throw new TypeError("no server in tests");
+    });
+  };
+  const respond = (status: number) =>
+    failRecommended(async () => new Response(JSON.stringify({ error: "x", jobs: [], totalCount: 0 }), { status }));
+
+  beforeEach(async () => {
+    const { createClient } = await import("@supabase/supabase-js");
+    (globalThis as any).__mockSupabaseClient = (createClient as any)();
+  });
+  afterEach(() => {
+    delete (globalThis as any).__mockSupabaseClient;
+  });
+
+  for (const status of [500, 502, 503, 429]) {
+    it(`HTTP ${status} -> isDegraded + error "degraded" (UI shows Retry)`, async () => {
+      respond(status);
+      const res = await call();
+      expect(res.isDegraded).toBe(true);
+      expect(res.error).toBe("degraded");
+      expect(res.jobs).toEqual([]);
+    });
+  }
+
+  it("network failure (fetch throws) -> isDegraded, never a fallback unpersonalized feed", async () => {
+    failRecommended(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    const res = await call();
+    expect(res.isDegraded).toBe(true);
+    expect(res.error).toBe("degraded");
+  });
+
+  it("HTTP 200 with zero jobs is a successful honest empty feed (not degraded)", async () => {
+    failRecommended(async () => new Response(JSON.stringify({ jobs: [], totalCount: 0 }), { status: 200 }));
+    const res = await call();
+    expect(res.isDegraded).toBe(false);
+    expect(res.error).toBeUndefined();
+    expect(res.jobs).toEqual([]);
+  });
+
+  it("HTTP 403 stays a distinct forbidden error", async () => {
+    respond(403);
+    const res = await call();
+    expect(res.error).toBe("forbidden");
   });
 });
