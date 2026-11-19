@@ -19,9 +19,9 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
   const router = useRouter();
 
   const [user, setUser] = useState<User | null>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
-  const [isPro, setIsPro] = useState(false);
-  const [isProDefinitive, setIsProDefinitive] = useState(false);
+  // "free" only when entitlement is definitively non-Pro; a transient failure is "error" (retry), never an upgrade screen.
+  const [access, setAccess] = useState<"checking" | "error" | "pro" | "free">("checking");
+  const isPro = access === "pro";
 
   const [simulation, setSimulation] = useState<SkillWhatIfData | null>(null);
   const [loadingSimulation, setLoadingSimulation] = useState(true);
@@ -33,33 +33,38 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
     process.env.NODE_ENV !== "production";
 
   // 1. Check Auth & Server-Verified Pro status (strictly never trust user_metadata)
+  const checkAccess = useCallback(async () => {
+    setAccess("checking");
+    try {
+      const authUser = await getAuthUser();
+      if (!authUser) {
+        router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`);
+        return;
+      }
+      setUser(authUser);
+      const proStatus = await getProAccessStatus(authUser.id);
+      setAccess(proStatus.isPro ? "pro" : proStatus.isDefinitive ? "free" : "error");
+    } catch (err) {
+      console.warn("Failed checking Pro status:", err);
+      setAccess("error");
+    }
+  }, [jobId, router]);
+
   useEffect(() => {
     if (!isFeatureEnabled) {
       router.replace("/jobs");
       return;
     }
-
-    getAuthUser().then(async (authUser) => {
-      if (!authUser) {
-        // Redirect to login if unauthenticated
-        router.replace(`/login?returnTo=/jobs/${jobId}/skill-what-if`);
-        return;
-      }
-
-      setUser(authUser);
-      setLoadingAuth(false);
-
-      try {
-        const proStatus = await getProAccessStatus(authUser.id);
-        setIsPro(Boolean(proStatus.isPro));
-        setIsProDefinitive(true);
-      } catch (err) {
-        console.warn("Failed checking Pro status:", err);
-        setIsPro(false);
-        setIsProDefinitive(true);
-      }
-    });
-  }, [jobId, router, isFeatureEnabled]);
+    void checkAccess();
+    // Entitlement lifecycle (same as Radar): re-check on purchase, expiry or sign-in/out.
+    const onChange = () => void checkAccess();
+    window.addEventListener("careermonke_pro_updated", onChange);
+    window.addEventListener("careermonke_auth_updated", onChange);
+    return () => {
+      window.removeEventListener("careermonke_pro_updated", onChange);
+      window.removeEventListener("careermonke_auth_updated", onChange);
+    };
+  }, [checkAccess, isFeatureEnabled, router]);
 
   // 2. Fetch simulation data strictly from server-enforced endpoint when user is Pro
   const fetchSimulationData = useCallback(async () => {
@@ -82,7 +87,7 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 403) {
-          setIsPro(false);
+          setAccess("free"); // server-verified: definitively not Pro
           setLoadingSimulation(false);
           return;
         }
@@ -122,7 +127,7 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
   }
 
   // Loading Screen while authenticating
-  if (loadingAuth || !isProDefinitive) {
+  if (access === "checking") {
     return (
       <LoggedInAppShell pageLabel="SKILL WHAT-IF" user={user} isPro={false}>
         <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 space-y-4" role="status" aria-label="Verifying your Pro membership">
@@ -135,8 +140,28 @@ export default function SkillWhatIfClient({ jobId }: SkillWhatIfClientProps) {
     );
   }
 
-  // Non-Pro users see existing locked state
-  if (!isPro) {
+  // Transient entitlement failure: offer a retry, never a definitive Free/upgrade screen
+  if (access === "error") {
+    return (
+      <LoggedInAppShell pageLabel="SKILL WHAT-IF" user={user} isPro={false}>
+        <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 space-y-3 text-center" role="alert">
+          <p className="text-sm font-semibold text-slate-700">We couldn&apos;t verify your Pro membership.</p>
+          <p className="text-xs text-slate-500">Check your connection and try again.</p>
+          <button
+            type="button"
+            onClick={() => void checkAccess()}
+            data-testid="skill-what-if-access-retry"
+            className="px-4 py-2 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+          >
+            Try again
+          </button>
+        </div>
+      </LoggedInAppShell>
+    );
+  }
+
+  // Definitively non-Pro users see the locked state
+  if (access === "free") {
     return (
       <LoggedInAppShell pageLabel="SKILL WHAT-IF" user={user} isPro={false}>
         <div className="max-w-5xl w-full mx-auto px-4 py-8">

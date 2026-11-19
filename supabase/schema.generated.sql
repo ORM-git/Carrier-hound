@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
--- Freshness Header: Generated on 2026-11-18
+-- Freshness Header: Generated on 2026-11-19
 -- Migrations Count: 83
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
@@ -10953,6 +10953,47 @@ SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
 -- ----------------------------------------------------------------------------
+-- Effective-policy guard (pre and post): every PERMISSIVE policy on the two tables that reaches
+-- PUBLIC, anon, authenticated, or any role they inherit (pg_has_role USAGE) must have each
+-- expression (USING and WITH CHECK) be exactly an owner key (auth.uid() = user_id, either order,
+-- incl. the (SELECT auth.uid()) form) or false. Anything else (USING (true), OR-ed conditions,
+-- user_id IS NOT NULL, ...) could let a non-owner read or write rows, so the migration fails.
+-- Session-temporary; dropped before COMMIT.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION pg_temp.cm_20261120a_assert_owner_only(p_phase text) RETURNS void
+LANGUAGE plpgsql AS $fn$
+DECLARE
+  r record;
+  v_uid  constant text := '(\(\s*SELECT auth\.uid\(\) AS uid\)|auth\.uid\(\))';
+  v_ok   constant text[] := ARRAY[
+    '^\(*\s*' || v_uid || '\s*=\s*user_id\s*\)*$',
+    '^\(*\s*user_id\s*=\s*' || v_uid || '\s*\)*$',
+    '^\(*\s*false\s*\)*$'
+  ];
+BEGIN
+  FOR r IN
+    SELECT p.tablename, p.policyname, p.cmd, p.roles, e.expr
+      FROM pg_policies p
+      CROSS JOIN LATERAL (VALUES (p.qual), (p.with_check)) AS e(expr)
+     WHERE p.schemaname = 'public'
+       AND p.tablename IN ('applications', 'candidate_profiles')
+       AND p.permissive = 'PERMISSIVE'
+       AND e.expr IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM unnest(p.roles) AS pr(role_name)
+          WHERE CASE WHEN pr.role_name = 'public' THEN true
+                     ELSE pg_has_role('anon', pr.role_name, 'USAGE')
+                       OR pg_has_role('authenticated', pr.role_name, 'USAGE')
+                END)
+       AND NOT (e.expr ~* v_ok[1] OR e.expr ~* v_ok[2] OR e.expr ~* v_ok[3])
+  LOOP
+    RAISE EXCEPTION '%: permissive policy public.%.% (% TO %) can let a non-owner reach rows: %',
+      p_phase, r.tablename, r.policyname, r.cmd, r.roles, r.expr;
+  END LOOP;
+END
+$fn$;
+
+-- ----------------------------------------------------------------------------
 -- PREFLIGHT: abort (and roll back) if the baseline is not what this migration expects.
 -- ----------------------------------------------------------------------------
 DO $$
@@ -10973,16 +11014,8 @@ BEGIN
     ) THEN
       RAISE EXCEPTION 'preflight: public.%.user_id (uuid) is missing', v_tbl;
     END IF;
-    -- No permissive policy may expose these tables to anon (other than the USING(false) blocks).
-    IF EXISTS (
-      SELECT 1 FROM pg_policies
-       WHERE schemaname = 'public' AND tablename = v_tbl AND permissive = 'PERMISSIVE'
-         AND ('anon' = ANY (roles) OR 'public' = ANY (roles))
-         AND policyname NOT LIKE '%coming_soon_block%'
-    ) THEN
-      RAISE EXCEPTION 'preflight: public.% has a permissive policy reaching anon/public; review first', v_tbl;
-    END IF;
   END LOOP;
+  PERFORM pg_temp.cm_20261120a_assert_owner_only('preflight');
 END $$;
 
 -- ----------------------------------------------------------------------------
@@ -11024,7 +11057,7 @@ CREATE POLICY "candidate_profiles_owner_update" ON public.candidate_profiles
   FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- ----------------------------------------------------------------------------
--- POST-CHECK inside the transaction: owner policies present, no anon reach.
+-- POST-CHECK inside the transaction: owner policies present, no non-owner reach for any client role.
 -- ----------------------------------------------------------------------------
 DO $$
 BEGIN
@@ -11033,12 +11066,10 @@ BEGIN
          AND policyname ~ '_owner_(select|insert|update)$') <> 6 THEN
     RAISE EXCEPTION 'postcheck: expected 6 owner select/insert/update policies';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_policies
-              WHERE schemaname = 'public' AND tablename IN ('applications', 'candidate_profiles')
-                AND 'anon' = ANY (roles) AND permissive = 'PERMISSIVE') THEN
-    RAISE EXCEPTION 'postcheck: a permissive policy reaches anon';
-  END IF;
+  PERFORM pg_temp.cm_20261120a_assert_owner_only('postcheck');
 END $$;
+
+DROP FUNCTION pg_temp.cm_20261120a_assert_owner_only(text);
 
 COMMIT;
 

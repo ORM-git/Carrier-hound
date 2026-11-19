@@ -10,8 +10,8 @@
  * 2. Auth & Middleware Navigation Guard:
  *    - First login: redirected from /login and /auth/callback to /onboarding.
  *    - First login: allowed to view /onboarding.
- *    - Repeat login: redirected from /login and /auth/callback to /dashboard.
- *    - Repeat login: visiting /onboarding redirects to /dashboard (seen exactly once).
+ *    - Repeat login: redirected from /login and /auth/callback to /jobs (Dashboard retired).
+ *    - Repeat login: visiting /onboarding redirects to /jobs (Dashboard retired) (seen exactly once).
  *    - Guest: visiting /onboarding redirects to /login?returnTo=/onboarding.
  * 3. Settings > Billing & Plans Real Catalog & Subscription:
  *    - Uses real catalog from src/config/plans.ts (Monthly: ₹1,499 / month).
@@ -66,7 +66,7 @@ import { middleware } from "../src/middleware";
 import { PLANS } from "../src/config/plans";
 import { getUserSubscription } from "../src/lib/billing/subscription";
 import { normalizePlanCode, PLAN_DEFINITIONS } from "../src/lib/billing/quota";
-import { swrFetch, readSwr, updateSwr, invalidateSwr } from "../src/lib/cache/swr";
+import { readSwr } from "../src/lib/cache/swr";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 
@@ -354,40 +354,40 @@ async function runOnboardingSuite() {
     `First login accessing /onboarding must pass through (200), got: ${newOnboardingRes.status}`
   );
 
-  // 3e. Repeat login: Authenticated completed user accessing /login -> redirected to /dashboard
+  // 3e. Repeat login: Authenticated completed user accessing /login -> redirected to /jobs
   const repeatLoginReq = new NextRequest("http://localhost:3000/login", {
     headers: { cookie: "sb-access-token=user-completed;" },
   });
   const repeatLoginRes = await middleware(repeatLoginReq);
   assert.strictEqual(repeatLoginRes.status, 307, "Repeat login on /login must redirect (307).");
   assert.ok(
-    (repeatLoginRes.headers.get("location") || "").endsWith("/dashboard"),
-    `Repeat login on /login must redirect to /dashboard, got: ${repeatLoginRes.headers.get("location")}`
+    (repeatLoginRes.headers.get("location") || "").endsWith("/jobs"),
+    `Repeat login on /login must redirect to /jobs, got: ${repeatLoginRes.headers.get("location")}`
   );
 
-  // 3f. Repeat login: Authenticated completed user accessing /auth/callback -> redirected to /dashboard
+  // 3f. Repeat login: Authenticated completed user accessing /auth/callback -> redirected to /jobs
   const repeatCallbackReq = new NextRequest("http://localhost:3000/auth/callback", {
     headers: { cookie: "sb-access-token=user-completed;" },
   });
   const repeatCallbackRes = await middleware(repeatCallbackReq);
   assert.strictEqual(repeatCallbackRes.status, 307, "Repeat login on /auth/callback must redirect (307).");
   assert.ok(
-    (repeatCallbackRes.headers.get("location") || "").endsWith("/dashboard"),
-    `Repeat login on /auth/callback must redirect to /dashboard, got: ${repeatCallbackRes.headers.get("location")}`
+    (repeatCallbackRes.headers.get("location") || "").endsWith("/jobs"),
+    `Repeat login on /auth/callback must redirect to /jobs, got: ${repeatCallbackRes.headers.get("location")}`
   );
 
-  // 3g. Repeat login: Authenticated completed user accessing /onboarding -> redirected to /dashboard!
+  // 3g. Repeat login: Authenticated completed user accessing /onboarding -> redirected to /jobs!
   const repeatOnboardingReq = new NextRequest("http://localhost:3000/onboarding", {
     headers: { cookie: "sb-access-token=user-completed;" },
   });
   const repeatOnboardingRes = await middleware(repeatOnboardingReq);
   assert.strictEqual(repeatOnboardingRes.status, 307, "Completed user accessing /onboarding must redirect (307).");
   assert.ok(
-    (repeatOnboardingRes.headers.get("location") || "").endsWith("/dashboard"),
-    `Completed user accessing /onboarding must redirect to /dashboard, got: ${repeatOnboardingRes.headers.get("location")}`
+    (repeatOnboardingRes.headers.get("location") || "").endsWith("/jobs"),
+    `Completed user accessing /onboarding must redirect to /jobs, got: ${repeatOnboardingRes.headers.get("location")}`
   );
 
-  console.log("  ✓ Middleware server-side checks passed (first login -> /onboarding, repeat login -> /dashboard).\n");
+  console.log("  ✓ Middleware server-side checks passed (first login -> /onboarding, repeat login -> /jobs).\n");
 
   // ---------------------------------------------------------------------------
   // TEST 4: Settings > Billing & Plans Plan Catalog & Real Subscription
@@ -978,35 +978,13 @@ async function runOnboardingSuite() {
   }
 
   // ---------------------------------------------------------------------------
-  // TEST 7: Route-Remount SWR Cache Invalidation Regression Test
+  // TEST 7: Dashboard is retired (#665): onboarding completion writes no dashboard:<userId> cache.
+  // Nothing reads that key any more; the signed-in home is /jobs and middleware handles the redirect.
   // ---------------------------------------------------------------------------
-  console.log("Test 7: Verifying dashboard SWR cache update/invalidation on onboarding completion...");
+  console.log("Test 7: Verifying onboarding completion writes no retired dashboard SWR cache...");
 
   const cacheUserId = "user-cache-remount-test";
   const dashboardKey = `dashboard:${cacheUserId}`;
-
-  // Step 1: Simulate initial dashboard load where user has onboardingCompleted = false (cached for 60s)
-  let dbFetchCount = 0;
-  const initialBundle = {
-    proRes: { isPro: false, isDefinitive: true },
-    prefRes: null,
-    profileRes: null,
-    appsRes: [],
-    onboardingCompleted: false,
-  };
-
-  const firstFetch = await swrFetch(dashboardKey, async () => {
-    dbFetchCount++;
-    return initialBundle;
-  });
-  assert.strictEqual(firstFetch.onboardingCompleted, false, "Initial fetch must have onboardingCompleted = false.");
-  assert.strictEqual(dbFetchCount, 1, "Database fetcher called once.");
-
-  // Verify that immediate SWR read returns the cached entry with onboardingCompleted = false
-  const cachedBefore = readSwr<typeof initialBundle>(dashboardKey);
-  assert.strictEqual(cachedBefore?.onboardingCompleted, false, "SWR must hold initial false state.");
-
-  // Step 2: User completes onboarding -> markAccountOnboardingCompleted is called
   const mockCacheSupabase = createMockSupabase({
     profiles: new Map(),
     candidate_profiles: new Map(),
@@ -1015,29 +993,13 @@ async function runOnboardingSuite() {
 
   await markAccountOnboardingCompleted(mockCacheSupabase as any, cacheUserId);
 
-  // Step 3: Verify the cache entry was updated in place so onboardingCompleted is now true
-  const cachedAfter = readSwr<typeof initialBundle>(dashboardKey);
-  assert.ok(cachedAfter, "Cached entry must exist.");
   assert.strictEqual(
-    cachedAfter.onboardingCompleted,
-    true,
-    "SWR cache entry for dashboard:<userId> MUST be updated to onboardingCompleted = true."
+    readSwr(dashboardKey),
+    undefined,
+    "Onboarding completion must not create a dashboard:<userId> cache entry (Dashboard retired)."
   );
 
-  // Step 4: Simulate navigating away and remounting within 60s (SWR fetch within 60s TTL)
-  const remountBundle = await swrFetch(dashboardKey, async () => {
-    dbFetchCount++;
-    return { ...initialBundle, onboardingCompleted: false };
-  });
-
-  assert.strictEqual(
-    remountBundle.onboardingCompleted,
-    true,
-    "Route remount within 60s MUST return onboardingCompleted = true from cache without showing questions again."
-  );
-  assert.strictEqual(dbFetchCount, 1, "Fetcher must NOT be called again within 60s TTL.");
-
-  console.log("  ✓ Route-remount SWR cache regression test passed: onboardingCompleted remains true on remount.\n");
+  console.log("  ✓ No retired dashboard cache written on onboarding completion.\n");
 
   console.log("================================================================================");
   console.log("  ALL TESTS PASSED: Onboarding persistence, repeat login guard & billing valid. ");

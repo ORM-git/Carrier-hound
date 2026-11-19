@@ -547,8 +547,8 @@ async function runSuite() {
     // =========================================================================
     console.log("\n--- Section 4: Real Role-Based DB Operations (PGlite) ---");
 
-    const pg = new PGlite();
-    await pg.exec(`
+    // Baseline schema + Supabase-like roles; reused for every RLS scenario below.
+    const RLS_BASELINE_SQL = `
       CREATE SCHEMA IF NOT EXISTS auth;
       CREATE TABLE IF NOT EXISTS auth.users (
         id UUID PRIMARY KEY,
@@ -628,20 +628,49 @@ async function runSuite() {
       GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
       GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
-    `);
-
-    // Apply the real #644 gate migration, then the restore proposal on top (as production would).
-    for (const file of [
-      "20261116c_launch_scope_coming_soon_gates.sql",
-      "20261120a_restore_tracker_profile_owner_policies.sql",
-    ]) {
+    `;
+    const migrationSql = (file: string) => {
       const p = path.resolve(__dirname, "../supabase/migrations", file);
       assert.ok(fs.existsSync(p), `Migration ${file} must exist`);
-      await pg.exec(fs.readFileSync(p, "utf-8"));
-      console.log(`  Migration ${file} executed successfully in PGlite.`);
+      return fs.readFileSync(p, "utf-8");
+    };
+    const GATE_SQL = migrationSql("20261116c_launch_scope_coming_soon_gates.sql");
+    const RESTORE_SQL = migrationSql("20261120a_restore_tracker_profile_owner_policies.sql");
+
+    // Drifted broad policies (what a pre-existing or hand-added policy could look like) must make
+    // 20261120a fail: direct, via an inherited role, and one that only mentions auth.uid().
+    const drifts: Array<[string, string]> = [
+      ["SELECT TO authenticated USING (true)",
+        `CREATE POLICY drift_all_read ON public.applications FOR SELECT TO authenticated USING (true);`],
+      ["inherited role: policy TO a role granted to authenticated",
+        `CREATE ROLE drift_reader; GRANT drift_reader TO authenticated;
+         CREATE POLICY drift_inherited ON public.candidate_profiles FOR SELECT TO drift_reader USING (true);`],
+      ["PUBLIC policy that only mentions auth.uid() (old substring check passed it)",
+        `CREATE POLICY drift_or ON public.applications FOR UPDATE USING (auth.uid() = user_id OR user_id IS NOT NULL);`],
+    ];
+    for (const [label, driftSql] of drifts) {
+      const drifted = new PGlite();
+      await drifted.exec(RLS_BASELINE_SQL);
+      await drifted.exec(GATE_SQL);
+      await drifted.exec(driftSql);
+      await assert.rejects(drifted.exec(RESTORE_SQL), /preflight: permissive policy/, `20261120a must fail on drift: ${label}`);
+      await drifted.exec("ROLLBACK;"); // the aborted migration transaction, as the SQL editor would end it
+      const left = await drifted.query("SELECT count(*)::int AS n FROM pg_policies WHERE policyname LIKE '%_owner_select';");
+      assert.strictEqual((left.rows[0] as any).n, 0, `Failed 20261120a must roll back fully (${label})`);
+      await drifted.close();
+      console.log(`  [PASS] 4.0 20261120a refuses drifted policy: ${label}`);
     }
+
+    const pg = new PGlite();
+    await pg.exec(RLS_BASELINE_SQL);
+
+    // Apply the real #644 gate migration, then the restore proposal on top (as production would).
+    await pg.exec(GATE_SQL);
+    console.log("  Migration 20261116c_launch_scope_coming_soon_gates.sql executed successfully in PGlite.");
+    await pg.exec(RESTORE_SQL);
+    console.log("  Migration 20261120a_restore_tracker_profile_owner_policies.sql executed successfully in PGlite.");
     // Idempotent: the restore proposal must be safe to run twice.
-    await pg.exec(fs.readFileSync(path.resolve(__dirname, "../supabase/migrations/20261120a_restore_tracker_profile_owner_policies.sql"), "utf-8"));
+    await pg.exec(RESTORE_SQL);
     console.log("  Migration 20261120a re-run (idempotent) succeeded.");
 
     const userA = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d";
@@ -653,6 +682,7 @@ async function runSuite() {
         ('b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', '${userA}', 'job_1', 'Software Engineer', 'Google'),
         ('c2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', '${userB}', 'job_9', 'Designer', 'Figma');
       INSERT INTO public.tailored_resumes (user_id, job_id) VALUES ('${userA}', 'job_1');
+      INSERT INTO public.candidate_profiles (user_id, name) VALUES ('${userB}', 'B');
     `);
     const asUser = async (uid: string) => {
       await pg.exec(`RESET ROLE;`);
@@ -673,6 +703,8 @@ async function runSuite() {
     await pg.exec(`SET ROLE anon;`);
     assert.strictEqual((await pg.query("SELECT * FROM public.applications;")).rows.length, 0, "Anon must see 0 rows");
     assert.ok(await fails(`INSERT INTO public.applications (user_id, job_id) VALUES ('${userA}', 'job_2');`), "Anon INSERT must be blocked");
+    assert.strictEqual((await pg.query("SELECT * FROM public.candidate_profiles;")).rows.length, 0, "Anon must see 0 profiles");
+    assert.ok(await fails(`INSERT INTO public.candidate_profiles (user_id, name) VALUES ('${userA}', 'x');`), "Anon profile INSERT must be blocked");
     console.log("  [PASS] 4.1 Anon: SELECT 0 rows, INSERT blocked");
 
     // 4.2 owner A: own rows only; no cross-user read/write; cannot re-point user_id
@@ -690,6 +722,8 @@ async function runSuite() {
     assert.strictEqual(crossUpdate.affectedRows ?? 0, 0, "Owner A UPDATE of B's row must affect 0 rows");
     assert.ok(!(await fails(`INSERT INTO public.candidate_profiles (user_id, name) VALUES ('${userA}', 'A');`)), "Owner A profile insert must succeed");
     assert.ok(await fails(`INSERT INTO public.candidate_profiles (user_id, name) VALUES ('${userB}', 'B');`), "Owner A profile insert for B must be rejected");
+    const aProfiles = await pg.query<{ user_id: string }>("SELECT user_id FROM public.candidate_profiles;");
+    assert.deepStrictEqual(aProfiles.rows.map((r) => r.user_id), [userA], "Owner A must see only their own profile, never B's");
     // tailored_resumes stays blocked (AI tailoring is not restored)
     assert.strictEqual((await pg.query("SELECT * FROM public.tailored_resumes;")).rows.length, 0, "tailored_resumes must stay blocked");
     const ownDelete: any = await pg.query(`DELETE FROM public.applications WHERE job_id = 'job_3';`);
@@ -750,6 +784,67 @@ async function runSuite() {
     assert.ok(settingsSrc.includes("handleDeleteAccount") && settingsSrc.includes("handleExportData"), "Settings must keep delete/export");
     assert.ok(!settingsSrc.includes("Daily AI Matching Digest"), "Settings must not offer the AI digest opt-in");
     console.log("  [PASS] 5.6 Settings: delete/export preserved; no AI digest opt-in control");
+
+    // 5.7 No AI CTA anywhere a product page renders: walk every non-landing page's import graph
+    // (nested components, modals, upgrade screens) and scan visible JSX text + string literals.
+    {
+      const srcRoot = path.resolve(__dirname, "../src");
+      const appRoot = path.join(srcRoot, "app");
+      // Landing page is the one place AI CTAs are allowed; legal/about/contact pages describe the service.
+      const NOT_PRODUCT = /^(page\.tsx|about|contact|privacy-policy|terms-and-conditions|refund-policy)([\\/]|$)/;
+      // "AI" is case-sensitive so ids/keys like "ai-tools-panel" or an "ai" filter value are not counted as text.
+      const isAiCta = (v: string) => /\bAI\b/.test(v) || /\btailor(?:ed|ing)? (?:my |your )?resumes?\b/i.test(v);
+      // Reviewed, non-CTA uses: a job-category filter label and the onboarding chat persona badge.
+      const ALLOWED = new Set(["AI & Machine Learning", "AI"]);
+      const entries: string[] = [];
+      const walkPages = (dir: string) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          const p = path.join(dir, e.name);
+          if (NOT_PRODUCT.test(path.relative(appRoot, p))) continue;
+          if (e.isDirectory()) walkPages(p);
+          else if (/^(page|layout)\.tsx$|Client\.tsx$/.test(e.name)) entries.push(p);
+        }
+      };
+      walkPages(appRoot);
+      const resolveImport = (from: string, spec: string): string | null => {
+        const base = spec.startsWith("@/") ? path.join(srcRoot, spec.slice(2)) : spec.startsWith(".") ? path.resolve(path.dirname(from), spec) : null;
+        if (!base) return null;
+        for (const c of [base, `${base}.tsx`, `${base}.ts`, path.join(base, "index.tsx")]) {
+          if (fs.existsSync(c) && fs.statSync(c).isFile() && c.endsWith(".tsx")) return c;
+        }
+        return null;
+      };
+      const seen = new Set<string>();
+      const hits: string[] = [];
+      const queue = [...entries];
+      while (queue.length) {
+        const file = queue.pop()!;
+        const inApp = path.relative(appRoot, file);
+        const notProduct = !inApp.startsWith("..") && NOT_PRODUCT.test(inApp);
+        if (seen.has(file) || notProduct || /[\\/]components[\\/]landing[\\/]|Landing[A-Z]\w*\.tsx$/.test(file)) continue;
+        seen.add(file);
+        const code = fs.readFileSync(file, "utf-8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+        for (const m of code.matchAll(/from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g)) {
+          const next = resolveImport(file, m[1] || m[2]);
+          if (next) queue.push(next);
+        }
+        const texts = [
+          ...Array.from(code.matchAll(/>([^<>{}]+)</g), (m) => m[1]),
+          ...Array.from(code.matchAll(/(["'`])((?:(?!\1)[^\n\\])*)\1/g), (m) => m[2]),
+        ];
+        for (const t of texts) {
+          const v = t.replace(/&amp;/g, "&").trim();
+          if (isAiCta(v) && !ALLOWED.has(v)) hits.push(`${path.relative(srcRoot, file)}: "${v.slice(0, 90)}"`);
+        }
+      }
+      assert.ok(seen.size > 50, `AI CTA scan must reach nested components (reached ${seen.size} files)`);
+      assert.ok(
+        Array.from(seen).some((f) => f.endsWith("ResumeUploadAndConfirm.tsx")) && Array.from(seen).some((f) => f.endsWith("ProUpgradeScreen.tsx")),
+        "AI CTA scan must cover modals/nested components (ResumeUploadAndConfirm, ProUpgradeScreen)"
+      );
+      assert.deepStrictEqual(hits, [], `No AI CTA may appear outside the landing page:\n${hits.join("\n")}`);
+      console.log(`  [PASS] 5.7 No AI CTA in any product page or nested component/modal (${seen.size} files scanned)`);
+    }
 
     console.log("\n================================================================================");
     console.log("ALL RESTORE-SCOPE TESTS & NEGATIVE CONTROLS PASSED [PASS-LOCAL]");
