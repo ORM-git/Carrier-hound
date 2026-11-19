@@ -28,9 +28,12 @@ const validPlanResponse = {
   },
 };
 
-function createMockSupabase(initialSub?: any) {
+function createMockSupabase(
+  initialSub?: any,
+  opts: { orders?: any[]; insertConflict?: boolean; failOrderUpdate?: boolean } = {}
+) {
   let sub = initialSub ? { ...initialSub } : null;
-  const orders: any[] = [];
+  const orders: any[] = (opts.orders || []).map((o) => ({ ...o }));
 
   const mockClient = {
     auth: {
@@ -75,6 +78,9 @@ function createMockSupabase(initialSub?: any) {
           return { data: null, error: null };
         },
         insert: async (row: any) => {
+          if (table === "payment_orders" && opts.insertConflict) {
+            return { error: { code: "23505", message: "duplicate key value violates unique constraint" } };
+          }
           if (table === "payment_orders") {
             orders.push({ ...row, id: `po_${Date.now()}` });
           } else if (table === "subscriptions") {
@@ -82,14 +88,30 @@ function createMockSupabase(initialSub?: any) {
           }
           return { error: null };
         },
-        update: (updates: any) => ({
-          eq: async (_col: string, _val: any) => {
-            if (table === "subscriptions" && sub) {
-              sub = { ...sub, ...updates };
-            }
-            return { error: null };
-          },
-        }),
+        update: (updates: any) => {
+          const filters: Record<string, any> = {};
+          const q: any = {
+            eq: (col: string, val: any) => {
+              filters[col] = val;
+              return q;
+            },
+            then: (resolve: any, reject: any) => {
+              if (table === "payment_orders" && opts.failOrderUpdate) {
+                return Promise.resolve({ error: { message: "write failed" } }).then(resolve, reject);
+              }
+              if (table === "subscriptions" && sub) {
+                sub = { ...sub, ...updates };
+              }
+              if (table === "payment_orders") {
+                orders.forEach((o, i) => {
+                  if (Object.entries(filters).every(([k, v]) => o[k] === v)) orders[i] = { ...o, ...updates };
+                });
+              }
+              return Promise.resolve({ error: null }).then(resolve, reject);
+            },
+          };
+          return q;
+        },
       };
       return chain;
     },
@@ -479,6 +501,103 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
       expect(JSON.parse(res.body).code).toBe("CONSENT_REQUIRED");
       expect(fetchSpy).not.toHaveBeenCalled();
     });
+  });
+
+  describe("Consent persisted on reused pending orders", () => {
+    const legacyOrder = (minutesAgo: number, metadata: any = { source: "legacy" }) => ({
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: "sub_legacy_pending_1",
+      plan_code: "monthly",
+      status: "created",
+      mode: "test",
+      created_at: new Date(Date.now() - minutesAgo * 60 * 1000).toISOString(),
+      metadata,
+    });
+
+    const mockGateway = () =>
+      fetchSpy.mockImplementation(async (url: any) =>
+        String(url).includes("/plans/")
+          ? new Response(JSON.stringify(validPlanResponse), { status: 200 })
+          : new Response(JSON.stringify({ id: "sub_fresh_new", status: "created" }), { status: 200 })
+      );
+
+    const callNext = async (mockDb: any) => {
+      const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      (req as any).__testDeps = {
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      };
+      const res = await nextSubscriptionPOST(req);
+      return { status: res.status, body: await res.json() };
+    };
+
+    const callNetlify = async (mockDb: any) => {
+      const handler = createNetlifySubscriptionHandler({
+        getSupabaseAdmin: () => mockDb,
+        verifyUserNotBanned: async () => ({ isBlocked: false }),
+        fetchFn: fetchSpy,
+      });
+      const res = await handler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token" },
+        body: JSON.stringify({ planCode: "monthly", consent: validConsent }),
+      });
+      return { status: res.statusCode, body: JSON.parse(res.body) };
+    };
+
+    for (const [platform, call] of [["Next.js", callNext], ["Netlify", callNetlify]] as const) {
+      it(`${platform}: recent legacy pending order without consent gets this request's consent merged before reuse`, async () => {
+        mockGateway();
+        const mockDb = createMockSupabase(null, { orders: [legacyOrder(2)] });
+        const { status, body } = await call(mockDb);
+        expect(status).toBe(200);
+        expect(body.reused).toBe(true);
+        expect(body.subscriptionId).toBe("sub_legacy_pending_1");
+        const saved = mockDb._getOrders()[0].metadata;
+        expect(saved.source).toBe("legacy");
+        expect(saved.consent).toMatchObject({ agreed: true, version: validConsent.version });
+      });
+
+      it(`${platform}: uniqueness-race reuse writes consent onto the existing pending order`, async () => {
+        mockGateway();
+        // Older than the 15-min reuse window, so only the race path can return it
+        const mockDb = createMockSupabase(null, { orders: [legacyOrder(30)], insertConflict: true });
+        const { status, body } = await call(mockDb);
+        expect(status).toBe(200);
+        expect(body.reused).toBe(true);
+        expect(body.subscriptionId).toBe("sub_legacy_pending_1");
+        const saved = mockDb._getOrders()[0].metadata;
+        expect(saved.source).toBe("legacy");
+        expect(saved.consent).toMatchObject({ agreed: true, version: validConsent.version });
+      });
+
+      it(`${platform}: fails closed when consent cannot be written on reuse (recent and race paths)`, async () => {
+        mockGateway();
+        const recent = await call(createMockSupabase(null, { orders: [legacyOrder(2)], failOrderUpdate: true }));
+        expect(recent.status).toBe(500);
+        expect(recent.body.code).toBe("CONSENT_RECORD_FAILED");
+        const race = await call(
+          createMockSupabase(null, { orders: [legacyOrder(30)], insertConflict: true, failOrderUpdate: true })
+        );
+        expect(race.status).toBe(500);
+        expect(race.body.code).toBe("CONSENT_RECORD_FAILED");
+      });
+
+      it(`${platform}: existing consent on a reused order is kept, not overwritten`, async () => {
+        mockGateway();
+        const original = { agreed: true, version: "2026-10-original", timestamp: "2026-11-19T00:00:00.000Z" };
+        const mockDb = createMockSupabase(null, { orders: [legacyOrder(2, { consent: original })] });
+        const { status } = await call(mockDb);
+        expect(status).toBe(200);
+        expect(mockDb._getOrders()[0].metadata.consent).toEqual(original);
+      });
+    }
   });
 
   describe("Fail-closed subscription cancellation (Blocker 1)", () => {

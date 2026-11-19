@@ -10,6 +10,7 @@ import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import { handleSubscriptionCancellation } from "@/lib/billing/subscriptionCancellation";
 import { validateRazorpayPlan } from "@/lib/billing/validatePlan";
+import { ensureOrderConsent } from "@/lib/billing/orderConsent";
 
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/subscription" } });
 
@@ -381,7 +382,7 @@ export async function POST(req: Request) {
       // Check for a recent pending order in payment_orders
       const { data: existingPendingOrder } = await supabaseAdmin
         .from("payment_orders")
-        .select("provider_order_id, plan_code, mode, created_at")
+        .select("provider_order_id, plan_code, mode, created_at, metadata")
         .eq("user_id", user.id)
         .eq("plan_code", planCode)
         .eq("status", "created")
@@ -401,6 +402,15 @@ export async function POST(req: Request) {
           : existingPendingOrder?.mode !== "live";
 
       if (existingPendingOrder && isRecent && isSubOrder && isMatchingMode) {
+        if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingPendingOrder, consentRecord))) {
+          log.error("Failed to record consent on reused pending order", {
+            subscriptionId: existingPendingOrder.provider_order_id,
+          });
+          return NextResponse.json(
+            { error: "Failed to record subscription consent. Please try again.", code: "CONSENT_RECORD_FAILED" },
+            { status: 500 }
+          );
+        }
         log.info("Reusing existing pending subscription mandate", {
           subscriptionId: existingPendingOrder.provider_order_id,
         });
@@ -477,7 +487,7 @@ export async function POST(req: Request) {
           });
           const { data: existingRace } = await supabaseAdmin
             .from("payment_orders")
-            .select("provider_order_id, plan_code, mode")
+            .select("provider_order_id, plan_code, mode, metadata")
             .eq("user_id", user.id)
             .eq("status", "created")
             .order("created_at", { ascending: false })
@@ -493,6 +503,15 @@ export async function POST(req: Request) {
               : existingRace?.mode !== "live";
 
           if (isRaceSub && isRaceMatchingMode) {
+            if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingRace, consentRecord))) {
+              log.error("Failed to record consent on race-reused pending order", {
+                subscriptionId: existingRace.provider_order_id,
+              });
+              return NextResponse.json(
+            { error: "Failed to record subscription consent. Please try again.", code: "CONSENT_RECORD_FAILED" },
+            { status: 500 }
+          );
+            }
             return NextResponse.json({
               subscriptionId: existingRace.provider_order_id,
               keyId,

@@ -5,6 +5,7 @@ import { PLAN_PRICING } from "../../src/config/plans";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { singleFlight } from "../../src/lib/cache/singleFlight";
 import { validateRazorpayPlan } from "../../src/lib/billing/validatePlan";
+import { ensureOrderConsent } from "../../src/lib/billing/orderConsent";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 
@@ -586,7 +587,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
 
         const { data: existingPendingOrder } = await supabaseAdmin
           .from("payment_orders")
-          .select("provider_order_id, plan_code, mode, created_at")
+          .select("provider_order_id, plan_code, mode, created_at, metadata")
           .eq("user_id", user.id)
           .eq("plan_code", planCode)
           .eq("status", "created")
@@ -606,6 +607,17 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             : existingPendingOrder?.mode !== "live";
 
         if (existingPendingOrder && isRecent && isSubOrder && isMatchingMode) {
+          if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingPendingOrder, consentRecord))) {
+            safeLog.error("[Netlify /billing-razorpay-subscription] Failed to record consent on reused pending order");
+            return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({
+              error: "Failed to record subscription consent. Please try again.",
+              code: "CONSENT_RECORD_FAILED",
+            }),
+          };
+          }
           safeLog.info(
             "[Netlify /billing-razorpay-subscription] Reusing existing pending mandate:",
             existingPendingOrder.provider_order_id
@@ -689,7 +701,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
             );
             const { data: existingRace } = await supabaseAdmin
               .from("payment_orders")
-              .select("provider_order_id, plan_code, mode")
+              .select("provider_order_id, plan_code, mode, metadata")
               .eq("user_id", user.id)
               .eq("status", "created")
               .order("created_at", { ascending: false })
@@ -705,6 +717,17 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
                 : existingRace?.mode !== "live";
 
             if (isRaceSub && isRaceMatchingMode) {
+              if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingRace, consentRecord))) {
+                safeLog.error("[Netlify /billing-razorpay-subscription] Failed to record consent on race-reused order");
+                return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({
+              error: "Failed to record subscription consent. Please try again.",
+              code: "CONSENT_RECORD_FAILED",
+            }),
+          };
+              }
               return {
                 statusCode: 200,
                 headers,
