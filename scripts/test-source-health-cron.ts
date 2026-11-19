@@ -29,6 +29,7 @@ import {
   isScheduledCronWorkflow,
   SCHEDULED_CRON_WORKFLOWS,
 } from "./lib/workflow-failure-alert";
+import { evaluateSourceHealth } from "../src/lib/observability/sourceHealth";
 
 interface ValidationResult {
   passed: boolean;
@@ -158,6 +159,34 @@ function main(): void {
   console.log("PASS: Command execution verified: npx tsx scripts/check-source-health.ts");
   console.log("PASS: Alerter wiring verified in .github/workflows/workflow-failure-alert.yml");
   console.log("PASS: Codebase catalog verified in scripts/lib/workflow-failure-alert.ts");
+
+  // Unit tests for staleness tolerance under GitHub Actions queue delays
+  const now = new Date("2026-11-18T13:15:00Z");
+  const runSuccess = {
+    started_at: "2026-11-18T07:23:37Z",
+    finished_at: "2026-11-18T07:36:52Z",
+    status: "success",
+    coverage: { cycle_id: "cycle-1", shard_id: 0, expected_shards: 1 },
+  };
+  // 1. 5.6h elapsed is healthy under 8h threshold (prevents afternoon stall false alarm)
+  const healthUnder8h = evaluateSourceHealth([runSuccess], { maxFailuresInWindow: 1, staleAfterHours: 8 }, now.toISOString());
+  assert.strictEqual(healthUnder8h.status, "healthy", "Cycle within 8h threshold should be healthy, not degraded");
+  assert.strictEqual(healthUnder8h.lastSuccessAt, "2026-11-18T07:36:52.000Z");
+
+  // 2. Stale when older than staleAfterHours (e.g. 4h threshold triggers false positive when run queue is delayed to 5.6h)
+  const staleHealth = evaluateSourceHealth([runSuccess], { maxFailuresInWindow: 1, staleAfterHours: 4 }, now.toISOString());
+  assert.strictEqual(staleHealth.status, "degraded", "Should be degraded when elapsed (5.6h) > staleAfterHours (4h)");
+
+  // 3. Truly failed shard must be degraded
+  const runFailed = {
+    started_at: "2026-11-18T07:23:37Z",
+    finished_at: "2026-11-18T07:36:52Z",
+    status: "failed",
+    coverage: { cycle_id: "cycle-2", shard_id: 0, expected_shards: 1 },
+  };
+  const failedHealth = evaluateSourceHealth([runFailed], { maxFailuresInWindow: 1, staleAfterHours: 8 }, now.toISOString());
+  assert.strictEqual(failedHealth.status, "degraded", "Failed shard must be degraded");
+  console.log("PASS: evaluateSourceHealth staleness threshold & failure detection verified");
 
   // Negative control sub-process verification
   console.log("\nRunning self in --negative-control mode to verify non-zero exit...");
