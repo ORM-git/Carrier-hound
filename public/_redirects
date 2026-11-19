@@ -3,10 +3,14 @@
 /job-search /jobs 301!
 /job-search/all /jobs 301!
 /paywall /jobs 301!
+/dashboard /jobs 301!
+/dashboard/* /jobs 301!
 /applications /tracker 301!
 /privacy /privacy-policy 301!
 /terms /terms-and-conditions 301!
 /early-access /signup 301!
 /early-access/* /signup 301!
+/jobs/*/interview-pack /jobs 301!
+/jobs/*/skill-what-if /jobs 301!
 /jobs/* /jobs/detail 200
 /* /404.html 404

@@ -42,7 +42,7 @@ export async function handleProCheckout(
 
   const currentPath = typeof window !== "undefined"
     ? window.location.pathname + window.location.search
-    : "/dashboard";
+    : "/jobs";
   const target = redirectTarget || currentPath;
 
   // 1. If visitor is NOT signed in, send them through sign-in first

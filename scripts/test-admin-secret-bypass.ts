@@ -5,7 +5,7 @@
  * 1. Valid header allows explicit read-only smoke-test endpoints (/api/health, /api/ticker, GET /api/jobs/search)
  *    without early-access approval.
  * 2. Valid header with NO session CANNOT access protected routes:
- *    - /dashboard redirects (307) to /early-access (or /login) exactly as if header were absent.
+ *    - /tracker (protected) redirects (307) to /early-access (or /login) exactly as if header were absent.
  *    - /api/jobs/top10 returns 403 (or 401) exactly as if header were absent.
  *    - hasValidSession is NEVER set to true by x-admin-secret.
  * 3. Wrong / mismatched / empty header behaves exactly as header absent (fails closed).
@@ -226,19 +226,19 @@ async function runSuite() {
   pass("Requirement (a) verified: smoke endpoints (/api/health, /api/jobs/search) reachable with valid header");
 
   // ---------------------------------------------------------------------------
-  // TEST 4: Requirement (b) - /dashboard and /api/jobs/top10 still redirect/pass to route
+  // TEST 4: Requirement (b) - /tracker (protected; /dashboard is retired and 301s to /jobs) and /api/jobs/top10 still redirect/pass to route
   // ---------------------------------------------------------------------------
-  console.log("\nTest 4: Requirement (b) - /dashboard and /api/jobs/top10 with valid header and NO session...");
+  console.log("\nTest 4: Requirement (b) - /tracker (protected; /dashboard is retired and 301s to /jobs) and /api/jobs/top10 with valid header and NO session...");
 
-  // 4.1 /dashboard with valid header but NO session
-  const dashReqWithHeader = new NextRequest("http://localhost:3000/dashboard", {
+  // 4.1 /tracker with valid header but NO session
+  const dashReqWithHeader = new NextRequest("http://localhost:3000/tracker", {
     headers: { "x-admin-secret": TEST_ADMIN_SECRET },
   });
   const dashResWithHeader = await middleware(dashReqWithHeader);
   assert.strictEqual(
     dashResWithHeader.status,
     307,
-    "/dashboard with valid x-admin-secret and NO session must return 307 redirect"
+    "/tracker with valid x-admin-secret and NO session must return 307 redirect"
   );
   const dashLocation = dashResWithHeader.headers.get("location");
   assert.ok(dashLocation, "Redirect response must include Location header");
@@ -246,16 +246,16 @@ async function runSuite() {
   assert.strictEqual(
     dashUrl.pathname,
     "/login",
-    "/dashboard must redirect to /login (never grants dashboard access)"
+    "/tracker must redirect to /login (never grants tracker access)"
   );
 
-  // Compare with /dashboard without header
-  const dashReqNoHeader = new NextRequest("http://localhost:3000/dashboard");
+  // Compare with /tracker without header
+  const dashReqNoHeader = new NextRequest("http://localhost:3000/tracker");
   const dashResNoHeader = await middleware(dashReqNoHeader);
   assert.strictEqual(dashResNoHeader.status, 307);
   const dashNoHeaderLocation = new URL(dashResNoHeader.headers.get("location")!).pathname;
   assert.strictEqual(dashLocation, dashResNoHeader.headers.get("location"), "Behavior with header must match behavior without header");
-  pass("/dashboard with valid header + NO session redirects to /login exactly as if header were absent");
+  pass("/tracker with valid header + NO session redirects to /login exactly as if header were absent");
 
   // 4.2 /api/jobs/top10 with valid header but NO session
   const top10ReqWithHeader = new NextRequest("http://localhost:3000/api/jobs/top10", {

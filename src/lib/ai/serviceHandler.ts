@@ -353,6 +353,16 @@ export async function executeAiCore(
   let confirmedUserId = "";
   let confirmedKind: QuotaKind | undefined;
   try {
+    // 1. Verify Authorization Header (Bearer Supabase access token) format first.
+    // Unauthenticated requests are rejected immediately without spending a shared rate-limit RPC,
+    // and rate limit store outages do not mask missing authentication.
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return {
+        statusCode: 401,
+        body: { error: "Unauthorized. Please sign in to use AI features." },
+      };
+    }
+
     // 0. Per-IP Rate Limiting (strict fail-closed shared store)
     const ipLimit = activeDeps.checkSharedRateLimit
       ? await activeDeps.checkSharedRateLimit(
@@ -388,14 +398,6 @@ export async function executeAiCore(
         headers: {
           "Retry-After": String(ipLimit.retryAfter),
         },
-      };
-    }
-
-    // 1. Verify Authorization Header (Bearer Supabase access token)
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return {
-        statusCode: 401,
-        body: { error: "Unauthorized. Please sign in to use AI features." },
       };
     }
 

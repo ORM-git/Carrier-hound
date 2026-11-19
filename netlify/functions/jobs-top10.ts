@@ -94,25 +94,6 @@ export async function handler(event: any) {
     ...buildCorsHeaders(event, CORS_OPTIONS),
   };
 
-  // Launch scope gate: Top 10 matches are Coming Soon
-  return {
-    statusCode: 503,
-    headers,
-    body: JSON.stringify({
-      error: "This feature is coming soon.",
-      code: "FEATURE_COMING_SOON",
-    }),
-  };
-}
-
-export async function handleNetlifyTop10Logic(event: any) {
-  const preflight = handleCorsPreflight(event, CORS_OPTIONS);
-  if (preflight) return preflight;
-
-  const headers = {
-    "Content-Type": "application/json",
-    ...buildCorsHeaders(event, CORS_OPTIONS),
-  };
 
   if (event.httpMethod !== "POST") {
     return {
@@ -443,5 +424,3 @@ export async function handleNetlifyTop10Logic(event: any) {
     };
   }
 }
-
-void handleNetlifyTop10Logic;
