@@ -184,6 +184,12 @@ paths:
       description: Creates a recurring subscription via Razorpay /v1/subscriptions.
       responses:
         "200": { description: Subscription created }
+    delete:
+      tags: [billing]
+      summary: Cancel subscription auto-renewal
+      description: Cancels recurring auto-renewal at period end.
+      responses:
+        "200": { description: Subscription scheduled to cancel at period end }
   /api/billing/razorpay/verify:
     post:
       tags: [billing]
@@ -223,13 +229,6 @@ paths:
       responses:
         "200": { description: Ready }
         "503": { description: Not ready }
-  /api/jobs/interview-pack:
-    get:
-      tags: [jobs]
-      summary: Generate an interview pack for a job
-      description: Delegates to handleInterviewPackRequest.
-      responses:
-        "200": { description: Interview pack }
   /api/jobs/pro:
     get:
       tags: [jobs]
@@ -241,19 +240,19 @@ paths:
       summary: Unlock Pro job details
       responses:
         "200": { description: Unlocked details }
+  /api/jobs/recommended:
+    get:
+      tags: [jobs]
+      summary: Personalized recommended jobs from onboarding answers
+      responses:
+        "200": { description: Recommended jobs result }
+        "503": { description: Service unavailable }
   /api/jobs/search:
     get:
       tags: [jobs]
       summary: Search jobs
       responses:
         "200": { description: Search results }
-  /api/jobs/skill-what-if:
-    get:
-      tags: [jobs]
-      summary: Skill what-if analysis
-      description: Delegates to handleSkillWhatIfRequest.
-      responses:
-        "200": { description: Analysis result }
   /api/jobs/suggest:
     get:
       tags: [jobs]
@@ -272,6 +271,41 @@ paths:
       summary: Current user quota status
       responses:
         "200": { description: Quota payload }
+  /api/onboarding:
+    post:
+      tags: [account]
+      summary: Save onboarding preferences
+      description: Validates and saves onboarding preferences for authenticated users.
+      responses:
+        "200": { description: Onboarding preferences saved }
+        "400": { description: Invalid parameters }
+        "401": { description: Unauthorized }
+  /api/onboarding/linkedin:
+    post:
+      tags: [account]
+      summary: Validate and save LinkedIn profile URL
+      description: Accepts only https linkedin.com or www.linkedin.com /in/<handle> URLs, normalizes to https://www.linkedin.com/in/<handle>, and saves it to auth user_metadata.linkedin_url. Never fetches or scrapes LinkedIn. Responses are private, no-store.
+      responses:
+        "200": { description: LinkedIn URL saved }
+        "400": { description: Invalid URL format }
+        "401": { description: Unauthorized }
+        "429": { description: Rate limit exceeded (per user and per IP) }
+        "500": { description: Save failed }
+        "503": { description: Feature coming soon or service unavailable }
+  /api/onboarding/resume:
+    post:
+      tags: [account]
+      summary: Store a resume or LinkedIn PDF privately and parse it for ranking
+      description: multipart/form-data with field "file". PDF or DOCX up to 5 MB (a LinkedIn "Save to PDF" export is a normal PDF); declared MIME, extension and magic bytes must agree. Stored in the private resumes bucket under <user_id>/onboarding/. After the upload commits, text is extracted server-side and parsed (rules, plus the existing resume_extraction AI operation with its rate limits and entitlement) into public.onboarding_resume_profiles for the owner only. Parse failures (scanned PDF, no text, parse error) never fail the upload. No LinkedIn scraping or API calls. Responses are private, no-store.
+      responses:
+        "200": { description: "Resume stored. Body: ok, fileName, sizeBytes, kind, parse {status: parsed|failed|unavailable, reason?, source?, jobTitle?, skillsCount?, topSkills?, yearsOfExperience?}" }
+        "400": { description: Missing, empty, or invalid file }
+        "401": { description: Unauthorized }
+        "413": { description: Upload larger than 5 MB }
+        "415": { description: Not multipart/form-data }
+        "429": { description: Rate limit exceeded (per user and per IP) }
+        "500": { description: Storage or database failure }
+        "503": { description: Feature coming soon or service unavailable }
   /api/radar:
     get:
       tags: [public]

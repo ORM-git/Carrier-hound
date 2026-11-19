@@ -50,6 +50,7 @@ graphify-out/
 .system_backup/
 backups/
 *.docx
+!tests/fixtures/**/*.docx
 *.txt
 !robots.txt
 deno.lock
@@ -61,6 +62,11 @@ reports/
 
 # Local agent instructions
 /AGENTS.md
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # ATS verification runtime checkpoint
 data/ats-verify-checkpoint.json

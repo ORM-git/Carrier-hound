@@ -133,15 +133,21 @@ function run() {
     console.log("  [PASS] match score: zero unbacked hash/random score fallback in getJobMatchScore");
   }
 
-  // Check 14: Fit Match panel & CircularMatchRing conditioned strictly on real score
-  const hasConditionedFitPanel = code.includes("matchScore !== null ?");
-  const hasUploadResumeCta =
-    code.includes("Upload your resume to see your real match") &&
-    code.includes('href="/resume"');
-  if (!hasConditionedFitPanel || !hasUploadResumeCta) {
-    failures.push('FIT MATCH FAIL: Fit Match panel must be conditioned on matchScore !== null, with "Upload your resume to see your real match" CTA linking to /resume.');
+  // Check 14: the Listing Facts panel was reverted (no prior git history ever had it); the
+  // card's right panel is back to the single match-score/upload-CTA panel, shown at every
+  // width (no lg:hidden split between a facts panel and a separately-hidden score panel).
+  const hasListingFactsPanel = code.includes("Listing facts") || code.includes("job-card-facts") || code.includes("tour-job-facts");
+  const scorePanels = code.match(/className="[^"]*bg-gradient-to-b from-\[#09151E\][^"]*"/g) || [];
+  const hasDesktopHiddenScorePanel = scorePanels.some((c) => c.includes("lg:hidden"));
+
+  if (hasListingFactsPanel || hasDesktopHiddenScorePanel || scorePanels.length === 0) {
+    failures.push(
+      "LISTING FACTS FAIL: Desktop card must not render a Listing Facts panel; the match-score/upload-CTA panel must be present and not lg:hidden."
+    );
   } else {
-    console.log('  [PASS] fit match: Fit Match panel and CircularMatchRing strictly gated; "Upload your resume to see your real match" rendered when null');
+    console.log(
+      "  [PASS] listing facts panel reverted; match-score/upload-CTA panel is the only right-side panel and renders at every width"
+    );
   }
 
   // Check 15: Exact layout and card size preservation for CTA

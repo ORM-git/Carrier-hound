@@ -316,7 +316,7 @@ async function runRazorpayModeIsolationSuite() {
   const netlifyOrder = createNetlifyOrderHandler({
     getSupabaseAdmin: mockSupabaseAdmin,
     fetchFn: async () =>
-      new Response(JSON.stringify({ id: "order_test_mock_1", amount: 69200, currency: "INR" }), {
+      new Response(JSON.stringify({ id: "order_test_mock_1", amount: 39900, currency: "INR" }), {
         status: 200,
       }),
     getServerEntitlement: async (userId: string) => ({
@@ -324,8 +324,53 @@ async function runRazorpayModeIsolationSuite() {
     }),
   });
 
+  const mockFetchRazorpayPayment = async (paymentId: string) => {
+    const paymentMap: Record<string, { orderId: string; amount: number }> = {
+      pay_test_fixture_101: { orderId: "order_test_plan_verify_1", amount: 39900 },
+      pay_test_next_202: { orderId: "order_test_next_verify_2", amount: 49900 },
+      pay_next_fixture_202: { orderId: "order_test_next_verify_2", amount: 39900 },
+      pay_test_addon_303: { orderId: "order_test_addon_verify_3", amount: 14900 },
+      pay_addon_fixture_303: { orderId: "order_test_addon_verify_3", amount: 299900 },
+      pay_replay_fixture_404: { orderId: "order_test_replay_4", amount: 39900 },
+      pay_live_fixture_505: { orderId: "order_live_plan_verify_5", amount: 39900 },
+      pay_live_valid_707: { orderId: "order_live_valid_707", amount: 49900 },
+      pay_cross_fixture_606: { orderId: "order_live_cross_mode_6", amount: 39900 },
+    };
+    const found = paymentMap[paymentId];
+    if (found) {
+      return {
+        id: paymentId,
+        order_id: found.orderId,
+        status: "captured",
+        amount: found.amount,
+        currency: "INR",
+      };
+    }
+    for (const [orderId, order] of mockDb.orders.entries()) {
+      const orderSuffix = orderId.split("_").pop();
+      const paySuffix = paymentId.split("_").pop();
+      if (orderSuffix && paySuffix && orderSuffix === paySuffix) {
+        return {
+          id: paymentId,
+          order_id: orderId,
+          status: "captured",
+          amount: order.amount_paise,
+          currency: order.currency || "INR",
+        };
+      }
+    }
+    return {
+      id: paymentId,
+      order_id: "order_fallback",
+      status: "captured",
+      amount: 39900,
+      currency: "INR",
+    };
+  };
+
   const netlifyVerify = createNetlifyVerifyHandler({
     getSupabaseAdmin: mockSupabaseAdmin,
+    fetchRazorpayPayment: mockFetchRazorpayPayment,
   });
 
   const netlifyWebhook = createNetlifyWebhookHandler({
@@ -505,7 +550,7 @@ async function runRazorpayModeIsolationSuite() {
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: async () =>
         new Response(
-          JSON.stringify({ id: "order_test_next_monthly_2", amount: 149900, currency: "INR" }),
+          JSON.stringify({ id: "order_test_next_monthly_2", amount: 49900, currency: "INR" }),
           { status: 200 }
         ),
     };
@@ -539,7 +584,7 @@ async function runRazorpayModeIsolationSuite() {
       user_id: validTestUser.id,
       provider: "razorpay",
       plan_code: "weekly",
-      amount_paise: 69200,
+      amount_paise: 39900,
       currency: "INR",
       status: "created",
       mode: "test",
@@ -588,7 +633,7 @@ async function runRazorpayModeIsolationSuite() {
       user_id: validTestUser.id,
       provider: "razorpay",
       plan_code: "monthly",
-      amount_paise: 149900,
+      amount_paise: 49900,
       currency: "INR",
       status: "created",
       mode: "test",
@@ -603,7 +648,10 @@ async function runRazorpayModeIsolationSuite() {
         razorpay_signature: validNextSig,
       }),
     });
-    (nextVerifyReq3 as any).__testDeps = { getSupabaseAdmin: mockSupabaseAdmin };
+    (nextVerifyReq3 as any).__testDeps = {
+      getSupabaseAdmin: mockSupabaseAdmin,
+      fetchRazorpayPayment: mockFetchRazorpayPayment,
+    };
     const nextVerifyRes3 = await handleNextVerify(nextVerifyReq3);
     assert.strictEqual(nextVerifyRes3.status, 200);
     const nextVerifyData3 = await nextVerifyRes3.json();
@@ -676,7 +724,7 @@ async function runRazorpayModeIsolationSuite() {
       user_id: validTestUser.id,
       provider: "razorpay",
       plan_code: "quarterly",
-      amount_paise: 399900,
+      amount_paise: 219900,
       currency: "INR",
       status: "created",
       mode: "test",
@@ -754,7 +802,7 @@ async function runRazorpayModeIsolationSuite() {
       user_id: validTestUser.id,
       provider: "razorpay",
       plan_code: "quarterly",
-      amount_paise: 399900,
+      amount_paise: 219900,
       currency: "INR",
       status: "created",
       mode: "test", // Created in test mode
@@ -848,7 +896,7 @@ async function runRazorpayModeIsolationSuite() {
       user_id: validLiveUser.id,
       provider: "razorpay",
       plan_code: "monthly",
-      amount_paise: 149900,
+      amount_paise: 49900,
       currency: "INR",
       status: "created",
       mode: "live", // Explicitly live
@@ -935,7 +983,7 @@ async function runRazorpayModeIsolationSuite() {
       user_id: validTestUser.id,
       provider: "razorpay",
       plan_code: "weekly",
-      amount_paise: 69200,
+      amount_paise: 39900,
       currency: "INR",
       status: "created",
       mode: "live", // Live order
@@ -969,7 +1017,7 @@ async function runRazorpayModeIsolationSuite() {
     const trackedFetch = async () => {
       rzpApiCallCount++;
       return new Response(
-        JSON.stringify({ id: "order_mock_b2_123", amount: 69200, currency: "INR" }),
+        JSON.stringify({ id: "order_mock_b2_123", amount: 39900, currency: "INR" }),
         { status: 200 }
       );
     };

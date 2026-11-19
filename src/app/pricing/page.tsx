@@ -7,19 +7,11 @@ import Footer from "@/components/Footer";
 import { cnTokens } from "@/components/ui/cn-tokens";
 import {
   PLANS,
-  type PlanConfig,
   PAID_PLANS_DISPLAY_ORDER,
-  getPlanBillingLabel,
-  getPlanPerWeekText,
   formatPriceINR,
-  ADD_ON_PACKS,
-  ADD_ON_PACKS_NOTE,
-  FAIR_USE_LIMIT_NOTE,
-  PLAN_QUOTA_SUMMARY_NOTE,
-  PER_WEEK_NOTE,
-  UPGRADE_BUTTON_LABEL,
+  PREPAID_PRICE_SUMMARY,
+  PLAN_PRICING,
 } from "@/config/plans";
-import { PLAN_FEATURE_ROWS } from "@/config/plan-features";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -27,10 +19,24 @@ import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { handleProCheckout, openRazorpaySubscription } from "@/lib/billing/checkout";
 import { toast } from "react-toastify";
 
+// Every plan unlocks the same product: full access to job listings.
+const JOB_LISTING_FEATURES = [
+  "Unlimited browsing of verified unindexed remote jobs",
+  "Filters for role, location and job type",
+  "Salary data where available",
+  "Direct apply links to employer career pages",
+];
+
+const policyLinks = [
+  { href: "/terms-and-conditions", label: "Terms & Conditions" },
+  { href: "/refund-policy", label: "Cancellation & Refund Policy" },
+  { href: "/privacy-policy", label: "Privacy Policy" },
+  { href: "/contact", label: "Contact Us" },
+];
+
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState<PlanConfig["id"]>("monthly");
 
   useEffect(() => {
     let mounted = true;
@@ -69,14 +75,19 @@ export default function PricingPage() {
   }, []);
 
   const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
-  const isAutorenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
+  const isAutoRenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
+  const [autoRenewConsent, setAutoRenewConsent] = useState(false);
 
-  // Single synchronous purchase lock shared by plan and add-on purchases
+  // Single synchronous purchase lock shared by all plan buttons
   const checkoutLockRef = useRef<boolean>(false);
   const [loadingCheckout, setLoadingCheckout] = useState<string | null>(null);
   const isCheckoutLocked = checkoutLockRef.current || loadingCheckout !== null;
 
   const handleBuyPlan = async (planCode: string) => {
+    if (!isBillingEnabled) {
+      toast.error("Payments not enabled. Billing is currently disabled.");
+      return;
+    }
     // Synchronous in-flight guard: acquired before any auth await
     if (checkoutLockRef.current || loadingCheckout !== null) {
       return;
@@ -109,80 +120,45 @@ export default function PricingPage() {
       return;
     }
 
-    try {
-      if (isAutorenewEnabled) {
-        await openRazorpaySubscription({
-          planCode,
-          redirectTarget: "/pricing",
-          onError: (errMsg) => {
-            resetLock();
-            toast.error(errMsg || "Payment processing failed. Please try again.");
-          },
-          onSuccess: () => {
-            resetLock();
-          },
-          onDismiss: () => {
-            resetLock();
-          },
-        });
-      } else {
-        await handleProCheckout({
-          planCode,
-          redirectTarget: "/pricing",
-          onError: (errMsg) => {
-            resetLock();
-            toast.error(errMsg || "Payment processing failed. Please try again.");
-          },
-          onSuccess: () => {
-            resetLock();
-          },
-          onDismiss: () => {
-            resetLock();
-          },
-        });
+    if (planCode === "monthly" && isAutoRenewEnabled) {
+      if (!autoRenewConsent) {
+        resetLock();
+        toast.error("Please authorize auto-renewal before subscribing.");
+        return;
       }
-    } catch (err: any) {
-      resetLock();
-      toast.error(err?.message || "Failed to initiate plan checkout.");
-    }
-  };
 
-  const handleBuyAddon = async (addonCode: string) => {
-    // Synchronous in-flight guard: acquired before any auth await
-    if (checkoutLockRef.current || loadingCheckout !== null) {
-      return;
-    }
-    checkoutLockRef.current = true;
-    setLoadingCheckout(addonCode);
+      const consentRecord = {
+        agreed: true,
+        version: "2026-11-autorenew-v1",
+        timestamp: new Date().toISOString(),
+      };
 
-    const resetLock = () => {
-      checkoutLockRef.current = false;
-      setLoadingCheckout(null);
-    };
-
-    let currentUser = user;
-    if (!currentUser) {
       try {
-        const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        currentUser = session?.user || null;
-      } catch {}
-    }
-
-    if (!currentUser) {
-      resetLock();
-      const loginUrl = `/login?returnTo=${encodeURIComponent("/pricing")}`;
-      if (typeof window !== "undefined") {
-        window.location.href = loginUrl;
+        await openRazorpaySubscription({
+          planCode: "monthly",
+          consent: consentRecord,
+          redirectTarget: "/pricing",
+          onError: (errMsg) => {
+            resetLock();
+            toast.error(errMsg || "Subscription processing failed. Please try again.");
+          },
+          onSuccess: () => {
+            resetLock();
+          },
+          onDismiss: () => {
+            resetLock();
+          },
+        });
+      } catch (err: any) {
+        resetLock();
+        toast.error(err?.message || "Failed to initiate subscription checkout.");
       }
       return;
     }
 
     try {
       await handleProCheckout({
-        addonCode,
+        planCode,
         redirectTarget: "/pricing",
         onError: (errMsg) => {
           resetLock();
@@ -197,661 +173,221 @@ export default function PricingPage() {
       });
     } catch (err: any) {
       resetLock();
-      toast.error(err?.message || "Failed to initiate add-on checkout.");
+      toast.error(err?.message || "Failed to initiate plan checkout.");
     }
-  };
-
-  const handleSelectPlan = (
-    planId: PlanConfig["id"] | string,
-    options?: { addonCode?: string; planCode?: string }
-  ) => {
-    if (options?.addonCode || (typeof planId === "string" && planId.startsWith("addon_"))) {
-      const addonCode = options?.addonCode || planId;
-      handleBuyAddon(addonCode);
-      return;
-    }
-    if (options?.planCode) {
-      setSelectedPlanId(planId as PlanConfig["id"]);
-      handleBuyPlan(options.planCode);
-      return;
-    }
-    setSelectedPlanId(planId as PlanConfig["id"]);
   };
 
   const paidPlansToDisplay = PAID_PLANS_DISPLAY_ORDER.map(
     (id) => PLANS.find((p) => p.id === id)!
   );
 
-  const handleKeyDownPlan = (
-    e: React.KeyboardEvent<HTMLDivElement>,
-    planId: PlanConfig["id"]
-  ) => {
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      setSelectedPlanId(planId);
-    } else if (e.key === "ArrowDown" || e.key === "ArrowRight") {
-      e.preventDefault();
-      const currentIndex = paidPlansToDisplay.findIndex((p) => p.id === planId);
-      const nextPlan = paidPlansToDisplay[(currentIndex + 1) % paidPlansToDisplay.length];
-      setSelectedPlanId(nextPlan.id);
-    } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
-      e.preventDefault();
-      const currentIndex = paidPlansToDisplay.findIndex((p) => p.id === planId);
-      const prevPlan = paidPlansToDisplay[(currentIndex - 1 + paidPlansToDisplay.length) % paidPlansToDisplay.length];
-      setSelectedPlanId(prevPlan.id);
-    }
-  };
+  const faqItems: Array<{ q: string; a: React.ReactNode }> = [
+    {
+      q: "What do I get?",
+      a: "Full access to CareerMonke job listings: every verified unindexed remote job, with filters, salary data where the employer publishes it, and direct apply links.",
+    },
+    {
+      q: "Does my plan renew automatically?",
+      a: isAutoRenewEnabled ? (
+        <>
+          The Monthly plan auto-renews at flat ₹499/month until cancelled. You can cancel anytime from Settings &gt; Billing. Weekly and Quarterly plans are prepaid for a fixed duration and do not auto-renew.
+        </>
+      ) : (
+        <>
+          No. Plans are prepaid for a fixed duration and do not auto-renew. You pay once ({PREPAID_PRICE_SUMMARY}) and
+          access ends when the period is over unless you choose to buy again.
+        </>
+      ),
+    },
+    {
+      q: "Can I get a refund?",
+      a: (
+        <>
+          All sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded. See the{" "}
+          <Link href="/refund-policy" className="underline underline-offset-2 hover:text-[#2563EB]">
+            Cancellation &amp; Refund Policy
+          </Link>
+          .
+        </>
+      ),
+    },
+    {
+      q: "How can I pay?",
+      a: "Payments are processed in Indian Rupees through Razorpay, with UPI, NetBanking and cards supported.",
+    },
+  ];
 
   const pricingContent = (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex flex-col items-center p-tk-4 sm:p-tk-3 gap-tk-4 sm:gap-tk-3 space-y-tk-4 sm:space-y-tk-3">
-      {/* 1. Centered Page Header */}
-      <div className="text-center space-y-2 mb-6 sm:mb-10 max-w-3xl mx-auto">
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#090E34] dark:text-white tracking-tight">
-          Get more interviews with CareerMonke Premium
+    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-20 flex flex-col gap-16 sm:gap-20">
+      {/* Header */}
+      <header className="text-center max-w-2xl mx-auto">
+        <h1 className="text-3xl sm:text-5xl font-semibold text-[#090E34] dark:text-white tracking-tight leading-tight">
+          Plans and pricing
         </h1>
-        <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto">
-          Stronger resumes + faster applications tailored to verified unindexed remote roles.
+        <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+          <span className="sm:block">Full access to verified unindexed remote job listings.</span>{" "}
+          <span className="sm:block whitespace-nowrap">
+            {isAutoRenewEnabled ? "Flat ₹499/mo monthly auto-renew, cancel anytime." : "One-time payment, no auto-renewal."}
+          </span>
         </p>
-        <div className="pt-2">
-          {isBillingEnabled ? (
-            <span
-              className="invisible inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold border border-transparent select-none"
-              aria-hidden="true"
+      </header>
+
+      {/* Plan cards: stacked on mobile, three columns from md */}
+      <section aria-label="Plans" className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 items-stretch">
+        {paidPlansToDisplay.map((plan) => {
+          const isPopular = plan.id === "monthly";
+          const durationDays = PLAN_PRICING[plan.id].duration_days;
+
+          return (
+            <article
+              key={plan.id}
+              data-plan-card={plan.id}
+              className={cnTokens(
+                "flex flex-col rounded-2xl p-6 sm:p-8 bg-white dark:bg-slate-950 min-w-0",
+                isPopular
+                  ? "border-2 border-[#2563EB] shadow-lg shadow-blue-600/10"
+                  : "border border-slate-200 dark:border-slate-800"
+              )}
             >
-              &nbsp;
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-              Payments will open soon.
-            </span>
-          )}
-        </div>
-      </div>
+              <div className="flex items-center justify-between gap-2 min-h-[28px]">
+                <h2 className="text-xl font-semibold text-[#090E34] dark:text-white">{plan.name}</h2>
+                {isPopular && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#2563EB] text-white">
+                    Most popular
+                  </span>
+                )}
+              </div>
 
-      {/* 2 & 3. Main Jobright-Turbo-Style Layout: Left Big Rounded Card (3 Tiles + Table) + Right Grey Panel */}
-      <div className="w-full">
-        {/* DESKTOP VIEW: Unified Table Layout guaranteeing row-by-row alignment */}
-        <div className="hidden lg:block w-full">
-          <table className="w-full border-separate border-spacing-0">
-            <tbody>
-              {/* TOP ROW: Left White Card Top (3 Tiles + Title) & Right Grey Free Plan Header */}
-              <tr>
-                {/* Left Cell: White rounded card containing the three plan tiles */}
-                <td className="w-[74%] bg-white dark:bg-slate-950 rounded-t-2xl border-t border-l border-r border-slate-200 dark:border-slate-800 p-6 sm:p-7 align-top shadow-xs">
-                  {/* Three Plan Tiles Side-by-Side: Weekly, Monthly, Quarterly */}
-                  <div
-                    role="radiogroup"
-                    aria-label="Subscription plans"
-                    className="grid grid-cols-3 gap-3.5"
-                  >
-                    {paidPlansToDisplay.map((plan) => {
-                      const isSelected = selectedPlanId === plan.id;
-                      const perWeekText = getPlanPerWeekText(plan);
-                      const billingLine = isAutorenewEnabled
-                        ? plan.interval === "month"
-                          ? "auto-renews every 30 days"
-                          : plan.interval === "quarter"
-                          ? "auto-renews every 90 days"
-                          : "auto-renews every 7 days"
-                        : plan.interval === "month"
-                        ? "billed monthly"
-                        : plan.interval === "quarter"
-                        ? "billed every 3 months"
-                        : "billed weekly";
+              <div className="mt-6 flex items-baseline gap-2">
+                <span className="text-4xl font-semibold text-[#090E34] dark:text-white tracking-tight">
+                  {formatPriceINR(plan.price)}
+                </span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">
+                  {isPopular && isAutoRenewEnabled ? "/month" : "one-time"}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {isPopular && isAutoRenewEnabled ? "Auto-renews monthly" : `${durationDays} days access`}
+              </p>
 
-                      return (
-                        <div
-                          key={plan.id}
-                          role="radio"
-                          aria-checked={isSelected}
-                          tabIndex={0}
-                          onClick={() => handleSelectPlan(plan.id)}
-                          onKeyDown={(e) => handleKeyDownPlan(e, plan.id)}
-                          className={cnTokens(
-                            "relative flex flex-col justify-between rounded-xl p-4 sm:p-5 transition-colors cursor-pointer select-none min-h-[220px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2",
-                            isSelected
-                              ? "border-2 border-[#2563EB] bg-blue-50/20 dark:bg-blue-950/20 shadow-xs"
-                              : "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-700"
-                          )}
-                        >
-                          <div>
-                            {/* Plan Name & Badge */}
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                                {plan.name}
-                              </span>
-                              {plan.badge && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
-                                  {plan.badge}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Big Price from Config */}
-                            <div className="my-1">
-                              <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                                {formatPriceINR(plan.price)}
-                              </span>
-                            </div>
-
-                            {/* Billing Line */}
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                              {billingLine}
-                            </p>
-
-                            {/* Per-week Figure */}
-                            <p className="text-xs font-semibold text-[#2563EB] dark:text-blue-400 mt-1">
-                              {perWeekText}
-                            </p>
-
-                            {/* Configured Quota / Usage Limit */}
-                            <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                              {plan.subLine}
-                            </p>
-
-                            <p className="sr-only">{getPlanBillingLabel(plan)}</p>
-                          </div>
-
-                          {/* Upgrade / Buy Button */}
-                          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                            {isBillingEnabled ? (
-                              <>
-                                <button
-                                  type="button"
-                                  data-plan-code={plan.id}
-                                  disabled={isCheckoutLocked}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectPlan(plan.id, { planCode: plan.id });
-                                  }}
-                                  className={cnTokens(
-                                    "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed",
-                                    isSelected
-                                      ? "bg-[#2563EB] text-white hover:bg-blue-700"
-                                      : "bg-black text-white dark:bg-slate-100 dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200"
-                                  )}
-                                >
-                                  Buy {plan.name}
-                                </button>
-                                <div className="flex justify-center mt-2" aria-hidden="true">
-                                  <span className="invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none">
-                                    &nbsp;
-                                  </span>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  disabled
-                                  aria-disabled="true"
-                                  className={cnTokens(
-                                    "w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors cursor-not-allowed select-none opacity-80",
-                                    isSelected
-                                      ? "bg-[#2563EB] text-white shadow-xs"
-                                      : "bg-black text-white dark:bg-slate-100 dark:text-slate-900"
-                                  )}
-                                >
-                                  Upgrade
-                                </button>
-                                <div className="flex justify-center mt-2">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                    {UPGRADE_BUTTON_LABEL}
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Footnote right below cards */}
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-3 leading-normal">
-                    {PER_WEEK_NOTE}
-                  </p>
-
-                  {/* Heading below tiles */}
-                  <div className="mt-6 mb-2">
-                    <h2 className="text-lg font-bold text-[#090E34] dark:text-white">
-                      All features included in Premium
-                    </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
-                    </p>
-                  </div>
-                </td>
-
-                {/* Right Cell: Grey Free Plan Panel Header */}
-                <td className="w-[26%] bg-[#F8F9FA] dark:bg-slate-900/60 rounded-t-2xl border-t border-r border-slate-200 dark:border-slate-800 p-6 sm:p-7 align-top">
-                  <div className="flex flex-col justify-between rounded-xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xs min-h-[220px]">
-                    <div>
-                      {/* Plan Name */}
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                          Free Plan
-                        </span>
-                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] text-slate-600 dark:text-slate-300 font-bold" aria-hidden="true">
-                          i
-                        </span>
-                      </div>
-
-                      {/* Big Price */}
-                      <div className="my-1">
-                        <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                          ₹0.00
-                        </span>
-                      </div>
-
-                      {/* Billing Line */}
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        Free forever
-                      </p>
-
-                      {/* Subline */}
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
-                        Basic search & masked previews
-                      </p>
-
-                      {/* Free Tier Usage Limit */}
-                      <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                        0 AI application sets · Unlimited job browsing
-                      </p>
-                    </div>
-
-                    {/* Button container matching paid cards */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <div className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center select-none bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                        Your current plan
-                      </div>
-                      <div className="flex justify-center mt-2 invisible" aria-hidden="true">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium">
-                          placeholder
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-
-              {/* 4. Table Rows: Sourced from Config */}
-              {PLAN_FEATURE_ROWS.map((row, idx) => {
-                const isLast = idx === PLAN_FEATURE_ROWS.length - 1;
-
-                return (
-                  <tr key={idx}>
-                    {/* Left Cell: Inside the white card */}
-                    <td
-                      className={cnTokens(
-                        "w-[74%] bg-white dark:bg-slate-950 border-l border-r border-slate-200 dark:border-slate-800 px-6 sm:px-7 py-3 align-middle",
-                        isLast
-                          ? "rounded-b-2xl border-b border-slate-200 dark:border-slate-800 shadow-xs"
-                          : "border-b border-slate-100 dark:border-slate-800/60"
-                      )}
+              <ul className="mt-8 space-y-3 text-sm text-slate-700 dark:text-slate-300 flex-1">
+                {JOB_LISTING_FEATURES.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2.5">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 20 20"
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[#2563EB]"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.25"
                     >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-semibold text-sm text-[#090E34] dark:text-white shrink-0">
-                            {row.name}
-                          </span>
-                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-300 dark:border-slate-700 text-[10px] text-slate-400">
-                              i
-                            </span>
-                            {row.info}
-                          </span>
-                        </div>
-                        <div className="shrink-0">
-                          <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
-                            {row.premium}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
+                      <path d="M4 10.5l4 4 8-9" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span className="min-w-0">{feature}</span>
+                  </li>
+                ))}
+              </ul>
 
-                    {/* Right Cell: Inside the grey Free Plan panel */}
-                    <td
-                      className={cnTokens(
-                        "w-[26%] bg-[#F8F9FA] dark:bg-slate-900/60 border-r border-slate-200 dark:border-slate-800 px-6 pl-8 py-3 align-middle",
-                        isLast
-                          ? "rounded-b-2xl border-b border-slate-200 dark:border-slate-800"
-                          : "border-b border-slate-200/50 dark:border-slate-800/50"
-                      )}
-                    >
-                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                        {row.free}
+              <div className="mt-8">
+                {isPopular && isAutoRenewEnabled && isBillingEnabled && (
+                  <div className="mb-4">
+                    <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        data-testid="autorenew-consent-checkbox"
+                        aria-label="Authorize monthly auto-renewal"
+                        checked={autoRenewConsent}
+                        onChange={(e) => setAutoRenewConsent(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span>
+                        I authorize CareerMonke to charge ₹499/month until cancelled. I can cancel anytime from Settings.
                       </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* MOBILE VIEW (< 1024px): Stacked Tiles + Free Card + Responsive Comparison */}
-        <div className="block lg:hidden w-full space-y-6">
-          {/* Stacked Plan Tiles */}
-          <div
-            role="radiogroup"
-            aria-label="Subscription plans"
-            className="space-y-3.5"
-          >
-            {paidPlansToDisplay.map((plan) => {
-              const isSelected = selectedPlanId === plan.id;
-              const perWeekText = getPlanPerWeekText(plan);
-              const billingLine = isAutorenewEnabled
-                ? plan.interval === "month"
-                  ? "auto-renews every 30 days"
-                  : plan.interval === "quarter"
-                  ? "auto-renews every 90 days"
-                  : "auto-renews every 7 days"
-                : plan.interval === "month"
-                ? "billed monthly"
-                : plan.interval === "quarter"
-                ? "billed every 3 months"
-                : "billed weekly";
-
-              return (
-                <div
-                  key={plan.id}
-                  role="radio"
-                  aria-checked={isSelected}
-                  tabIndex={0}
-                  onClick={() => handleSelectPlan(plan.id)}
-                  onKeyDown={(e) => handleKeyDownPlan(e, plan.id)}
-                  className={cnTokens(
-                    "flex flex-col justify-between rounded-2xl p-5 transition-colors cursor-pointer select-none bg-white dark:bg-slate-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]",
-                    isSelected
-                      ? "border-2 border-[#2563EB] shadow-xs"
-                      : "border border-slate-200 dark:border-slate-800"
-                  )}
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                        {plan.name}
-                      </span>
-                      {plan.badge && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#2563EB] dark:bg-blue-950/60 dark:text-blue-300 border border-blue-100 dark:border-blue-900/40">
-                          {plan.badge}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="my-1">
-                      <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                        {formatPriceINR(plan.price)}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-slate-500 font-medium">{billingLine}</p>
-
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs font-semibold text-[#2563EB] dark:text-blue-400">
-                        {perWeekText}
-                      </span>
-                    </div>
-
-                    <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                      {plan.subLine}
-                    </p>
+                    </label>
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    {isBillingEnabled ? (
-                      <>
-                        <button
-                          type="button"
-                          data-plan-code={plan.id}
-                          disabled={isCheckoutLocked}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectPlan(plan.id, { planCode: plan.id });
-                          }}
-                          className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center transition-colors hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75 cursor-pointer disabled:cursor-not-allowed"
-                        >
-                          Buy {plan.name}
-                        </button>
-                        <div className="flex justify-center mt-2" aria-hidden="true">
-                          <span className="invisible inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border border-transparent select-none">
-                            &nbsp;
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled
-                          aria-disabled="true"
-                          className="w-full min-h-[48px] h-11 rounded-lg bg-[#2563EB] text-white font-semibold text-sm flex items-center justify-center cursor-not-allowed select-none opacity-80"
-                        >
-                          Upgrade
-                        </button>
-                        <div className="flex justify-center mt-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                            {UPGRADE_BUTTON_LABEL}
-                          </span>
-                        </div>
-                      </>
+                )}
+                {isBillingEnabled ? (
+                  <button
+                    type="button"
+                    data-plan-code={plan.id}
+                    disabled={isCheckoutLocked || (isPopular && isAutoRenewEnabled && !autoRenewConsent)}
+                    onClick={() => handleBuyPlan(plan.id)}
+                    className={cnTokens(
+                      "w-full min-h-[48px] rounded-xl font-semibold text-sm flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed",
+                      isPopular
+                        ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
+                        : "bg-[#090E34] text-white hover:bg-slate-800 dark:bg-white dark:text-[#090E34] dark:hover:bg-slate-200"
                     )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Footnote right below cards */}
-          <p className="text-[11px] text-slate-400 dark:text-slate-500 -mt-2 leading-normal text-center">
-            {PER_WEEK_NOTE}
-          </p>
-
-          {/* Free Tier Card on Mobile */}
-          <div className="flex flex-col justify-between rounded-2xl p-5 bg-[#F8F9FA] dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div>
-              <div className="mb-1">
-                <span className="text-lg font-bold text-[#090E34] dark:text-white">
-                  Free Plan
-                </span>
-              </div>
-
-              <div className="my-1">
-                <span className="text-3xl font-black text-[#090E34] dark:text-white tracking-tight">
-                  ₹0.00
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-500 font-medium">Free forever</p>
-
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Basic search & masked previews
-                </span>
-              </div>
-
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1.5">
-                0 AI application sets · Unlimited job browsing
-              </p>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
-              <div className="w-full min-h-[48px] h-11 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-sm flex items-center justify-center select-none">
-                Your current plan
-              </div>
-            </div>
-          </div>
-
-          {/* Mobile Comparison Table */}
-          <div className="bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
-            <div className="mb-3">
-              <h2 className="text-base font-bold text-[#090E34] dark:text-white">
-                All features included in Premium
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                {PLAN_QUOTA_SUMMARY_NOTE} {FAIR_USE_LIMIT_NOTE}
-              </p>
-            </div>
-
-            <div className="overflow-x-auto -mx-2 px-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    <th className="py-2.5 px-2">Feature</th>
-                    <th className="py-2.5 px-2 text-center">Free</th>
-                    <th className="py-2.5 px-2 text-center">Premium</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {PLAN_FEATURE_ROWS.map((row, idx) => (
-                    <tr key={idx}>
-                      <td className="py-2.5 px-2">
-                        <span className="font-semibold text-[#090E34] dark:text-white block">
-                          {row.name}
-                        </span>
-                        <span className="text-[11px] text-slate-500 block mt-0.5 leading-snug">
-                          {row.info}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-2 text-center align-middle text-slate-600">
-                        {row.free}
-                      </td>
-                      <td className="py-2.5 px-2 text-center align-middle">
-                        <span className="inline-flex items-center justify-center px-2 py-1 rounded-lg text-[11px] font-semibold bg-blue-50 text-[#2563EB] text-center leading-snug">
-                          {row.premium}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Clearly Separated Add-on Packs Section */}
-      <section
-        aria-labelledby="addon-packs-heading"
-        className="w-full mt-10 pt-8 border-t border-slate-200 dark:border-slate-800"
-      >
-        <div className="w-full bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-xs space-y-5">
-          <div className="space-y-1.5 text-center sm:text-left">
-            <h2
-              id="addon-packs-heading"
-              className="text-lg sm:text-xl font-bold text-[#090E34] dark:text-white"
-            >
-              Add-on Packs
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Need extra capacity during your billing period? 10 / 30 / 60 extra generations are used only after your plan quota is exhausted, respect the 30/day fair-use limit, and expire together with the subscription.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {ADD_ON_PACKS.map((pack) => {
-              const addonCode = pack.code || (pack.sets === 10 ? "addon_10" : pack.sets === 30 ? "addon_30" : "addon_60");
-
-              return (
-                <div
-                  key={pack.sets}
-                  className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-[#F8F9FA] dark:bg-slate-900/60 p-4 sm:p-5"
-                >
-                  <div>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB] dark:text-blue-400">
-                      One-time add-on
-                    </span>
-                    <div className="mt-1 text-2xl font-black text-[#090E34] dark:text-white tracking-tight">
-                      {formatPriceINR(pack.price)}
-                    </div>
-                    <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                      {pack.sets} extra generations
-                    </p>
-                    <p className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-                      Used after plan quota · Expires together with your subscription
-                    </p>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800">
+                  >
+                    Buy {plan.name}
+                  </button>
+                ) : (
+                  <>
                     <button
                       type="button"
-                      data-addon-code={addonCode}
-                      disabled={isCheckoutLocked}
-                      onClick={() => handleSelectPlan(addonCode, { addonCode })}
-                      className="w-full min-h-[48px] h-11 rounded-lg font-semibold text-sm flex items-center justify-center transition-colors select-none bg-[#2563EB] text-white hover:bg-blue-700 shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 disabled:opacity-75"
+                      disabled
+                      aria-disabled="true"
+                      className="w-full min-h-[48px] rounded-xl font-semibold text-sm flex items-center justify-center cursor-not-allowed bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                     >
-                      Buy
+                      Upgrade
                     </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                    <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
+                      Payments are currently unavailable.
+                    </p>
+                  </>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </section>
 
-          <div className="p-3.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 text-center sm:text-left">
-            <p className="text-xs sm:text-sm font-semibold text-[#090E34] dark:text-white">
-              {ADD_ON_PACKS_NOTE}
-            </p>
-          </div>
+      {/* FAQ */}
+      <section aria-labelledby="pricing-faq-heading" className="w-full max-w-3xl mx-auto">
+        <h2 id="pricing-faq-heading" className="text-xl sm:text-2xl font-semibold text-[#090E34] dark:text-white text-center">
+          Frequently asked questions
+        </h2>
+        <div className="mt-8 divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {faqItems.map((item) => (
+            <details key={item.q} className="group py-5">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm sm:text-base font-medium text-[#090E34] dark:text-white [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0">{item.q}</span>
+                <span aria-hidden="true" className="shrink-0 text-slate-400 transition-transform group-open:rotate-45 text-xl leading-none">
+                  +
+                </span>
+              </summary>
+              <div className="mt-3 text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{item.a}</div>
+            </details>
+          ))}
         </div>
       </section>
 
-      {/* 6. Under the section: Final-sale and Policy Links */}
-      <div className="w-full max-w-3xl mx-auto mt-6 px-4 text-center space-y-4">
-        <div className="pt-2 text-center space-y-2 text-xs text-slate-500 dark:text-slate-400">
-          <p className="font-bold text-[#090E34] dark:text-white">All sales final · no refunds</p>
-          {isAutorenewEnabled ? (
-            <p>
-              Plans auto-renew every 7 days (Weekly: ₹692), 30 days (Monthly: ₹1,499), or 90 days (Quarterly: ₹3,999) from purchase until cancelled (renews every 7/30/90 days from purchase). Renewal amount and schedule are confirmed at checkout. Cancel anytime from your account settings before the renewal date. Add-on packs expire together with the subscription.
-            </p>
-          ) : (
-            <p>Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires. Add-on packs expire together with the subscription.</p>
-          )}
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+      {/* Final-sale note and policy links */}
+      <div className="w-full max-w-3xl mx-auto text-center space-y-3 text-xs text-slate-500 dark:text-slate-400">
+        <p className="font-semibold text-[#090E34] dark:text-white">All sales final · no refunds</p>
+        <p>
+          {isAutoRenewEnabled
+            ? "Monthly plan auto-renews at flat ₹499/month until cancelled. Weekly and Quarterly plans are prepaid for a fixed duration."
+            : `Plans are prepaid for a fixed duration and do not auto-renew. (${PREPAID_PRICE_SUMMARY}). Access ends automatically when the plan period expires.`}
+        </p>
+        <nav aria-label="Policies" className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+          {policyLinks.map((link) => (
             <Link
-              href="/about"
+              key={link.href}
+              href={link.href}
               className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
             >
-              About Us
+              {link.label}
             </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/terms-and-conditions"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Terms &amp; Conditions
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/privacy-policy"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Privacy Policy
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/refund-policy"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Cancellation &amp; Refund Policy
-            </Link>
-            <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
-            <Link
-              href="/contact"
-              className="hover:text-[#2563EB] dark:hover:text-blue-400 underline underline-offset-2 transition-colors"
-            >
-              Contact Us
-            </Link>
-          </div>
-        </div>
+          ))}
+        </nav>
       </div>
     </div>
   );
 
   return (
     <LoggedInAppShell pageLabel="PRICING" user={user} isPro={isPro}>
-  <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Pricing", path: "/pricing" }]} />
+      <BreadcrumbJsonLd trail={[{ name: "Home", path: "/" }, { name: "Pricing", path: "/pricing" }]} />
       {pricingContent}
       <Footer />
     </LoggedInAppShell>

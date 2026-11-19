@@ -90,16 +90,17 @@ function run() {
     console.log("  [PASS] content order: summary + tags, Responsibilities, Qualifications, Benefits, and Company section");
   }
 
-  // 5. Right Rail with Stacked Cards
+  // 5. Right Rail with Stacked Cards. Product restore (#665): the Tailor Resume card was removed (no AI
+  // CTAs outside the landing page), so it must NOT come back; Similar jobs and Your notes remain.
   const hasRightRail =
-    detailCode.includes("Tailor Resume") &&
     detailCode.includes("Similar jobs") &&
-    detailCode.includes("Your notes");
+    detailCode.includes("Your notes") &&
+    !detailCode.includes("Tailor Resume");
 
   if (!hasRightRail) {
-    failures.push("RIGHT RAIL FAIL: Desktop right rail must contain stacked cards (Tailor Resume, Similar jobs, Your notes).");
+    failures.push("RIGHT RAIL FAIL: Desktop right rail must contain stacked cards (Similar jobs, Your notes) and no Tailor Resume card.");
   } else {
-    console.log("  [PASS] right rail: stacked action cards (Tailor Resume, Similar jobs, Your notes) with sections hidden when no data");
+    console.log("  [PASS] right rail: stacked cards (Similar jobs, Your notes), no Tailor Resume card, sections hidden when no data");
   }
 
   // 6. Pro Unlock Error Handling & isUnlocked logic preserved

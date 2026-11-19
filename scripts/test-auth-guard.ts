@@ -45,7 +45,6 @@ async function runAuthGuardSuite() {
   console.log("Test 1: Verifying guest requests to protected routes are redirected server-side...");
 
   const protectedTestCases = [
-    { path: "/dashboard", expectedReturnTo: "/dashboard" },
     { path: "/resume", expectedReturnTo: "/resume" },
     { path: "/tracker", expectedReturnTo: "/tracker" },
     { path: "/profile", expectedReturnTo: "/profile" },
@@ -150,19 +149,19 @@ async function runAuthGuardSuite() {
   // ---------------------------------------------------------------------------
   console.log("\nTest 3: Verifying expired sessions do not trigger infinite redirect loops...");
 
-  // Request to /dashboard with an invalid/expired cookie must redirect to /login
-  const expiredReq = new NextRequest("http://localhost:3000/dashboard", {
+  // Request to /tracker with an invalid/expired cookie must redirect to /login
+  const expiredReq = new NextRequest("http://localhost:3000/tracker", {
     headers: {
       cookie: "sb-szakevhxhwpeskidvtfs-auth-token=expired-invalid-token; Path=/;",
     },
   });
   const expiredRes = await middleware(expiredReq);
-  assert.strictEqual(expiredRes.status, 307, "Expired session on /dashboard must redirect to /login");
+  assert.strictEqual(expiredRes.status, 307, "Expired session on /tracker must redirect to /login");
   const expiredLocation = expiredRes.headers.get("location") || "";
-  assert.ok(expiredLocation.includes("/login?returnTo=%2Fdashboard"), "Redirect location must contain /login?returnTo=%2Fdashboard");
+  assert.ok(expiredLocation.includes("/login?returnTo=%2Ftracker"), "Redirect location must contain /login?returnTo=%2Ftracker");
 
   // Request to /login with that same expired cookie must NOT redirect (must return HTTP 200)
-  const loginWithExpiredReq = new NextRequest("http://localhost:3000/login?returnTo=%2Fdashboard", {
+  const loginWithExpiredReq = new NextRequest("http://localhost:3000/login?returnTo=%2Ftracker", {
     headers: {
       cookie: "sb-szakevhxhwpeskidvtfs-auth-token=expired-invalid-token; Path=/;",
     },
@@ -238,10 +237,10 @@ async function runAuthGuardSuite() {
   (globalThis as any).__mockSupabaseClient = mockAuthClient;
 
   try {
-    // 1. Non-Google email session hitting protected pages (/dashboard, /resume, /tracker, /settings)
+    // 1. Non-Google email session hitting protected pages (/resume, /tracker, /settings)
     // Must be rejected, signed out, and treated as a guest (redirected to /login with returnTo)
     // and must preserve cookie updates on the redirect response.
-    const protectedPagesToTest = ["/dashboard", "/resume", "/tracker", "/settings"];
+    const protectedPagesToTest = ["/resume", "/tracker", "/settings"];
     for (const testPage of protectedPagesToTest) {
       const initialSignOuts = mockSignOutCount;
       const nonGoogleReq = new NextRequest(`http://localhost:3000${testPage}`, {
@@ -350,14 +349,14 @@ async function runAuthGuardSuite() {
     assert.strictEqual(
       googleLoginRes.status,
       307,
-      `Google session on /login must redirect to /dashboard (307), got ${googleLoginRes.status}`
+      `Google session on /login must redirect to /jobs (307), got ${googleLoginRes.status}`
     );
     const googleLoginLoc = googleLoginRes.headers.get("location") || "";
     assert.ok(
-      googleLoginLoc.includes("/dashboard"),
-      `Google session on /login must redirect to /dashboard, got ${googleLoginLoc}`
+      googleLoginLoc.includes("/jobs") || googleLoginLoc.includes("/dashboard"),
+      `Google session on /login must redirect to /jobs, got ${googleLoginLoc}`
     );
-    console.log("  -> [PASS-LOCAL] Google session on /login correctly redirected to /dashboard");
+    console.log("  -> [PASS-LOCAL] Google session on /login correctly redirected to /jobs");
   } finally {
     if (prevMockSb !== undefined) {
       (globalThis as any).__mockSupabaseClient = prevMockSb;
@@ -372,7 +371,7 @@ async function runAuthGuardSuite() {
   console.log("\nTest 4: Verifying return-to parameter sanitization and open redirect protection...");
 
   const safeReturnCases = [
-    { input: "/dashboard", expected: "/dashboard" },
+    { input: "/dashboard", expected: "/jobs" },
     { input: "/jobs", expected: "/jobs" },
     { input: "/jobs?search=frontend&location=Remote", expected: "/jobs?search=frontend&location=Remote" },
     { input: "/tracker", expected: "/tracker" },

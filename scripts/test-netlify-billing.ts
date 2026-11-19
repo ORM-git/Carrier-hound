@@ -272,8 +272,11 @@ async function runSuite() {
     fetchFn: mockFetch,
   });
 
+  // Provider payments the mocked Razorpay API returns, keyed by payment id.
+  const providerPayments = new Map<string, any>();
   const verifyHandler = createVerifyHandler({
     getSupabaseAdmin: mockAdminGetter,
+    fetchRazorpayPayment: async (paymentId: string) => providerPayments.get(paymentId) ?? null,
   });
 
   const webhookHandler = createWebhookHandler({
@@ -382,7 +385,7 @@ async function runSuite() {
       "\nTest 3: Verifying server-authoritative order creation and Pro check on add-ons..."
     );
 
-    // 3A: Weekly plan order (client specifies tampered amount: 1 rupee; server must force 69200 paise)
+    // 3A: Weekly plan order (client specifies tampered amount: 1 rupee; server must force 39900 paise)
     const weeklyOrderRes = await orderHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer valid-token-pro" },
@@ -392,8 +395,8 @@ async function runSuite() {
     const weeklyOrder = JSON.parse(weeklyOrderRes.body);
     assert.strictEqual(
       weeklyOrder.amount,
-      69200,
-      "Weekly plan MUST resolve to 69200 paise (Rs 692)"
+      39900,
+      "Weekly plan MUST resolve to 39900 paise (Rs 399)"
     );
     assert.strictEqual(weeklyOrder.currency, "INR");
     assert(weeklyOrder.orderId.startsWith("order_test_"));
@@ -403,7 +406,7 @@ async function runSuite() {
     assert(recordedWeeklyOrder, "Order must be recorded in payment_orders");
     assert.strictEqual(recordedWeeklyOrder.status, "created");
     assert.strictEqual(recordedWeeklyOrder.plan_code, "weekly");
-    assert.strictEqual(recordedWeeklyOrder.amount_paise, 69200);
+    assert.strictEqual(recordedWeeklyOrder.amount_paise, 39900);
 
     // 3B: Monthly plan order
     const monthlyOrderRes = await orderHandler({
@@ -415,8 +418,8 @@ async function runSuite() {
     const monthlyOrder = JSON.parse(monthlyOrderRes.body);
     assert.strictEqual(
       monthlyOrder.amount,
-      149900,
-      "Monthly plan MUST resolve to 149900 paise (Rs 1,499)"
+      49900,
+      "Monthly plan MUST resolve to 49900 paise (Rs 499)"
     );
 
     // 3C: Free user attempts to buy Add-on 10 -> MUST be rejected with 403 PRO_REQUIRED
@@ -509,7 +512,7 @@ async function runSuite() {
     // ---------------------------------------------------------------------------
     console.log("\nTest 5: Verifying tamper protection on payment verify...");
 
-    // 5A: Client sends altered amount (recorded = 149900, payload = 69200)
+    // 5A: Client sends altered amount (recorded = 49900, payload = 39900)
     const verifyTamperedAmount = await verifyHandler({
       httpMethod: "POST",
       headers: { authorization: "Bearer valid-token-pro" },
@@ -517,7 +520,7 @@ async function runSuite() {
         order_id: targetOrderId,
         payment_id: samplePaymentId,
         razorpay_signature: validSignature,
-        amount: 69200,
+        amount: 39900,
       }),
     });
     assert.strictEqual(verifyTamperedAmount.statusCode, 400);
@@ -560,6 +563,43 @@ async function runSuite() {
     console.log("\nTest 6: Verifying verify fulfillment and repeat idempotency...");
 
     mockDb.rpcFulfilCalls = [];
+
+    // 6-pre: fail-closed provider checks. Every mismatch must be 400 with no fulfilment.
+    const recordedOrder: any = Array.from(mockDb.orders.values()).find((o: any) => o.provider_order_id === targetOrderId);
+    assert(recordedOrder, "Monthly order must be recorded");
+    const goodPayment = {
+      id: samplePaymentId,
+      order_id: targetOrderId,
+      status: "captured",
+      amount: recordedOrder.amount_paise,
+      currency: recordedOrder.currency || "INR",
+    };
+    const verifyBody6 = JSON.stringify({
+      order_id: targetOrderId,
+      payment_id: samplePaymentId,
+      razorpay_signature: validSignature,
+    });
+    const badProviderCases: Array<[string, any, string]> = [
+      ["not captured", { ...goodPayment, status: "authorized" }, "PAYMENT_NOT_CAPTURED"],
+      ["amount mismatch", { ...goodPayment, amount: goodPayment.amount - 1 }, "AMOUNT_MISMATCH"],
+      ["currency mismatch", { ...goodPayment, currency: "USD" }, "CURRENCY_MISMATCH"],
+      ["order mismatch", { ...goodPayment, order_id: "order_other" }, "ORDER_MISMATCH"],
+      ["payment id mismatch", { ...goodPayment, id: "pay_other" }, "PAYMENT_ID_MISMATCH"],
+      ["payment not found", null, "PAYMENT_NOT_FOUND"],
+    ];
+    for (const [label, providerPayment, code] of badProviderCases) {
+      providerPayments.set(samplePaymentId, providerPayment);
+      const r = await verifyHandler({
+        httpMethod: "POST",
+        headers: { authorization: "Bearer valid-token-pro" },
+        body: verifyBody6,
+      });
+      assert.strictEqual(r.statusCode, 400, `provider ${label} must be 400`);
+      assert.strictEqual(JSON.parse(r.body).code, code, `provider ${label} code`);
+      assert.strictEqual(mockDb.rpcFulfilCalls.length, 0, `provider ${label} must not fulfil`);
+    }
+    providerPayments.set(samplePaymentId, goodPayment);
+
     // 6A: First valid verify call
     const verifySuccess = await verifyHandler({
       httpMethod: "POST",
@@ -802,7 +842,7 @@ async function runSuite() {
         status: 200,
         json: async () => ({
           id: "order_b2_netlify_mock",
-          amount: 69200,
+          amount: 39900,
           currency: "INR",
           status: "created",
         }),

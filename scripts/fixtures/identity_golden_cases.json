@@ -1,0 +1,750 @@
+{
+  "version": "v2",
+  "contract": "length_framed_utf8_sha256",
+  "description": "Language-neutral golden test vectors for job identity and similarity hashing",
+  "cases": [
+    {
+      "id": "case_01_paypay_japanese_roles",
+      "name": "PayPay Unrelated Japanese Roles",
+      "description": "Preserves Japanese characters so unrelated roles do not collide and expire rows",
+      "items": [
+        {
+          "label": "Product Manager",
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "プロダクトマネージャー",
+            "country": "JP",
+            "location": "東京都, 日本"
+          },
+          "expected_payload": "v2|c:6:paypay|t:33:プロダクトマネージャー|co:2:jp|loc:9:東京都",
+          "expected_hash": "47a1e880aad0f529ae7f12a56e1ffe02b2b4b3679bc4ee43fde06b126f3c0cfe"
+        },
+        {
+          "label": "Backend Engineer",
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "バックエンドエンジニア",
+            "country": "JP",
+            "location": "東京都, 日本"
+          },
+          "expected_payload": "v2|c:6:paypay|t:33:バックエンドエンジニア|co:2:jp|loc:9:東京都",
+          "expected_hash": "378c114d9186654e22a7140e7202f81f01bd2c0e44ffc280c87d96c9a9c6de6b"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_02_new_relic_japanese_territories",
+      "name": "New Relic Japanese Sales Territories",
+      "description": "Preserves Japanese location distinctions across territories",
+      "items": [
+        {
+          "label": "Tokyo Territory",
+          "input": {
+            "company": "New Relic",
+            "title": "Enterprise Account Executive",
+            "country": "JP",
+            "location": "東京"
+          },
+          "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:東京",
+          "expected_hash": "f6e50cb0d5af0056f7e012ff5d6c053187fedf34e289ea7584e7a3e5a671416c"
+        },
+        {
+          "label": "Osaka Territory",
+          "input": {
+            "company": "New Relic",
+            "title": "Enterprise Account Executive",
+            "country": "JP",
+            "location": "大阪"
+          },
+          "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:大阪",
+          "expected_hash": "f2a0a09ac852c94c0ae1e96ef5482c859acf77d4db1b6d93e0db3193b3e43da3"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_03_clickhouse_support_consulting_tam",
+      "name": "ClickHouse Support vs Consulting vs TAM",
+      "description": "Distinguishes between similar client-facing technical roles",
+      "items": [
+        {
+          "label": "Support Engineer",
+          "input": {
+            "company": "ClickHouse",
+            "title": "Support Engineer",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:10:clickhouse|t:16:support engineer|co:2:us|loc:6:remote",
+          "expected_hash": "8ce9815c877c2fbd7cc2dacab7156ad699c036486ca7c6d9456ed4b1cbce1e07"
+        },
+        {
+          "label": "Consulting Engineer",
+          "input": {
+            "company": "ClickHouse",
+            "title": "Consulting Engineer",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:10:clickhouse|t:19:consulting engineer|co:2:us|loc:6:remote",
+          "expected_hash": "cfde2a87d4989bcdff2089b0836acfa301bb045734c86fb7cd43300e41ae262f"
+        },
+        {
+          "label": "Technical Account Manager",
+          "input": {
+            "company": "ClickHouse",
+            "title": "Technical Account Manager",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:10:clickhouse|t:25:technical account manager|co:2:us|loc:6:remote",
+          "expected_hash": "1e7a936ab36ef51f938ea7f8861d9e76fc639958be9960806071f7f47150546e"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_04_wolt_obuda_vs_buda",
+      "name": "Wolt Óbuda vs Buda (Accented Ó Preserved)",
+      "description": "Preserves accented Ó in Hungarian locations without stripping to buda",
+      "items": [
+        {
+          "label": "Óbuda Location",
+          "input": {
+            "company": "Wolt",
+            "title": "Courier Partner",
+            "country": "HU",
+            "location": "Óbuda, Budapest"
+          },
+          "expected_payload": "v2|c:4:wolt|t:15:courier partner|co:2:hu|loc:6:óbuda",
+          "expected_hash": "68124c76e14bfe59dabfd27cda0d272c29dc730d6a608507e37b1c482ae3c341"
+        },
+        {
+          "label": "Buda Location",
+          "input": {
+            "company": "Wolt",
+            "title": "Courier Partner",
+            "country": "HU",
+            "location": "Buda, Budapest"
+          },
+          "expected_payload": "v2|c:4:wolt|t:15:courier partner|co:2:hu|loc:4:buda",
+          "expected_hash": "c103f13234ad93411d3454c88c3c36c2d0aa6cf6b787396e50b05a7cdd65a8ea"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_05_alan_territory_flags",
+      "name": "Alan Territory Flags",
+      "description": "Preserves country brackets/flags in titles/locations",
+      "items": [
+        {
+          "label": "France Opening",
+          "input": {
+            "company": "Alan",
+            "title": "Software Engineer [FR]",
+            "country": "FR",
+            "location": "Paris"
+          },
+          "expected_payload": "v2|c:4:alan|t:22:software engineer [fr]|co:2:fr|loc:5:paris",
+          "expected_hash": "9161ae7127669aa296029fb61f323482059e12132bec10f13fcd002baff46d87"
+        },
+        {
+          "label": "Spain Opening",
+          "input": {
+            "company": "Alan",
+            "title": "Software Engineer [ES]",
+            "country": "ES",
+            "location": "Madrid"
+          },
+          "expected_payload": "v2|c:4:alan|t:22:software engineer [es]|co:2:es|loc:6:madrid",
+          "expected_hash": "4ae0ae7d38b1affd188c148444b0aef9718e84e2d8c873ebe38afcdcdefaa184"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_06_bilingual_punctuation_variants",
+      "name": "Bilingual / ASCII Punctuation Variants",
+      "description": "Preserves distinct punctuation characters (- vs / vs :) without delimiter ambiguity",
+      "items": [
+        {
+          "label": "Dash separator",
+          "input": {
+            "company": "Stripe",
+            "title": "Software Engineer - Platform",
+            "country": "US",
+            "location": "San Francisco, CA"
+          },
+          "expected_payload": "v2|c:6:stripe|t:28:software engineer - platform|co:2:us|loc:13:san francisco",
+          "expected_hash": "bbb7da6da2b6033c52a0749cd768284c7289714fa94f65914fa569ccef82d995"
+        },
+        {
+          "label": "Slash separator",
+          "input": {
+            "company": "Stripe",
+            "title": "Software Engineer / Platform",
+            "country": "US",
+            "location": "San Francisco, CA"
+          },
+          "expected_payload": "v2|c:6:stripe|t:28:software engineer / platform|co:2:us|loc:13:san francisco",
+          "expected_hash": "e47893e0799c0f3d4b0c63bc3161914ef4458a2ed8d266eaf2f9fc14a972e938"
+        },
+        {
+          "label": "Colon separator",
+          "input": {
+            "company": "Stripe",
+            "title": "Software Engineer: Platform",
+            "country": "US",
+            "location": "San Francisco, CA"
+          },
+          "expected_payload": "v2|c:6:stripe|t:27:software engineer: platform|co:2:us|loc:13:san francisco",
+          "expected_hash": "cd2e4533aaf52f7837bcbf89d79a5d5cb59ac65fa37d68988b5a82db1a7161ca"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_07_nfc_vs_nfd_equivalence",
+      "name": "Composed vs Decomposed Accented Text (NFC vs NFD)",
+      "description": "NFC normalization ensures pre-composed and combining decomposed accents produce identical hashes",
+      "items": [
+        {
+          "label": "NFD Decomposed (e + acute)",
+          "input": {
+            "company": "Café Inc",
+            "title": "Barista",
+            "country": "FR",
+            "location": "Nice"
+          },
+          "expected_payload": "v2|c:5:café|t:7:barista|co:2:fr|loc:4:nice",
+          "expected_hash": "50d4f87149f90cde2f8467cbd2c719186b816f36283412098e25f1578ef08df0"
+        },
+        {
+          "label": "NFC Pre-composed (é)",
+          "input": {
+            "company": "Café Ltd",
+            "title": "Barista",
+            "country": "FR",
+            "location": "Nice"
+          },
+          "expected_payload": "v2|c:5:café|t:7:barista|co:2:fr|loc:4:nice",
+          "expected_hash": "50d4f87149f90cde2f8467cbd2c719186b816f36283412098e25f1578ef08df0"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_08_null_and_empty_values",
+      "name": "Null and Empty Values",
+      "description": "Gracefully handles null and empty string fields without error",
+      "items": [
+        {
+          "label": "All Nulls",
+          "input": {
+            "company": null,
+            "title": null,
+            "country": null,
+            "location": null
+          },
+          "expected_payload": "v2|c:0:|t:0:|co:0:|loc:0:",
+          "expected_hash": "184f360ac4a49305dc7b81a0725ebf00fde9d3d72bd0d04b9e1abda3fd9d3a3d"
+        },
+        {
+          "label": "All Empty Strings",
+          "input": {
+            "company": "",
+            "title": "",
+            "country": "",
+            "location": ""
+          },
+          "expected_payload": "v2|c:0:|t:0:|co:0:|loc:0:",
+          "expected_hash": "184f360ac4a49305dc7b81a0725ebf00fde9d3d72bd0d04b9e1abda3fd9d3a3d"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_09_delimiter_characters_injection",
+      "name": "Delimiter Characters Injection Safety",
+      "description": "Values containing length-framing or delimiter characters (| and :) do not shift framing or collide",
+      "items": [
+        {
+          "label": "Pipe and Colon in title and company",
+          "input": {
+            "company": "A | B : C",
+            "title": "Staff Engineer | Platform : Core",
+            "country": "US",
+            "location": "Austin | Remote"
+          },
+          "expected_payload": "v2|c:9:a | b : c|t:32:staff engineer | platform : core|co:2:us|loc:15:austin | remote",
+          "expected_hash": "950798468c6e4213e50b42ba18b3b5c987b288ccde080a0023a0e7b2b2c19c85"
+        },
+        {
+          "label": "Different structure with similar tokens",
+          "input": {
+            "company": "A",
+            "title": "B : C | Staff Engineer",
+            "country": "US",
+            "location": "Platform : Core"
+          },
+          "expected_payload": "v2|c:1:a|t:22:b : c | staff engineer|co:2:us|loc:15:platform : core",
+          "expected_hash": "06788cdfd6ffe4c2c29b5dacdb0a355299478cfe6ebe603e7d5a48f7dd484708"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_10_same_posting_distinct_requisitions",
+      "name": "Same Title & Location with Distinct Requisition IDs",
+      "description": "Advisory similarity hash is identical, but authoritative write identity keeps them distinct without collision",
+      "items": [
+        {
+          "label": "Requisition 101",
+          "authoritative": {
+            "sourceId": "greenhouse:google",
+            "sourceJobId": "REQ-101"
+          },
+          "input": {
+            "company": "Google",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "Mountain View, CA"
+          },
+          "expected_payload": "v2|c:6:google|t:17:software engineer|co:2:us|loc:13:mountain view",
+          "expected_hash": "1a28d47de18ced0da8c7c5910157f16ff882f4e4ac4ba2e7becfab71d3d4b390"
+        },
+        {
+          "label": "Requisition 102",
+          "authoritative": {
+            "sourceId": "greenhouse:google",
+            "sourceJobId": "REQ-102"
+          },
+          "input": {
+            "company": "Google",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "Mountain View, CA"
+          },
+          "expected_payload": "v2|c:6:google|t:17:software engineer|co:2:us|loc:13:mountain view",
+          "expected_hash": "1a28d47de18ced0da8c7c5910157f16ff882f4e4ac4ba2e7becfab71d3d4b390"
+        }
+      ],
+      "expected_outcome": "identical_similarity_hash_but_distinct_authoritative_keys"
+    },
+    {
+      "id": "case_11_provider_job_ids_duplicated_across_boards",
+      "name": "Provider Job IDs Duplicated Across Different Boards",
+      "description": "Authoritative source_id scopes provider_job_id so identical IDs on different boards never collide",
+      "items": [
+        {
+          "label": "Board Alpha Job 101",
+          "authoritative": {
+            "sourceId": "greenhouse:board_alpha",
+            "sourceJobId": "101"
+          },
+          "input": {
+            "company": "Company Alpha",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "New York, NY"
+          },
+          "expected_payload": "v2|c:13:company alpha|t:17:software engineer|co:2:us|loc:8:new york",
+          "expected_hash": "221cc3dd82c72d3c197e1a25f92fa9d1f958ab541bbf42f430b4b26ca2499a3c"
+        },
+        {
+          "label": "Board Beta Job 101",
+          "authoritative": {
+            "sourceId": "greenhouse:board_beta",
+            "sourceJobId": "101"
+          },
+          "input": {
+            "company": "Company Beta",
+            "title": "Software Engineer",
+            "country": "US",
+            "location": "New York, NY"
+          },
+          "expected_payload": "v2|c:12:company beta|t:17:software engineer|co:2:us|loc:8:new york",
+          "expected_hash": "b507d285bdec1c0192041feaeebe8915dd13614defbe77ffb689bf6fa5b06c6d"
+        }
+      ],
+      "expected_outcome": "distinct_authoritative_keys"
+    },
+    {
+      "id": "case_12_turkish_dotted_i",
+      "name": "Turkish Dotted Capital I (İ / U+0130)",
+      "description": "Normalizes Turkish dotted capital İ to ASCII i across TS, Python, and SQL with 100% byte-for-byte parity",
+      "items": [
+        {
+          "label": "Turkish Capital Dotted İ",
+          "input": {
+            "company": "İş Bankası A.Ş.",
+            "title": "İş Geliştirme Uzmanı",
+            "country": "TR",
+            "location": "İstanbul, Türkiye"
+          },
+          "expected_payload": "v2|c:18:iş bankası a.ş.|t:23:iş geliştirme uzmanı|co:2:tr|loc:8:istanbul",
+          "expected_hash": "c962aa120eb03ac80adb1f0cf9d6955aa7cbab010e0dcb8cbdb9e42e9567311d"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_13_greek_final_sigma",
+      "name": "Greek Omicron Sigma and Final Sigma (ΟΣ / ς -> σ)",
+      "description": "Normalizes Greek final sigma ς to small sigma σ matching canonical Unicode case folding across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Greek Capital Sigma and Small Final Sigma",
+          "input": {
+            "company": "ΕΡΓΟΣ Α.Ε.",
+            "title": "Ανάπτυξη Λογισμικού (λόγος)",
+            "country": "GR",
+            "location": "Αθήνα, Ελλάδα"
+          },
+          "expected_payload": "v2|c:17:εργοσ α.ε.|t:50:ανάπτυξη λογισμικού (λόγοσ)|co:2:gr|loc:10:αθήνα",
+          "expected_hash": "535047d28e8329003e94067499333b9665603ee867ee46edfd85060313450011"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_14_nel_u0085_next_line",
+      "name": "Next Line Whitespace (NEL / U+0085)",
+      "description": "Normalizes U+0085 Next Line control character to space and collapses it cleanly across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "NEL inside company, title, and location",
+          "input": {
+            "company": "Acme\u0085Technologies Corp",
+            "title": "Staff\u0085Engineer",
+            "country": "US",
+            "location": "Austin\u0085Remote, TX"
+          },
+          "expected_payload": "v2|c:17:acme technologies|t:14:staff engineer|co:2:us|loc:13:austin remote",
+          "expected_hash": "361968560c2008d40c80665a4e6da63fadf296b12d4c02d7123564274e452612"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_15_japanese_location_identity_and_hash_framing",
+      "name": "Tokyo vs Osaka Location Identity and Provider ID Hash Escaping",
+      "description": "Unicode-safe location keys (Tokyo/Osaka) generate distinct length-framed identities without lossy slug stripping, and provider IDs with '#' are escaped without aliasing",
+      "items": [
+        {
+          "label": "Tokyo Location Key",
+          "authoritative": {
+            "sourceId": "greenhouse:paypay",
+            "providerJobId": "REQ",
+            "locationKey": "東京",
+            "expectedSourceJobId": "REQ#6:東京"
+          },
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "Software Engineer",
+            "country": "JP",
+            "location": "東京"
+          },
+          "expected_payload": "v2|c:6:paypay|t:17:software engineer|co:2:jp|loc:6:東京",
+          "expected_hash": "fcccd0d3a20f0a708be5cb9904b34c1716db8a66a39203a133180c42cd535656"
+        },
+        {
+          "label": "Osaka Location Key",
+          "authoritative": {
+            "sourceId": "greenhouse:paypay",
+            "providerJobId": "REQ",
+            "locationKey": "大阪",
+            "expectedSourceJobId": "REQ#6:大阪"
+          },
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "Software Engineer",
+            "country": "JP",
+            "location": "大阪"
+          },
+          "expected_payload": "v2|c:6:paypay|t:17:software engineer|co:2:jp|loc:6:大阪",
+          "expected_hash": "554628af4127829458cbb925fd5f9daa86b6c8630b571e7095181d46bc18c80d"
+        },
+        {
+          "label": "Provider ID with Hash Delimiter Escaping",
+          "authoritative": {
+            "sourceId": "greenhouse:paypay",
+            "providerJobId": "REQ#6",
+            "locationKey": null,
+            "expectedSourceJobId": "REQ%236"
+          },
+          "input": {
+            "company": "PayPay Inc.",
+            "title": "Software Engineer",
+            "country": "JP",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:6:paypay|t:17:software engineer|co:2:jp|loc:6:remote",
+          "expected_hash": "431113e21e6e4c85bb9d8fbcb5342c3e7c81e8b8f40960652d78d36fdb1e89e9"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_16_company_inc_kanji",
+      "name": "Company Inc with Japanese Kanji (Company Inc東京)",
+      "description": "Verifies Inc directly attached to Japanese Kanji is not stripped as a word boundary across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Company Inc followed by Tokyo Kanji",
+          "input": {
+            "company": "Company Inc東京",
+            "title": "Engineer",
+            "country": "JP",
+            "location": "Tokyo"
+          },
+          "expected_payload": "v2|c:17:company inc東京|t:8:engineer|co:2:jp|loc:5:tokyo",
+          "expected_hash": "f6165fc1280d23e93bc97b2b84c894765980551c793bc73415fe3360aab74a50"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_17_bom_feff_whitespace_preservation",
+      "name": "Zero Width No-Break Space (U+FEFF / BOM Preservation)",
+      "description": "Verifies U+FEFF is preserved and not converted into whitespace across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Title containing A, U+FEFF, B",
+          "input": {
+            "company": "Acme Corp",
+            "title": "A\uFEFFB",
+            "country": "US",
+            "location": "Remote"
+          },
+          "expected_payload": "v2|c:4:acme|t:5:a\uFEFFb|co:2:us|loc:6:remote",
+          "expected_hash": "010dda9715382d884ad20176e4fcaec63f3195eda1583be3a407835f29967e8e"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_18_information_separator_u001c",
+      "name": "Information Separator Four (U+001C Preservation)",
+      "description": "Verifies U+001C is preserved and not treated as whitespace across TS, Python, and SQL",
+      "items": [
+        {
+          "label": "Title containing A, U+001C, B",
+          "input": {
+            "company": "Acme Technologies",
+            "title": "A\u001cB",
+            "country": "US",
+            "location": "Austin"
+          },
+          "expected_payload": "v2|c:17:acme technologies|t:3:a\u001cb|co:2:us|loc:6:austin",
+          "expected_hash": "dcf7ff09b76332c776c7115f717a9b3b0d977b09a283b60a49ca4b9a26b79d3e"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_19_hindi_distinct_titles",
+      "name": "Hindi titles at one company stay distinct",
+      "description": "Devanagari must not be stripped to a shared empty key (ASCII slug collision)",
+      "items": [
+        {
+          "label": "Software engineer",
+          "input": {
+            "company": "टाटा कंसल्टेंसी",
+            "title": "सॉफ्टवेयर इंजीनियर",
+            "country": "IN",
+            "location": "मुंबई, भारत"
+          },
+          "expected_payload": "v2|c:43:टाटा कंसल्टेंसी|t:52:सॉफ्टवेयर इंजीनियर|co:2:in|loc:15:मुंबई",
+          "expected_hash": "11423036003a021670a6af93889bb57f2dbdbcff08f75bd9a4591ed9cde5c04a"
+        },
+        {
+          "label": "Data analyst",
+          "input": {
+            "company": "टाटा कंसल्टेंसी",
+            "title": "डेटा विश्लेषक",
+            "country": "IN",
+            "location": "मुंबई, भारत"
+          },
+          "expected_payload": "v2|c:43:टाटा कंसल्टेंसी|t:37:डेटा विश्लेषक|co:2:in|loc:15:मुंबई",
+          "expected_hash": "cdd0848333ceeeb6bd9fd63c68c5c952b2c40af31528315237275de5fc140e40"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_20_chinese_arabic_distinct_titles",
+      "name": "Chinese and Arabic titles stay distinct",
+      "description": "CJK and Arabic script titles never collapse together",
+      "items": [
+        {
+          "label": "Chinese engineer",
+          "input": {
+            "company": "阿里巴巴",
+            "title": "软件工程师",
+            "country": "CN",
+            "location": "杭州"
+          },
+          "expected_payload": "v2|c:12:阿里巴巴|t:15:软件工程师|co:2:cn|loc:6:杭州",
+          "expected_hash": "f5990bf1c6127f9e8ad9b3245ff06df02342715d6f5d2cc6acc61f2cf0ae1291"
+        },
+        {
+          "label": "Chinese PM",
+          "input": {
+            "company": "阿里巴巴",
+            "title": "产品经理",
+            "country": "CN",
+            "location": "杭州"
+          },
+          "expected_payload": "v2|c:12:阿里巴巴|t:12:产品经理|co:2:cn|loc:6:杭州",
+          "expected_hash": "71caa1cc8138156beb9f8cd50a87c49e829fd4fb6d2c4730ca1614026917b5e2"
+        },
+        {
+          "label": "Arabic engineer",
+          "input": {
+            "company": "أرامكو",
+            "title": "مهندس برمجيات",
+            "country": "SA",
+            "location": "الظهران"
+          },
+          "expected_payload": "v2|c:12:أرامكو|t:25:مهندس برمجيات|co:2:sa|loc:14:الظهران",
+          "expected_hash": "17216c42d2c17aa1688e028e759edf36a7d13466e4cd85c44b2bea10f6e54988"
+        },
+        {
+          "label": "Arabic analyst",
+          "input": {
+            "company": "أرامكو",
+            "title": "محلل بيانات",
+            "country": "SA",
+            "location": "الظهران"
+          },
+          "expected_payload": "v2|c:12:أرامكو|t:21:محلل بيانات|co:2:sa|loc:14:الظهران",
+          "expected_hash": "4e0e7330556260d57a450f1d0ec11480646e9a5c99454bae90afc16af324e486"
+        }
+      ],
+      "expected_outcome": "all_distinct_hashes"
+    },
+    {
+      "id": "case_21_emoji_titles",
+      "name": "Emoji are preserved",
+      "description": "Titles differing only by emoji (incl. variation selector) stay distinct",
+      "items": [
+        {
+          "label": "Rocket",
+          "input": {
+            "company": "Acme",
+            "title": "Engineer 🚀",
+            "country": "US",
+            "location": "Austin, TX"
+          },
+          "expected_payload": "v2|c:4:acme|t:13:engineer 🚀|co:2:us|loc:6:austin",
+          "expected_hash": "7f3b8a4a8f29369da25cad384ddcd3403c710008676e5e6becc3a6f8375a1a9b"
+        },
+        {
+          "label": "Tools",
+          "input": {
+            "company": "Acme",
+            "title": "Engineer 🛠️",
+            "country": "US",
+            "location": "Austin, TX"
+          },
+          "expected_payload": "v2|c:4:acme|t:16:engineer 🛠️|co:2:us|loc:6:austin",
+          "expected_hash": "4f66be06edf8f196a926c5c6877287bdb9fda73c0be7b5586a0824624aa0a6bf"
+        }
+      ],
+      "expected_outcome": "distinct_hashes"
+    },
+    {
+      "id": "case_22_trailing_spaces_mixed_case",
+      "name": "Trailing spaces, mixed case and legal suffix fold together",
+      "description": "Same role written with different case/spacing/suffix hashes identically",
+      "items": [
+        {
+          "label": "Messy",
+          "input": {
+            "company": "  ACME Inc.  ",
+            "title": "  Senior   ENGINEER  ",
+            "country": " US ",
+            "location": "  Austin ,TX "
+          },
+          "expected_payload": "v2|c:4:acme|t:15:senior engineer|co:2:us|loc:6:austin",
+          "expected_hash": "ff27567e6083c36ae283d6b2566e592d14e8cf307b1b597c779e72a41d256413"
+        },
+        {
+          "label": "Clean",
+          "input": {
+            "company": "acme",
+            "title": "senior engineer",
+            "country": "us",
+            "location": "austin"
+          },
+          "expected_payload": "v2|c:4:acme|t:15:senior engineer|co:2:us|loc:6:austin",
+          "expected_hash": "ff27567e6083c36ae283d6b2566e592d14e8cf307b1b597c779e72a41d256413"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_23_nfkc_fullwidth_ligature_sharp_s",
+      "name": "NFKC compatibility forms and sharp s fold",
+      "description": "Fullwidth letters, the fi ligature and ß/ss normalize to the same key",
+      "items": [
+        {
+          "label": "Compat forms",
+          "input": {
+            "company": "Ｍüller GmbH",
+            "title": "ﬁnance Ｍanager Straße",
+            "country": "DE",
+            "location": "Ｂerlin"
+          },
+          "expected_payload": "v2|c:7:müller|t:23:finance manager strasse|co:2:de|loc:6:berlin",
+          "expected_hash": "e9d3414991c48ecbe320486e18e958ade8a5a96283fe8627f124f23670d45ab3"
+        },
+        {
+          "label": "Plain forms",
+          "input": {
+            "company": "müller",
+            "title": "finance manager strasse",
+            "country": "de",
+            "location": "berlin"
+          },
+          "expected_payload": "v2|c:7:müller|t:23:finance manager strasse|co:2:de|loc:6:berlin",
+          "expected_hash": "e9d3414991c48ecbe320486e18e958ade8a5a96283fe8627f124f23670d45ab3"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    },
+    {
+      "id": "case_24_non_latin_mixed_case",
+      "name": "Cyrillic and Greek case fold in every implementation",
+      "description": "Uppercase Cyrillic/Greek (incl. final sigma) lowercases identically in PG, TS and Python",
+      "items": [
+        {
+          "label": "Upper",
+          "input": {
+            "company": "ЯНДЕКС",
+            "title": "ΜΗΧΑΝΙΚΟΣ РАЗРАБОТЧИК",
+            "country": "RU",
+            "location": "МОСКВА"
+          },
+          "expected_payload": "v2|c:12:яндекс|t:41:μηχανικοσ разработчик|co:2:ru|loc:12:москва",
+          "expected_hash": "5f5da6cf5211a43eef48fa6d2672ca2c965d66486ceb9b68fa7c6a8a55353194"
+        },
+        {
+          "label": "Lower",
+          "input": {
+            "company": "яндекс",
+            "title": "μηχανικοσ разработчик",
+            "country": "ru",
+            "location": "москва"
+          },
+          "expected_payload": "v2|c:12:яндекс|t:41:μηχανικοσ разработчик|co:2:ru|loc:12:москва",
+          "expected_hash": "5f5da6cf5211a43eef48fa6d2672ca2c965d66486ceb9b68fa7c6a8a55353194"
+        }
+      ],
+      "expected_outcome": "identical_hashes"
+    }
+  ]
+}

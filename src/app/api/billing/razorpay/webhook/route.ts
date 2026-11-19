@@ -5,10 +5,30 @@ import { recordFailedEvent } from "@/lib/events/failedEvents";
 import { createLogger } from "@/lib/observability/logger";
 import { verifyWebhookSignatureBytes } from "@/lib/billing/webhookSignature";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
+import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
 const baseLog = createLogger({ context: { route: "/api/billing/razorpay/webhook" } });
 
 export const runtime = "edge";
+
+async function getCloudflareEnv(deps?: any): Promise<Record<string, any> | undefined> {
+  if (deps?.cfEnv) return deps.cfEnv;
+  if (deps?.env) return deps.env;
+  try {
+    const mod = await import("@cloudflare/next-on-pages").catch(() => null);
+    const ctx = mod?.getRequestContext?.();
+    if (ctx?.env) {
+      return ctx.env as Record<string, any>;
+    }
+  } catch {}
+  try {
+    const cfContext = (globalThis as any)[Symbol.for("__cloudflare-request-context__")];
+    if (cfContext?.env) {
+      return cfContext.env as Record<string, any>;
+    }
+  } catch {}
+  return undefined;
+}
 
 const MAX_BODY_BYTES = 256 * 1024; // 256 KB max payload to protect Edge memory
 
@@ -70,9 +90,10 @@ async function readBoundedRawBody(
 export async function POST(req: Request) {
   const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
   const deps = (req as any).__testDeps || {};
+  const cfEnv = await getCloudflareEnv(deps);
 
   // 1. Feature Flag Gating
-  if (process.env.NEXT_PUBLIC_BILLING_ENABLED !== "true") {
+  if (getRuntimeEnv("NEXT_PUBLIC_BILLING_ENABLED", cfEnv) !== "true") {
     return NextResponse.json(
       {
         error: "Billing is currently unavailable",
@@ -88,7 +109,7 @@ export async function POST(req: Request) {
 
   try {
     // 2. Gateway and Secret Configuration
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const webhookSecret = getRuntimeEnv("RAZORPAY_WEBHOOK_SECRET", cfEnv);
     if (!webhookSecret) {
       log.error("[Razorpay Webhook] Missing RAZORPAY_WEBHOOK_SECRET");
       return NextResponse.json(
@@ -99,8 +120,8 @@ export async function POST(req: Request) {
 
     // Key precedence: NEXT_PUBLIC_RAZORPAY_KEY_ID || RAZORPAY_KEY_ID
     const serverKeyId =
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-      process.env.RAZORPAY_KEY_ID ||
+      getRuntimeEnv("NEXT_PUBLIC_RAZORPAY_KEY_ID", cfEnv) ||
+      getRuntimeEnv("RAZORPAY_KEY_ID", cfEnv) ||
       "";
     const serverMode = getRazorpayKeyMode(serverKeyId);
     if (serverMode === "unknown") {
@@ -233,7 +254,7 @@ export async function POST(req: Request) {
 
     // (1) Dormancy Gate: subscription.* events must be gated by NEXT_PUBLIC_AUTORENEW_ENABLED
     if (eventType.startsWith("subscription.")) {
-      if (process.env.NEXT_PUBLIC_AUTORENEW_ENABLED !== "true") {
+      if (getRuntimeEnv("NEXT_PUBLIC_AUTORENEW_ENABLED", cfEnv) !== "true") {
         log.info("[Razorpay Webhook] Auto-renew disabled; acknowledging and ignoring subscription event", {
           eventType,
           eventId,
@@ -257,11 +278,12 @@ export async function POST(req: Request) {
         supabaseAdmin = deps.getSupabaseAdmin();
       } else {
         const supabaseUrl =
-          process.env.NEXT_PUBLIC_SUPABASE_URL ||
-          process.env.SUPABASE_URL ||
+          getRuntimeEnv("NEXT_PUBLIC_SUPABASE_URL", cfEnv) ||
+          getRuntimeEnv("SUPABASE_URL", cfEnv) ||
           "https://szakevhxhwpeskidvtfs.supabase.co";
         const serviceKey =
-          process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+          getRuntimeEnv("SUPABASE_SERVICE_ROLE_KEY", cfEnv) ||
+          getRuntimeEnv("SUPABASE_SERVICE_KEY", cfEnv);
 
         if (!supabaseUrl || !serviceKey) {
           throw new Error("Supabase service configuration missing");

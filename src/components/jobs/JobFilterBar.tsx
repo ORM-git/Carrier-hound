@@ -189,7 +189,7 @@ export default function JobFilterBar({
   const workModelInfo = formatMultiLabel(filters.workModel, "Work model");
 
   return (
-    <div className="sticky top-[56px] z-tk-sticky py-2 sm:py-0 bg-[#F8FAFC]/95 backdrop-blur-xs space-y-2">
+    <div className="sticky top-[56px] z-tk-sticky py-2 sm:py-0 bg-[#F8FAFC]/95 lg:bg-slate-100/95 backdrop-blur-xs space-y-2">
       {/* =================================================================== */}
       {/* 1. MOBILE FILTER ROW (< 768px)                                      */}
       {/* =================================================================== */}
@@ -197,6 +197,7 @@ export default function JobFilterBar({
         <button
           ref={mobileFiltersTriggerRef}
           type="button"
+          data-tour="tour-filters"
           onClick={onOpenMobileFilters}
           aria-expanded={isMobileFiltersOpen}
           aria-label="Open filter settings"
@@ -263,7 +264,12 @@ export default function JobFilterBar({
       {/* =================================================================== */}
       <div className="hidden md:flex flex-col gap-2">
         {/* ROW 1: Location, Function, Level, Job Type, Work Model, Date Posted, Sort */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2">
+        {/* lg:flex-nowrap + lg:shrink-0 on Sort (below) keeps Sort pinned on this row at desktop
+            widths (>=1024px) even when its label is the longer "Sort: Recommended"; the chip
+            group absorbs any width deficit via its own min-w-0 + internal flex-wrap instead of
+            pushing Sort to a new row. Tablet (768-1023px) keeps the original flex-wrap/items-center
+            behavior unchanged. */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 lg:gap-2 md:flex-wrap md:items-center lg:flex-nowrap lg:items-start">
           <div className="flex flex-wrap items-center gap-1.5 lg:gap-2 min-w-0">
             {/* 1. LOCATION CHIP & POPOVER */}
             <div className="relative">
@@ -808,7 +814,7 @@ export default function JobFilterBar({
           </div>
 
           {/* FAR RIGHT: SORT DROPDOWN */}
-          <div className="relative">
+          <div className="relative lg:shrink-0">
             <button
               ref={(el) => { triggerRefs.current["sort"] = el; }}
               type="button"
@@ -1191,6 +1197,7 @@ export default function JobFilterBar({
           <button
             ref={allFiltersTriggerRef}
             type="button"
+            data-tour="tour-filters"
             onClick={onOpenAllFilters}
             aria-label="Open all filters drawer"
             className="h-8 px-3.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[13px] font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"

@@ -37,6 +37,7 @@ import {
   filterJobsByWatermark,
 } from "./lib/board-delta";
 import { dedupJobs, NormalizedJob } from "./board-ingest";
+import { RequisitionTracker } from "../src/lib/jobs/highVolumeEnrichment";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
@@ -284,8 +285,7 @@ async function runTestSuite() {
   // ---------------------------------------------------------------------------
   console.log("\n[5] Deduplication Fallback Integration");
   // Ensure that after delta filtering, unique-key dedupe (dedupJobs) still functions properly
-  const seenUrls = new Set<string>();
-  const seenRoles = new Set<string>();
+  const seenRequisitions = new RequisitionTracker();
 
   // Feed candidate jobs from deltaResult into dedupJobs
   const candidateJobsForDedup: NormalizedJob[] = deltaResult.deltaJobs.map((j, idx) => ({
@@ -316,7 +316,7 @@ async function runTestSuite() {
     id: "duplicate-candidate",
   });
 
-  const dedupOutcome = dedupJobs(candidateJobsForDedup, seenUrls, seenRoles);
+  const dedupOutcome = dedupJobs(candidateJobsForDedup, seenRequisitions);
   assert(
     "Unique-key dedupe identifies duplicates among delta-filtered jobs",
     dedupOutcome.duplicates === 1 &&

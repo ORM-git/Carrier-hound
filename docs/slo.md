@@ -1,6 +1,6 @@
 # Service Level Objectives (initial, pre-launch)
 
-Initial targets. Review after the first month of real traffic; tighten or
+Initial targets. Review after the first 30 days of real traffic; tighten or
 drop per what the data shows.
 
 | SLI | Target | Measured by |

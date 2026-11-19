@@ -7,13 +7,12 @@ import {
   Sparkles,
   Building2,
   TrendingUp,
-  FileText,
-  FileCheck2,
   CheckCircle2,
   LogOut,
   ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { PLAN_PRICING, formatPriceINR } from "@/config/plans";
 
 interface ProUpgradeScreenProps {
   title?: string;
@@ -22,7 +21,7 @@ interface ProUpgradeScreenProps {
 
 export default function ProUpgradeScreen({
   title = "Unlock CareerMonke Pro",
-  subtitle = "Complete your membership to access full job details, match scores, and AI application tools.",
+  subtitle = "Complete your membership to access full job details, and match scores.",
 }: ProUpgradeScreenProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<"weekly" | "monthly" | "quarterly">("monthly");
 
@@ -49,16 +48,6 @@ export default function ProUpgradeScreen({
       icon: Sparkles,
       title: "Your Top 10 Jobs",
       desc: "The 10 highest-matching roles ranked across our full live dataset.",
-    },
-    {
-      icon: FileCheck2,
-      title: "AI-Powered Resume Tools",
-      desc: "Highlights and formats relevant skills for each opening.",
-    },
-    {
-      icon: FileText,
-      title: "Tailored Cover Letters",
-      desc: "Generates role-specific cover letters grounded in your profile facts.",
     },
   ];
 
@@ -91,8 +80,10 @@ export default function ProUpgradeScreen({
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>Weekly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹692 / wk</span>
+            <span>{PLAN_PRICING.weekly.name}</span>
+            <span className="text-[11px] font-semibold text-ink-muted">
+              {formatPriceINR(PLAN_PRICING.weekly.price_inr)} / {PLAN_PRICING.weekly.duration_days}d
+            </span>
           </button>
           <button
             type="button"
@@ -103,8 +94,10 @@ export default function ProUpgradeScreen({
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>Monthly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹1,499 / mo</span>
+            <span>{PLAN_PRICING.monthly.name}</span>
+            <span className="text-[11px] font-semibold text-ink-muted">
+              {formatPriceINR(PLAN_PRICING.monthly.price_inr)} / {PLAN_PRICING.monthly.duration_days}d
+            </span>
           </button>
           <button
             type="button"
@@ -115,8 +108,10 @@ export default function ProUpgradeScreen({
                 : "text-ink-muted hover:text-ink"
             }`}
           >
-            <span>Quarterly</span>
-            <span className="text-[11px] font-semibold text-ink-muted">₹3,999 / 3mo</span>
+            <span>{PLAN_PRICING.quarterly.name}</span>
+            <span className="text-[11px] font-semibold text-ink-muted">
+              {formatPriceINR(PLAN_PRICING.quarterly.price_inr)} / {PLAN_PRICING.quarterly.duration_days}d
+            </span>
           </button>
         </div>
 

@@ -36,8 +36,6 @@ interface FitDiagnosticsModalProps {
     salary_text?: string;
     apply_url?: string;
   };
-  onOpenCoverLetter?: () => void;
-  onExportResume?: () => void;
   isPro?: boolean;
 }
 
@@ -47,8 +45,6 @@ export default function FitDiagnosticsModal({
   diagnostics,
   candidate,
   job,
-  onOpenCoverLetter,
-  onExportResume,
   isPro,
 }: FitDiagnosticsModalProps) {
   const [isProUser, setIsProUser] = useState<boolean>(Boolean(isPro));
@@ -305,43 +301,6 @@ export default function FitDiagnosticsModal({
             </div>
           )}
 
-          {/* Action Row: ATS Tailor Tools */}
-          <div className="pt-2 border-t border-slate-100 space-y-2.5">
-            <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Application Tailoring Tools
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenChange(false);
-                  onOpenCoverLetter?.();
-                }}
-                className="w-full p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-100/60 text-blue-900 text-xs font-bold flex items-center justify-between transition-colors cursor-pointer min-h-[44px]"
-              >
-                <span className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <span>1-Click Cover Letter</span>
-                </span>
-                <ChevronRight className="w-4 h-4 text-blue-500" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenChange(false);
-                  onExportResume?.();
-                }}
-                className="w-full p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center justify-between transition-colors cursor-pointer min-h-[44px]"
-              >
-                <span className="flex items-center gap-2">
-                  <FileCheck2 className="w-4 h-4 text-slate-600" />
-                  <span>Export ATS Resume</span>
-                </span>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </button>
-            </div>
-          </div>
             </>
           )}
         </div>

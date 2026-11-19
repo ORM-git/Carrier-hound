@@ -10,7 +10,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "mock_service_role_key";
 
 import { POST as deleteRoutePost } from "../src/app/api/account/delete/route";
 import { POST as trackRoutePost } from "../src/app/api/track/route";
-import { GET as interviewPackRouteGet } from "../src/app/api/jobs/interview-pack/route";
+import { handleInterviewPackRequest as interviewPackRouteGet } from "../src/lib/interview-pack/handler";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 

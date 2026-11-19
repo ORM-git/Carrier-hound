@@ -36,7 +36,7 @@ secret, notify address). Whether each host has every variable set is unproven fr
   and there is no staging with production-like data (owner to confirm the preview setup).
 - `docs/disaster-recovery.md` proposes a throwaway Supabase project plus a preview deploy for restore rehearsals.
   That is a plan, not an existing environment.
-- `.env.example` sets `NEXT_PUBLIC_BILLING_ENABLED=false`, so a copy of the example does not turn billing on.
+- `.env.example` sets `NEXT_PUBLIC_BILLING_ENABLED=true` and `NEXT_PUBLIC_AUTORENEW_ENABLED=false` (prepaid one-time Razorpay checkout active, auto-renew mandates disabled).
 
 ## Parity (partial)
 

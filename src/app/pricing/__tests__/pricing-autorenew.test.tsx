@@ -157,7 +157,47 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
   });
 
-  it("calls openRazorpaySubscription when both BILLING and AUTORENEW are on", async () => {
+  it("requires auto-renew consent checkbox for monthly plan before pay when AUTORENEW is on", async () => {
+    process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+    process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
+
+    await mountPage();
+
+    const monthlyButton = container?.querySelector(
+      'button[data-plan-code="monthly"]'
+    ) as HTMLButtonElement | null;
+    expect(monthlyButton).not.toBeNull();
+    // Disabled before consent checkbox is checked
+    expect(monthlyButton?.disabled).toBe(true);
+
+    const consentCheckbox = container?.querySelector(
+      'input[data-testid="autorenew-consent-checkbox"]'
+    ) as HTMLInputElement | null;
+    expect(consentCheckbox).not.toBeNull();
+    expect(consentCheckbox?.checked).toBe(false);
+
+    // Click checkbox to authorize auto-renewal
+    await act(async () => {
+      consentCheckbox?.click();
+    });
+    expect(monthlyButton?.disabled).toBe(false);
+
+    // Now clicking initiates openRazorpaySubscription
+    await act(async () => {
+      monthlyButton?.click();
+    });
+
+    expect(mockOpenRazorpaySubscription).toHaveBeenCalledTimes(1);
+    expect(mockOpenRazorpaySubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planCode: "monthly",
+        redirectTarget: "/pricing",
+      })
+    );
+    expect(mockHandleProCheckout).not.toHaveBeenCalled();
+  });
+
+  it("calls handleProCheckout prepaid flow for weekly plan even when AUTORENEW is on", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
 
@@ -173,14 +213,14 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
       weeklyButton?.click();
     });
 
-    expect(mockOpenRazorpaySubscription).toHaveBeenCalledTimes(1);
-    expect(mockOpenRazorpaySubscription).toHaveBeenCalledWith(
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+    expect(mockHandleProCheckout).toHaveBeenCalledWith(
       expect.objectContaining({
         planCode: "weekly",
         redirectTarget: "/pricing",
       })
     );
-    expect(mockHandleProCheckout).not.toHaveBeenCalled();
+    expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
   });
 
   it("holds lock while subscription checkout is pending and re-enables on dismissal", async () => {
@@ -195,14 +235,21 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     await mountPage();
 
+    const consentCheckbox = container?.querySelector(
+      'input[data-testid="autorenew-consent-checkbox"]'
+    ) as HTMLInputElement | null;
+    await act(async () => {
+      consentCheckbox?.click();
+    });
+
     const monthlyButton = container?.querySelector(
       'button[data-plan-code="monthly"]'
     ) as HTMLButtonElement | null;
     const weeklyButton = container?.querySelector(
       'button[data-plan-code="weekly"]'
     ) as HTMLButtonElement | null;
-    const addonButton = container?.querySelector(
-      'button[data-addon-code="addon10"]'
+    const quarterlyButton = container?.querySelector(
+      'button[data-plan-code="quarterly"]'
     ) as HTMLButtonElement | null;
 
     // First click initiates subscription checkout
@@ -213,9 +260,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     expect(mockOpenRazorpaySubscription).toHaveBeenCalledTimes(1);
     expect(monthlyButton?.disabled).toBe(true);
     expect(weeklyButton?.disabled).toBe(true);
-    if (addonButton) {
-      expect(addonButton.disabled).toBe(true);
-    }
+    expect(quarterlyButton?.disabled).toBe(true);
 
     // Second click on any button while locked must do nothing
     await act(async () => {
@@ -230,9 +275,7 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     expect(monthlyButton?.disabled).toBe(false);
     expect(weeklyButton?.disabled).toBe(false);
-    if (addonButton) {
-      expect(addonButton.disabled).toBe(false);
-    }
+    expect(quarterlyButton?.disabled).toBe(false);
   });
 
   it("redirects signed-out visitor to login before opening subscription modal", async () => {
@@ -243,6 +286,13 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     await mountPage();
 
+    const consentCheckbox = container?.querySelector(
+      'input[data-testid="autorenew-consent-checkbox"]'
+    ) as HTMLInputElement | null;
+    await act(async () => {
+      consentCheckbox?.click();
+    });
+
     const monthlyButton = container?.querySelector(
       'button[data-plan-code="monthly"]'
     ) as HTMLButtonElement | null;
@@ -252,10 +302,11 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
     });
 
     expect(mockOpenRazorpaySubscription).not.toHaveBeenCalled();
+    expect(mockHandleProCheckout).not.toHaveBeenCalled();
     expect(window.location.href).toBe("/login?returnTo=%2Fpricing");
   });
 
-  it("renders exact 'prepaid, no auto-renew' text when NEXT_PUBLIC_AUTORENEW_ENABLED is false", async () => {
+  it("renders exact 'prepaid, no auto-renew' text when AUTORENEW is off", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "false";
 
@@ -263,30 +314,26 @@ describe("Pricing Page Auto-Renew Subscription Permutations & Lock Behavior", ()
 
     const textContent = container?.textContent || "";
     expect(textContent).toContain(
-      "Plans are prepaid for a fixed duration and do not auto-renew. Premium access ends automatically when the plan period expires."
+      "Plans are prepaid for a fixed duration and do not auto-renew. (Weekly: ₹399 for 7 days, Monthly: ₹499 for 30 days, Quarterly: ₹2,199 for 90 days). Access ends automatically when the plan period expires."
     );
-    expect(textContent).toContain("billed weekly");
-    expect(textContent).toContain("billed monthly");
-    expect(textContent).toContain("billed every 3 months");
+    expect(textContent).toContain("7 days access");
+    expect(textContent).toContain("30 days access");
+    expect(textContent).toContain("90 days access");
   });
 
-  it("renders auto-renew copy with amounts, schedule, and cancellation instructions without dynamic Date.now when flag is on", async () => {
+  it("renders auto-renew copy for monthly and prepaid copy for weekly/quarterly when AUTORENEW is on", async () => {
     process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
     process.env.NEXT_PUBLIC_AUTORENEW_ENABLED = "true";
 
     await mountPage();
 
     const textContent = container?.textContent || "";
-    expect(textContent).toContain("Plans auto-renew every 7 days (Weekly: ₹692");
-    expect(textContent).toContain("30 days (Monthly: ₹1,499");
-    expect(textContent).toContain("90 days (Quarterly: ₹3,999");
-    expect(textContent).toContain("until cancelled");
-    expect(textContent).toContain("renews every 7/30/90 days from purchase");
-    expect(textContent).not.toContain("next renewal");
-    expect(textContent).toContain("Cancel anytime from your account settings before the renewal date");
-
-    expect(textContent).toContain("auto-renews every 7 days");
-    expect(textContent).toContain("auto-renews every 30 days");
-    expect(textContent).toContain("auto-renews every 90 days");
+    expect(textContent).toContain("Flat ₹499/mo monthly auto-renew, cancel anytime.");
+    expect(textContent).toContain("₹399");
+    expect(textContent).toContain("₹499");
+    expect(textContent).toContain("₹2,199");
+    expect(textContent).toContain("7 days access");
+    expect(textContent).toContain("Auto-renews monthly");
+    expect(textContent).toContain("90 days access");
   });
 });

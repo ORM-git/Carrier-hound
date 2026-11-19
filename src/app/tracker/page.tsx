@@ -35,7 +35,6 @@ import {
   deleteApplicationFromTracker,
   addApplicationToTracker,
 } from "@/lib/tracker/storage";
-import { getTodayDigest, DigestMatchItem } from "@/lib/cron/digestStorage";
 import { toast } from "react-toastify";
 import MatchScoreBadge from "@/components/matcher/MatchScoreBadge";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
@@ -54,13 +53,6 @@ export default function TrackerPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [searchQuery, setSearchQuery] = useState("");
-  const [digest, setDigest] = useState<{
-    digestDate: string;
-    matches: DigestMatchItem[];
-    isQueuedByCron: boolean;
-  } | null>(null);
-  const [showDigest, setShowDigest] = useState(false);
-  const [isScanningDigest, setIsScanningDigest] = useState(false);
   const [draggedAppId, setDraggedAppId] = useState<string | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<ApplicationStage | null>(null);
 
@@ -83,15 +75,13 @@ export default function TrackerPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [proRes, apps, todayDigest] = await Promise.all([
+      const [proRes, apps] = await Promise.all([
         getProAccessStatus(userId),
         getTrackedApplications(userId),
-        getTodayDigest(userId),
       ]);
       setIsPro(proRes.isPro);
       setIsProDefinitive(Boolean(proRes.isDefinitive));
       setApplications(apps);
-      setDigest(todayDigest);
     } catch (err: any) {
       setLoadError(err?.message || "Failed to load tracked applications.");
     } finally {
@@ -251,49 +241,6 @@ export default function TrackerPage() {
     }
   };
 
-  const handleAddDigestToPipeline = async (item: DigestMatchItem) => {
-    try {
-      const added = await addApplicationToTracker({
-        jobId: item.jobId,
-        title: item.title,
-        company: item.company,
-        location: item.location,
-        applyUrl: item.applyUrl,
-        stage: "saved",
-        notes: `AI Match (${item.score}%): Evidenced skills: ${item.matchedSkills.join(", ")}`,
-      });
-      setApplications((prev) => [added, ...prev]);
-      toast.success(`Added "${item.title}" to Saved!`);
-    } catch {
-      toast.error("Failed to add digest role.");
-    }
-  };
-
-  const handleRefreshScan = async () => {
-    setIsScanningDigest(true);
-    try {
-      const res = await fetch("/api/ai?action=digest_scan", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.matches) {
-          setDigest({
-            digestDate: new Date().toISOString().split("T")[0],
-            matches: data.matches,
-            isQueuedByCron: false,
-          });
-          setShowDigest(true);
-          toast.success("AI pipeline scan complete!");
-        }
-      } else {
-        toast.info("Pipeline up to date.");
-      }
-    } catch {
-      toast.info("Automated daily scan is running in background.");
-    } finally {
-      setIsScanningDigest(false);
-    }
-  };
-
   const filteredApps = applications.filter((app) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -416,114 +363,6 @@ export default function TrackerPage() {
                 <span>Add application</span>
               </button>
             </div>
-          </div>
-
-          {/* Daily Automated Digest Banner */}
-          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-4 shadow-none space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-[12px] bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center shrink-0">
-                  <Sparkles className="w-5 h-5 text-[#2563EB]" />
-                </div>
-                <div>
-                  <h3 className="text-[14px] sm:text-[15px] font-bold text-[#0F172A] flex items-center gap-2">
-                    <span>Daily AI Matching Digest</span>
-                    {digest && digest.matches.length > 0 && (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]">
-                        {digest.matches.length} Top Roles
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-[12px] text-[#475569]">
-                    {digest?.isQueuedByCron
-                      ? "Queued by Daily Automated Cron scan against confirmed profile skills."
-                      : "Automated scan evaluates verified tech listings against your confirmed resume."}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={handleRefreshScan}
-                  disabled={isScanningDigest}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[12px] font-bold transition shadow-none cursor-pointer disabled:opacity-60"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${isScanningDigest ? "animate-spin" : ""}`} />
-                  <span>{isScanningDigest ? "Scanning..." : "Run AI Scan"}</span>
-                </button>
-
-                {digest && digest.matches.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowDigest(!showDigest)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-full bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A] hover:bg-[#E2E8F0] text-[12px] font-semibold transition cursor-pointer"
-                  >
-                    <span>{showDigest ? "Hide Digest" : "Show Digest"}</span>
-                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDigest ? "rotate-180" : ""}`} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {showDigest && digest && digest.matches.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-[#E2E8F0] animate-fadeIn">
-                {digest.matches.map((item) => (
-                  <div
-                    key={item.jobId}
-                    className="bg-[#F8FAFC] rounded-[12px] p-3.5 border border-[#E2E8F0] space-y-2 flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-1.5">
-                        <span className="font-bold text-[13px] text-[#0F172A] line-clamp-1">{item.title}</span>
-                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] shrink-0">
-                          {item.score}% Match
-                        </span>
-                      </div>
-                      <div className="text-[12px] text-[#475569] font-medium">{item.company} • {item.location}</div>
-                      {item.matchedSkills.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {item.matchedSkills.slice(0, 3).map((s) => (
-                            <span key={s} className="text-[11px] bg-white text-[#475569] px-2 py-0.5 rounded-full border border-[#E2E8F0]">
-                              {s}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-2 border-t border-[#E2E8F0] flex items-center justify-between gap-2 min-h-[36px]">
-                      <button
-                        type="button"
-                        onClick={() => handleAddDigestToPipeline(item)}
-                        className="text-[12px] font-bold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add to Saved</span>
-                      </button>
-
-                      {sanitizeExternalUrl(item.applyUrl) && (
-                        <a
-                          href={sanitizeExternalUrl(item.applyUrl)!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[12px] text-[#475569] hover:text-[#0F172A] flex items-center gap-0.5"
-                        >
-                          <span>Apply</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : showDigest ? (
-              <div className="pt-3 pb-1 border-t border-[#E2E8F0] text-center">
-                <p className="text-[12px] text-[#475569]">
-                  No matching roles generated yet for today. Click <strong className="text-[#0F172A]">&quot;Run AI Scan&quot;</strong> above to scan unindexed listings against your resume!
-                </p>
-              </div>
-            ) : null}
           </div>
 
           {/* Error State with Retry */}

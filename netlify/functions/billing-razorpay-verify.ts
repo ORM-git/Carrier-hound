@@ -11,6 +11,8 @@ const CORS_OPTIONS = {
 
 export interface BillingVerifyDeps {
   getSupabaseAdmin?: () => any;
+  fetchFn?: typeof fetch;
+  fetchRazorpayPayment?: (paymentId: string) => Promise<any>;
 }
 
 interface VerifyPayload {
@@ -317,6 +319,167 @@ export function createHandler(deps: BillingVerifyDeps = {}) {
             isPro: serverMode === "live" && Boolean(orderRow.plan_code),
             message: "Order already verified and paid",
             orderId: orderRow.id,
+          }),
+        };
+      }
+
+      // Authoritative Server-Side Razorpay Verification (Launch Scope Requirement 4)
+      // Fetch payment from Razorpay and require captured status with matching amount and currency
+      const fetchCaller = deps.fetchFn;
+      const rzpCreds = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+      let rzpPayment: any = null;
+
+      if (deps.fetchRazorpayPayment) {
+        rzpPayment = await deps.fetchRazorpayPayment(paymentId);
+      } else if (fetchCaller) {
+        try {
+          const rzpPayRes = await fetchCaller(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+            method: "GET",
+            headers: {
+              Authorization: `Basic ${rzpCreds}`,
+            },
+          });
+          if (!rzpPayRes.ok) {
+            const errData = await rzpPayRes.json().catch(() => ({}));
+            safeLog.error("[Netlify /billing-razorpay-verify] Razorpay payment fetch failed", { status: rzpPayRes.status, err: errData });
+            return {
+              statusCode: 400,
+              headers,
+              body: JSON.stringify({
+                error: "Payment verification failed with provider",
+                code: "PAYMENT_VERIFICATION_FAILED",
+              }),
+            };
+          }
+          rzpPayment = await rzpPayRes.json();
+        } catch (fetchErr: any) {
+          safeLog.error("[Netlify /billing-razorpay-verify] Network error during Razorpay payment fetch", fetchErr);
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error: "Payment verification failed with provider",
+              code: "PAYMENT_VERIFICATION_FAILED",
+            }),
+          };
+        }
+      } else {
+        try {
+          const rzpPayRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+            method: "GET",
+            headers: {
+              Authorization: `Basic ${rzpCreds}`,
+            },
+          });
+          if (!rzpPayRes.ok) {
+            const errData = await rzpPayRes.json().catch(() => ({}));
+            safeLog.error("[Netlify /billing-razorpay-verify] Razorpay payment fetch failed", { status: rzpPayRes.status, err: errData });
+            return {
+              statusCode: 400,
+              headers,
+              body: JSON.stringify({
+                error: "Payment verification failed with provider",
+                code: "PAYMENT_VERIFICATION_FAILED",
+              }),
+            };
+          }
+          rzpPayment = await rzpPayRes.json();
+        } catch (fetchErr: any) {
+          safeLog.error("[Netlify /billing-razorpay-verify] Network error during Razorpay payment fetch", fetchErr);
+          return {
+            statusCode: 502,
+            headers,
+            body: JSON.stringify({
+              error: "Payment verification failed with provider",
+              code: "PAYMENT_VERIFICATION_FAILED",
+            }),
+          };
+        }
+      }
+
+      if (!rzpPayment || typeof rzpPayment !== "object") {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Unable to retrieve payment details from provider",
+            code: "PAYMENT_NOT_FOUND",
+          }),
+        };
+      }
+
+      // Require exact non-empty payment ID matching request paymentId
+      const rzpId = typeof rzpPayment.id === "string" ? rzpPayment.id.trim() : "";
+      if (!rzpId || rzpId !== paymentId) {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment ID mismatch or missing from provider response", { rzpId, paymentId });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Payment verification failed with provider: invalid payment ID",
+            code: "PAYMENT_ID_MISMATCH",
+          }),
+        };
+      }
+
+      // Require exact non-empty order_id matching request orderId
+      const rzpOrderId = typeof rzpPayment.order_id === "string" ? rzpPayment.order_id.trim() : "";
+      if (!rzpOrderId || rzpOrderId !== orderId) {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment order_id mismatch with request", { paymentOrderId: rzpPayment.order_id, expected: orderId });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Payment order mismatch",
+            code: "ORDER_MISMATCH",
+          }),
+        };
+      }
+
+      // Require captured status
+      if (rzpPayment.status !== "captured") {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment rejected: status is not captured", { paymentId, status: rzpPayment.status });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: `Payment is not captured (status: ${rzpPayment.status})`,
+            code: "PAYMENT_NOT_CAPTURED",
+          }),
+        };
+      }
+
+      // Require finite exact amount matching orderRow.amount_paise
+      const rzpAmount = Number(rzpPayment.amount);
+      if (
+        rzpPayment.amount === null ||
+        rzpPayment.amount === undefined ||
+        !Number.isFinite(rzpAmount) ||
+        rzpAmount <= 0 ||
+        rzpAmount !== Number(orderRow.amount_paise)
+      ) {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment amount mismatch with orderRow", { rzpAmount, orderPaise: orderRow.amount_paise });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Payment amount does not match recorded order amount",
+            code: "AMOUNT_MISMATCH",
+          }),
+        };
+      }
+
+      // Require exact non-empty currency matching orderRow.currency
+      const rzpCurrency = typeof rzpPayment.currency === "string" ? rzpPayment.currency.trim().toUpperCase() : "";
+      const expectedCurrency = (orderRow.currency || "INR").trim().toUpperCase();
+      if (!rzpCurrency || rzpCurrency !== expectedCurrency) {
+        safeLog.warn("[Netlify /billing-razorpay-verify] Payment currency mismatch with orderRow", { rzpCurrency, expectedCurrency });
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "Payment currency does not match recorded order currency",
+            code: "CURRENCY_MISMATCH",
           }),
         };
       }

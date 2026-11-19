@@ -1,3 +1,4 @@
+import type { AutoRenewConsent } from "./types";
 
 
 import { createLogger } from "@/lib/observability/logger";
@@ -77,7 +78,10 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
     return;
   }
 
-  // 1. Create order server-side via /api/billing/razorpay/order (server resolves pricing, client amounts ignored)
+  // 1. Load Razorpay Checkout SDK dynamically so checkout.js is fetched and window.Razorpay is defined
+  const scriptPromise = loadRazorpayScript();
+
+  // 2. Create order server-side via /api/billing/razorpay/order (server resolves pricing, client amounts ignored)
   let orderData: { orderId: string; amount: number; currency: string; keyId: string };
   try {
     const res = await fetch("/api/billing/razorpay/order", {
@@ -104,8 +108,8 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
     return;
   }
 
-  // 2. Load Razorpay Checkout SDK
-  const isLoaded = await loadRazorpayScript();
+  // 3. Ensure Razorpay Checkout SDK is ready
+  const isLoaded = await scriptPromise;
   if (!isLoaded) {
     options.onError?.(new Error("Failed to load Razorpay payment gateway"));
     return;
@@ -216,6 +220,7 @@ export async function verifyRazorpayWebhookSignature(
 
 export interface RazorpaySubscriptionOptions {
   planCode: string;
+  consent?: AutoRenewConsent;
   authToken?: string;
   userEmail?: string;
   userName?: string;
@@ -278,7 +283,8 @@ export async function openRazorpaySubscription(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        planCode: options.planCode,
+        planCode: options.planCode || "monthly",
+        consent: options.consent,
       }),
     });
 

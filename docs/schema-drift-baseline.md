@@ -14,7 +14,7 @@ the uncovered-table count rises above the baseline. New migrations
 that create tables must extend `schema.sql` (preferred) or this file
 in the same PR.
 
-Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 16 Nov 2026 for `20261116b_ten_million_system_design_schema.sql` (not applied): 54 tables, 54 covered only by migrations.
+Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 18 Nov 2026 for `20261118_onboarding_resume_uploads.sql` (migration-only: pointer table with preflight, marker comments, and transactional rollback guards): 46 tables, 46 covered only by migrations. Updated 19 Nov 2026 for `20261119_onboarding_resume_profiles.sql` (migration-only: parsed resume profile for ranking, owner-read only, preflight + marker + guarded rollback): 47 tables, 47 covered only by migrations. Updated 19 Nov 2026 (rehearsal merge of #643) for `20261116b_ten_million_system_design_schema.sql` (not applied): 57 tables, 57 covered only by migrations.
 
 | Table | Owning migration |
 | --- | --- |
@@ -51,6 +51,8 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `job_source_records` | `20261116b_ten_million_system_design_schema.sql` |
 | `jobs_archive` | `20261106l_job_archival.sql` |
 | `matview_refresh_log` | `20261106d_matview_refresh_log.sql` |
+| `onboarding_resume_profiles` | `20261119_onboarding_resume_profiles.sql` |
+| `onboarding_resume_uploads` | `20261118_onboarding_resume_uploads.sql` |
 | `outbox` | `20261107c_outbox_queue.sql` |
 | `page_views` | `20261011_admin_page_views_and_blocked_users.sql` |
 | `payment_orders` | `20261103_plans_addons_usage.sql` |
@@ -58,6 +60,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `plans` | `20261103_plans_addons_usage.sql` |
 | `push_subscriptions` | `20261106i_push_subscriptions.sql` |
 | `rate_limits` | `20261020_rate_limits.sql` |
+| `repair_645_backfill_progress` | `20261116f_repair_642_batch_backfill.sql` |
 | `resumes` | `20261031_account_delete_and_private_resumes.sql` |
 | `row_change_history` | `20261106c_change_history_triggers.sql` |
 | `saved_jobs` | `20261031_account_delete_and_private_resumes.sql` |
@@ -75,7 +78,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 54
+baseline-count: 57
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -109,6 +112,8 @@ table: job_postings | 20261116b_ten_million_system_design_schema.sql
 table: job_source_records | 20261116b_ten_million_system_design_schema.sql
 table: jobs_archive | 20261106l_job_archival.sql
 table: matview_refresh_log | 20261106d_matview_refresh_log.sql
+table: onboarding_resume_profiles | 20261119_onboarding_resume_profiles.sql
+table: onboarding_resume_uploads | 20261118_onboarding_resume_uploads.sql
 table: outbox | 20261107c_outbox_queue.sql
 table: page_views | 20261011_admin_page_views_and_blocked_users.sql
 table: payment_orders | 20261103_plans_addons_usage.sql
@@ -116,6 +121,7 @@ table: plan_usage_events | 20261103_plans_addons_usage.sql
 table: plans | 20261103_plans_addons_usage.sql
 table: push_subscriptions | 20261106i_push_subscriptions.sql
 table: rate_limits | 20261020_rate_limits.sql
+table: repair_645_backfill_progress | 20261116f_repair_642_batch_backfill.sql
 table: resumes | 20261031_account_delete_and_private_resumes.sql
 table: row_change_history | 20261106c_change_history_triggers.sql
 table: saved_jobs | 20261031_account_delete_and_private_resumes.sql

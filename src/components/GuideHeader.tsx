@@ -162,8 +162,6 @@ export default function GuideHeader() {
   const isWorldwideActive = pathname === "/worldwide";
   const isRadarActive = pathname === "/radar";
   const isApplicationsActive = pathname === "/applications" || pathname === "/tracker";
-  const isResumeActive = pathname === "/resume";
-  const isDashboardActive = pathname === "/dashboard";
 
   const navLinkClass = (active: boolean) =>
     `relative h-16 inline-flex items-center px-3 text-[14px] transition-colors duration-200 ${
@@ -188,7 +186,7 @@ export default function GuideHeader() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between gap-4">
           {/* Left: Brand Logo */}
           <Link
-            href={user ? "/dashboard" : "/"}
+            href={user ? "/jobs" : "/"}
             aria-label="CareerMonke Home"
             className="flex items-center shrink-0 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
           >
@@ -199,14 +197,8 @@ export default function GuideHeader() {
           {user ? (
             /* Logged-In User Nav */
             <nav aria-label="Primary" className="hidden lg:flex flex-1 items-center justify-center gap-1 h-full">
-              <Link href="/dashboard" className={navLinkClass(isDashboardActive)}>
-                Dashboard
-              </Link>
               <Link href="/jobs" prefetch={false} className={navLinkClass(isJobsActive)}>
                 Jobs
-              </Link>
-              <Link href="/resume" prefetch={false} className={navLinkClass(isResumeActive)}>
-                ATS Resume
               </Link>
               <Link href="/applications" prefetch={false} className={navLinkClass(isApplicationsActive)}>
                 Applications
@@ -383,7 +375,7 @@ export default function GuideHeader() {
       </header>
 
       {/* =================================================================== */}
-      {/* MOBILE FULL-HEIGHT DRAWER (0.3s slide-in from right)                */}
+      {/* MOBILE FULL-HEIGHT DRAWER (0.3s slide-in from left)                 */}
       {/* =================================================================== */}
       {/* Backdrop */}
       <div
@@ -406,15 +398,15 @@ export default function GuideHeader() {
         aria-label="Mobile Navigation"
         aria-hidden={!drawerOpen}
         inert={(!drawerOpen ? "" : undefined) as any}
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between p-6 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] lg:hidden ${
-          drawerOpen ? "translate-x-0" : "translate-x-full invisible pointer-events-none"
+        className={`fixed inset-y-0 left-0 z-50 w-full max-w-[320px] bg-white h-full shadow-2xl flex flex-col justify-between p-6 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] lg:hidden ${
+          drawerOpen ? "translate-x-0" : "-translate-x-full invisible pointer-events-none"
         }`}
       >
         <div className="space-y-6">
           {/* Drawer Header: Logo + Close */}
           <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
             <Link
-              href={user ? "/dashboard" : "/"}
+              href={user ? "/jobs" : "/"}
               onClick={() => setDrawerOpen(false)}
               aria-label="CareerMonke Home"
               className="flex items-center"
@@ -439,14 +431,8 @@ export default function GuideHeader() {
           <nav aria-label="Mobile" className="space-y-1">
             {user ? (
               <>
-                <Link href="/dashboard" onClick={() => setDrawerOpen(false)} className={drawerLinkClass(isDashboardActive)}>
-                  Dashboard
-                </Link>
                 <Link href="/jobs" prefetch={false} onClick={() => setDrawerOpen(false)} className={drawerLinkClass(isJobsActive)}>
                   Jobs
-                </Link>
-                <Link href="/resume" prefetch={false} onClick={() => setDrawerOpen(false)} className={drawerLinkClass(isResumeActive)}>
-                  ATS Resume
                 </Link>
                 <Link href="/applications" prefetch={false} onClick={() => setDrawerOpen(false)} className={drawerLinkClass(isApplicationsActive)}>
                   Applications

@@ -28,6 +28,7 @@ import PrivacyPolicyPage from "../src/app/privacy-policy/page";
 import ContactUsPage from "../src/app/contact/page";
 import RefundPolicyPage from "../src/app/refund-policy/page";
 import sitemap from "../src/app/sitemap";
+import { PREPAID_PRICE_SUMMARY } from "../src/config/plans";
 
 const IS_NEGATIVE_CONTROL = process.argv.includes("--negative-control");
 
@@ -106,11 +107,14 @@ async function main() {
     "company career pages",
     "Current prices are shown on the",
     "Pricing page",
-    "plans are prepaid for a fixed period and do not renew automatically",
+    "Weekly and Quarterly plans are prepaid for a fixed period and do not renew automatically",
+    "Monthly plan is available as an auto-renewing subscription at flat ₹499 per month",
+    "12 monthly billing cycles",
     "Add-on packs:",
     "expire together with the subscription",
     "Razorpay",
     "4. Cancellation, Renewal, and Access After Cancellation",
+    "How to cancel auto-renewal",
     "Cancellation &amp; Refund Policy",
     "5. Intellectual Property &amp; Acceptable Use",
     "6. Limitation of Liability &amp; Disclaimer",
@@ -124,10 +128,46 @@ async function main() {
   }
   assert.ok(!termsHtml.includes("Stripe"), "/terms-and-conditions must NOT contain Stripe (Razorpay only)");
   console.log('  [PASS-LOCAL] /terms-and-conditions excludes Stripe (Razorpay only)');
-  for (const hardcodedPrice of ["₹692", "₹1,499", "₹3,999", "₹149", "₹399", "₹699"]) {
-    assert.ok(!termsHtml.includes(hardcodedPrice), `/terms-and-conditions must NOT hard-code price "${hardcodedPrice}" (prices live on /pricing; final prices pending founders)`);
+  // Prepaid flat prices: Terms and Refund render PREPAID_PRICE_SUMMARY (built from PLAN_PRICING)
+  // with the exact flat prices and durations, and no legacy, first-month or recurring billing copy.
+  const EXPECTED_PRICE_LINES = [
+    "Weekly: ₹399 for 7 days",
+    "Monthly: ₹499 for 30 days",
+    "Quarterly: ₹2,199 for 90 days",
+  ];
+  assert.strictEqual(
+    PREPAID_PRICE_SUMMARY,
+    EXPECTED_PRICE_LINES.join(", "),
+    "PREPAID_PRICE_SUMMARY must be exactly Weekly 399 / 7 days, Monthly 499 / 30 days, Quarterly 2199 / 90 days"
+  );
+  for (const [route, html] of [["/terms-and-conditions", termsHtml], ["/refund-policy", refundHtml]] as const) {
+    assert.ok(html.includes(PREPAID_PRICE_SUMMARY), `${route} must render PREPAID_PRICE_SUMMARY`);
+    for (const line of EXPECTED_PRICE_LINES) {
+      assert.ok(html.includes(line), `${route} must contain "${line}"`);
+    }
+    console.log(`  [PASS-LOCAL] ${route} renders PREPAID_PRICE_SUMMARY: "${PREPAID_PRICE_SUMMARY}"`);
+
+    const text = html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+    assert.ok(!text.includes("799"), `${route} must NOT contain 799 (old monthly price)`);
+    assert.ok(!/first[\s-]+month/i.test(text), `${route} must NOT contain "first month" pricing copy`);
+    assert.ok(/auto[\s-]?renew/i.test(text), `${route} must mention auto-renew`);
+    assert.ok(text.includes("499"), `${route} must mention flat 499 price`);
+    assert.ok(/cancel/i.test(text), `${route} must explain how to cancel`);
+    assert.ok(/12\s+monthly\s+cycles|12-cycle/i.test(text), `${route} must mention 12 monthly cycles limit`);
+    assert.ok(!/reminder/i.test(text), `${route} must NOT promise email renewal reminders without a real sender`);
+    console.log(`  [PASS-LOCAL] ${route} has no 799, no "first month", correctly mentions 499 auto-renew, 12 cycles, cancellation, and excludes false reminders`);
   }
-  console.log('  [PASS-LOCAL] /terms-and-conditions hard-codes no INR amounts (prices live on /pricing)');
+
+  // Plan prices are final and rendered from the central config (PREPAID_PRICE_SUMMARY in src/config/plans.ts).
+  assert.ok(
+    termsHtml.includes(PREPAID_PRICE_SUMMARY),
+    "/terms-and-conditions must show plan prices only via PREPAID_PRICE_SUMMARY from src/config/plans.ts"
+  );
+  // Old plan prices and add-on-only prices must never appear on Terms.
+  for (const stalePrice of ["₹692", "₹1,499", "₹3,999", "₹799", "₹149", "₹699"]) {
+    assert.ok(!termsHtml.includes(stalePrice), `/terms-and-conditions must NOT contain stale or add-on price "${stalePrice}"`);
+  }
+  console.log('  [PASS-LOCAL] /terms-and-conditions shows plan prices from PREPAID_PRICE_SUMMARY and no stale INR amounts');
 
   // 3. /privacy-policy Key Phrases (Google Doc Tab 2)
   console.log("\n3. Verifying /privacy-policy key phrases (Google Doc Tab 2)...");

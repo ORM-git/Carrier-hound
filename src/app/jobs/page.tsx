@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
-import { getCandidateProfile, calculateProfileCompletion } from "@/lib/resume/storage";
+import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
 import { TrackedApplication } from "@/lib/tracker/types";
@@ -30,7 +30,7 @@ import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
-import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -46,18 +46,28 @@ import {
   Lock,
   ArrowRight,
   Ban,
-  Plus,
-  Pencil,
-  Lightbulb,
-  CheckCircle2,
   DollarSign,
   AlertCircle,
   ArrowLeft,
 } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { toast } from "react-toastify";
-import { updateSwr } from "@/lib/cache/swr";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
+import {
+  EXPERIENCE_LEVEL_LABELS,
+  formatExperienceLevels,
+  matchesExperienceLevelFilter,
+  parseExperienceLevels,
+  type CanonicalExperienceLevel,
+} from "@/lib/jobs/experienceLevels";
+import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
+import JobsProductTour from "@/components/jobs/JobsProductTour";
+import {
+  consumeFirstRunMarker,
+  isTourDismissed,
+  markTourDismissed,
+  shouldShowFirstJobsWelcome,
+} from "@/lib/onboarding/firstJobsExperience";
 
 const PaywallModal = dynamic(() => import("@/components/PaywallModal"), { ssr: false });
 
@@ -251,6 +261,9 @@ function getCompanyTagPills(category?: string | null): string[] {
 }
 
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
+  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) {
+    return Math.max(10, Math.min(99, Math.round(job.matchScore)));
+  }
   if (candidate && candidate.confirmedAt) {
     try {
       const res = computeFitDiagnostics(candidate, {
@@ -470,6 +483,50 @@ function JobsPageInner() {
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
   const [isDegraded, setIsDegraded] = useState<boolean>(false);
   const [retryNonce, setRetryNonce] = useState<number>(0);
+
+  // First-run welcome + guided tour: desktop (>=1024px) only; mobile/tablet Jobs is unchanged.
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [tourActive, setTourActive] = useState(false);
+  const welcomeTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    // Once per mount; only after the verified user's recommended feed has loaded (not degraded).
+    if (welcomeTriggeredRef.current || !isDesktop || loadingJobs || isDegraded || !user?.id) return;
+    if (
+      shouldShowFirstJobsWelcome({
+        userId: user.id,
+        isVerifiedUser: true,
+        isRecommendedTab: activeTab === "recommended",
+      })
+    ) {
+      welcomeTriggeredRef.current = true;
+      setWelcomeOpen(true);
+    }
+  }, [isDesktop, loadingJobs, isDegraded, user, activeTab]);
+
+  const finishWelcome = (levels: CanonicalExperienceLevel[] | null) => {
+    if (user?.id) consumeFirstRunMarker(user.id);
+    // Confirm applies the OR Level filter to the current feed/URL only (not an account preference).
+    if (levels) {
+      setSelectedLevel(formatExperienceLevels(levels));
+      setPage(1);
+    }
+    setWelcomeOpen(false);
+    if (user?.id && !isTourDismissed(user.id)) setTourActive(true);
+  };
+
+  const endTour = () => {
+    if (user?.id) markTourDismissed(user.id);
+    setTourActive(false);
+  };
   const [apiSimilarJobs, setApiSimilarJobs] = useState<LiveJob[]>([]);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [detailStatus, setDetailStatus] = useState<"not-found" | "expired" | null>(null);
@@ -536,6 +593,10 @@ function JobsPageInner() {
           if (job) {
             if (job.isExpired || job.status === "expired" || job.status === "closed") {
               setDetailStatus("expired");
+            }
+            if (typeof job.matchScore !== "number" && candidate) {
+              const score = getJobMatchScore(job, candidate);
+              if (score !== null) job.matchScore = score;
             }
             setSelectedJob(job);
           } else {
@@ -892,7 +953,7 @@ function JobsPageInner() {
     }
 
     const isRecommended = activeTab === "recommended";
-    const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+    const effectiveSortBy = isRecommended ? "match" : sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -996,7 +1057,7 @@ function JobsPageInner() {
     setLoadingMore(true);
     try {
       const isRecommended = activeTab === "recommended";
-      const effectiveSortBy = isRecommended && sortBy === "match" ? "match" : sortBy;
+      const effectiveSortBy = isRecommended ? "match" : sortBy;
       const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
       const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -1127,7 +1188,7 @@ function JobsPageInner() {
 
     if (selectedLevel) {
       result = result.filter((job) =>
-        inferJobLevel(job.title).toLowerCase().includes(selectedLevel.toLowerCase())
+        matchesExperienceLevelFilter(job, selectedLevel)
       );
     }
 
@@ -1171,13 +1232,25 @@ function JobsPageInner() {
       });
     }
 
-    // Sort
-    if (sortBy === "match" && candidate) {
-      result = [...result].sort((a, b) => {
-        const scoreA = getJobMatchScore(a, candidate) ?? 0;
-        const scoreB = getJobMatchScore(b, candidate) ?? 0;
-        return scoreB - scoreA;
-      });
+    // Sort: Recommended ranking (title/skills + experience fit, location/remote
+    // eligibility, recency, salary-listed) via the scoring module's pure ranking
+    // function. Ranking only — nothing above this is excluded by score. Runs
+    // whenever the Recommended tab is the effective sort (same condition the
+    // fetch uses above) or the user explicitly picks Sort: Recommended — not
+    // gated on a local "match" default — and with no candidate/resume, the
+    // module's own neutral fallback (fitScore 50) still orders by the other
+    // factors instead of skipping ranking entirely.
+    if (shouldApplyRecommendedRanking(activeTab, sortBy)) {
+      const now = Date.now(); // one snapshot for the whole sort pass, not per-comparison
+      result = [...result].sort((a, b) =>
+        compareByRecommendedRanking(
+          a,
+          b,
+          candidate,
+          preferences ? { preferredCountryCode: preferences.countryCode, remotePreference: preferences.remotePreference } : null,
+          now
+        )
+      );
     }
 
     if (activeTab === "recommended") {
@@ -1202,6 +1275,7 @@ function JobsPageInner() {
     selectedExperience,
     sortBy,
     candidate,
+    preferences,
   ]);
 
   const displayedJobs = filteredJobs;
@@ -1351,12 +1425,6 @@ function JobsPageInner() {
 
       const updatedApps = await getTrackedApplications(user.id);
       setTrackedApplications(updatedApps);
-      // Write-through: keep the dashboard SWR bundle consistent with the
-      // mutation so it never paints the pre-mutation list (row 88).
-      updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-        ...bundle,
-        appsRes: updatedApps,
-      }));
       const appliedApps = updatedApps.filter((a) => a.stage === "applied");
       setAppliedJobIds(appliedApps.map((a) => a.jobId || "").filter(Boolean));
       setAppliedCount(appliedApps.length);
@@ -1388,10 +1456,6 @@ function JobsPageInner() {
         try {
           await removeApplicationFromTracker(job.id);
           setSavedJobIds((prev) => prev.filter((id) => id !== job.id));
-          updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-            ...bundle,
-            appsRes: bundle.appsRes.filter((a) => a.jobId !== job.id),
-          }));
           toast.info(`Removed "${job.title}" from Liked Jobs.`);
         } catch {
           toast.error("Could not update saved job.");
@@ -1400,7 +1464,7 @@ function JobsPageInner() {
       }
 
       try {
-        const created = await addApplicationToTracker({
+        await addApplicationToTracker({
           jobId: job.id,
           title: job.title,
           company: job.company,
@@ -1410,10 +1474,6 @@ function JobsPageInner() {
           stage: "saved",
         });
         setSavedJobIds((prev) => [...prev, job.id]);
-        updateSwr(`dashboard:${user.id}`, (bundle: { appsRes: TrackedApplication[] }) => ({
-          ...bundle,
-          appsRes: [...bundle.appsRes, created],
-        }));
         toast.success(`Liked "${job.title}"! Saved to your tracker.`);
       } catch {
         toast.error("Could not save job.");
@@ -1461,7 +1521,12 @@ function JobsPageInner() {
     if (!job.description || job.description.length < 50 || job.proUnlockError) {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
-        if (fullJob) setSelectedJob(fullJob);
+        if (fullJob) {
+          if (typeof job.matchScore === "number") {
+            fullJob.matchScore = job.matchScore;
+          }
+          setSelectedJob(fullJob);
+        }
       } catch {}
     }
   };
@@ -1523,6 +1588,22 @@ function JobsPageInner() {
     if (preset.remoteOnly !== undefined) setRemoteOnly(preset.remoteOnly);
     toast.info(`Applied filter: "${preset.name}"`);
   };
+
+  // Right-panel summary rows, derived only from the live filter state.
+  const currentFilterRows: Array<[string, string]> = [
+    ["Search", search.trim()],
+    ["Country", selectedCountryCode],
+    ["Location", selectedLocation],
+    ["Category", selectedCategory],
+    ["Level", parseExperienceLevels(selectedLevel).map((l) => EXPERIENCE_LEVEL_LABELS[l]).join(", ")],
+    ["Job type", selectedJobType],
+    ["Work model", selectedWorkModel || (remoteOnly ? "remote" : "")],
+    ["Posted", selectedDatePosted],
+    ["Company", selectedCompany],
+  ].filter((row): row is [string, string] => Boolean(row[1]));
+
+  // The listing view (not detail/loading) uses the desktop two-column grid with the right panel.
+  const isListView = !detailLoading && !(detailStatus === "not-found" && !selectedJob) && !selectedJob;
 
   const activeFiltersCount =
     (search.trim() ? 1 : 0) +
@@ -1675,10 +1756,10 @@ function JobsPageInner() {
       {/* <GuideHeader /> replaced by unified AppIconRail / AppTopBar shell before and after login (!user) */}
 
       {/* Left Icon Rail (fixed 72px wide narrow / 240px expanded on desktop, bottom tab bar on mobile) */}
-      <AppIconRail />
+      <AppIconRail expandOnDesktop />
 
       {/* Main Content Area (offset by 72px or 240px on desktop) */}
-      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px]"} flex flex-col min-w-0 pb-6 md:pb-0 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
+      <div className={`flex-1 ${isExpanded ? "md:pl-[240px]" : "md:pl-[72px] min-[1440px]:pl-[240px]"} flex flex-col min-w-0 pb-6 md:pb-0 lg:bg-slate-100 transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)]`}>
         {/* Top bar for both guest and signed-in users: 56px, white, 1px bottom border */}
         <AppTopBar
           pageLabel="JOBS"
@@ -1688,11 +1769,12 @@ function JobsPageInner() {
           searchPlaceholder="Search by title or company"
           user={user}
           isPro={isPro}
+          hidePlanPill
         />
         <main
           id="main-content"
           data-testid="jobs-main-content"
-          className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 space-y-4 sm:space-y-3 pb-44 sm:pb-32 lg:pb-12"
+          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 space-y-4 sm:space-y-3 pb-44 sm:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
           {detailLoading ? (
             <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">
@@ -1844,7 +1926,7 @@ function JobsPageInner() {
                 </div>
               </div>
 
-              <div className="space-y-4 sm:space-y-3">
+              <div className="space-y-4 sm:space-y-3 lg:col-start-1">
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
                 <JobFilterBar
@@ -1890,7 +1972,7 @@ function JobsPageInner() {
               </div>
 
               {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
-              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2 sm:pt-0">
+              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2 sm:pt-0 lg:col-start-1">
                 {/* Left Feed Column: about 973px max on wide desktop, flex-1 */}
                 <div className="w-full lg:max-w-[973px] flex-1 space-y-3 min-w-0">
                   {loadingJobs ? (
@@ -2016,6 +2098,9 @@ function JobsPageInner() {
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
+                        if (matchScore !== null) {
+                          job.matchScore = matchScore;
+                        }
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
@@ -2027,6 +2112,7 @@ function JobsPageInner() {
                           <motion.article
                             key={job.id}
                             data-testid="job-card"
+                            data-tour={index === 0 ? "tour-job-details" : undefined}
                             initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={
@@ -2188,7 +2274,7 @@ function JobsPageInner() {
                                 {/* Horizontal divider 2: thin 1px light gray line */}
                                 <div className="border-b border-[#E2E8F0]" />
 
-                                {/* Footer with action buttons (Hide, Save, Tailor Resume, Apply) */}
+                                {/* Footer with action buttons (Hide, Save, Apply) */}
                                 <div className="flex items-center justify-end gap-2">
                                   <button
                                     type="button"
@@ -2220,16 +2306,6 @@ function JobsPageInner() {
                                     <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
                                   </button>
 
-                                  <Link
-                                    href="/resume"
-                                    onClick={(e) => e.stopPropagation()}
-                                    aria-label="Tailor resume for this job"
-                                    className="w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#2563EB] text-xs font-bold transition shadow-none cursor-pointer"
-                                  >
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                    <span>Tailor Resume</span>
-                                  </Link>
-
                                   {isPro ? (
                                     <button
                                       type="button"
@@ -2237,6 +2313,7 @@ function JobsPageInner() {
                                         e.stopPropagation();
                                         handleSelectJob(job);
                                       }}
+                                      data-tour={index === 0 ? "tour-job-apply" : undefined}
                                       className="w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
                                     >
                                       <span>Apply</span>
@@ -2249,6 +2326,7 @@ function JobsPageInner() {
                                         e.stopPropagation();
                                         handleLockedAction(e);
                                       }}
+                                      data-tour={index === 0 ? "tour-job-apply" : undefined}
                                       className="w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
                                     >
                                       <Lock className="w-3.5 h-3.5" />
@@ -2271,9 +2349,9 @@ function JobsPageInner() {
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
                                       {cardZeroSkills
                                         ? "EXPERIENCE MATCH"
-                                        : matchScore >= 80
+                                        : matchScore !== null && matchScore >= 80
                                         ? "STRONG MATCH"
-                                        : matchScore >= 60
+                                        : matchScore !== null && matchScore >= 60
                                         ? "GOOD MATCH"
                                         : "FAIR MATCH"}
                                     </div>
@@ -2496,7 +2574,15 @@ function JobsPageInner() {
                 </div>
 
                 {/* Right Rail Column: about 316px, sticky, hidden on mobile */}
-                <div className="hidden lg:block w-[316px] shrink-0 space-y-3 sticky top-20">
+              </div>
+              {/* Right panel (desktop >=1024px only): continuous white surface, listing-only content.
+                  Hidden below lg, so moving it out of the list row cannot change mobile/tablet. */}
+              <aside
+                aria-label="Listing summary"
+                data-testid="jobs-right-panel"
+                className="hidden lg:block lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-stretch bg-white border-l border-[#E2E8F0] lg:-mr-8 lg:!-mt-4 lg:-mb-12 lg:min-h-[calc(100vh-56px)]"
+              >
+                <div className="sticky top-14 p-4 space-y-3 max-h-[calc(100vh-56px)] overflow-y-auto">
                   {/* User Profile & Subscription Card (signed-in only) */}
                   {user && (
                     <div className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 space-y-3" data-testid="sidebar-user-card">
@@ -2537,30 +2623,39 @@ function JobsPageInner() {
                     </div>
                   )}
 
-                  {/* Card 1: Your Saved Filters */}
-                  <div className="bg-white rounded-[16px] border border-[#E2E8F0] p-4 space-y-3">
+                  {/* Current filter summary, derived from the live filter state */}
+                  <section className="space-y-2" data-testid="current-filter-summary" aria-labelledby="current-filters-title">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm text-[#0F172A]">Your Saved Filters</h3>
-                      <div className="flex items-center gap-1 text-[#475569]">
+                      <h3 id="current-filters-title" className="font-bold text-sm text-[#0F172A]">Current filters</h3>
+                      {currentFilterRows.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => toast.info("Filter saved to presets")}
-                          aria-label="Add current filter to saved"
-                          className="p-1 hover:text-[#0F172A] rounded-full hover:bg-slate-100 transition cursor-pointer"
+                          onClick={handleResetFilters}
+                          className="text-xs font-semibold text-[#2563EB] hover:underline cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded"
                         >
-                          <Plus className="w-4 h-4" />
+                          Clear all
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => toast.info("Manage saved filter presets")}
-                          aria-label="Edit saved filters"
-                          className="p-1 hover:text-[#0F172A] rounded-full hover:bg-slate-100 transition cursor-pointer"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      )}
                     </div>
+                    {currentFilterRows.length === 0 ? (
+                      <p className="text-xs text-[#475569]">No filters applied. Showing all listings in this tab.</p>
+                    ) : (
+                      <dl className="space-y-1.5 text-xs">
+                        {currentFilterRows.map(([label, value]) => (
+                          <div key={label} className="flex items-start justify-between gap-3">
+                            <dt className="text-[#475569] shrink-0">{label}</dt>
+                            <dd className="font-semibold text-[#0F172A] text-right truncate" title={value}>{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </section>
 
+                  <div className="border-b border-[#E2E8F0]" />
+
+                  {/* Static example searches (not personal saved filters): each applies its real filter */}
+                  <section className="space-y-2" aria-labelledby="suggested-searches-title">
+                    <h3 id="suggested-searches-title" className="font-bold text-sm text-[#0F172A]">Suggested Searches</h3>
                     <div className="space-y-1.5">
                       {SAVED_PRESETS.map((preset) => {
                         const isActive = search === preset.search || (preset.category && selectedCategory === preset.category);
@@ -2570,9 +2665,7 @@ function JobsPageInner() {
                             type="button"
                             onClick={() => handleApplySavedFilter(preset)}
                             className={`w-full text-left p-2.5 rounded-xl text-xs font-medium transition cursor-pointer flex items-center gap-2.5 ${
-                              isActive
-                                ? "bg-blue-50 text-[#1E3A8A] font-bold"
-                                : "hover:bg-slate-50 text-slate-700"
+                              isActive ? "bg-blue-50 text-[#1E3A8A] font-bold" : "hover:bg-slate-50 text-slate-700"
                             }`}
                           >
                             <span className={`w-1 h-5 rounded-full shrink-0 ${isActive ? "bg-[#2563EB]" : "bg-emerald-500"}`} />
@@ -2581,78 +2674,17 @@ function JobsPageInner() {
                         );
                       })}
                     </div>
-                  </div>
+                  </section>
 
-                  {/* Card 2: Profile & Job Match Progress Card */}
-                  {(() => {
-                    const { hasResume, hasPreferences, hasTracked, completionPercentage } = calculateProfileCompletion({
-                      candidate,
-                      preferences,
-                      savedJobIds,
-                    });
+                  <div className="border-b border-[#E2E8F0]" />
 
-                    return (
-                      <div className="bg-blue-50/70 border border-blue-200/70 rounded-[16px] p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center shrink-0">
-                            <Lightbulb className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold text-[#0F172A] leading-tight">
-                              Complete Profile & Preferences
-                            </div>
-                          </div>
-                          <span className="text-xs font-bold text-[#2563EB]">
-                            {`${completionPercentage}%`}
-                          </span>
-                        </div>
-
-                        <div className="h-1.5 w-full bg-blue-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[#2563EB] rounded-full transition-all duration-300"
-                            style={{ width: `${completionPercentage}%` }}
-                          />
-                        </div>
-
-                        <div className="space-y-2 pt-1 text-xs text-slate-700">
-                          <Link
-                            href="/resume"
-                            className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
-                          >
-                            <span className="flex items-center gap-2">
-                              <CheckCircle2 className={`w-3.5 h-3.5 ${hasResume ? "text-emerald-600" : "text-slate-300"}`} />
-                              <span>1. Upload Your Resume</span>
-                            </span>
-                            <ArrowRight className="w-3 h-3 text-[#475569]" />
-                          </Link>
-
-                          <Link
-                            href="/settings?tab=preferences"
-                            className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
-                          >
-                            <span className="flex items-center gap-2">
-                              <CheckCircle2 className={`w-3.5 h-3.5 ${hasPreferences ? "text-emerald-600" : "text-slate-300"}`} />
-                              <span>2. Set Job Preferences</span>
-                            </span>
-                            <ArrowRight className="w-3 h-3 text-[#475569]" />
-                          </Link>
-
-                          <Link
-                            href="/tracker"
-                            className="flex items-center justify-between p-2 rounded-lg bg-white/80 hover:bg-white transition border border-blue-100"
-                          >
-                            <span className="flex items-center gap-2">
-                              <CheckCircle2 className={`w-3.5 h-3.5 ${hasTracked ? "text-emerald-600" : "text-slate-300"}`} />
-                              <span>3. Track Liked Positions</span>
-                            </span>
-                            <ArrowRight className="w-3 h-3 text-[#475569]" />
-                          </Link>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  <section className="space-y-1.5 text-xs text-[#475569]" aria-labelledby="listing-help-title">
+                    <h3 id="listing-help-title" className="font-bold text-sm text-[#0F172A]">Using this list</h3>
+                    <p>Use All Filters to narrow by location, job type and work model.</p>
+                    <p>Open a job to read its listed requirements before you apply.</p>
+                  </section>
                 </div>
-              </div>
+              </aside>
             </>
           )}
         </main>
@@ -2668,6 +2700,20 @@ function JobsPageInner() {
         user={user}
         featureTitle="Unlock Verified Company Names & Direct Employer Apply"
       />
+
+      {isDesktop && (
+        <>
+          <FirstJobsWelcome
+            isOpen={welcomeOpen}
+            onClose={() => finishWelcome(null)}
+            onConfirm={(levels) => finishWelcome(levels)}
+            recommendedCount={isDegraded ? null : Math.min(totalCount || liveJobs.length, 30)}
+            initialLevels={selectedLevel}
+            savedExperienceLevel={preferences?.experienceLevel}
+          />
+          <JobsProductTour isActive={tourActive && !welcomeOpen} onComplete={endTour} onExit={endTour} />
+        </>
+      )}
     </div>
   );
 }

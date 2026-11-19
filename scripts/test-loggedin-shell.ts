@@ -82,17 +82,17 @@ function run() {
     console.log("  [PASS] rail branding: small CareerMonke logo mark at top");
   }
 
-  // 1c. Vertical nav items: Dashboard, Jobs, Resume, Profile, Tracker, Radar
-  const hasDashboardNav = railCode.includes('"Dashboard"') || railCode.includes('label: "Dashboard"');
+  // 1c. Vertical nav items: Jobs, Resume, Profile, Tracker, Radar (Dashboard was retired; Jobs is home)
+  const hasDashboardNav = railCode.includes('label: "Dashboard"') || railCode.includes('href: "/dashboard"') || railCode.includes('href="/dashboard"');
   const hasJobsNav = railCode.includes('"Jobs"') || railCode.includes('label: "Jobs"');
   const hasResumeNav = railCode.includes('"Resume"') || railCode.includes('label: "Resume"');
   const hasProfileNav = railCode.includes('"Profile"') || railCode.includes('label: "Profile"');
   const hasTrackerNav = railCode.includes('"Tracker"') || railCode.includes('label: "Tracker"');
   const hasRadarNav = railCode.includes('"Radar"') || railCode.includes('label: "Radar"');
-  if (!hasDashboardNav || !hasJobsNav || !hasResumeNav || !hasProfileNav || !hasTrackerNav || !hasRadarNav) {
-    failures.push("RAIL FAIL: Nav items must include Dashboard, Jobs, Resume, Profile, Tracker, and Radar.");
+  if (hasDashboardNav || !hasJobsNav || !hasResumeNav || !hasProfileNav || !hasTrackerNav || !hasRadarNav) {
+    failures.push("RAIL FAIL: Nav items must include Jobs, Resume, Profile, Tracker, and Radar, and no Dashboard link.");
   } else {
-    console.log("  [PASS] rail nav items: Dashboard, Jobs, Resume, Profile, Tracker, Radar present");
+    console.log("  [PASS] rail nav items: Jobs, Resume, Profile, Tracker, Radar present; no Dashboard");
   }
 
   // 1d. Icon and label sizing in narrow mode (24px line icons centred over 11px labels)
@@ -245,12 +245,18 @@ function run() {
   }
 
   // 5b. Pages use AppIconRail and AppTopBar
-  const pagesHaveRail = dashboardCode.includes("AppIconRail") && jobsCode.includes("AppIconRail") && trackerCode.includes("AppIconRail") && resumeCode.includes("AppIconRail") && settingsCode.includes("AppIconRail");
-  const pagesHaveTopBar = dashboardCode.includes("AppTopBar") && jobsCode.includes("AppTopBar") && trackerCode.includes("AppTopBar") && resumeCode.includes("AppTopBar") && settingsCode.includes("AppTopBar");
+  const pagesHaveRail = jobsCode.includes("AppIconRail") && trackerCode.includes("AppIconRail") && resumeCode.includes("AppIconRail") && settingsCode.includes("AppIconRail");
+  const pagesHaveTopBar = jobsCode.includes("AppTopBar") && trackerCode.includes("AppTopBar") && resumeCode.includes("AppTopBar") && settingsCode.includes("AppTopBar");
   if (!pagesHaveRail || !pagesHaveTopBar) {
-    failures.push("SHELL ADOPTION FAIL: AppIconRail and AppTopBar must be adopted on /dashboard, /jobs, /tracker, /resume, and /settings.");
+    failures.push("SHELL ADOPTION FAIL: AppIconRail and AppTopBar must be adopted on /jobs, /tracker, /resume, and /settings.");
   } else {
-    console.log("  [PASS] shell adoption: AppIconRail and AppTopBar integrated across /dashboard, /jobs, /tracker, /resume, /settings");
+    console.log("  [PASS] shell adoption: AppIconRail and AppTopBar integrated across /jobs, /tracker, /resume, /settings");
+  }
+  // Retired Dashboard: /dashboard is a redirect stub that renders no shell or Dashboard UI.
+  if (dashboardCode && (dashboardCode.includes("AppIconRail") || !dashboardCode.includes('router.replace("/jobs")'))) {
+    failures.push("DASHBOARD RETIRED FAIL: /dashboard must only redirect to /jobs.");
+  } else {
+    console.log("  [PASS] retired dashboard: /dashboard only redirects to /jobs");
   }
 
   // 5c. Strict Jobright purity: no Jobright logo, mascot, copy; no Agent, Coaching, Interview, Autofill, or upsell pills
