@@ -120,7 +120,9 @@ export async function consumeSet(
   userId: string,
   kind: QuotaKind,
   idempotencyKey: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  customSupabaseAdmin?: any,
+  customGetServerEntitlement?: (uid: string) => Promise<any>
 ): Promise<ConsumeResult> {
   if (!userId || typeof userId !== "string") {
     return { success: false, code: "PRO_REQUIRED", error: "Valid user ID required" };
@@ -140,7 +142,8 @@ export async function consumeSet(
 
   try {
     // 1. Pro Entitlement Check - Fail closed
-    const entitlement = await getServerEntitlement(userId);
+    const getEntitlement = customGetServerEntitlement || getServerEntitlement;
+    const entitlement = await getEntitlement(userId);
     if (!entitlement.isPro) {
       return {
         success: false,
@@ -149,7 +152,7 @@ export async function consumeSet(
       };
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = customSupabaseAdmin || getSupabaseAdmin();
 
     // 2. Resolve quota period and plan parameters
     const quota = await getPlanQuota(userId, now);
@@ -276,14 +279,15 @@ export async function refundSet(
   userId: string,
   idempotencyKey: string,
   now: Date = new Date(),
-  kind?: QuotaKind
+  kind?: QuotaKind,
+  customSupabaseAdmin?: any
 ): Promise<RefundResult> {
   if (!userId || !idempotencyKey) {
     return { success: false, refunded: false, error: "Missing userId or idempotencyKey" };
   }
 
   try {
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = customSupabaseAdmin || getSupabaseAdmin();
 
     // 1. Attempt atomic Postgres RPC refund
     try {

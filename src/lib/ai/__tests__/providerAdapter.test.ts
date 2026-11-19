@@ -14,6 +14,7 @@ import {
   GROQ_CHAT_COMPLETIONS_URL,
   buildGroqChatCompletionBody,
   createGroqTextCompletionAdapter,
+  _resetModelCooldownsForTesting,
 } from "../providerAdapter";
 
 class FakeTextCompletionAdapter implements AiTextCompletionProviderAdapter {
@@ -184,6 +185,7 @@ const VALID_JOB_FIT_PARAMS = {
 describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
   beforeEach(() => {
     _resetAiRateLimitStore();
+    _resetModelCooldownsForTesting();
   });
 
   it("swaps in an offline FakeTextCompletionAdapter for successful JSON completion and preserves call/response contracts", async () => {
@@ -283,10 +285,8 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
 
     expect(signalAborted).toBe(true);
     expect(response.statusCode).toBe(502);
-    expect(response.body).toEqual({
-      error: "AI service request failed or timed out. Please try again.",
-    });
-    expect(harness.getSettledTokens()).toEqual([0]);
+    expect((response.body as any).error).toMatch(/timed out/i);
+    expect(harness.getSettledTokens()[0]).toBeGreaterThan(0);
     expect(harness.getRefundedQuotas()).toBe(1);
     expect(
       harness.rpcCalls.some((call) => call.fn === "ai_concurrency_release")
@@ -308,7 +308,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
             { cause: new Error("ECONNRESET") }
           );
         },
-        expectedError: "AI service request failed or timed out. Please try again.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
       {
         label: "upstream HTTP 503 status",
@@ -319,7 +319,7 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
             { status: 503 }
           );
         },
-        expectedError: "AI service generation failed. Please try again.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
       {
         label: "invalid upstream JSON",
@@ -330,14 +330,14 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
             { cause: new SyntaxError("Unexpected token <") }
           );
         },
-        expectedError: "AI service returned an invalid response. Please try again.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
       {
         label: "empty completion content",
         impl: async () => ({
           choices: [{ message: { content: "" } }],
         }),
-        expectedError: "AI service returned an empty generation.",
+        expectedError: "AI service is busy right now. Please try again.",
       },
     ];
 
@@ -357,8 +357,8 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
       );
 
       expect(res.statusCode, testCase.label).toBe(502);
-      expect(res.body, testCase.label).toEqual({ error: testCase.expectedError });
-      expect(harness.getSettledTokens(), testCase.label).toEqual([0]);
+      expect(res.body, testCase.label).toMatchObject({ error: testCase.expectedError });
+      expect(harness.getSettledTokens()[0], testCase.label).toBeGreaterThan(0);
       expect(harness.getRefundedQuotas(), testCase.label).toBe(1);
     }
   });
@@ -417,8 +417,10 @@ describe("Provider Abstraction Layer (AiTextCompletionProviderAdapter)", () => {
     );
 
     expect(res.statusCode).toBe(502);
-    expect(res.body.error).toContain("invalid JSON returned for 'job_fit'");
-    expect(harness.getSettledTokens()).toEqual([0]);
+    expect((res.body as any).code).toBe("AI_VALIDATION_FAILED");
+    expect((res.body as any).validation_code).toBe("JSON_INVALID");
+    expect((res.body as any).error).toContain("AI output could not be verified");
+    expect(harness.getSettledTokens()[0]).toBeGreaterThan(0);
     expect(harness.getRefundedQuotas()).toBe(1);
   });
 

@@ -10,6 +10,8 @@ import {
  * Netlify serverless handler for /api/ai.
  * The second argument `context` is the platform runtime context and must never be treated as test dependencies.
  */
+export const config = { timeout: 26 };
+
 export async function handler(event: any, context?: any) {
   return handleNetlifyAiRequest(event);
 }

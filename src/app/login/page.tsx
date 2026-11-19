@@ -8,6 +8,7 @@ import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { formatAuthError } from "@/lib/auth/authErrors";
 import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
 function GoogleIcon() {
@@ -52,7 +53,7 @@ export default function LoginPage() {
       setNext(getValidReturnUrl(rawNext, "/jobs"));
       const queryError = params.get("error");
       if (queryError) {
-        setError(queryError);
+        setError(formatAuthError(queryError, false));
       }
     }
   }, []);
@@ -118,7 +119,7 @@ export default function LoginPage() {
       });
 
       if (signInError) {
-        setError(signInError.message || "Failed to send magic link. Please try again.");
+        setError(formatAuthError(signInError.message || "Failed to send magic link. Please try again.", false));
         setLoading(false);
         return;
       }
@@ -126,7 +127,7 @@ export default function LoginPage() {
       setEmailSent(true);
       setResendTimer(30);
     } catch (err: any) {
-      setError(err?.message || "Failed to send magic link. Please try again.");
+      setError(formatAuthError(err?.message || "Failed to send magic link. Please try again.", false));
     } finally {
       setLoading(false);
     }
@@ -149,11 +150,11 @@ export default function LoginPage() {
       });
 
       if (oauthError) {
-        setError(oauthError.message);
+        setError(formatAuthError(oauthError.message, false, true));
         setGoogleLoading(false);
       }
     } catch (err: any) {
-      setError(err?.message || "Could not initialize Google Sign In.");
+      setError(formatAuthError(err?.message || "Could not initialize Google Sign In.", false, true));
       setGoogleLoading(false);
     }
   };

@@ -165,6 +165,7 @@ export interface AiServiceDeps {
    * is returned.
    */
   upstreamStream?: boolean;
+  requestId?: string;
 }
 
 export {
@@ -191,9 +192,24 @@ import {
   validateIdempotencyKey,
   getIdempotentResult,
   storeIdempotentResult,
+  isOperationInFlight,
+  setOperationInFlight,
+  clearOperationInFlight,
 } from "./idempotency";
 
 import { createLogger } from "@/lib/observability/logger";
+import {
+  routeCompletion,
+  AiRoutingError,
+  DEFAULT_TOTAL_MS,
+  DEFAULT_PRIMARY_MS,
+  DEFAULT_FALLBACK_MS,
+  computeMaxWorkTokens,
+  getValidationReasonCode,
+  MAX_ROUTING_ATTEMPTS_WITH_FALLBACK,
+  MAX_ROUTING_ATTEMPTS_SINGLE_MODEL,
+  getMaxRoutingAttempts,
+} from "./routing";
 
 const log = createLogger({ context: { module: "ai/serviceHandler" } });
 export {
@@ -203,6 +219,9 @@ export {
   getIdempotencyCacheKey,
   getIdempotentResult,
   storeIdempotentResult,
+  isOperationInFlight,
+  setOperationInFlight,
+  clearOperationInFlight,
   _clearIdempotencyResultCacheForTesting,
 } from "./idempotency";
 
@@ -344,6 +363,10 @@ export async function executeAiCore(
   ipRateLimitPrefix: string = "ai:ip:"
 ): Promise<AiCoreResponse> {
   const activeDeps: AiServiceDeps = deps;
+  const executionRequestId =
+    activeDeps.requestId ||
+    (typeof body === "object" && (body?.requestId || body?.request_id)) ||
+    `req_${crypto.randomUUID()}`;
   let setConsumed = false;
   let aiQuotaConsumed = false;
   let confirmedSupabaseAdmin: any = null;
@@ -537,6 +560,23 @@ export async function executeAiCore(
 
     const isMeteredOperation = config.operation === "resume_tailor" || config.operation === "cover_letter";
 
+    // Validate upstream API key BEFORE reserving budget or checking in-flight operations
+    const resolvedGroqApiKey =
+      getRuntimeEnv("GROQ_API_KEY", activeDeps.env)?.trim() ||
+      getRuntimeEnv("AI_PROVIDER_KEY", activeDeps.env)?.trim() ||
+      getRuntimeEnv("GROQ_KEY", activeDeps.env)?.trim();
+    if (!activeDeps.providerAdapter && !activeDeps.callGroq && !resolvedGroqApiKey) {
+      log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
+      return {
+        statusCode: 500,
+        body: {
+          error: "Missing required environment variable: GROQ_API_KEY",
+          code: "AI_NOT_CONFIGURED",
+          missingVariable: "GROQ_API_KEY",
+        },
+      };
+    }
+
     // 3A. Global Kill Switch Check (before any quota debit or budget reservation)
     if (isAiGlobalDisabled(activeDeps.env)) {
       emitBudgetAlert("kill_switch", "AI temporarily disabled via emergency kill switch (AI_GLOBAL_DISABLE)", {
@@ -556,57 +596,89 @@ export async function executeAiCore(
       };
     }
 
-    // 3B. Pre-check for Idempotent Replay (Must NOT reserve budget or take a lease)
+    // 3B. Pre-check for Idempotent Replay & In-Flight Operations (Applies across all operations)
     let isPreVerifiedReplay = false;
     let preVerifiedReplayResult: any = null;
 
-    if (isMeteredOperation) {
-      confirmedKind = config.operation as QuotaKind;
-      const candidateKey =
-        body.idempotencyKey ??
-        body.idempotency_key ??
-        body.requestId ??
-        body.request_id ??
-        params?.idempotencyKey ??
-        params?.idempotency_key ??
-        params?.requestId ??
-        params?.request_id;
+    confirmedKind = isMeteredOperation ? (config.operation as QuotaKind) : undefined;
+    const candidateKey =
+      body.idempotencyKey ??
+      body.idempotency_key ??
+      body.requestId ??
+      body.request_id ??
+      params?.idempotencyKey ??
+      params?.idempotency_key ??
+      params?.requestId ??
+      params?.request_id;
 
-      const keyValidation = validateIdempotencyKey(candidateKey);
-      if (!keyValidation.valid) {
-        return {
-          statusCode: 400,
-          body: {
-            error: keyValidation.error,
-            code: "INVALID_IDEMPOTENCY_KEY",
-          },
-        };
-      }
+    const keyValidation = validateIdempotencyKey(candidateKey);
+    if (!keyValidation.valid) {
+      return {
+        statusCode: 400,
+        body: {
+          error: keyValidation.error,
+          code: "INVALID_IDEMPOTENCY_KEY",
+        },
+      };
+    }
 
-      setConsumeKey =
-        keyValidation.key ||
-        createOperationId("set");
+    setConsumeKey =
+      keyValidation.key ||
+      createOperationId("set");
 
-      const cached = getIdempotentResult(user.id, config.operation, setConsumeKey);
-      if (cached) {
-        isPreVerifiedReplay = true;
-        preVerifiedReplayResult = cached;
-      } else if (typeof supabaseAdmin?.from === "function") {
-        try {
-          const { data: dbEvent } = await supabaseAdmin
-            .from("plan_usage_events")
-            .select("response_payload")
-            .eq("user_id", user.id)
-            .eq("kind", config.operation)
-            .eq("idempotency_key", setConsumeKey)
-            .maybeSingle();
+    // Check if an identical operation is currently running
+    if (isOperationInFlight(user.id, config.operation, setConsumeKey)) {
+      return {
+        statusCode: 409,
+        body: {
+          error: "Operation currently in progress. Please retry or poll shortly.",
+          code: "OPERATION_IN_FLIGHT",
+          status: "pending",
+          operation: config.operation,
+          idempotencyKey: setConsumeKey,
+          retryAfter: 2,
+        },
+        headers: {
+          "Retry-After": "2",
+        },
+      };
+    }
 
-          if (dbEvent?.response_payload) {
-            isPreVerifiedReplay = true;
-            preVerifiedReplayResult = dbEvent.response_payload;
-          }
-        } catch {}
-      }
+    const cached = getIdempotentResult(user.id, config.operation, setConsumeKey);
+    if (cached) {
+      isPreVerifiedReplay = true;
+      preVerifiedReplayResult = cached;
+    } else if (isMeteredOperation && typeof supabaseAdmin?.from === "function") {
+      try {
+        const { data: dbEvent } = await supabaseAdmin
+          .from("plan_usage_events")
+          .select("response_payload")
+          .eq("user_id", user.id)
+          .eq("kind", config.operation)
+          .eq("idempotency_key", setConsumeKey)
+          .maybeSingle();
+
+        if (dbEvent?.response_payload) {
+          isPreVerifiedReplay = true;
+          preVerifiedReplayResult = dbEvent.response_payload;
+        } else if (dbEvent && typeof dbEvent === "object" && "response_payload" in dbEvent) {
+          // Row recorded but result not yet populated -> in flight
+          return {
+            statusCode: 409,
+            body: {
+              error: "Operation currently in progress. Please retry or poll shortly.",
+              code: "OPERATION_IN_FLIGHT",
+              status: "pending",
+              operation: config.operation,
+              idempotencyKey: setConsumeKey,
+              retryAfter: 2,
+            },
+            headers: {
+              "Retry-After": "2",
+            },
+          };
+        }
+      } catch {}
     }
 
     if (isPreVerifiedReplay) {
@@ -641,8 +713,9 @@ export async function executeAiCore(
       }
     };
 
-    // 3C. Global Daily Token Budget Reservation
-    const estimatedTokens = Math.max(1, (payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+    // 3C. Global Daily Token Budget Reservation (Reserve maximum permitted work across all possible attempts)
+    const maxPermittedTokens = computeMaxWorkTokens(payload);
+    const estimatedTokens = maxPermittedTokens;
     const globalDailyCap = getAiGlobalDailyTokenCap(activeDeps.env);
     const periodDate = new Date().toISOString().slice(0, 10);
     let budgetReserved = false;
@@ -747,30 +820,12 @@ export async function executeAiCore(
             p_actual: Math.max(0, actualTokens),
           }));
           budgetReserved = false;
-        } catch (settleErr) {
-          log.warn("[AI Service] Error settling global AI budget:", { error: settleErr });
+        } catch (_settleErr) {
+          log.warn("[AI Service] Error settling global AI budget", { code: "SETTLE_BUDGET_ERROR" });
         }
       }
     };
 
-    // Validate upstream API key BEFORE consuming user quota/sets so a missing
-    // server secret never burns a user's daily tailoring or cover-letter credit.
-    const resolvedGroqApiKey =
-      getRuntimeEnv("GROQ_API_KEY", activeDeps.env)?.trim() ||
-      getRuntimeEnv("AI_PROVIDER_KEY", activeDeps.env)?.trim() ||
-      getRuntimeEnv("GROQ_KEY", activeDeps.env)?.trim();
-    if (!activeDeps.providerAdapter && !activeDeps.callGroq && !resolvedGroqApiKey) {
-      releaseProbeIfAny();
-      await settleBudget(0);
-      log.error("[AI Service] Missing required environment variable: GROQ_API_KEY");
-      return {
-        statusCode: 500,
-        body: {
-          error: "Missing required environment variable: GROQ_API_KEY",
-          missingVariable: "GROQ_API_KEY",
-        },
-      };
-    }
 
     // 4. Quota Enforcement:
     // Metered AI generations (resume_tailor and cover_letter) route strictly through consumeSet,
@@ -778,15 +833,39 @@ export async function executeAiCore(
     // and the 30/day IST fair-use cap. They MUST NOT double-count in ai_usage_quotas.
     // Non-metered operations (e.g. job_fit, extraction) fall under checkAndIncrementAiQuota.
     if (isMeteredOperation) {
-      const doConsume = activeDeps.consumeSet || consumeSet;
+      const doConsume =
+        activeDeps.consumeSet ||
+        ((u: string, k: QuotaKind, key: string) =>
+          consumeSet(
+            u,
+            k,
+            key,
+            undefined,
+            activeDeps.getSupabaseAdmin ? activeDeps.getSupabaseAdmin() : undefined,
+            activeDeps.getServerEntitlement
+          ));
       const consumeRes = await doConsume(user.id, config.operation as QuotaKind, setConsumeKey);
 
       if (!consumeRes.success) {
         releaseProbeIfAny();
         await settleBudget(0);
         const isDailyCap = consumeRes.code === "DAILY_LIMIT_REACHED";
+        if (isDailyCap) {
+          return {
+            statusCode: 429,
+            headers: {
+              "Retry-After": "86400",
+            },
+            body: {
+              error: `Daily AI usage quota exceeded for operation '${config.operation}' (30/30). Quotas reset daily at midnight UTC.`,
+              code: "DAILY_LIMIT_REACHED",
+              currentCount: 30,
+              limit: 30,
+            },
+          };
+        }
         return {
-          statusCode: isDailyCap ? 429 : 403,
+          statusCode: 403,
           body: {
             error: consumeRes.error || "Quota exhausted for operation",
             code: consumeRes.code || "QUOTA_EXHAUSTED",
@@ -840,16 +919,19 @@ export async function executeAiCore(
           // Ignore DB fetch failure on replay
         }
 
+        // Fallback: If already consumed but no cached content exists, return 409 (never 200 without content)
         return {
-          statusCode: 200,
+          statusCode: 409,
           body: {
-            success: true,
-            result: "Idempotent replay: operation already processed.",
-            content: "Idempotent replay: operation already processed.",
-            text: "Idempotent replay: operation already processed.",
+            error: "Operation currently in progress or already processed. Please retry or poll shortly.",
+            code: "OPERATION_IN_FLIGHT",
+            status: "pending",
             operation: config.operation,
-            idempotentReplay: true,
-            alreadyConsumed: true,
+            idempotencyKey: setConsumeKey,
+            retryAfter: 2,
+          },
+          headers: {
+            "Retry-After": "2",
           },
         };
       }
@@ -895,19 +977,28 @@ export async function executeAiCore(
 
     const rollbackAllQuotas = async () => {
       if (setConsumed && setConsumeKey) {
-        const doRefund = activeDeps.refundSet || refundSet;
+        const doRefund =
+          activeDeps.refundSet ||
+          ((uid: string, key: string, d?: Date, k?: QuotaKind) =>
+            refundSet(
+              uid,
+              key,
+              d,
+              k,
+              activeDeps.getSupabaseAdmin ? activeDeps.getSupabaseAdmin() : undefined
+            ));
         setConsumed = false;
         try {
           await doRefund(user.id, setConsumeKey, new Date(), config.operation as QuotaKind);
-        } catch (rfErr) {
-          log.warn("[AI Service] Error refunding consumed set:", { error: rfErr });
+        } catch (_rfErr) {
+          log.warn("[AI Service] Error refunding consumed set", { code: "REFUND_ERROR" });
         }
       } else if (!isMeteredOperation && aiQuotaConsumed) {
         aiQuotaConsumed = false;
         try {
           await refundAiQuota(supabaseAdmin, user.id, config.operation, payload.estimatedInputTokens);
-        } catch (rfErr) {
-          log.warn("[AI Service] Error refunding non-metered AI quota:", { error: rfErr });
+        } catch (_rfErr) {
+          log.warn("[AI Service] Error refunding non-metered AI quota", { code: "REFUND_ERROR" });
         }
       }
     };
@@ -991,16 +1082,19 @@ export async function executeAiCore(
 
     const groqTimeoutMs =
       activeDeps.groqTimeoutMs ??
-      (Number(getRuntimeEnv("GROQ_TIMEOUT_MS", activeDeps.env)) || 25000);
+      (Number(getRuntimeEnv("GROQ_TIMEOUT_MS", activeDeps.env)) || DEFAULT_TOTAL_MS);
 
     const abortController = new AbortController();
     const timeoutHandle = setTimeout(() => {
       abortController.abort(new Error("AI service request timed out after 25s"));
     }, groqTimeoutMs);
 
+    setOperationInFlight(user.id, config.operation, setConsumeKey);
     try {
       // 5. Server-Side Groq API Key Check & Upstream Groq Call
       let groqData: any;
+      let servedModel = payload.model;
+      let routedTokens = 0;
       if (activeDeps.callGroq) {
         try {
           const mockCall = activeDeps.callGroq(payload, { signal: abortController.signal });
@@ -1019,7 +1113,7 @@ export async function executeAiCore(
         } catch (mockErr: any) {
           clearTimeout(timeoutHandle);
           activeBreaker.recordFailure();
-          log.warn("[AI Service] Error calling mock Groq provider:", { error: mockErr });
+          log.warn("[AI Service] Error calling mock Groq provider", { code: "MOCK_PROVIDER_ERROR" });
           await settleBudget(0);
           await rollbackAllQuotas();
           return {
@@ -1039,6 +1133,7 @@ export async function executeAiCore(
             statusCode: 500,
             body: {
               error: "Missing required environment variable: GROQ_API_KEY",
+              code: "AI_NOT_CONFIGURED",
               missingVariable: "GROQ_API_KEY",
             },
           };
@@ -1068,7 +1163,10 @@ export async function executeAiCore(
           } catch (fetchErr: any) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            log.warn("[AI Service] Network error calling upstream provider:", { error: fetchErr });
+            log.warn("[AI Service] Upstream stream network error", {
+              code: "UPSTREAM_STREAM_FETCH_ERROR",
+              requestId: executionRequestId,
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
             return {
@@ -1080,7 +1178,11 @@ export async function executeAiCore(
           if (!groqResponse.ok) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            log.warn(`[AI Service] Upstream provider returned status ${groqResponse.status}`);
+            log.warn("[AI Service] Upstream stream HTTP error", {
+              status: groqResponse.status,
+              code: "UPSTREAM_STREAM_HTTP_ERROR",
+              requestId: executionRequestId,
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
             return {
@@ -1091,10 +1193,13 @@ export async function executeAiCore(
 
           try {
             groqData = await readChatCompletionStream(groqResponse.body);
-          } catch (parseErr) {
+          } catch (_parseErr) {
             clearTimeout(timeoutHandle);
             activeBreaker.recordFailure();
-            log.warn("[AI Service] Failed to parse upstream provider JSON:", { error: parseErr });
+            log.warn("[AI Service] Failed to parse upstream provider JSON", {
+              code: "PARSE_ERROR",
+              requestId: executionRequestId,
+            });
             await settleBudget(0);
             await rollbackAllQuotas();
             return {
@@ -1104,65 +1209,65 @@ export async function executeAiCore(
           }
         } else {
           const adapter = activeDeps.providerAdapter ?? groqTextCompletionAdapter;
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            abortController.signal.addEventListener(
-              "abort",
-              () => {
-                const err = new Error("AI service request timed out after 25s");
-                (err as any).name = "AbortError";
-                reject(err);
-              },
-              { once: true }
-            );
-          });
           try {
-            groqData = await Promise.race([
-              adapter.completeText(payload, {
-                signal: abortController.signal,
-                apiKey: groqApiKey,
-              }),
-              timeoutPromise,
-            ]);
-          } catch (adapterErr: any) {
+            const routed = await routeCompletion({
+              adapter,
+              payload,
+              apiKey: groqApiKey,
+              requestId: executionRequestId,
+              totalMs: groqTimeoutMs,
+              primaryMs: Math.min(DEFAULT_PRIMARY_MS, groqTimeoutMs),
+              fallbackMs: Math.min(DEFAULT_FALLBACK_MS, groqTimeoutMs),
+              signal: abortController.signal,
+              maxBillableTokens: maxPermittedTokens,
+              validate: (c) => {
+                const v = validateAndSanitizeAiOutput(config.operation, c, params);
+                return v.ok ? { ok: true } : { ok: false, error: v.error };
+              },
+            });
+            groqData = routed.data;
+            servedModel = routed.model;
+            routedTokens = routed.totalBillableTokens;
+          } catch (routeErr: any) {
             clearTimeout(timeoutHandle);
-            activeBreaker.recordFailure();
-            if (adapterErr instanceof AiProviderUpstreamError) {
-              if (adapterErr.kind === "http_status") {
-                log.warn(`[AI Service] Upstream provider returned status ${adapterErr.status}`);
-                await settleBudget(0);
-                await rollbackAllQuotas();
-                return {
-                  statusCode: 502,
-                  body: { error: "AI service generation failed. Please try again." },
-                };
-              }
-              if (adapterErr.kind === "invalid_json") {
-                log.warn("[AI Service] Failed to parse upstream provider JSON:", {
-                  error: adapterErr.cause ?? adapterErr,
-                });
-                await settleBudget(0);
-                await rollbackAllQuotas();
-                return {
-                  statusCode: 502,
-                  body: { error: "AI service returned an invalid response. Please try again." },
-                };
-              }
-              log.warn("[AI Service] Network error calling upstream provider:", {
-                error: adapterErr.cause ?? adapterErr,
-              });
-              await settleBudget(0);
-              await rollbackAllQuotas();
+            const re: AiRoutingError | null = routeErr instanceof AiRoutingError ? routeErr : null;
+            routedTokens = re?.billableTokens ?? ((payload.estimatedInputTokens || 0) + (payload.maxOutputTokens || 0));
+            // Validator rejections are the model's output quality, not provider health.
+            if (!re || re.code !== "AI_VALIDATION_FAILED") activeBreaker.recordFailure();
+            else releaseProbeIfAny();
+            log.warn("[AI Service] AI request failed", {
+              operation: config.operation,
+              code: re?.code ?? "AI_BUSY",
+            });
+            await settleBudget(routedTokens);
+            await rollbackAllQuotas();
+            const code = re?.code ?? "AI_BUSY";
+            if (code === "AI_NOT_CONFIGURED") {
               return {
-                statusCode: 502,
-                body: { error: "AI service request failed or timed out. Please try again." },
+                statusCode: 500,
+                body: { error: "AI service is not configured.", code },
               };
             }
-            log.warn("[AI Service] Network error calling upstream provider:", { error: adapterErr });
-            await settleBudget(0);
-            await rollbackAllQuotas();
+            const status = re?.statusCode ?? 502;
+            const retryAfter = re?.retryAfter;
+            const fixedError =
+              code === "AI_VALIDATION_FAILED"
+                ? "AI output could not be verified against the provided facts."
+                : code === "AI_TIMEOUT"
+                ? "AI service request timed out. Please try again."
+                : code === "AI_BUSY"
+                ? "AI service is busy right now. Please try again."
+                : "AI service generation failed. Please try again.";
             return {
-              statusCode: 502,
-              body: { error: "AI service request failed or timed out. Please try again." },
+              statusCode: status,
+              body: {
+                error: fixedError,
+                message: fixedError,
+                code,
+                ...(code === "AI_VALIDATION_FAILED" ? { validation_code: getValidationReasonCode(re?.message || "") } : {}),
+                ...(retryAfter ? { retryAfter } : {}),
+              },
+              ...(retryAfter ? { headers: { "Retry-After": String(Math.min(retryAfter, 60)) } } : {}),
             };
           }
         }
@@ -1173,7 +1278,7 @@ export async function executeAiCore(
       const content = extractTextCompletionContent(groqData);
       if (!content) {
         activeBreaker.recordFailure();
-        await settleBudget(0);
+        await settleBudget(routedTokens > 0 ? routedTokens : 0);
         await rollbackAllQuotas();
         return {
           statusCode: 502,
@@ -1184,14 +1289,16 @@ export async function executeAiCore(
       activeBreaker.recordSuccess();
 
       // Settle actual tokens from Groq response usage field when present, otherwise estimate
-      let actualTokens = 0;
-      if (groqData && typeof groqData === "object" && groqData.usage) {
-        const promptTokens = Number(groqData.usage.prompt_tokens) || 0;
-        const completionTokens = Number(groqData.usage.completion_tokens) || 0;
-        actualTokens = promptTokens + completionTokens;
-      }
+      let actualTokens = routedTokens;
       if (actualTokens <= 0) {
-        actualTokens = estimatedTokens;
+        if (groqData && typeof groqData === "object" && groqData.usage) {
+          const promptTokens = Number(groqData.usage.prompt_tokens) || 0;
+          const completionTokens = Number(groqData.usage.completion_tokens) || 0;
+          actualTokens = promptTokens + completionTokens;
+        }
+        if (actualTokens <= 0) {
+          actualTokens = estimatedTokens;
+        }
       }
 
       if (activeDeps.callGroq && content === "Simulated AI generated output") {
@@ -1206,8 +1313,10 @@ export async function executeAiCore(
           jobDescriptionShortened: false,
         };
 
-        if (setConsumed && setConsumeKey) {
+        if (setConsumeKey) {
           storeIdempotentResult(user.id, config.operation, setConsumeKey, simulatedPayload);
+        }
+        if (setConsumed && setConsumeKey) {
           try {
             await supabaseAdmin
               .from("plan_usage_events")
@@ -1226,11 +1335,17 @@ export async function executeAiCore(
 
       const validated = validateAndSanitizeAiOutput(config.operation, content, params);
       if (!validated.ok) {
-        await settleBudget(0);
+        await settleBudget(actualTokens);
         await rollbackAllQuotas();
+        const fixedError = "AI output could not be verified against the provided facts.";
         return {
           statusCode: 502,
-          body: { error: validated.error },
+          body: {
+            error: fixedError,
+            message: fixedError,
+            code: "AI_VALIDATION_FAILED",
+            validation_code: getValidationReasonCode(validated.error),
+          },
         };
       }
 
@@ -1242,19 +1357,32 @@ export async function executeAiCore(
         content: validated.sanitizedText,
         text: validated.sanitizedText,
         operation: config.operation,
-        model: payload.model,
+        model: servedModel,
         jobDescriptionShortened: payload.metadata?.jobDescriptionShortened ?? false,
       };
 
-      if (setConsumed && setConsumeKey) {
+      if (setConsumeKey) {
         storeIdempotentResult(user.id, config.operation, setConsumeKey, responsePayload);
+      }
+      if (setConsumeKey && typeof supabaseAdmin?.from === "function") {
         try {
-          await supabaseAdmin
-            .from("plan_usage_events")
-            .update({ response_payload: responsePayload })
-            .eq("user_id", user.id)
-            .eq("kind", config.operation)
-            .eq("idempotency_key", setConsumeKey);
+          if (setConsumed) {
+            await supabaseAdmin
+              .from("plan_usage_events")
+              .update({ response_payload: responsePayload })
+              .eq("user_id", user.id)
+              .eq("kind", config.operation)
+              .eq("idempotency_key", setConsumeKey);
+          } else {
+            await supabaseAdmin
+              .from("plan_usage_events")
+              .insert({
+                user_id: user.id,
+                kind: config.operation,
+                idempotency_key: setConsumeKey,
+                response_payload: responsePayload,
+              });
+          }
         } catch {}
       }
 
@@ -1263,13 +1391,14 @@ export async function executeAiCore(
         body: responsePayload,
       };
     } finally {
+      clearOperationInFlight(user.id, config.operation, setConsumeKey);
       clearTimeout(timeoutHandle);
       if (hasLease && typeof supabaseAdmin.rpc === "function") {
         try {
           await rpcWithRetry(() => supabaseAdmin.rpc("ai_concurrency_release", { p_lease_id: leaseId }));
           hasLease = false;
-        } catch (relErr) {
-          log.warn("[AI Service] Error releasing concurrency lease:", { error: relErr });
+        } catch (_relErr) {
+          log.warn("[AI Service] Error releasing concurrency lease", { code: "LEASE_RELEASE_ERROR" });
         }
       }
       if (budgetReserved && typeof supabaseAdmin.rpc === "function") {
@@ -1280,27 +1409,30 @@ export async function executeAiCore(
             p_actual: 0,
           }));
           budgetReserved = false;
-        } catch (setErr) {
-          log.warn("[AI Service] Error settling budget reservation in finally:", { error: setErr });
+        } catch (_setErr) {
+          log.warn("[AI Service] Error settling budget reservation in finally", { code: "SETTLE_BUDGET_ERROR" });
         }
       }
     }
   } catch (err: any) {
-    log.error("[AI Service] Unhandled error:", { error: err });
+    log.error("[AI Service] Unhandled error", {
+      code: err?.code || "INTERNAL_SERVER_ERROR",
+      status: 500,
+    });
     if (setConsumed && setConsumeKey && confirmedUserId) {
       const doRefund = activeDeps.refundSet || refundSet;
       setConsumed = false;
       try {
         await doRefund(confirmedUserId, setConsumeKey, new Date(), confirmedKind);
-      } catch (rfErr) {
-        log.warn("[AI Service] Error refunding consumed set on unhandled error:", { error: rfErr });
+      } catch (_rfErr) {
+        log.warn("[AI Service] Error refunding consumed set on unhandled error", { code: "REFUND_ERROR" });
       }
     } else if (aiQuotaConsumed && confirmedSupabaseAdmin && confirmedUserId && confirmedOperation) {
       aiQuotaConsumed = false;
       try {
         await refundAiQuota(confirmedSupabaseAdmin, confirmedUserId, confirmedOperation, confirmedEstimatedTokens);
-      } catch (rfErr) {
-        log.warn("[AI Service] Error refunding non-metered quota on unhandled error:", { error: rfErr });
+      } catch (_rfErr) {
+        log.warn("[AI Service] Error refunding non-metered quota on unhandled error", { code: "REFUND_ERROR" });
       }
     }
     return {
@@ -1318,15 +1450,13 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
     const clientIp = getClientIpFromRequest(req);
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     const body = await req.json().catch(() => ({}));
-    const res = await executeAiCore(clientIp, authHeader, body, deps, "ai:ip:");
+    const reqId = req.headers.get("x-request-id") || req.headers.get("x-nf-request-id") || undefined;
+    const res = await executeAiCore(clientIp, authHeader, body, { ...deps, ...(reqId ? { requestId: reqId } : {}) }, "ai:ip:");
     if (res.statusCode >= 500) {
       log.error("[AI Service] 5xx response returned", {
-        statusCode: res.statusCode,
-        operation: typeof body?.operation === "string" ? body.operation : undefined,
-        error: res.body?.error,
-        code: res.body?.code,
-        missingVariable: res.body?.missingVariable,
-        requestId: req?.headers?.get?.("x-request-id") ?? undefined,
+        status: res.statusCode,
+        code: res.body?.code ?? "INTERNAL_SERVER_ERROR",
+        requestId: req?.headers?.get?.("x-request-id") ?? reqId,
       });
     }
     return NextResponse.json(res.body, {
@@ -1335,7 +1465,8 @@ export async function handleAiRequest(req: Request, deps: AiServiceDeps = {}): P
     });
   } catch (err: any) {
     log.error("[AI Service] Unhandled error in handleAiRequest", {
-      error: err,
+      status: 500,
+      code: "INTERNAL_SERVER_ERROR",
       requestId: req?.headers?.get?.("x-request-id") ?? undefined,
     });
     return NextResponse.json(
@@ -1381,14 +1512,13 @@ export async function handleNetlifyAiRequest(
     };
   }
 
-  const res = await executeAiCore(clientIp, authHeader, body, deps, "ip:");
+  const reqId = event.headers?.["x-nf-request-id"] || event.headers?.["x-request-id"] || undefined;
+  const res = await executeAiCore(clientIp, authHeader, body, { ...deps, ...(reqId ? { requestId: reqId } : {}) }, "ip:");
   if (res.statusCode >= 500) {
     log.error("[AI Service] 5xx response returned (Netlify)", {
-      statusCode: res.statusCode,
-      operation: typeof body?.operation === "string" ? body.operation : undefined,
-      error: res.body?.error,
-      code: res.body?.code,
-      missingVariable: res.body?.missingVariable,
+      status: res.statusCode,
+      code: res.body?.code ?? "INTERNAL_SERVER_ERROR",
+      requestId: reqId,
     });
   }
   return {

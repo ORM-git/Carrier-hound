@@ -23,20 +23,118 @@ export function getGroqApiKey(): boolean {
 export const isAiAvailable = getGroqApiKey;
 
 export const GENERIC_AI_UNAVAILABLE_MESSAGE =
-  "AI is temporarily unavailable. Your verified rules-based version is ready.";
+  "AI is temporarily unavailable. Please try again.";
 
 /**
  * Sanitizes any AI service error string for client-side user presentation.
  * Replaces any error message exposing environment variable names (such as GROQ_API_KEY)
- * or sensitive internals with the generic verified rules-based fallback message.
+ * or sensitive internals with a clean, friendly message.
  */
-export function sanitizeUserFacingAiError(rawError?: string | null): string {
-  if (!rawError) return GENERIC_AI_UNAVAILABLE_MESSAGE;
+export function sanitizeUserFacingAiError(rawError?: string | null, isTailoring = false): string {
+  if (!rawError) {
+    return isTailoring
+      ? "AI is temporarily unavailable. Your verified rules-based version is ready."
+      : GENERIC_AI_UNAVAILABLE_MESSAGE;
+  }
   const str = String(rawError);
   if (/GROQ_API_KEY|API_KEY|[A-Z0-9_]+_KEY|[A-Z0-9_]+_SECRET/i.test(str)) {
-    return GENERIC_AI_UNAVAILABLE_MESSAGE;
+    return isTailoring
+      ? "AI is temporarily unavailable. Your verified rules-based version is ready."
+      : GENERIC_AI_UNAVAILABLE_MESSAGE;
+  }
+  if (/AI (?:service )?generation failed/i.test(str)) {
+    return isTailoring
+      ? "AI service is temporarily busy. Your verified rules-based version is ready."
+      : "AI service is temporarily busy. Please try again.";
+  }
+  if (/rate limit|too many requests|429/i.test(str)) {
+    return "AI service is experiencing high demand. Please try again in a few moments.";
+  }
+  if (/timed out|timeout/i.test(str)) {
+    return "AI service request timed out. Please try again in a moment.";
   }
   return str;
+}
+
+const KEPT = "Your verified rules-based version is kept.";
+
+/** User-facing copy for the typed server error codes. */
+export function aiErrorMessage(data: any, status?: number, operation?: string): string {
+  const op = operation || data?.operation;
+  const isTailoring = op === "resume_tailor";
+
+  switch (data?.code) {
+    case "AI_TIMEOUT":
+      return isTailoring
+        ? `AI took too long to respond. ${KEPT} You can try again.`
+        : "AI took too long to respond. Please try again.";
+    case "AI_BUSY":
+      return isTailoring
+        ? `AI is busy right now. ${KEPT} You can try again shortly.`
+        : "AI is busy right now. Please try again shortly.";
+    case "AI_VALIDATION_FAILED":
+      return isTailoring
+        ? `AI could not produce a draft that matches your resume facts. ${KEPT}`
+        : "AI could not produce a response that matches the provided data. Please try again.";
+    case "AI_NOT_CONFIGURED":
+      return isTailoring
+        ? `AI is not available right now. ${KEPT}`
+        : "AI is not available right now.";
+  }
+  if (!data?.error && (status === 502 || status === 504)) {
+    return isTailoring
+      ? `AI took too long to respond. ${KEPT} You can try again.`
+      : "AI took too long to respond. Please try again.";
+  }
+  return sanitizeUserFacingAiError(data?.error || `AI generation failed (HTTP ${status}).`, isTailoring);
+}
+
+/**
+ * POSTs to /api/ai with ONE idempotency key per call (i.e. per user click), reused on the
+ * single retry so a retried request can never consume quota twice. Retries only on a network
+ * failure, an in-flight 409 pending state, a platform gateway error with no JSON body, or a
+ * code-less 429 whose Retry-After is short. Coded server responses (quota, budget, kill-switch,
+ * typed AI errors) are never retried.
+ */
+export async function postAiRequest(
+  token: string,
+  body: Record<string, any>
+): Promise<{ response: Response; data: any }> {
+  const payload = JSON.stringify({ ...body, idempotencyKey: `ai_${crypto.randomUUID()}` });
+  const send = () =>
+    fetch("/api/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: payload,
+    });
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  let response: Response;
+  try {
+    response = await send();
+  } catch {
+    await wait(800);
+    response = await send();
+    return { response, data: await response.clone().json().catch(() => ({})) };
+  }
+  let data = await response.clone().json().catch(() => null);
+
+  const gatewayNoBody = (response.status === 502 || response.status === 504) && data === null;
+  const retryAfter = Number(response.headers?.get?.("retry-after")) || 0;
+  const plain429 = response.status === 429 && !data?.code && retryAfter > 0 && retryAfter <= 5;
+  const isInFlight = response.status === 409 || data?.code === "OPERATION_IN_FLIGHT" || data?.status === "pending";
+
+  if (isInFlight) {
+    const pollWaitMs = Math.min(Math.max((retryAfter || 2) * 1000, 1500), 4000);
+    await wait(pollWaitMs);
+    response = await send();
+    data = await response.clone().json().catch(() => null);
+  } else if (gatewayNoBody || plain429) {
+    await wait(plain429 ? retryAfter * 1000 : 800);
+    response = await send();
+    data = await response.clone().json().catch(() => null);
+  }
+  return { response, data: data ?? {} };
 }
 
 /**
@@ -64,30 +162,23 @@ export async function callGroqCompletion(options: {
     }
 
     const operation = options.operation || options.feature || "cover_letter";
-    const body: Record<string, any> = {
-      operation,
-      params: options.params || {},
-    };
-
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const { response } = await postAiRequest(token, { operation, params: options.params || {} });
 
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      log.warn("[AI] Server endpoint returned error:", { detail: errData.error || response.status });
+      const errData = await response.clone().json().catch(() => ({}));
+      log.warn("[AI] Server endpoint returned error:", {
+        code: errData?.code || "SERVER_ERROR",
+        status: response.status,
+      });
       return null;
     }
 
     const data = await response.json();
     return data?.content || data?.text || null;
-  } catch (err) {
-    log.warn("[AI] Secure completion request failed, falling back to local engine:", { error: err });
+  } catch (_err) {
+    log.warn("[AI] Secure completion request failed, falling back to local engine:", {
+      code: "COMPLETION_ERROR",
+    });
     return null;
   }
 }
@@ -125,8 +216,10 @@ export async function extractResumeFactsWithGroq(
         certifications: Array.isArray(parsed.certifications) ? parsed.certifications : baseProfile.certifications,
       };
     }
-  } catch (err) {
-    log.warn("Failed to parse AI extraction output, retaining deterministic output:", { error: err });
+  } catch (_err) {
+    log.warn("Failed to parse AI extraction output, retaining deterministic output:", {
+      code: "EXTRACTION_PARSE_ERROR",
+    });
   }
 
   return baseProfile;
@@ -176,7 +269,9 @@ export async function generateGroqTailoredCoverLetter(
       // Validate the generated paragraphs against candidate facts
       const validation = validateCoverLetter(cleanOutput, candidate, job);
       if (!validation.valid) {
-        log.warn("AI cover letter failed strict evidence verification:", { detail: validation.reasons });
+        log.warn("AI cover letter failed strict evidence verification:", {
+          code: "COVER_LETTER_GROUNDING_FAILED",
+        });
         return {
           text: fallback.fullText,
           isValidated: true,
@@ -200,8 +295,10 @@ export async function generateGroqTailoredCoverLetter(
         isAiEnhanced: true,
       };
     }
-  } catch (e) {
-    log.warn("AI cover letter generation failed, using deterministic template:", { error: e });
+  } catch (_e) {
+    log.warn("AI cover letter generation failed, using deterministic template:", {
+      code: "COVER_LETTER_GENERATION_FAILED",
+    });
   }
 
   return {
@@ -217,6 +314,8 @@ export interface TailorResumeAiResponse {
   draft?: {
     tailoredSummary: string;
     highlightedSkills: string[];
+    matchedKeywords?: string[];
+    unmatchedRequirements?: string[];
     tailoredBullets: Record<string, string[]>;
   };
   model?: string;
@@ -253,28 +352,15 @@ export async function generateAiTailoredResume(
       };
     }
 
-    const response = await fetch("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        operation: "resume_tailor",
-        params: {
-          candidate,
-          job,
-        },
-      }),
+    const { response, data } = await postAiRequest(token, {
+      operation: "resume_tailor",
+      params: { candidate, job },
     });
 
-    const data = await response.json().catch(() => ({}));
-
     if (!response.ok) {
-      const rawError = data.error || `AI generation failed (HTTP ${response.status}).`;
       return {
         success: false,
-        error: sanitizeUserFacingAiError(rawError),
+        error: aiErrorMessage(data, response.status, "resume_tailor"),
       };
     }
 

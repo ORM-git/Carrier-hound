@@ -69,13 +69,55 @@ import {
   handleNetlifyAiRequest,
   _resetAiRateLimitStore,
 } from "../src/lib/ai/serviceHandler";
+import { _resetRateLimitClient } from "../src/lib/api/sharedRateLimit";
 import {
   normalizeSkillToTokens,
   doesSkillMatch,
   GENUINE_SKILL_ALIASES,
   areSkillsGenuineMatch,
 } from "../src/lib/matcher/scoring";
-import { POST as apiAiPost } from "../src/app/api/ai/route";
+process.env.NODE_ENV = "test";
+(globalThis as any).__mockRateLimitClient = {
+  rpc: async () => ({
+    data: { allowed: true, retry_after: 0, current_count: 1 },
+    error: null,
+  }),
+};
+
+// Install offline preflight deny-network fetch guard
+const rawGlobalFetch = globalThis.fetch;
+globalThis.fetch = async function preflightDenyNetwork(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const deniedHost = new URL(url).hostname;
+  const err: any = new Error(`[NETWORK DENIED] External fetch blocked to '${deniedHost}' in offline transport fixture`);
+  err.code = "ENETWORK_DENIED";
+  throw err;
+};
+
+import Module from "module";
+
+// Register Node test hook for @cloudflare/next-on-pages in unit test environment
+const originalResolve = (Module as any)._resolveFilename;
+(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+  if (request === "@cloudflare/next-on-pages") {
+    return "virtual:@cloudflare/next-on-pages";
+  }
+  return originalResolve.call(this, request, parent, isMain, options);
+};
+
+require.cache["virtual:@cloudflare/next-on-pages"] = {
+  id: "virtual:@cloudflare/next-on-pages",
+  filename: "virtual:@cloudflare/next-on-pages",
+  loaded: true,
+  exports: {
+    getRequestContext: () => {
+      const sym = Symbol.for("__cloudflare-request-context__");
+      return (globalThis as any)[sym];
+    },
+  },
+} as any;
+
+const { POST: apiAiPost } = require("../src/app/api/ai/route");
 import { handler as netlifyAiHandler } from "../netlify/functions/ai";
 
 /**
@@ -839,13 +881,13 @@ async function runAllTests() {
     jobDescriptionShortened: false,
   };
 
-  saveCachedTailoredResume(testJob.id, aiAcceptedResult);
-  const loadedCached = getCachedTailoredResume(testJob.id, hash1);
+  saveCachedTailoredResume(testJob.id, aiAcceptedResult, "guest");
+  const loadedCached = getCachedTailoredResume(testJob.id, hash1, "guest");
   assert(loadedCached !== null, "Saved tailored resume is loaded successfully from storage");
   assert(loadedCached?.modelIdentity === "llama-3.3-70b-versatile", "Loaded cache preserves server modelIdentity 'llama-3.3-70b-versatile'");
 
   // Invalidation: if candidate changes, stale hash causes cache miss
-  const staleLoaded = getCachedTailoredResume(testJob.id, hashModCandidate);
+  const staleLoaded = getCachedTailoredResume(testJob.id, hashModCandidate, "guest");
   assert(staleLoaded === null, "Mismatched source hash invalidates stale AI cache cleanly");
 
   // -------------------------------------------------------------
@@ -1003,6 +1045,9 @@ async function runAllTests() {
   // 7D. Internal Factory Core Verification (handleAiRequest & handleNetlifyAiRequest with explicit deps)
   console.log("\n--- 7D. INTERNAL FACTORY CORE VERIFICATION WITH INJECTABLE DEPS ---");
 
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://szakevhxhwpeskidvtfs.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic_test_service_key_offline_only";
+
   const validProductionAuthToken = "Bearer prod_test_token_123";
   const validUserPayload = { id: "user_prod_test", email: "pro@example.com" };
 
@@ -1037,6 +1082,31 @@ async function runAllTests() {
         return createMockQueryBuilder(quotaRow, onRefund);
       }
       return createMockQueryBuilder(null);
+    },
+    rpc: async (fn: string, params?: any) => {
+      if (fn === "ai_global_budget_reserve") {
+        return { data: [{ allowed: true, current_tokens: 0, remaining: 1000000 }], error: null };
+      }
+      if (fn === "ai_global_budget_settle" || fn === "ai_concurrency_release") {
+        return { data: { success: true }, error: null };
+      }
+      if (fn === "ai_concurrency_acquire") {
+        return { data: [{ allowed: true, lease_id: "mock_lease" }], error: null };
+      }
+      if (fn === "check_rate_limit") {
+        return { data: { allowed: true, retry_after: 0, current_count: 1 }, error: null };
+      }
+      if (fn === "consume_user_set" || fn === "consume_plan_set") {
+        if (quotaRow && quotaRow.count >= 30) {
+          return { data: { success: false, code: "DAILY_LIMIT_REACHED", error: "Daily limit reached" }, error: null };
+        }
+        return { data: { success: true, source: "plan" }, error: null };
+      }
+      if (fn === "refund_plan_or_addon_set") {
+        onRefund?.();
+        return { data: { success: true, refunded: true, source: "plan" }, error: null };
+      }
+      return { data: null, error: null };
     },
   });
 
@@ -1238,7 +1308,7 @@ async function runAllTests() {
   assert(nextValFailRes.status === 502, "Next factory: Output validation failure returns 502 status");
   const nextValFailBody = await nextValFailRes.json();
   assert(
-    typeof nextValFailBody.error === "string" && (nextValFailBody.error.includes("unevidenced skill") || nextValFailBody.error.includes("not a verified skill")),
+    nextValFailBody.code === "AI_VALIDATION_FAILED" && (nextValFailBody.validation_code === "SKILL_UNGROUNDED" || nextValFailBody.error.includes("could not be verified")),
     "Next factory: Output validation failure returns unevidenced skill error"
   );
   assert(refundCountNext === 1, "Next factory: Quota is refunded exactly once on output validation failure");
@@ -1267,7 +1337,7 @@ async function runAllTests() {
   assert(netlifyValFailRes.statusCode === 502, "Netlify factory: Output validation failure returns 502 status");
   const netlifyValFailBody = JSON.parse(netlifyValFailRes.body);
   assert(
-    typeof netlifyValFailBody.error === "string" && (netlifyValFailBody.error.includes("unevidenced skill") || netlifyValFailBody.error.includes("not a verified skill")),
+    netlifyValFailBody.code === "AI_VALIDATION_FAILED" && (netlifyValFailBody.validation_code === "SKILL_UNGROUNDED" || netlifyValFailBody.error.includes("could not be verified")),
     "Netlify factory: Output validation failure returns unevidenced skill error"
   );
   assert(refundCountNetlify === 1, "Netlify factory: Quota is refunded exactly once on output validation failure");
@@ -1288,6 +1358,10 @@ async function runAllTests() {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://szakevhxhwpeskidvtfs.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "synthetic_test_service_key_offline_only";
   process.env.GROQ_API_KEY = "synthetic_test_groq_key_offline_only";
+
+  const savedMockRateLimitClient = (globalThis as any).__mockRateLimitClient;
+  delete (globalThis as any).__mockRateLimitClient;
+  _resetRateLimitClient();
 
   type MockTransportRoute = {
     quotaRow: { count: number; total_tokens: number } | null;
@@ -1338,12 +1412,60 @@ async function runAllTests() {
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
+    // 2B. Plan usage events endpoint: /rest/v1/plan_usage_events
+    if (url.includes("/rest/v1/plan_usage_events")) {
+      return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     // 3. Blocked users endpoint: /rest/v1/blocked_users
     if (url.includes("/rest/v1/blocked_users")) {
       return new Response(JSON.stringify(null), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
-    // 4. Rate limit RPC endpoint: /rest/v1/rpc/check_rate_limit
+    // 4. RPC endpoints
+    if (url.includes("/rest/v1/rpc/refund_plan_or_addon_set")) {
+      activeTransportState.onQuotaRefund?.();
+      return new Response(JSON.stringify({ success: true, refunded: true, source: "plan" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.includes("/rest/v1/rpc/consume_user_set") || url.includes("/rest/v1/rpc/consume_plan_set")) {
+      if (activeTransportState.quotaRow && activeTransportState.quotaRow.count >= 30) {
+        return new Response(JSON.stringify({ success: false, code: "DAILY_LIMIT_REACHED", error: "Daily limit reached" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      activeTransportState.onQuotaIncrement?.();
+      return new Response(JSON.stringify({ success: true, source: "plan" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.includes("/rest/v1/rpc/ai_global_budget_reserve")) {
+      return new Response(JSON.stringify([{ allowed: true, current_tokens: 0, remaining: 1000000 }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.includes("/rest/v1/rpc/ai_global_budget_settle") || url.includes("/rest/v1/rpc/ai_concurrency_release")) {
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.includes("/rest/v1/rpc/ai_concurrency_acquire")) {
+      return new Response(JSON.stringify([{ allowed: true, lease_id: "mock_lease" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (url.includes("rpc") || url.includes("check_rate_limit")) {
       try {
         const bodyObj = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
@@ -1398,6 +1520,7 @@ async function runAllTests() {
             finish_reason: "stop",
           },
         ],
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -1559,7 +1682,7 @@ async function runAllTests() {
     assert(nextValFailWrapperRes.status === 502, "Next wrapper: Output validation failure returns 502 status");
     const nextValFailWrapperBody = await nextValFailWrapperRes.json();
     assert(
-      typeof nextValFailWrapperBody.error === "string" && (nextValFailWrapperBody.error.includes("unevidenced skill") || nextValFailWrapperBody.error.includes("not a verified skill")),
+      nextValFailWrapperBody.code === "AI_VALIDATION_FAILED" && (nextValFailWrapperBody.validation_code === "SKILL_UNGROUNDED" || nextValFailWrapperBody.error.includes("could not be verified")),
       "Next wrapper: Output validation failure returns unevidenced skill error"
     );
     assert(wrapperRefundCountNext === 1, "Next wrapper: Quota is refunded exactly once on output validation failure");
@@ -1588,7 +1711,7 @@ async function runAllTests() {
     assert(netlifyValFailWrapperRes.statusCode === 502, "Netlify wrapper: Output validation failure returns 502 status");
     const netlifyValFailWrapperBody = JSON.parse(netlifyValFailWrapperRes.body);
     assert(
-      typeof netlifyValFailWrapperBody.error === "string" && (netlifyValFailWrapperBody.error.includes("unevidenced skill") || netlifyValFailWrapperBody.error.includes("not a verified skill")),
+      netlifyValFailWrapperBody.code === "AI_VALIDATION_FAILED" && (netlifyValFailWrapperBody.validation_code === "SKILL_UNGROUNDED" || netlifyValFailWrapperBody.error.includes("could not be verified")),
       "Netlify wrapper: Output validation failure returns unevidenced skill error"
     );
     assert(wrapperRefundCountNetlify === 1, "Netlify wrapper: Quota is refunded exactly once on output validation failure");
@@ -1676,6 +1799,8 @@ async function runAllTests() {
     assert(lastIpRateLimitKey === "ip:192.168.1.31", "Netlify wrapper: pins rate-limit key to 'ip:<ip>'");
   } finally {
     // Clean teardown: restore original fetch and environment variables
+    (globalThis as any).__mockRateLimitClient = savedMockRateLimitClient;
+    _resetRateLimitClient();
     globalThis.fetch = origFetchGlobal;
     process.env.NEXT_PUBLIC_SUPABASE_URL = origEnvUrl;
     process.env.SUPABASE_SERVICE_ROLE_KEY = origEnvKey;

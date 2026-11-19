@@ -5,6 +5,8 @@ import {
   GENUINE_SKILL_ALIASES,
   getCanonicalSkillId,
   areSkillsGenuineMatch,
+  isKeywordInText,
+  isExactTechMatch,
 } from "../matcher/scoring";
 import { stripControlChars, stripHtmlAndExecutableMarkup } from "../security/xss";
 import { countTokens, trimTextToTokens } from "./tokenBudget";
@@ -29,6 +31,10 @@ export interface OperationConfig {
   jsonMode: boolean;
   dailyQuota: number;
   description: string;
+  /** Groq gpt-oss only: caps hidden reasoning so it cannot starve max_tokens. */
+  reasoningEffort?: "low" | "medium" | "high";
+  /** Used only on timeout/5xx/429/empty/truncated from the primary model. */
+  fallbackModel?: string;
 }
 
 /**
@@ -87,9 +93,11 @@ export const OPERATION_CONFIGS: Record<AllowedAiOperation, OperationConfig> = {
     aliases: ["cover-letter", "coverletter"],
     model: process.env.SMART_MODEL || "openai/gpt-oss-120b",
     maxInputTokens: 3000,
-    maxOutputTokens: 1000,
-    temperature: 0.2,
+    maxOutputTokens: 2500,
+    temperature: 0.3,
     jsonMode: false,
+    reasoningEffort: "low",
+    fallbackModel: process.env.AI_FALLBACK_MODEL || "llama-3.3-70b-versatile",
     dailyQuota: 30,
     description: "Factual tailored cover letter body paragraphs strictly grounded in candidate facts",
   },
@@ -109,9 +117,11 @@ export const OPERATION_CONFIGS: Record<AllowedAiOperation, OperationConfig> = {
     aliases: ["resume-tailor", "resumetailor", "tailor_resume", "tailor-resume"],
     model: process.env.SMART_MODEL || "openai/gpt-oss-120b",
     maxInputTokens: 4000,
-    maxOutputTokens: 2000,
+    maxOutputTokens: 3500,
     temperature: 0.2,
     jsonMode: true,
+    reasoningEffort: "low",
+    fallbackModel: process.env.AI_FALLBACK_MODEL || "llama-3.3-70b-versatile",
     dailyQuota: 30,
     description: "Tailor candidate profile bullet points and summary strictly grounded in candidate facts",
   },
@@ -161,6 +171,8 @@ export interface BuiltAiPayload {
   temperature: number;
   jsonMode: boolean;
   estimatedInputTokens: number;
+  reasoningEffort?: "low" | "medium" | "high";
+  fallbackModel?: string;
 }
 
 /**
@@ -231,24 +243,29 @@ export function buildOperationPayload(
         expSummary: string;
         skillsList: string;
       }) => {
-        const sys = `You are an elite career strategist. Draft 3-4 concise, high-impact body paragraphs for a job cover letter.
+        const sys = `You are an elite career strategist. Draft exactly 3 concise, high-impact body paragraphs for a job cover letter (170-230 words total).
 CRITICAL ZERO-FABRICATION RULES:
-1. Generate ONLY the body paragraphs. DO NOT include contact headers (name, email, phone, location), salutations ("Dear..."), or sign-offs ("Sincerely...").
-2. Strictly ground the content in the candidate's verified facts:
+1. Generate EXACTLY 3 body paragraphs totaling between 170 and 230 words. DO NOT include contact headers (name, email, phone, location), salutations ("Dear..."), or sign-offs ("Sincerely...").
+2. Paragraph 1: State target role and company enthusiasm, highlighting 1-2 core evidenced strengths.
+3. Paragraph 2: Connect relevant accomplishments from work history directly to role requirements.
+4. Paragraph 3: Explain forward-looking alignment with company mission, closing with interest in discussion.
+5. Strictly ground the content in the candidate's verified facts:
 - Real skills: ${fields.skillsList}
 - Work history: ${fields.expSummary}
-3. ZERO HALLUCINATIONS:
+6. ZERO HALLUCINATIONS:
 - NEVER invent false employers, project names, metrics, or years of experience.
 - If candidate has NO prior work experience, DO NOT claim "throughout my tenure" or "previous roles". Focus strictly on verified skills and enthusiasm.
 - DO NOT include any emails, phone numbers, or URLs.
-4. Tailor tone to ${jobTitle} at ${jobCompany}.
+7. Tailor tone to ${jobTitle} at ${jobCompany}.
 
 WORKED EXAMPLE:
 Candidate input: Skills: TypeScript, React, Next.js. Experience: Frontend Engineer at Acme Corp (2022 - 2024). Target role: Senior Frontend Engineer at Linear.
 Ideal output body paragraphs:
-At Acme Corp, I engineered responsive user interfaces and modular component systems utilizing TypeScript, React, and Next.js. My focus was delivering performant web applications with high reliability and clean architectural patterns.
+I am excited to apply for the Senior Frontend Engineer role at Linear. Having followed Linear's focus on user experience and speed, I am eager to contribute my background in web development to your engineering team. My core technical skills in TypeScript, React, and Next.js align directly with Linear's high engineering standards and product quality.
 
-Joining Linear as a Senior Frontend Engineer aligns directly with my engineering focus. Your dedication to craft and tool performance is an environment where my experience building scalable frontend applications will drive immediate value.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
+During my tenure as a Frontend Engineer at Acme Corp from 2022 to 2024, I developed web applications and modular component interfaces using TypeScript, React, and Next.js. I focused on building reliable user interfaces, improving frontend code maintainability, and collaborating with cross-functional team members to deliver high-quality features across production web workflows.
+
+Linear's commitment to building fast, high-quality software tools for engineering teams strongly aligns with my own professional values. I would welcome the opportunity to discuss how my background in TypeScript, React, and modern web application development can support Linear's mission and engineering velocity. Thank you for your time and consideration; I look forward to speaking with you.${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
         const usr = `<untrusted_candidate_data>\nName: ${candName}\nHeadline: ${candHeadline}\nSummary: ${fields.candSummary}\nSkills: ${fields.skillsList}\n</untrusted_candidate_data>\n\n<untrusted_job_data>\nTitle: ${jobTitle}\nCompany: ${jobCompany}\nDescription: ${fields.jobDesc}\n</untrusted_job_data>`;
 
@@ -458,15 +475,19 @@ Ideal output JSON:
 
       systemPrompt = `You are an expert ATS resume tailoring engine.
 CRITICAL ZERO-FABRICATION AND GROUNDING RULES:
-1. ONLY rewrite the candidate's existing professional summary and experience bullets.
-2. NEVER modify, invent, or output employers, roles, dates, degrees, schools, or certifications.
-3. Every numeric fact, percentage, metric, count, and dollar value present in an original bullet MUST be preserved exactly in the rewritten bullet. Do NOT alter numbers or fabricate new metrics.
-4. "highlightedSkills" MUST be a strict subset of the candidate's verified skills list. Do NOT introduce tools or skills not in verified skills.
-5. In "tailoredBullets", each experience ID MUST match an existing ID from the input. The number of rewritten bullets for each experience ID MUST exactly match the number of source bullets.
-6. Return a valid JSON object matching this schema:
+1. Extract key requirements from the target job data.
+2. ONLY rewrite the candidate's existing professional summary and experience bullets.
+3. NEVER modify, invent, or output employers, roles, dates, degrees, schools, or certifications. Zero new facts.
+4. Keep the exact same experience IDs, bullet count, and bullet order for each experience entry. Every input bullet must have exactly one corresponding tailored bullet.
+5. Use strong action verbs. Keep all original numbers, metrics, percentages, counts, dollar values, and proper names completely unchanged.
+6. "highlightedSkills" and "matchedKeywords" MUST be grounded strictly in the candidate's verified facts and evidenced skills.
+7. "unmatchedRequirements" lists target job requirements not evidenced in candidate facts.
+8. Return a valid JSON object matching this schema:
 {
   "tailoredSummary": string,
   "highlightedSkills": string[],
+  "matchedKeywords": string[],
+  "unmatchedRequirements": string[],
   "tailoredBullets": { [experienceId: string]: string[] }
 }
 
@@ -474,13 +495,15 @@ WORKED EXAMPLE:
 Input:
 Candidate Skills: ["Node.js", "PostgreSQL", "Docker"]. Summary: "Backend engineer."
 Experience exp-1: Role: Software Engineer at DataInc. Bullets: ["Optimized SQL queries reducing latency by 40%."].
-Target Job: Senior Backend Engineer at CloudScale.
+Target Job: Senior Backend Engineer at CloudScale requiring Node.js, PostgreSQL, Kubernetes.
 Ideal output JSON:
 {
   "tailoredSummary": "Backend engineer specializing in Node.js, PostgreSQL, and Docker, with proven success optimizing database query performance by 40%.",
   "highlightedSkills": ["Node.js", "PostgreSQL", "Docker"],
+  "matchedKeywords": ["Node.js", "PostgreSQL"],
+  "unmatchedRequirements": ["Kubernetes"],
   "tailoredBullets": {
-    "exp-1": ["Optimized PostgreSQL database queries to reduce backend service latency by 40%."]
+    "exp-1": ["Optimized PostgreSQL database queries using Node.js to reduce backend service latency by 40%."]
   }
 }${UNTRUSTED_DATA_SYSTEM_GUARD}`;
 
@@ -755,6 +778,8 @@ Ideal output JSON:
       temperature: config.temperature,
       jsonMode: config.jsonMode,
       estimatedInputTokens,
+      reasoningEffort: config.reasoningEffort,
+      fallbackModel: config.fallbackModel,
       metadata,
     },
   };
@@ -802,6 +827,368 @@ export const ALL_CANONICAL_TOOLS_AND_SKILLS: string[] = Array.from(
  *   "r" as a letter, or "go" as a verb) if used outside tech contexts; regex boundary checks minimize this.
  * - Therefore, automated validation serves as an essential safety gate, but candidate manual review remains mandatory.
  */
+
+export const SPELLED_NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+  hundred: 100,
+  thousand: 1000,
+  million: 1000000,
+  billion: 1000000000,
+  dozen: 12,
+  double: 2,
+  triple: 3,
+  quadruple: 4,
+};
+
+export interface NumericClaim {
+  raw: string;
+  normalizedNum: string;
+  numericValue: number;
+  isPercent: boolean;
+  isMultiplier: boolean;
+  nounContext?: string;
+  isExperienceYearsClaim?: boolean;
+  isAchievementSentence?: boolean;
+}
+
+/**
+ * Extracts every numeric claim from text: integers, decimals, percentages, currency,
+ * ranges, multipliers (2x, double, triple), and spelled-out numbers.
+ */
+export function extractDetailedNumericClaims(text: string): NumericClaim[] {
+  if (!text || typeof text !== "string") return [];
+  const claims: NumericClaim[] = [];
+
+  const sentences = text.split(/(?<=[.!?\n])\s+/);
+
+  for (const sentence of sentences) {
+    if (!sentence.trim()) continue;
+    const lowerSentence = sentence.toLowerCase();
+    const isAchievementSentence = /\b(i|my|we|our|led|grew|built|managed|increased|drove|delivered|scaled|achieved|spearheaded|improved|expanded|reduced)\b/i.test(sentence);
+
+    // 1. Spelled-out numbers (e.g. "eight engineers", "nine percent", "double revenue")
+    const spelledRegex = /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|dozen|double|triple|quadruple)\b(?:\s+(percent|%|engineers?|team|developers?|direct reports?|people|users?|clients?|customers?|services?|years?(?:\s+of)?(?:\s+experience)?|revenue|growth))?/gi;
+    let spelledMatch: RegExpExecArray | null;
+    while ((spelledMatch = spelledRegex.exec(lowerSentence)) !== null) {
+      const word = spelledMatch[1].toLowerCase();
+      const val = SPELLED_NUMBER_WORDS[word];
+      if (val === undefined) continue;
+
+      const contextWord = spelledMatch[2] ? spelledMatch[2].toLowerCase() : "";
+      const isPercent = contextWord === "percent" || contextWord === "%";
+      const isYears = contextWord.startsWith("year");
+      const noun = isPercent || isYears ? (isPercent ? "percent" : "years") : contextWord;
+
+      claims.push({
+        raw: spelledMatch[0].trim(),
+        normalizedNum: isPercent ? `${val}%` : String(val),
+        numericValue: val,
+        isPercent,
+        isMultiplier: word === "double" || word === "triple" || word === "quadruple",
+        nounContext: noun || undefined,
+        isExperienceYearsClaim: isYears,
+        isAchievementSentence,
+      });
+    }
+
+    // 2. Digit numbers with prefixes/suffixes (e.g. "9%", "8 engineers", "1.2M", "₹50k", "$100,000", "2x")
+    const digitRegex = /(?:[\$₹€£]|rs\.?|usd|inr)?\s*\b(\d+(?:[.,]\d+)*)\s*(%|percent|x|times|k|m|b|l|cr|lakh|crore|st|nd|rd|th|\+)?(?:\s+([a-zA-Z]+))?/gi;
+    let digitMatch: RegExpExecArray | null;
+    while ((digitMatch = digitRegex.exec(lowerSentence)) !== null) {
+      const numStr = digitMatch[1].replace(/,/g, "");
+      const suffix = digitMatch[2] ? digitMatch[2].toLowerCase() : "";
+      const followingWord = digitMatch[3] ? digitMatch[3].toLowerCase() : "";
+
+      let val = parseFloat(numStr);
+      if (isNaN(val)) continue;
+
+      let isPercent = suffix === "%" || suffix === "percent" || followingWord === "percent";
+      let isMultiplier = suffix === "x" || suffix === "times" || followingWord === "times";
+      let noun = isPercent ? "percent" : (followingWord || undefined);
+
+      if (suffix === "k") val *= 1000;
+      else if (suffix === "m" || suffix === "million") val *= 1000000;
+      else if (suffix === "b" || suffix === "billion") val *= 1000000000;
+      else if (suffix === "l" || suffix === "lakh") val *= 100000;
+      else if (suffix === "cr" || suffix === "crore") val *= 10000000;
+
+      const isYears = followingWord === "years" || followingWord === "year";
+
+      claims.push({
+        raw: digitMatch[0].trim(),
+        normalizedNum: isPercent ? `${val}%` : String(val),
+        numericValue: val,
+        isPercent,
+        isMultiplier,
+        nounContext: noun,
+        isExperienceYearsClaim: isYears,
+        isAchievementSentence,
+      });
+    }
+  }
+
+  return claims;
+}
+
+export function extractCandidateNumericFacts(candidate: CandidateProfile): {
+  values: Set<number>;
+  percentValues: Set<number>;
+  rawTokens: Set<string>;
+  maxExperienceYears: number;
+} {
+  const values = new Set<number>();
+  const percentValues = new Set<number>();
+  const rawTokens = new Set<string>();
+
+  const scanText = (text?: string) => {
+    if (!text || typeof text !== "string") return;
+    const words = text.toLowerCase().split(/[^a-z0-9.%+-]+/);
+    for (const w of words) {
+      if (w) rawTokens.add(w);
+    }
+    const claims = extractDetailedNumericClaims(text);
+    for (const c of claims) {
+      values.add(c.numericValue);
+      rawTokens.add(c.normalizedNum);
+      rawTokens.add(String(c.numericValue));
+      if (c.isPercent) {
+        percentValues.add(c.numericValue);
+        rawTokens.add(`${c.numericValue}%`);
+      }
+    }
+  };
+
+  scanText(candidate.summary);
+  scanText(candidate.headline);
+  for (const exp of candidate.experience || []) {
+    scanText(exp?.role);
+    scanText(exp?.company);
+    for (const b of exp?.bullets || []) {
+      scanText(b);
+    }
+    scanText(exp?.startDate);
+    scanText(exp?.endDate);
+  }
+  for (const edu of candidate.education || []) {
+    scanText(edu?.degree);
+    scanText(edu?.institution);
+    scanText(edu?.year);
+  }
+
+  let maxYears = 0;
+  let minStartYear = 9999;
+  let maxEndYear = 0;
+  let hasCurrentJob = false;
+  for (const exp of candidate.experience || []) {
+    const startMatch = (exp?.startDate || "").match(/\b(19\d\d|20\d\d)\b/);
+    const endStr = (exp?.endDate || "").trim();
+    const endMatch = endStr.match(/\b(19\d\d|20\d\d)\b/);
+    if (startMatch) {
+      const sYear = parseInt(startMatch[1], 10);
+      if (sYear > 1970 && sYear < minStartYear) minStartYear = sYear;
+    }
+    if (/^(present|current|now|ongoing)$/i.test(endStr) || !endStr) {
+      hasCurrentJob = true;
+    } else if (endMatch) {
+      const eYear = parseInt(endMatch[1], 10);
+      if (eYear > maxEndYear) maxEndYear = eYear;
+    }
+  }
+  const currentYear = new Date().getFullYear();
+  const latestYear = hasCurrentJob ? currentYear : (maxEndYear > 0 ? maxEndYear : currentYear);
+  if (minStartYear < 9999) {
+    maxYears = Math.max(1, latestYear - minStartYear + 1);
+  }
+
+  return { values, percentValues, rawTokens, maxExperienceYears: maxYears };
+}
+
+export interface OrganizationClaim {
+  raw: string;
+  normalized: string;
+  isPastEmployment: boolean;
+  contextSentence: string;
+}
+
+export function normalizeOrgName(name: string): string {
+  if (!name || typeof name !== "string") return "";
+  return name
+    .toLowerCase()
+    .replace(/['’]s\b/gi, "")
+    .replace(/[.,'’"()]/g, "")
+    .replace(
+      /\b(inc|incorporated|corp|corporation|llc|ltd|limited|pvt|technologies|technology|labs|solutions|systems|group|holdings|company|co|gmbh|sa|bv)\b/gi,
+      ""
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isOrgMatch(orgA: string, orgB: string): boolean {
+  const normA = normalizeOrgName(orgA);
+  const normB = normalizeOrgName(orgB);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  const wordsA = normA.split(" ").filter(Boolean);
+  const wordsB = normB.split(" ").filter(Boolean);
+  if (wordsA.length === 1 && wordsB.includes(normA)) return true;
+  if (wordsB.length === 1 && wordsA.includes(normB)) return true;
+  return false;
+}
+
+export const ORG_SUFFIX_REGEX =
+  /\b([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*\s+(?:Inc\.?|Incorporated|LLC|Ltd\.?|Limited|Corp\.?|Corporation|Technologies|Technology|Labs|Solutions|Systems|Group|Holdings|Pvt\.?\s*Ltd\.?))\b/g;
+
+export const ORG_EXCLUSION_WORDS = new Set([
+  "i", "my", "our", "we", "you", "your", "he", "she", "it", "they", "their",
+  "this", "that", "these", "those", "there", "here", "the", "a", "an",
+  "having", "during", "throughout", "with", "in", "at", "as", "for", "to", "from",
+  "after", "before", "while", "when", "since", "because", "although", "if",
+  "thank", "thanks", "sincerely", "regards", "best", "dear", "hello",
+  "senior", "junior", "lead", "principal", "staff", "director", "manager", "head",
+  "engineer", "developer", "architect", "designer", "specialist", "consultant", "analyst",
+  "frontend", "backend", "fullstack", "full", "stack", "data", "cloud", "mobile", "web",
+  "software", "engineering", "product", "team", "department", "company", "organization",
+  "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "bachelor", "master", "phd", "doctorate", "degree", "diploma", "university", "college", "school",
+  "conference", "conf", "summit", "meetup", "hackathon", "workshop", "event"
+]);
+
+export function extractOrganizationClaims(
+  text: string,
+  candidate?: CandidateProfile,
+  targetCompanyName?: string
+): OrganizationClaim[] {
+  if (!text || typeof text !== "string") return [];
+  const claims: OrganizationClaim[] = [];
+  const seen = new Set<string>();
+
+  const candidateNameTokens = new Set<string>();
+  if (candidate?.name) {
+    candidate.name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).forEach((t) => candidateNameTokens.add(t));
+  }
+
+  const knownSkills = new Set<string>(ALL_CANONICAL_TOOLS_AND_SKILLS);
+  (candidate?.skills || []).forEach((s) => knownSkills.add(s.toLowerCase().trim()));
+  (candidate?.certifications || []).forEach((c) => knownSkills.add(c.toLowerCase().trim()));
+
+  const isExempt = (rawName: string): boolean => {
+    const norm = normalizeOrgName(rawName);
+    if (!norm || norm.length <= 1) return true;
+    const words = rawName.toLowerCase().split(/[^a-z0-9+#.-]+/).filter(Boolean);
+    if (words.length === 0) return true;
+    if (words.every((w) => ORG_EXCLUSION_WORDS.has(w))) return true;
+    if (words.every((w) => candidateNameTokens.has(w))) return true;
+    if (knownSkills.has(norm) || knownSkills.has(rawName.toLowerCase())) return true;
+    if (words.some((w) => knownSkills.has(w) && (words.includes("conf") || words.includes("conference") || words.includes("summit") || words.includes("meetup") || words.includes("workshop")))) {
+      return true;
+    }
+    return false;
+  };
+
+  const sentences = text.split(/(?<=[.!?\n])\s+/);
+
+  for (const sentence of sentences) {
+    if (!sentence.trim()) continue;
+
+    const isProspectiveContext =
+      /\b(apply|applying|application|applied|excited to|eager to|thrilled to|look forward|looking forward|welcome the opportunity|resonate|resonates|admire|followed|following|mission|velocity|standards|dedication|culture|values|craft|focus|support\b|contribute to)\b/i.test(sentence);
+
+    const isPastContext =
+      /\b(during my tenure|throughout my tenure|my tenure|my time at|during my time|when i was|while at|while working|prior role|previous role|former position|past role|employed at|employed by|worked at|working at|interned at|served as|developed|built|engineered|increased|reduced|managed|scaled|designed|created|spearheaded|achieved|prior|previous|past|former)\b/i.test(sentence);
+
+    // 1. Suffix-based mentions (e.g. "Globex Corporation", "Initech LLC")
+    let suffixMatch: RegExpExecArray | null;
+    const suffixRegex = new RegExp(ORG_SUFFIX_REGEX.source, "g");
+    while ((suffixMatch = suffixRegex.exec(sentence)) !== null) {
+      let raw = suffixMatch[1].replace(/['’]s$/i, "").replace(/[.,;:]+$/, "").trim();
+      if (isExempt(raw)) continue;
+      const key = `${raw.toLowerCase()}:${isPastContext}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        claims.push({
+          raw,
+          normalized: normalizeOrgName(raw),
+          isPastEmployment: isPastContext,
+          contextSentence: sentence,
+        });
+      }
+    }
+
+    // 2. Explicit past employment phrases
+    const pastPhrases = [
+      /\b(?:during my tenure at|throughout my tenure at|my tenure as [^.,;]+ at|my time at|during my time at|when I was at|while at|while working at|prior role at|previous role at|former position at|past role at|employed at|employed by|worked at|working at|interned at|served as [^.,;]+ at|as an? [A-Za-z\s]+ at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g,
+      /(?:^|[.!?\n]\s*)\s*(?:At|While at|During my time at|In my role at)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)[,\s]+(?:I|we|my team|my work)\b/g,
+    ];
+
+    for (const regex of pastPhrases) {
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(sentence)) !== null) {
+        let raw = m[1].replace(/['’]s$/i, "").replace(/[.,;:]+$/, "").trim();
+        if (isExempt(raw)) continue;
+        const key = `${raw.toLowerCase()}:true`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({
+            raw,
+            normalized: normalizeOrgName(raw),
+            isPastEmployment: true,
+            contextSentence: sentence,
+          });
+        }
+      }
+    }
+
+    // 3. Preposition mentions ("at", "with", "for", "joined")
+    const prepRegex = /\b(?:at|with|for|joined)\s+([A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+)*)/g;
+    let prepMatch: RegExpExecArray | null;
+    while ((prepMatch = prepRegex.exec(sentence)) !== null) {
+      let raw = prepMatch[1].replace(/['’]s$/i, "").replace(/[.,;:]+$/, "").trim();
+      if (isExempt(raw)) continue;
+      const past = isPastContext && !isProspectiveContext;
+      const key = `${raw.toLowerCase()}:${past}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        claims.push({
+          raw,
+          normalized: normalizeOrgName(raw),
+          isPastEmployment: past,
+          contextSentence: sentence,
+        });
+      }
+    }
+  }
+
+  return claims;
+}
 
 /**
  * Extracts numeric facts, percentages, metrics, and currency from text.
@@ -942,6 +1329,16 @@ export function findUnevidencedToolOrSkill(
         if (!regex.test(textWithoutJs)) {
           continue; // "java" only appeared as part of "javascript"
         }
+      } else if (skill === "js") {
+        const textWithoutFrameworkJs = lowerText.replace(/(next|node|vue|nuxt|express|angular|react)[\s\-_.]?js/gi, " ");
+        if (!regex.test(textWithoutFrameworkJs)) {
+          continue; // "js" only appeared as part of framework js
+        }
+      } else if (skill === "express") {
+        const textWithoutEnglishVerb = lowerText.replace(/\bexpress\s+(my|our|an?|the|keen|interest|gratitude|enthusias\w*|sincere|desire|willingness|concern|hope|confidence|support)\b/gi, " ");
+        if (!regex.test(textWithoutEnglishVerb)) {
+          continue; // "express" was only used as an English verb
+        }
       }
       if (!isSkillEvidencedInCandidate(skill, candidate, candidateTerms)) {
         return skill;
@@ -956,7 +1353,16 @@ export function validateTailoredResumeOutput(
   parsed: any,
   candidate: CandidateProfile,
   job?: any
-): { ok: true; sanitized: { tailoredSummary: string; highlightedSkills: string[]; tailoredBullets: Record<string, string[]> } } | { ok: false; error: string } {
+): {
+  ok: true;
+  sanitized: {
+    tailoredSummary: string;
+    highlightedSkills: string[];
+    matchedKeywords?: string[];
+    unmatchedRequirements?: string[];
+    tailoredBullets: Record<string, string[]>;
+  };
+} | { ok: false; error: string } {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { ok: false, error: "AI output rejected: expected JSON object for resume_tailor." };
   }
@@ -1028,6 +1434,97 @@ export function validateTailoredResumeOutput(
       };
     }
     validHighlightedSkills.push(s.trim());
+  }
+
+  // 2b. Validate matchedKeywords (if present): strings appearing in BOTH candidate data and job description
+  let validMatchedKeywords: string[] | undefined = undefined;
+  if ("matchedKeywords" in parsed && parsed.matchedKeywords !== undefined) {
+    if (!Array.isArray(parsed.matchedKeywords)) {
+      return { ok: false, error: "AI output rejected: 'matchedKeywords' must be an array of strings." };
+    }
+    const candidateFullText = [
+      candidate.headline,
+      candidate.summary,
+      ...(candidate.skills || []),
+      ...(candidate.experience || []).flatMap((e) => [e?.role, e?.company, ...(e?.bullets || [])]),
+      ...(candidate.education || []).flatMap((ed) => [ed?.degree, (ed as any)?.field, (ed as any)?.school, ed?.institution]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const jobFullText = [job?.title, job?.company, job?.description]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const kept: string[] = [];
+    for (const kw of parsed.matchedKeywords) {
+      if (typeof kw !== "string" || !kw.trim()) continue;
+      const cleanKw = stripHtmlAndExecutableMarkup(kw.trim());
+      if (!cleanKw) continue;
+
+      // Must appear in BOTH candidate data AND job description using token/alias-aware matching
+      const inCandidate =
+        isKeywordInText(cleanKw, candidateFullText) ||
+        (candidate.skills || []).some((cs) => isExactTechMatch(cs, cleanKw));
+      const inJob = isKeywordInText(cleanKw, jobFullText);
+
+      if (inCandidate && inJob) {
+        kept.push(cleanKw);
+      }
+      // Non-matching keywords are dropped ("drop others")
+    }
+    validMatchedKeywords = Array.from(new Set(kept));
+  }
+
+  // 2c. Validate unmatchedRequirements (if present): strings
+  let cleanUnmatchedRequirements: string[] | undefined = undefined;
+  if ("unmatchedRequirements" in parsed && parsed.unmatchedRequirements !== undefined) {
+    if (!Array.isArray(parsed.unmatchedRequirements)) {
+      return { ok: false, error: "AI output rejected: 'unmatchedRequirements' must be an array of strings." };
+    }
+    const jobFullText = [job?.title, job?.company, job?.description]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const candidateFullText = [
+      candidate.headline,
+      candidate.summary,
+      ...(candidate.skills || []),
+      ...(candidate.experience || []).flatMap((e) => [e?.role, e?.company, ...(e?.bullets || [])]),
+      ...(candidate.education || []).flatMap((ed) => [ed?.degree, (ed as any)?.field, (ed as any)?.school, ed?.institution]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const clean: string[] = [];
+    for (const req of parsed.unmatchedRequirements) {
+      if (typeof req !== "string" || !req.trim()) continue;
+      const cleanReq = stripHtmlAndExecutableMarkup(req.trim());
+      if (!cleanReq) continue;
+
+      // Unmatched requirement must be present in the JD
+      const inJob = isKeywordInText(cleanReq, jobFullText) || jobFullText.includes(cleanReq.toLowerCase());
+      if (!inJob) {
+        return {
+          ok: false,
+          error: `AI output rejected: unmatched requirement '${cleanReq}' not found in job description.`,
+        };
+      }
+
+      // And must be absent in candidate facts (if candidate has it, drop it)
+      const inCandidate =
+        isKeywordInText(cleanReq, candidateFullText) ||
+        (candidate.skills || []).some((cs) => isExactTechMatch(cs, cleanReq));
+      if (inCandidate) {
+        continue;
+      }
+
+      clean.push(cleanReq);
+    }
+    cleanUnmatchedRequirements = Array.from(new Set(clean));
   }
 
   // 3. Validate tailoredBullets
@@ -1142,6 +1639,8 @@ export function validateTailoredResumeOutput(
     sanitized: {
       tailoredSummary: cleanSummary,
       highlightedSkills: Array.from(new Set(validHighlightedSkills)),
+      matchedKeywords: Array.from(new Set(validMatchedKeywords)),
+      unmatchedRequirements: Array.from(new Set(cleanUnmatchedRequirements)),
       tailoredBullets: cleanTailoredBullets,
     },
   };
@@ -1178,6 +1677,209 @@ export function validateAndSanitizeAiOutput(
     if (!stripped) {
       return { ok: false, error: "AI output rejected: output contained only disallowed HTML/script markup." };
     }
+
+    // 1 & 2. Enforce paragraph count and word count bounds when generating a real candidate cover letter
+    if (context?.candidate || context?.job) {
+      // 1. Enforce exactly 3 paragraphs
+      const paragraphs = stripped
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (paragraphs.length !== 3) {
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter must contain exactly 3 paragraphs (found ${paragraphs.length}).`,
+        };
+      }
+
+      // 2. Enforce word count between 170 and 230 words
+      const words = stripped.split(/\s+/).filter(Boolean);
+      if (words.length < 170 || words.length > 230) {
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter word count must be between 170 and 230 words (found ${words.length}).`,
+        };
+      }
+    }
+
+    // 3. Grounding: reject ungrounded facts not in candidate data (degrees, employers, years)
+    const candidate = context?.candidate;
+    if (candidate) {
+      const candFullText = [
+        candidate.headline,
+        candidate.summary,
+        ...(candidate.skills || []),
+        ...(candidate.experience || []).flatMap((e) => [e?.role, e?.company, ...(e?.bullets || [])]),
+        ...(candidate.education || []).flatMap((ed) => [ed?.degree, (ed as any)?.field, (ed as any)?.school, ed?.institution]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      // Check degrees
+      const degreePatterns = [
+        /\b(ph\.?d|doctorate)\b/i,
+        /\b(master'?s|m\.?s\b|m\.?sc|m\.?tech|mba)\b/i,
+        /\b(bachelor'?s|b\.?s\b|b\.?sc|b\.?tech|b\.?a\b)\b/i,
+      ];
+      for (const dp of degreePatterns) {
+        const match = stripped.match(dp);
+        if (match) {
+          const degreeClaim = match[0].toLowerCase();
+          if (!candFullText.includes(degreeClaim)) {
+            return {
+              ok: false,
+              error: `AI output rejected: cover letter mentions unevidenced degree '${match[0]}' not found in candidate profile facts.`,
+            };
+          }
+        }
+      }
+
+      // 3B. Check employers & organization grounding (freshers and experienced candidates)
+      const hasExp = Array.isArray(candidate.experience) && candidate.experience.length > 0;
+      const orgClaims = extractOrganizationClaims(stripped, candidate, context?.job?.company);
+      const verifiedEmployers = (candidate.experience || []).map((e) => e?.company || "").filter(Boolean);
+      const verifiedEducation = (candidate.education || []).flatMap((ed) => [ed?.institution, (ed as any)?.school]).filter(Boolean);
+      const targetCompany = ((context?.job?.company as string) || "").trim();
+
+      if (!hasExp) {
+        if (/\b(?:at my previous|at my former|former employer|previous employer|throughout my tenure at)\b/i.test(stripped)) {
+          return {
+            ok: false,
+            error: "AI output rejected: cover letter claims prior employment tenure for a candidate with no work history. The following claims are not in the candidate's profile and MUST be removed: prior employment tenure.",
+          };
+        }
+        for (const claim of orgClaims) {
+          if (claim.isPastEmployment) {
+            return {
+              ok: false,
+              error: `AI output rejected: cover letter claims prior employment tenure for a candidate with no work history. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+            };
+          }
+        }
+      } else {
+        for (const claim of orgClaims) {
+          const isTarget = Boolean(targetCompany && (isOrgMatch(claim.raw, targetCompany) || (targetCompany && claim.normalized === normalizeOrgName(targetCompany))));
+          const isEmployer = verifiedEmployers.some((ve) => isOrgMatch(claim.raw, ve));
+          const isEducation = verifiedEducation.some((edu) => isOrgMatch(claim.raw, edu));
+
+          if (isTarget) {
+            // Target company used in past employment context is rejected unless candidate actually worked there
+            if (claim.isPastEmployment && !isEmployer) {
+              return {
+                ok: false,
+                error: `AI output rejected: cover letter claims unevidenced past employment at target company '${claim.raw}'. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+              };
+            }
+            // Prospective context for target company is allowed
+            continue;
+          }
+
+          if (isEmployer || isEducation) {
+            continue;
+          }
+
+          // Unverified organization
+          return {
+            ok: false,
+            error: `AI output rejected: cover letter mentions unevidenced organization '${claim.raw}' not found in candidate experience or education. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+          };
+        }
+      }
+
+      // 3C. Check tools and skills against candidate facts
+      const candidateTerms = extractCandidateTerms(candidate);
+      const unevidencedSkill = findUnevidencedToolOrSkill(stripped, candidate, candidateTerms);
+      if (unevidencedSkill) {
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter claims unevidenced skill/tool '${unevidencedSkill}' not found in candidate profile facts. The following claims are not in the candidate's profile and MUST be removed: ${unevidencedSkill}.`,
+        };
+      }
+
+      // 3D. Check years of experience claims computed from job end dates
+      let maxEndYear = 0;
+      let minStartYear = 9999;
+      let hasCurrentJob = false;
+
+      for (const exp of candidate.experience || []) {
+        const startMatch = (exp?.startDate || "").match(/\b(19\d\d|20\d\d)\b/);
+        const endStr = (exp?.endDate || "").trim();
+        const endMatch = endStr.match(/\b(19\d\d|20\d\d)\b/);
+
+        if (startMatch) {
+          const sYear = parseInt(startMatch[1], 10);
+          if (sYear > 1970 && sYear < minStartYear) {
+            minStartYear = sYear;
+          }
+        }
+
+        if (/^(present|current|now|ongoing)$/i.test(endStr) || !endStr) {
+          hasCurrentJob = true;
+        } else if (endMatch) {
+          const eYear = parseInt(endMatch[1], 10);
+          if (eYear > maxEndYear) {
+            maxEndYear = eYear;
+          }
+        }
+      }
+
+      const currentYear = new Date().getFullYear();
+      const latestYear = hasCurrentJob ? currentYear : (maxEndYear > 0 ? maxEndYear : currentYear);
+      let maxYears = 0;
+      if (minStartYear < 9999) {
+        maxYears = Math.max(1, latestYear - minStartYear + 1);
+      }
+
+      const yearsMatch = stripped.match(/\b(\d+)\+?\s+years?(?:\s+of)?(?:\s+experience|\s+tenure)?\b/i);
+      if (yearsMatch) {
+        const claimedYears = parseInt(yearsMatch[1], 10);
+        if (claimedYears > Math.max(maxYears, 1) + 1) {
+          return {
+            ok: false,
+            error: `AI output rejected: cover letter claims ${claimedYears} years of experience, exceeding candidate work history. The following claims are not in the candidate's profile and MUST be removed: ${claimedYears} years of experience.`,
+          };
+        }
+      }
+
+      // 3E. Check numeric facts, percentages, and metrics against candidate profile facts
+      const candidateNumericFacts = extractCandidateNumericFacts(candidate);
+      const letterNumericClaims = extractDetailedNumericClaims(stripped);
+
+      for (const claim of letterNumericClaims) {
+        // Safe allowlist: legitimate candidate experience tenure statement
+        if (claim.isExperienceYearsClaim && claim.numericValue <= candidateNumericFacts.maxExperienceYears + 1) {
+          continue;
+        }
+
+        // Percentage check: must match a percentage evidenced in candidate facts
+        if (claim.isPercent) {
+          if (candidateNumericFacts.percentValues.has(claim.numericValue)) {
+            continue;
+          }
+          return {
+            ok: false,
+            error: `AI output rejected: cover letter introduces unevidenced numeric percentage '${claim.raw}' not found in candidate profile facts. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+          };
+        }
+
+        // Numeric check: whole-token boundary matching
+        const hasToken =
+          candidateNumericFacts.rawTokens.has(claim.normalizedNum) ||
+          candidateNumericFacts.rawTokens.has(String(claim.numericValue));
+        const hasValue = candidateNumericFacts.values.has(claim.numericValue);
+
+        if (hasToken || hasValue) {
+          continue;
+        }
+
+        return {
+          ok: false,
+          error: `AI output rejected: cover letter introduces unevidenced numeric metric '${claim.raw}' not found in candidate profile facts. The following claims are not in the candidate's profile and MUST be removed: ${claim.raw}.`,
+        };
+      }
+    }
+
     return { ok: true, sanitizedText: stripped };
   }
 
@@ -1292,6 +1994,12 @@ export function validateAndSanitizeAiOutput(
       tailoredSummary: stripHtmlAndExecutableMarkup(String(parsed.tailoredSummary || "")),
       highlightedSkills: Array.isArray(parsed.highlightedSkills)
         ? parsed.highlightedSkills.map((s: any) => stripHtmlAndExecutableMarkup(String(s || ""))).filter(Boolean)
+        : [],
+      matchedKeywords: Array.isArray(parsed.matchedKeywords)
+        ? parsed.matchedKeywords.map((s: any) => stripHtmlAndExecutableMarkup(String(s || ""))).filter(Boolean)
+        : [],
+      unmatchedRequirements: Array.isArray(parsed.unmatchedRequirements)
+        ? parsed.unmatchedRequirements.map((s: any) => stripHtmlAndExecutableMarkup(String(s || ""))).filter(Boolean)
         : [],
       tailoredBullets,
     };
