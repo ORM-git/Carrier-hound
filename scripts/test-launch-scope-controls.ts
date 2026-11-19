@@ -146,12 +146,8 @@ async function runSuite() {
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://mock.supabase.co";
     process.env.NODE_ENV = "test";
     process.env.AI_STREAMING_ENABLED = "true";
-    (globalThis as any).__mockRateLimitClient = {
-      rpc: async () => ({
-        data: { allowed: true, retry_after: 0, current_count: 1 },
-        error: null,
-      }),
-    };
+    // No rate-limit mock on purpose: the shared store is unreachable offline, so a 401 here
+    // proves the AI handler rejects missing auth before consulting the (fail-closed) limiter.
 
     // =========================================================================
     // SECTION 1: Restored routes require auth/entitlement and are never Coming Soon
