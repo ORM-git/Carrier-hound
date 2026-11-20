@@ -4,6 +4,11 @@ import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/coun
 import { decodeCursor, encodeCursor } from "../../src/lib/pagination/cursor";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "../../src/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "../../src/lib/jobs/eligibility";
+import {
+  detectCompanyCategory,
+  detectRoleCategory,
+  extractTopKeywords,
+} from "../../src/lib/jobs/highVolumeEnrichment";
 import { applyExperienceLevelQuery, isExperienceLevelFilterActive } from "../../src/lib/jobs/experienceLevels";
 import { safeLog } from "./_logger";
 
@@ -269,19 +274,19 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const normalizedUserCountries = normalizeUserCountries(userLocations);
 
     const selectColumns = (isPro && hasServiceKey)
-      ? "*, companies(name, logo_url, domain)"
+      ? "*, companies(name, logo_url, category, canonical_domain, domain)"
       : hasServiceKey
-      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url)"
-      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
+      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, role_category, top_keywords, is_remote";
 
     const idParam = params.id;
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
       const singleColumns = (isPro && hasServiceKey)
-        ? "*, companies(name, logo_url, domain)"
+        ? "*, companies(name, logo_url, category, canonical_domain, domain)"
         : hasServiceKey
-        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url)"
-        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
+        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
+        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active, role_category, top_keywords, is_remote";
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
         .from(targetTable)
@@ -331,6 +336,33 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         ? (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period, { displayCurrency: preferredCurrency }) || jobRow.salary_text || null)
         : originalSalary;
 
+      const singleTopKeywords = Array.isArray(jobRow.top_keywords) && jobRow.top_keywords.length > 0
+        ? jobRow.top_keywords.slice(0, 8)
+        : extractTopKeywords(
+            jobRow.title,
+            isPro && !isInactive ? jobRow.description : null,
+            isPro && !isInactive ? jobRow.skills : null,
+            8
+          );
+      const singleRoleCategory =
+        jobRow.role_category || detectRoleCategory(jobRow.title, jobRow.category, isPro ? jobRow.skills : null);
+      const singleCompanyCategory =
+        isPro && !isInactive
+          ? (jobRow.companies?.category ||
+             detectCompanyCategory(
+               jobRow.company || jobRow.companies?.name,
+               jobRow.company_slug,
+               jobRow.companies?.canonical_domain || jobRow.companies?.domain,
+               jobRow.country_code
+             ))
+          : null;
+
+      const singleDomain =
+        jobRow.canonical_domain ||
+        jobRow.companies?.canonical_domain ||
+        jobRow.companies?.domain ||
+        null;
+
       const formatted = {
         id: jobRow.id,
         title: jobRow.title || "Untitled Position",
@@ -340,7 +372,16 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           : { companyGroupId: singleGroupId }),
         location: jobRow.location || (jobRow.remote ? "Remote (Worldwide)" : "Remote"),
         category: jobRow.category || "engineering",
+        role_category: singleRoleCategory,
+        company_category: singleCompanyCategory,
+        ...(isPro && !isInactive ? {
+          company_domain: singleDomain,
+          canonical_domain: singleDomain,
+          domain: singleDomain,
+        } : {}),
+        top_keywords: singleTopKeywords,
         remote: Boolean(jobRow.remote),
+        is_remote: Boolean(jobRow.is_remote ?? jobRow.remote),
         remoteScope: jobRow.remote_scope || undefined,
         remoteEligibility: jobRow.remote_eligibility || undefined,
         country: jobRow.country_code || jobRow.country || "",
@@ -849,8 +890,31 @@ export function createHandler(deps: JobsSearchDeps = {}) {
       const displaySalary = preferredCurrency
         ? (formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period, { displayCurrency: preferredCurrency }) || row.salary_text || null)
         : originalSalary;
+      const resolvedRoleCategory =
+        row.role_category || detectRoleCategory(row.title, row.category, isPro ? row.skills : null);
+      const resolvedTopKeywords = Array.isArray(row.top_keywords) && row.top_keywords.length > 0
+        ? row.top_keywords.slice(0, 8)
+        : extractTopKeywords(
+            row.title,
+            isPro ? row.description : null,
+            isPro ? row.skills : null,
+            8
+          );
 
       if (isPro) {
+        const resolvedCompanyCategory =
+          row.companies?.category ||
+          detectCompanyCategory(
+            row.company || row.companies?.name,
+            row.company_slug,
+            row.companies?.canonical_domain || row.companies?.domain,
+            row.country_code
+          );
+        const resolvedDomain =
+          row.canonical_domain ||
+          row.companies?.canonical_domain ||
+          row.companies?.domain ||
+          null;
         return {
           id: row.id,
           title: row.title || "Untitled Position",
@@ -863,7 +927,14 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           salary_display: displaySalary,
           salary_original: originalSalary,
           category: row.category || "engineering",
+          role_category: resolvedRoleCategory,
+          company_category: resolvedCompanyCategory,
+          company_domain: resolvedDomain,
+          canonical_domain: resolvedDomain,
+          domain: resolvedDomain,
+          top_keywords: resolvedTopKeywords,
           remote: Boolean(row.remote),
+          is_remote: Boolean(row.is_remote ?? row.remote),
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
@@ -890,7 +961,11 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         salary_display: null,
         salary_original: null,
         category: row.category || "engineering",
+        role_category: resolvedRoleCategory,
+        company_category: null,
+        top_keywords: resolvedTopKeywords,
         remote: Boolean(row.remote),
+        is_remote: Boolean(row.is_remote ?? row.remote),
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",

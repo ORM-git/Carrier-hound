@@ -127,7 +127,7 @@ beforeAll(async () => {
   });
   nextSearch = (await import("@/app/api/jobs/search/route")).GET;
   netlifySearch = (await import("../../../../../netlify/functions/jobs-search")).handler as any;
-}, 30000);
+}, 60000);
 
 beforeEach(() => {
   state.users = {

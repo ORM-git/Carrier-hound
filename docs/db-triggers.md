@@ -30,6 +30,7 @@ Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for
 | `trg_touch_updated_at_tailored_resumes` | `tailored_resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `jobs_touch_last_seen` | `jobs` | BEFORE UPDATE | `touch_job_last_seen()` | Preserves last_seen_at during metadata updates; updates only on explicit caller timestamp or scraper refresh session. |
 
+
 <!-- guard-entries: one per line, parsed by dbTriggersDoc.test.ts -->
 ```guard
 trigger: tr_prevent_admin_audit_log_mutation | 20261020_admin_audit_log.sql | admin_audit_log

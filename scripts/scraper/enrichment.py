@@ -589,3 +589,226 @@ def classify_company_category(
         return "INDIAN_IT_AND_OTHER"
 
     return "OTHER_STARTUPS"
+
+
+COMPANY_ALIASES: dict[str, tuple[str, str, str | None]] = {
+    # token -> (canonical_name, category, canonical_domain)
+    "tcs": ("Tata Consultancy Services", "INDIAN_IT_AND_OTHER", "tcs.com"),
+    "tataconsultancyservices": ("Tata Consultancy Services", "INDIAN_IT_AND_OTHER", "tcs.com"),
+    "infosys": ("Infosys", "INDIAN_IT_AND_OTHER", "infosys.com"),
+    "infosyslimited": ("Infosys", "INDIAN_IT_AND_OTHER", "infosys.com"),
+    "wipro": ("Wipro", "INDIAN_IT_AND_OTHER", "wipro.com"),
+    "wiprolimited": ("Wipro", "INDIAN_IT_AND_OTHER", "wipro.com"),
+    "hcl": ("HCLTech", "INDIAN_IT_AND_OTHER", "hcltech.com"),
+    "hcltech": ("HCLTech", "INDIAN_IT_AND_OTHER", "hcltech.com"),
+    "hcltechnologies": ("HCLTech", "INDIAN_IT_AND_OTHER", "hcltech.com"),
+    "cognizant": ("Cognizant", "INDIAN_IT_AND_OTHER", "cognizant.com"),
+    "cognizanttechnologysolutions": ("Cognizant", "INDIAN_IT_AND_OTHER", "cognizant.com"),
+    "techmahindra": ("Tech Mahindra", "INDIAN_IT_AND_OTHER", "techmahindra.com"),
+    "ltimindtree": ("LTIMindtree", "INDIAN_IT_AND_OTHER", "ltimindtree.com"),
+    "mindtree": ("LTIMindtree", "INDIAN_IT_AND_OTHER", "ltimindtree.com"),
+    "larsentoubroinfotech": ("LTIMindtree", "INDIAN_IT_AND_OTHER", "ltimindtree.com"),
+    "ltts": ("L&T Technology Services", "INDIAN_IT_AND_OTHER", "ltts.com"),
+    "capgemini": ("Capgemini", "INDIAN_IT_AND_OTHER", "capgemini.com"),
+    "accenture": ("Accenture", "INDIAN_IT_AND_OTHER", "accenture.com"),
+    "deloitte": ("Deloitte", "INDIAN_IT_AND_OTHER", "deloitte.com"),
+    "mphasis": ("Mphasis", "INDIAN_IT_AND_OTHER", "mphasis.com"),
+    "persistent": ("Persistent Systems", "INDIAN_IT_AND_OTHER", "persistent.com"),
+    "persistentsystems": ("Persistent Systems", "INDIAN_IT_AND_OTHER", "persistent.com"),
+    "coforge": ("Coforge", "INDIAN_IT_AND_OTHER", "coforge.com"),
+    "hexaware": ("Hexaware Technologies", "INDIAN_IT_AND_OTHER", "hexaware.com"),
+    "zensar": ("Zensar Technologies", "INDIAN_IT_AND_OTHER", "zensar.com"),
+    "birlasoft": ("Birlasoft", "INDIAN_IT_AND_OTHER", "birlasoft.com"),
+    "kpit": ("KPIT Technologies", "INDIAN_IT_AND_OTHER", "kpit.com"),
+    "tataelxsi": ("Tata Elxsi", "INDIAN_IT_AND_OTHER", "tataelxsi.com"),
+    "genpact": ("Genpact", "INDIAN_IT_AND_OTHER", "genpact.com"),
+    "wns": ("WNS", "INDIAN_IT_AND_OTHER", "wns.com"),
+    "exl": ("EXL Service", "INDIAN_IT_AND_OTHER", "exlservice.com"),
+    "musigma": ("Mu Sigma", "INDIAN_IT_AND_OTHER", "mu-sigma.com"),
+    "fractal": ("Fractal Analytics", "INDIAN_IT_AND_OTHER", "fractal.ai"),
+    "tigeranalytics": ("Tiger Analytics", "INDIAN_IT_AND_OTHER", "tigeranalytics.com"),
+    "nagarro": ("Nagarro", "INDIAN_IT_AND_OTHER", "nagarro.com"),
+    "zoho": ("Zoho", "MNC_BIGTECH", "zoho.com"),
+    "freshworks": ("Freshworks", "MNC_BIGTECH", "freshworks.com"),
+    "google": ("Google", "MNC_BIGTECH", "google.com"),
+    "alphabet": ("Google", "MNC_BIGTECH", "google.com"),
+    "microsoft": ("Microsoft", "MNC_BIGTECH", "microsoft.com"),
+    "amazon": ("Amazon", "MNC_BIGTECH", "amazon.com"),
+    "aws": ("Amazon", "MNC_BIGTECH", "amazon.com"),
+    "amazonwebservices": ("Amazon", "MNC_BIGTECH", "amazon.com"),
+    "meta": ("Meta", "MNC_BIGTECH", "meta.com"),
+    "facebook": ("Meta", "MNC_BIGTECH", "meta.com"),
+    "apple": ("Apple", "MNC_BIGTECH", "apple.com"),
+    "netflix": ("Netflix", "MNC_BIGTECH", "netflix.com"),
+    "nvidia": ("NVIDIA", "MNC_BIGTECH", "nvidia.com"),
+    "walmart": ("Walmart", "MNC_BIGTECH", "walmart.com"),
+    "walmartglobaltech": ("Walmart", "MNC_BIGTECH", "walmart.com"),
+    "salesforce": ("Salesforce", "MNC_BIGTECH", "salesforce.com"),
+    "mastercard": ("Mastercard", "MNC_BIGTECH", "mastercard.com"),
+    "visa": ("Visa", "MNC_BIGTECH", "visa.com"),
+    "adobe": ("Adobe", "MNC_BIGTECH", "adobe.com"),
+    "cisco": ("Cisco", "MNC_BIGTECH", "cisco.com"),
+    "oracle": ("Oracle", "MNC_BIGTECH", "oracle.com"),
+    "ibm": ("IBM", "MNC_BIGTECH", "ibm.com"),
+    "sap": ("SAP", "MNC_BIGTECH", "sap.com"),
+    "uber": ("Uber", "MNC_BIGTECH", "uber.com"),
+    "atlassian": ("Atlassian", "MNC_BIGTECH", "atlassian.com"),
+    "datadog": ("Datadog", "MNC_BIGTECH", "datadoghq.com"),
+    "cloudflare": ("Cloudflare", "MNC_BIGTECH", "cloudflare.com"),
+    "palantir": ("Palantir Technologies", "MNC_BIGTECH", "palantir.com"),
+    "bosch": ("Bosch Group", "MNC_BIGTECH", "bosch.com"),
+    "stripe": ("Stripe", "HIGH_PRODUCT_YC", "stripe.com"),
+    "openai": ("OpenAI", "HIGH_PRODUCT_YC", "openai.com"),
+    "anthropic": ("Anthropic", "HIGH_PRODUCT_YC", "anthropic.com"),
+    "linear": ("Linear", "HIGH_PRODUCT_YC", "linear.app"),
+    "ramp": ("Ramp", "HIGH_PRODUCT_YC", "ramp.com"),
+    "notion": ("Notion", "HIGH_PRODUCT_YC", "notion.so"),
+    "supabase": ("Supabase", "HIGH_PRODUCT_YC", "supabase.com"),
+    "figma": ("Figma", "HIGH_PRODUCT_YC", "figma.com"),
+    "vercel": ("Vercel", "HIGH_PRODUCT_YC", "vercel.com"),
+    "airbnb": ("Airbnb", "HIGH_PRODUCT_YC", "airbnb.com"),
+    "brex": ("Brex", "HIGH_PRODUCT_YC", "brex.com"),
+    "gitlab": ("GitLab", "HIGH_PRODUCT_YC", "gitlab.com"),
+    "scaleai": ("Scale AI", "HIGH_PRODUCT_YC", "scale.com"),
+    "perplexity": ("Perplexity AI", "HIGH_PRODUCT_YC", "perplexity.ai"),
+    "perplexityai": ("Perplexity AI", "HIGH_PRODUCT_YC", "perplexity.ai"),
+    "elevenlabs": ("ElevenLabs", "HIGH_PRODUCT_YC", "elevenlabs.io"),
+    "posthog": ("PostHog", "HIGH_PRODUCT_YC", "posthog.com"),
+    "retool": ("Retool", "HIGH_PRODUCT_YC", "retool.com"),
+    "gusto": ("Gusto", "HIGH_PRODUCT_YC", "gusto.com"),
+    "mistral": ("Mistral AI", "HIGH_PRODUCT_YC", "mistral.ai"),
+    "mistralai": ("Mistral AI", "HIGH_PRODUCT_YC", "mistral.ai"),
+    "plaid": ("Plaid", "HIGH_PRODUCT_YC", "plaid.com"),
+    "wise": ("Wise", "HIGH_PRODUCT_YC", "wise.com"),
+    "razorpay": ("Razorpay", "HIGH_PRODUCT_YC", "razorpay.com"),
+    "zerodha": ("Zerodha", "HIGH_PRODUCT_YC", "zerodha.com"),
+    "cred": ("CRED", "HIGH_PRODUCT_YC", "cred.club"),
+    "swiggy": ("Swiggy", "HIGH_PRODUCT_YC", "swiggy.com"),
+    "zomato": ("Zomato", "HIGH_PRODUCT_YC", "zomato.com"),
+    "phonepe": ("PhonePe", "HIGH_PRODUCT_YC", "phonepe.com"),
+    "zepto": ("Zepto", "HIGH_PRODUCT_YC", "zeptonow.com"),
+    "postman": ("Postman", "HIGH_PRODUCT_YC", "postman.com"),
+    "browserstack": ("BrowserStack", "HIGH_PRODUCT_YC", "browserstack.com"),
+}
+
+_IT_SERVICE_PATTERN_RE = re.compile(
+    r"\b(consultancy|consulting|infotech|services|outsourcing|staffing|bpo|solutions\s+pvt|technologies\s+pvt|systems\s+pvt|global\s+services|it\s+services)\b",
+    re.IGNORECASE,
+)
+
+
+def normalize_company_alias(company_name: str | None) -> tuple[str, str | None, str | None]:
+    """
+    Normalizes company name aliases.
+    Returns (canonical_company_name, matched_category_or_None, canonical_domain_or_None).
+    """
+    raw = (company_name or "Unknown").strip()
+    stripped = _COMPANY_SUFFIX_RE.sub("", raw).strip()
+    token = re.sub(r"[^a-z0-9]", "", stripped.lower())
+    if token in COMPANY_ALIASES:
+        return COMPANY_ALIASES[token]
+
+    raw_token = re.sub(r"[^a-z0-9]", "", raw.lower())
+    if raw_token in COMPANY_ALIASES:
+        return COMPANY_ALIASES[raw_token]
+
+    for alias_key, (canon_name, cat, dom) in COMPANY_ALIASES.items():
+        if len(alias_key) >= 5 and token.startswith(alias_key):
+            return canon_name, cat, dom
+
+    return (stripped or raw), None, None
+
+
+def assign_company_category(
+    seed_category: str | None,
+    company_name: str,
+    slug: str = "",
+    source_layer: str = "layer1",
+    country_code: str | None = None,
+) -> str:
+    """Deterministically assigns one of the 4 company categories."""
+    if seed_category in COMPANY_CATEGORIES:
+        return seed_category
+
+    _, alias_cat, _ = normalize_company_alias(company_name)
+    if alias_cat in COMPANY_CATEGORIES:
+        return alias_cat
+
+    if slug:
+        _, slug_cat, _ = normalize_company_alias(slug)
+        if slug_cat in COMPANY_CATEGORIES:
+            return slug_cat
+
+    if source_layer == "layer2":
+        return "MNC_BIGTECH"
+
+    combined = f"{company_name} {slug}".strip()
+    if _IT_SERVICE_PATTERN_RE.search(combined):
+        return "INDIAN_IT_AND_OTHER"
+    if (country_code or "").upper() == "IN" and re.search(r"\b(pvt|private|limited|ltd|tech|technologies|solutions)\b", combined, re.IGNORECASE):
+        return "INDIAN_IT_AND_OTHER"
+
+    return "OTHER_STARTUPS"
+
+
+def assign_role_category(
+    title: str | None,
+    department: str | None = None,
+    top_keywords: list[str] | None = None,
+) -> str:
+    """Deterministically assigns one of ('SDE', 'AI_ML', 'CLOUD', 'DATA', 'OTHER')."""
+    t = (title or "").lower()
+    d = (department or "").lower()
+    kws = " ".join(top_keywords or []).lower()
+    combined = f"{t} {d} {kws}"
+
+    if re.search(
+        r"\b(ai|ml|machine learning|deep learning|llm|genai|generative ai|nlp|computer vision|data scientist|research scientist|applied scientist|mlops)\b",
+        t,
+    ):
+        return "AI_ML"
+    if re.search(
+        r"\b(cloud|devops|sre|site reliability|infrastructure|platform engineer|kubernetes|aws|gcp|azure|terraform|devsecops|security engineer|network engineer)\b",
+        t,
+    ):
+        return "CLOUD"
+    if re.search(
+        r"\b(data engineer|data analyst|analytics engineer|business intelligence|\bbi\b|etl|data warehouse|database administrator|\bdba\b|snowflake|databricks|spark)\b",
+        t,
+    ):
+        return "DATA"
+    if re.search(
+        r"\b(software|sde|developer|engineer|backend|back-end|frontend|front-end|full stack|full-stack|fullstack|mobile|ios|android|web|firmware|embedded|qa|sdet|architect|programmer)\b",
+        combined,
+    ) and not re.search(
+        r"\b(account executive|sales|recruiter|talent|marketing|finance|accountant|legal|counsel|human resources|customer success)\b",
+        t,
+    ):
+        return "SDE"
+    return "OTHER"
+
+
+def assign_legacy_category(title: str | None, role_category: str) -> str:
+    """Maps to legacy frontend category slug so existing filter pills work unchanged."""
+    if role_category == "AI_ML":
+        return "ai"
+    if role_category == "CLOUD":
+        return "devops"
+    if role_category == "DATA":
+        return "data"
+    t = (title or "").lower()
+    if re.search(r"\b(design|ui|ux)\b", t):
+        return "design"
+    if re.search(r"\b(product manager|program manager|project manager|\btpm\b)\b", t):
+        return "product"
+    if re.search(r"\b(marketing|growth|seo|brand)\b", t):
+        return "marketing"
+    if re.search(r"\b(sales|account executive|business development|\bbdr\b)\b", t):
+        return "sales"
+    if re.search(r"\b(qa|quality assurance|test engineer|sdet)\b", t):
+        return "qa-testing"
+    if re.search(r"\b(finance|accountant|payroll)\b", t):
+        return "finance"
+    if re.search(r"\b(recruiter|talent|human resources|\bhr\b)\b", t):
+        return "hr"
+    return "engineering"

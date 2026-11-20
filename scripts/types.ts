@@ -54,6 +54,12 @@ export interface NormalizedJob {
   salary_period?: 'yearly' | 'monthly' | 'hourly';
   currency?: string;
   category?: string;
+  role_category?: 'SDE' | 'AI_ML' | 'CLOUD' | 'DATA' | 'OTHER';
+  company_category?: 'MNC_BIGTECH' | 'HIGH_PRODUCT_YC' | 'OTHER_STARTUPS' | 'INDIAN_IT_AND_OTHER';
+  top_keywords?: string[];
+  dedupe_hash?: string;
+  is_remote?: boolean;
+  source_priority?: 1 | 2;
   country?: string;
   posted_at?: string; // ISO string
   expires_at?: string | null; // ISO string

@@ -3,6 +3,7 @@ import { formatSalary } from "../../src/lib/salary/parser";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
+import { detectCompanyCategory, detectRoleCategory, extractTopKeywords } from "../../src/lib/jobs/highVolumeEnrichment";
 import { safeLog } from "./_logger";
 
 function getSupabaseAdmin() {
@@ -188,7 +189,7 @@ export async function handler(event: any) {
           const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
           let query = supabaseAdmin
             .from("jobs")
-            .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
+            .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
             .eq("status", "active")
             .eq("is_active", true);
 
@@ -216,9 +217,16 @@ export async function handler(event: any) {
             const displaySalary = preferredCurrency
               ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
               : originalSalary;
+            const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
             return {
               ...j,
-              description: resolveDescription(j.description, descMap.get(j.id)),
+              description: resolvedDesc,
+              role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
+              top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
+                ? j.top_keywords.slice(0, 8)
+                : extractTopKeywords(j.title, resolvedDesc, j.skills, 8),
+              is_remote: Boolean(j.is_remote ?? j.remote),
+              company_category: j.companies?.category || detectCompanyCategory(j.company, null, null, j.country_code),
               country: j.country_code || j.country || "",
               salary_text: displaySalary || originalSalary || "",
               salary_display: displaySalary,
@@ -242,7 +250,7 @@ export async function handler(event: any) {
 
       const { data: job, error }: any = await (supabaseAdmin as any)
         .from("jobs")
-        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
+        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
         .eq("id", id)
         .maybeSingle();
 
@@ -262,9 +270,16 @@ export async function handler(event: any) {
         ? (formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period, { displayCurrency: preferredCurrency }) || job.salary_text || null)
         : originalSalary;
       const isInactive = Boolean(row.is_active === false || row.status === "expired" || row.status === "closed");
+      const resolvedSingleDesc = resolveDescription(job.description, descMap.get(job.id));
       const formattedJob = {
         ...job,
-        description: resolveDescription(job.description, descMap.get(job.id)),
+        description: resolvedSingleDesc,
+        role_category: job.role_category || detectRoleCategory(job.title, job.category, job.skills),
+        top_keywords: Array.isArray(job.top_keywords) && job.top_keywords.length > 0
+          ? job.top_keywords.slice(0, 8)
+          : extractTopKeywords(job.title, resolvedSingleDesc, job.skills, 8),
+        is_remote: Boolean(job.is_remote ?? job.remote),
+        company_category: job.companies?.category || detectCompanyCategory(job.company, null, null, job.country_code),
         country: job.country_code || job.country || "",
         salary_text: displaySalary || originalSalary || "",
         salary_display: displaySalary,
@@ -308,7 +323,7 @@ export async function handler(event: any) {
 
       const { data: jobs, error }: any = await (supabaseAdmin as any)
         .from("jobs")
-        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active")
+        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
         .in("id", ids.slice(0, 100));
 
       if (error) {
@@ -327,9 +342,16 @@ export async function handler(event: any) {
         const displaySalary = preferredCurrency
           ? (formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period, { displayCurrency: preferredCurrency }) || j.salary_text || null)
           : originalSalary;
+        const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
         return {
           ...j,
-          description: resolveDescription(j.description, descMap.get(j.id)),
+          description: resolvedDesc,
+          role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
+          top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
+            ? j.top_keywords.slice(0, 8)
+            : extractTopKeywords(j.title, resolvedDesc, j.skills, 8),
+          is_remote: Boolean(j.is_remote ?? j.remote),
+          company_category: j.companies?.category || detectCompanyCategory(j.company, null, null, j.country_code),
           country: j.country_code || j.country || "",
           salary_text: displaySalary || originalSalary || "",
           salary_display: displaySalary,

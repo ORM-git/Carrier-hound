@@ -53,6 +53,7 @@ backups/
 !tests/fixtures/**/*.docx
 *.txt
 !robots.txt
+!scripts/scraper/requirements.txt
 deno.lock
 scripts/read_docs.mjs
 scripts/extract_docx.py

@@ -29,6 +29,7 @@ export const TARGET = "20261116b_ten_million_system_design_schema.sql";
 const D_FILE = "20261116d_repair_642_identity_and_similarity_safety.sql";
 const E_FILE = "20261116e_repair_642_concurrent_indexes.sql";
 const F_FILE = "20261116f_repair_642_batch_backfill.sql";
+const A642_FILE = "20261116a_high_volume_ingestion_schema.sql";
 export const FIXTURE = path.join(ROOT, "scripts/fixtures/10m-schema-step1-populated.sql");
 
 /** Minimal engine interface: PGlite and node-postgres both satisfy it through tiny adapters. */
@@ -183,7 +184,8 @@ function scopedDStatements(): string[] {
 /** Schema for a baseline, before the fixture. Returns chain failures (must be empty). */
 export async function buildBaselineSchema(db: Db, kind: Baseline): Promise<string[]> {
   if (kind === "full") return applyChain(db, allMigrations().filter((f) => f !== TARGET), kind);
-  const failed = await applyChain(db, allMigrations().filter((f) => ![TARGET, D_FILE, E_FILE, F_FILE].includes(f)), kind);
+  // The reconstructed owner state predates #642: its unapplied 16a is not part of it (the full baseline runs it)
+  const failed = await applyChain(db, allMigrations().filter((f) => ![TARGET, D_FILE, E_FILE, F_FILE, A642_FILE].includes(f)), kind);
   try {
     await db.exec(RECON_LIVE_COLUMNS);
     for (const s of scopedDStatements()) await db.exec(s);
