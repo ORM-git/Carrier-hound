@@ -159,6 +159,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-lint-config.ts", command: "npx tsx scripts/test-lint-config.ts", classification: "offline", timeout: 180000 },
   { name: "scripts/test-security-audit-baseline.ts", command: "npx tsx scripts/test-security-audit-baseline.ts", classification: "offline" },
   { name: "scripts/test-database-safety.ts", command: "npx tsx scripts/test-database-safety.ts", classification: "offline" },
+  { name: "scripts/test-10m-schema-step1-fixtures.ts", command: "npx tsx scripts/test-10m-schema-step1-fixtures.ts", classification: "offline" },
   { name: "scripts/test-seo-structured-data.ts", command: "npx tsx scripts/test-seo-structured-data.ts", classification: "offline" },
   { name: "scripts/test-email-unsubscribe.ts", command: "npx tsx scripts/test-email-unsubscribe.ts", classification: "offline" },
   { name: "scripts/test-incremental-ingestion.ts", command: "npx tsx scripts/test-incremental-ingestion.ts", classification: "offline" },
