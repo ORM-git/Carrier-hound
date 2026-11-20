@@ -153,9 +153,20 @@ describe("JobFilterBar - Chip Labels and Unclipped Popovers", () => {
     expect(row2Container?.className).toContain("flex-wrap");
     expect(row2Container?.className).toContain("items-center");
 
-    // Secondary filters (min salary, source, company) are hidden below 2xl
-    const salaryChip = row2Container?.querySelector('[class*="2xl:block"]');
+    // Secondary filters (min salary, source, company) have responsive chip classes
+    const salaryChip = row2Container?.querySelector(".chip-salary");
     expect(salaryChip).toBeTruthy();
+  });
+
+  it("ensures active chips retain chip-active class so they stay visible at constrained viewports", () => {
+    const { container } = renderFilterBar({ salaryMin: "50000", company: "Google" });
+
+    const desktopFilterBar = container.querySelector(".hidden.md\\:flex");
+    const salaryChip = desktopFilterBar?.querySelector(".chip-salary");
+    expect(salaryChip?.className).toContain("chip-active");
+
+    const companyChip = desktopFilterBar?.querySelector(".chip-company");
+    expect(companyChip?.className).toContain("chip-active");
   });
 
   it("visibly opens the Sort dropdown on click", () => {

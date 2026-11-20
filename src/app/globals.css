@@ -363,3 +363,70 @@ input[type="password"]::-ms-clear {
 .animate-auth-backdrop {
   animation: authBackdropFade 0.25s ease-out forwards;
 }
+
+/* Container query system for JobFilterBar strict two-row responsive layout */
+.job-filter-bar-container {
+  container-type: inline-size;
+}
+
+/* Compact button padding at narrow widths */
+@container (max-width: 449px) {
+  .job-filter-bar-container button {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+  .chip-location-label-long {
+    display: none !important;
+  }
+  .chip-location-label-short {
+    display: inline !important;
+  }
+}
+
+@container (min-width: 450px) {
+  .chip-location-label-short {
+    display: none !important;
+  }
+}
+
+/* Row 1 responsive visibility */
+@container (max-width: 449px) {
+  .chip-level:not(.chip-active) {
+    display: none !important;
+  }
+}
+
+@container (max-width: 599px) {
+  .chip-jobtype:not(.chip-active) {
+    display: none !important;
+  }
+}
+
+/* Row 2 responsive visibility */
+@container (max-width: 449px) {
+  .chip-date:not(.chip-active) {
+    display: none !important;
+  }
+}
+
+@container (max-width: 599px) {
+  .chip-experience:not(.chip-active) {
+    display: none !important;
+  }
+}
+
+@container (max-width: 779px) {
+  .chip-salary:not(.chip-active) {
+    display: none !important;
+  }
+}
+
+@container (max-width: 899px) {
+  .chip-source:not(.chip-active) {
+    display: none !important;
+  }
+  .chip-company:not(.chip-active) {
+    display: none !important;
+  }
+}
+

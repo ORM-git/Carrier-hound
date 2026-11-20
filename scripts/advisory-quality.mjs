@@ -180,9 +180,6 @@ try {
     report.lighthouse = { error: String(err) };
     console.log(`[lighthouse] ERROR ${err}`);
   }
-} catch (err) {
-  report.error = String(err);
-  console.warn(`[advisory-quality] Advisory audit warning: ${err}`);
 } finally {
   if (browser) {
     try {

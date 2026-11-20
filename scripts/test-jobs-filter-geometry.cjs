@@ -140,12 +140,12 @@ async function runGeometryRegression() {
       { name: "1440px-collapsed", width: 1440, height: 900, sidebarExpanded: false, expectRows: 2, shot: "after-filter-1440-collapsed.png" },
       { name: "1440px-expanded", width: 1440, height: 900, sidebarExpanded: true, expectRows: 2, shot: "after-filter-1440-expanded.png" },
       { name: "1280px-collapsed", width: 1280, height: 900, sidebarExpanded: false, expectRows: 2, shot: "after-filter-1280-collapsed.png" },
-      { name: "1280px-expanded", width: 1280, height: 900, sidebarExpanded: true, expectRows: null, shot: "after-filter-1280-expanded.png" },
-      { name: "1024px-collapsed", width: 1024, height: 900, sidebarExpanded: false, expectRows: null, shot: "after-filter-1024-collapsed.png" },
-      { name: "1024px-expanded", width: 1024, height: 900, sidebarExpanded: true, expectRows: null, shot: "after-filter-1024-expanded.png" },
+      { name: "1280px-expanded", width: 1280, height: 900, sidebarExpanded: true, expectRows: 2, shot: "after-filter-1280-expanded.png" },
+      { name: "1024px-collapsed", width: 1024, height: 900, sidebarExpanded: false, expectRows: 2, shot: "after-filter-1024-collapsed.png" },
+      { name: "1024px-expanded", width: 1024, height: 900, sidebarExpanded: true, expectRows: 2, shot: "after-filter-1024-expanded.png" },
       { name: "850px-tablet", width: 850, height: 900, sidebarExpanded: false, expectRows: 2, shot: "after-filter-850-tablet.png" },
       { name: "390px-mobile", width: 390, height: 844, isMobile: true, hasTouch: true, shot: "after-filter-390-mobile.png" },
-      { name: "1280px-long-labels", width: 1280, height: 900, sidebarExpanded: false, qs: "?country_code=US&category=engineering&level=Senior&type=Full-time&workModel=Remote", shot: "after-filter-long-labels.png" },
+      { name: "1280px-long-labels", width: 1280, height: 900, sidebarExpanded: false, expectRows: 2, qs: "?country_code=US&category=engineering&level=Senior&type=Full-time&workModel=Remote", shot: "after-filter-long-labels.png" },
     ];
 
     for (const vp of viewports) {
