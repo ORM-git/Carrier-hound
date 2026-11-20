@@ -717,7 +717,7 @@ export default function JobDetailView({
                 <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
                   <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
                   <span className="truncate">
-                    {isUnlocked ? (job.location || "Remote") : <span className="filter blur-[3.5px] select-none">Location Locked</span>}
+                    {isUnlocked ? (job.location || "Remote") : <span className="text-[#64748B]">Location locked</span>}
                   </span>
                 </div>
 
@@ -1037,7 +1037,7 @@ export default function JobDetailView({
                 {job.location && (
                   <div className="text-xs text-[#475569] flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-[#64748B]" />
-                    <span>{isUnlocked ? job.location : <span className="filter blur-[3.5px]">Location Locked</span>}</span>
+                    <span>{isUnlocked ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
                   </div>
                 )}
               </div>
