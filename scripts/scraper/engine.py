@@ -112,7 +112,12 @@ def partition_set_diff(
     Returns (to_insert, to_update [(existing_id, payload)], unchanged_ids).
     - Deduplicates the incoming batch by board identity (source_id, source_job_id), legacy
       (source_type, source_job_id) when source_id is absent; higher priority (lower number) wins.
-    - Matches existing DB rows by (source_id, source_job_id), then legacy (source_type, source_job_id).
+    - Matches existing DB rows by exact (source_id, source_job_id). The legacy fallback
+      (source_type, source_job_id) only considers rows whose source_id IS NULL, and only when the
+      match is unambiguous: exactly one such legacy row, exactly one incoming board claiming that
+      native id, and the incoming board's vendor equals the row's source_type. Anything else inserts:
+      a row with a different non-null source_id is never updated (greenhouse:b/42 never overwrites
+      greenhouse:a/42).
       dedupe_hash is advisory (#643 contract): two boards with the same hash coexist, never merged.
     - Only emits writes for brand-new jobs or jobs whose content fingerprint / priority changed.
     """
@@ -127,15 +132,23 @@ def partition_set_diff(
             deduped_incoming[key] = job
 
     by_source_id_key: dict[tuple[str, str], dict[str, Any]] = {}
-    by_source_key: dict[tuple[str, str], dict[str, Any]] = {}
+    legacy_rows: dict[tuple[str, str], list[dict[str, Any]]] = {}  # source_id IS NULL rows only
     for ex in existing_rows:
         src_id = str(ex.get("source_id") or "")
         st = str(ex.get("source_type") or "")
         sid = str(ex.get("source_job_id") or "")
         if src_id and sid:
             by_source_id_key[(src_id, sid)] = ex
+        elif st and sid:
+            legacy_rows.setdefault((st, sid), []).append(ex)
+
+    # Boards in this batch claiming each legacy (source_type, source_job_id): >1 means we cannot tell
+    # which board a NULL-board legacy row belongs to.
+    boards_per_legacy_key: dict[tuple[str, str], set[str]] = {}
+    for job in deduped_incoming.values():
+        st, sid = str(job.get("source_type") or ""), str(job.get("source_job_id") or "")
         if st and sid:
-            by_source_key[(st, sid)] = ex
+            boards_per_legacy_key.setdefault((st, sid), set()).add(str(job.get("source_id") or ""))
 
     to_insert: list[dict[str, Any]] = []
     to_update: list[tuple[str, dict[str, Any]]] = []
@@ -145,13 +158,15 @@ def partition_set_diff(
         src_id_key = (str(job.get("source_id") or ""), str(job.get("source_job_id") or ""))
         s_key = (str(job.get("source_type") or ""), str(job.get("source_job_id") or ""))
 
-        # Look up by exact board (source_id, source_job_id) first,
-        # then fallback to legacy (source_type, source_job_id).
+        # Exact board identity first; then the guarded NULL-board legacy fallback.
         existing = None
         if src_id_key[0] and src_id_key[1]:
             existing = by_source_id_key.get(src_id_key)
         if existing is None and s_key[0] and s_key[1]:
-            existing = by_source_key.get(s_key)
+            candidates = legacy_rows.get(s_key, [])
+            vendor = src_id_key[0].split(":", 1)[0] if src_id_key[0] else s_key[0]
+            if len(candidates) == 1 and len(boards_per_legacy_key.get(s_key, ())) == 1 and vendor == s_key[0]:
+                existing = candidates[0]
 
         if existing is None:
             to_insert.append(job)

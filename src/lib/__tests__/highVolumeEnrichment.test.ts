@@ -9,7 +9,9 @@ import {
   extractTopKeywords,
   computeDedupeHash,
   getSourcePriority,
+  sha256Hex,
 } from "../jobs/highVolumeEnrichment";
+import { createHash } from "node:crypto";
 
 describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
   it("classifies companies into the 4 canonical categories", () => {
@@ -74,43 +76,45 @@ describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
     expect(getSourcePriority("feed", "remotive")).toBe(2);
   });
 
-  it("declares all required columns, partial indexes, and unique constraints in migration 20261116a", () => {
+  it("migration 20261116a is a repair-aware additive delta (columns only, owned objects untouched)", () => {
     const migrationPath = path.resolve(
       __dirname,
       "../../../supabase/migrations/20261116a_high_volume_ingestion_schema.sql"
     );
     expect(fs.existsSync(migrationPath)).toBe(true);
-    const sql = fs.readFileSync(migrationPath, "utf8");
+    const raw = fs.readFileSync(migrationPath, "utf8");
+    const sql = raw.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
 
-    // 1. companies columns & check
+    // 1. Declares the columns the #642 ingestion code writes
     expect(sql).toMatch(/ALTER TABLE public\.companies ADD COLUMN IF NOT EXISTS canonical_domain text/i);
     expect(sql).toMatch(/ALTER TABLE public\.companies ADD COLUMN IF NOT EXISTS category text/i);
-    expect(sql).toMatch(/MNC_BIGTECH/);
-    expect(sql).toMatch(/HIGH_PRODUCT_YC/);
-    expect(sql).toMatch(/OTHER_STARTUPS/);
-    expect(sql).toMatch(/INDIAN_IT_AND_OTHER/);
-
-    // 2. jobs columns & check
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS role_category text/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS top_keywords text\[\]/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS source_id text/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS dedupe_hash text/i);
-    expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS is_remote boolean/i);
+    expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS is_remote boolean;/i);
     expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS logo_url text/i);
-    expect(sql).toMatch(/'SDE',\s*'AI_ML',\s*'CLOUD',\s*'DATA',\s*'OTHER'/);
-    expect(sql).toMatch(/jobs_source_type_check/i);
+    expect(sql).toMatch(/ALTER TABLE public\.jobs ADD COLUMN IF NOT EXISTS canonical_domain text/i);
+    expect(sql).toMatch(/added by 20261116a/);
 
-    // Assert migration is non-destructive (no destructive row mutations or renames)
-    expect(sql).not.toMatch(/UPDATE public\.jobs[\s\S]*?__dup_/i);
+    // 2. Leaves every #645 / #643 owned object alone: no functions, views, grants, constraints, indexes, row writes
+    expect(sql).not.toMatch(/CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|VIEW|TRIGGER)/i);
+    expect(sql).not.toMatch(/\b(CREATE|DROP)\s+(UNIQUE\s+)?INDEX/i);
+    expect(sql).not.toMatch(/\b(ADD|DROP)\s+CONSTRAINT/i);
+    expect(sql).not.toMatch(/\bDROP\s+(VIEW|FUNCTION|TABLE|COLUMN)/i);
+    expect(sql).not.toMatch(/\b(GRANT|REVOKE)\b/i);
+    expect(sql).not.toMatch(/\bUPDATE\s+public\./i);
+    expect(sql).not.toMatch(/merge_job_by_dedupe_priority|idx_jobs_active_dedupe_hash_uniq/i);
+  });
 
-    // 3. dedupe_hash is advisory (#643 contract): no merge trigger, no unique index on it
-    expect(sql).not.toMatch(/merge_job_by_dedupe_priority|trg_jobs_merge_dedupe_priority/i);
-    expect(sql).not.toMatch(/idx_jobs_active_dedupe_hash_uniq/i);
-
-    // 4. Partial indexes on is_active = TRUE and unique constraints
-    expect(sql).toMatch(/idx_jobs_active_category[\s\S]*?WHERE is_active = TRUE/i);
-    expect(sql).toMatch(/idx_jobs_active_country[\s\S]*?WHERE is_active = TRUE/i);
-    expect(sql).toMatch(/idx_jobs_active_posted_at_desc[\s\S]*?WHERE is_active = TRUE/i);
-    expect(sql).toMatch(/idx_jobs_source_id_source_job_id_uniq/i);
+  it("sha256Hex (Edge/browser-safe) matches node:crypto byte-for-byte", () => {
+    const samples = ["", "a", "abc", "x".repeat(55), "x".repeat(56), "x".repeat(64), "y".repeat(1000),
+      "v2|c:6:stripe|t:3:swe|co:2:us|loc:13:san francisco", "İstanbul ß ς 東京 \u{1F600} \uD800 lone"];
+    let seed = 7;
+    for (let i = 0; i < 200; i++) {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      samples.push(Array.from({ length: seed % 300 }, (_, j) => String.fromCodePoint(((seed >> (j % 16)) + j * 31) % 0x2fff)).join(""));
+    }
+    for (const s of samples) expect(sha256Hex(s)).toBe(createHash("sha256").update(s, "utf8").digest("hex"));
   });
 });

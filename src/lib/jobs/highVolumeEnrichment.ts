@@ -5,7 +5,9 @@
  * and Python scripts.scraper.enrichment.compute_similarity_hash_v2().
  */
 
-import * as crypto from 'crypto';
+// Browser/Edge-safe: no Node built-ins here (this module is bundled into client and Edge code).
+// Hashing uses the pure-JS sha256Hex below.
+const utf8Len = (s: string): number => new TextEncoder().encode(s).length;
 
 export const COMPANY_CATEGORIES = [
   'MNC_BIGTECH',
@@ -78,7 +80,7 @@ export function buildScopedJobIdentity(
   if (locationKey && typeof locationKey === 'string' && locationKey.trim()) {
     const cleanLoc = cleanLocationKey(locationKey);
     if (cleanLoc) {
-      const locLen = Buffer.byteLength(cleanLoc, 'utf8');
+      const locLen = utf8Len(cleanLoc);
       cleanJobId = `${cleanPid}#${locLen}:${cleanLoc}`;
     }
   }
@@ -143,10 +145,10 @@ export function buildSimilarityPayloadV2(
   const co = cleanCountry(country);
   const loc = cleanLocation(location);
 
-  const cLen = Buffer.byteLength(c, 'utf8');
-  const tLen = Buffer.byteLength(t, 'utf8');
-  const coLen = Buffer.byteLength(co, 'utf8');
-  const locLen = Buffer.byteLength(loc, 'utf8');
+  const cLen = utf8Len(c);
+  const tLen = utf8Len(t);
+  const coLen = utf8Len(co);
+  const locLen = utf8Len(loc);
 
   return `v2|c:${cLen}:${c}|t:${tLen}:${t}|co:${coLen}:${co}|loc:${locLen}:${loc}`;
 }
@@ -157,8 +159,7 @@ export function computeSimilarityHashV2(
   country?: string | null,
   location?: string | null
 ): string {
-  const payload = buildSimilarityPayloadV2(company, title, country, location);
-  return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
+  return sha256Hex(buildSimilarityPayloadV2(company, title, country, location));
 }
 
 /**

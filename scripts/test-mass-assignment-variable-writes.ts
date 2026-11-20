@@ -29,7 +29,6 @@ const BASELINE: Record<string, string> = {
   "src/lib/db/optimisticLock.ts :: update(patch)": "helper: caller supplies the patch; helper refuses a patch that sets row_version",
   "src/lib/early-access/gmail.ts :: insert(row)": "send-log row built from server values",
   "src/lib/billing/razorpay.ts :: update(rawBody)": "NOT a DB write: crypto HMAC update",
-  "src/lib/jobs/highVolumeEnrichment.ts :: update(payload)": "NOT a DB write: crypto sha256 hash update",
   "src/lib/resume/storage.ts :: upsert(payload)": "payload built from the validated candidate profile (two sites: first try and retry)",
 };
 const EXPECTED_COUNTS: Record<string, number> = { "src/lib/resume/storage.ts :: upsert(payload)": 2 };

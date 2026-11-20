@@ -285,6 +285,53 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         n2 = {**a, "source_job_id": None, "title": "y"}
         self.assertEqual(len(partition_set_diff([n1, n2], [])[0]), 2)
 
+    def test_same_vendor_native_id_collision_never_crosses_boards(self) -> None:
+        """greenhouse:b/42 must INSERT, never update greenhouse:a/42 (or a NULL-board row it cannot prove)."""
+        a = {"company": "A", "title": "SWE", "source_type": "greenhouse", "source_id": "greenhouse:a",
+             "source_job_id": "42", "source_priority": 1}
+        b = {**a, "company": "B", "source_id": "greenhouse:b"}
+        row_a = {"id": "uuid-a", **a}
+
+        # different non-null source_id, same vendor + native id: insert, row A untouched
+        ins, upd, unch = partition_set_diff([b], [row_a])
+        self.assertEqual(([j["source_id"] for j in ins], upd, unch), (["greenhouse:b"], [], []))
+
+        # both boards in one batch with row A present: A unchanged, B inserted
+        ins, upd, unch = partition_set_diff([a, b], [row_a])
+        self.assertEqual(([j["source_id"] for j in ins], upd, unch), (["greenhouse:b"], [], ["uuid-a"]))
+
+        # mutated A still updates its own row only
+        ins, upd, unch = partition_set_diff([{**a, "title": "Senior SWE"}, b], [row_a])
+        self.assertEqual(([j["source_id"] for j in ins], [u[0] for u in upd]), (["greenhouse:b"], ["uuid-a"]))
+
+    def test_null_board_legacy_fallback_only_when_unambiguous(self) -> None:
+        a = {"company": "A", "title": "SWE", "source_type": "greenhouse", "source_id": "greenhouse:a",
+             "source_job_id": "42", "source_priority": 1}
+        b = {**a, "company": "B", "source_id": "greenhouse:b"}
+        legacy = {"id": "uuid-legacy", **a, "source_id": None}
+
+        # one board, one legacy row, same vendor: adopt the legacy row
+        ins, upd, _ = partition_set_diff([a], [legacy])
+        self.assertEqual((ins, [u[0] for u in upd]), ([], ["uuid-legacy"]))
+
+        # two same-vendor boards claim native id 42: cannot tell whose legacy row it is -> insert both
+        ins, upd, unch = partition_set_diff([a, b], [legacy])
+        self.assertEqual((sorted(j["source_id"] for j in ins), upd, unch), (["greenhouse:a", "greenhouse:b"], [], []))
+
+        # two legacy rows for the same (vendor, native id): ambiguous -> insert
+        legacy2 = {**legacy, "id": "uuid-legacy-2", "company": "Other"}
+        ins, upd, _ = partition_set_diff([a], [legacy, legacy2])
+        self.assertEqual((len(ins), upd), (1, []))
+
+        # vendor in source_id disagrees with source_type: provenance unclear -> insert
+        odd = {**a, "source_id": "lever:a"}
+        ins, upd, _ = partition_set_diff([odd], [legacy])
+        self.assertEqual((len(ins), upd), (1, []))
+
+        # legacy rows never match across vendors
+        ins, upd, _ = partition_set_diff([{**a, "source_type": "lever", "source_id": "lever:a"}], [legacy])
+        self.assertEqual((len(ins), upd), (1, []))
+
     def test_persistence_failure_vetos_expiry_step(self) -> None:
         """Requirement 1: HTTP 400/409/500 errors on job or company writes veto expiry step."""
         def handler(request: httpx.Request) -> httpx.Response:
@@ -381,18 +428,27 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
 
     def test_sql_fixture_all_10_fetchers_and_legacy_cross_vendor_duplicates(self) -> None:
         """Requirement 1: Migration supports all 10 fetchers and legacy cross-vendor duplicate IDs without collision."""
-        migration_path = Path(__file__).resolve().parents[2] / "supabase" / "migrations" / "20261116a_high_volume_ingestion_schema.sql"
-        sql_content = migration_path.read_text(encoding="utf-8")
+        mig_dir = Path(__file__).resolve().parents[2] / "supabase" / "migrations"
+        sql_content = (mig_dir / "20261116a_high_volume_ingestion_schema.sql").read_text(encoding="utf-8")
+        # #645 owns the vendor CHECK and the canonical identity index; 16a must leave both alone
+        repair_d = (mig_dir / "20261116d_repair_642_identity_and_similarity_safety.sql").read_text(encoding="utf-8")
+        repair_e = (mig_dir / "20261116e_repair_642_concurrent_indexes.sql").read_text(encoding="utf-8")
 
         all_10_fetchers = [
             "greenhouse", "lever", "ashby", "smartrecruiters", "workday",
             "amazon", "microsoft", "jobspy", "arbeitnow", "adzuna",
         ]
         for f in all_10_fetchers:
-            self.assertIn(f"'{f}'", sql_content, f"Migration CHECK constraint must include {f}")
+            self.assertIn(f"'{f}'", repair_d, f"#645 jobs_source_type_check must include {f}")
 
-        self.assertIn("idx_jobs_source_id_source_job_id_uniq", sql_content)
-        self.assertIn("WHERE source_id IS NOT NULL", sql_content)
+        self.assertIn("idx_jobs_source_id_source_job_id_uniq", repair_e)
+        self.assertIn("WHERE source_id IS NOT NULL", repair_e)
+        self.assertIn("indisvalid", repair_e)
+
+        code = "\n".join(l for l in sql_content.splitlines() if not l.strip().startswith("--"))
+        for forbidden in ("CREATE OR REPLACE FUNCTION", "CREATE INDEX", "CREATE UNIQUE INDEX", "DROP INDEX",
+                          "ADD CONSTRAINT", "DROP CONSTRAINT", "CREATE OR REPLACE VIEW", "GRANT ", "UPDATE public."):
+            self.assertNotIn(forbidden, code, f"repair-aware 16a must not contain {forbidden!r}")
 
         # Simulate SQL unique index behavior on fixture data
         # Legacy rows have source_id IS NULL and can share the same numeric source_job_id across vendors
@@ -422,25 +478,11 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             indexed_keys.add(key)
         self.assertEqual(len(indexed_keys), len(all_10_fetchers))
 
-        # Requirement 2: Pre-check #3 must gate source_id read on column existence (safe on fresh baseline)
-        self.assertIn("column_name = 'source_id'", sql_content)
-        self.assertIn("information_schema.columns", sql_content)
-
-        # Requirement 3: Verify SQL must check indisvalid in pg_index, not only pg_indexes
-        self.assertIn("indisvalid", sql_content)
-        self.assertIn("pg_index", sql_content)
-
-        # Requirement 1: Non-destructive rollback must not drop additive columns
-        rollback_block = sql_content.split("-- ROLLBACK", 1)[1] if "-- ROLLBACK" in sql_content else ""
-        self.assertTrue(len(rollback_block) > 0, "Migration must contain ROLLBACK block")
-        self.assertNotIn("DROP COLUMN", rollback_block, "Rollback must be non-destructive and NOT drop additive columns")
-        self.assertIn("DROP VIEW IF EXISTS public.jobs_public", rollback_block, "Rollback must use transactional DROP VIEW to avoid column order conflicts")
-        self.assertIn("CREATE VIEW public.jobs_public AS", rollback_block, "Rollback must re-create pre-migration jobs_public view")
-
-        # Requirement 2: Rollback must preserve compatible expanded source_type check to prevent vendor row violations
-        self.assertIn("jobs_source_type_check", rollback_block)
-        for f in all_10_fetchers:
-            self.assertIn(f"'{f}'", rollback_block, f"Rollback constraint must retain vendor '{f}'")
+        # Rollback is a separate data-preserving script: only marked, empty, dependency-free columns; no CASCADE
+        rollback_sql = (mig_dir.parent / "scripts" / "rollback-20261116a.sql").read_text(encoding="utf-8")
+        self.assertIn("added by 20261116a", rollback_sql)
+        self.assertNotIn("CASCADE", "\n".join(l for l in rollback_sql.splitlines() if not l.strip().startswith("--")))
+        self.assertNotIn("DELETE FROM", rollback_sql)
 
         # Requirement 3: Actually execute forward then rollback SQL on populated Postgres fixture
         repo_root = Path(__file__).resolve().parents[2]
