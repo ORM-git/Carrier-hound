@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { normalizePlanCode } from "@/lib/billing/quota";
-import { PLAN_PRICING } from "@/config/plans";
+import { getAutoRenewPlan } from "@/lib/billing/autorenewPlans";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
@@ -248,14 +248,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. Parse and validate plan code: Flat Rs 499 monthly plan ONLY
+    // 5. Parse and validate plan code: weekly Rs 399, monthly Rs 499, quarterly Rs 2,199
     const rawPlan = bodyJson?.planCode || bodyJson?.planId || "monthly";
     const planCode = normalizePlanCode(rawPlan);
+    const autoRenewPlan = getAutoRenewPlan(planCode);
 
-    if (planCode !== "monthly") {
+    if (!planCode || !autoRenewPlan) {
       return NextResponse.json(
         {
-          error: "Only the flat Rs 499 monthly auto-renew subscription is supported",
+          error: "Auto-renew is supported only for the weekly, monthly and quarterly plans",
           code: "UNSUPPORTED_PLAN",
         },
         { status: 400 }
@@ -305,11 +306,11 @@ export async function POST(req: Request) {
 
     // 7. Plan ID from environment variables only — NEVER hardcoded
     const razorpayPlanId =
-      getRuntimeEnv("RAZORPAY_AUTORENEW_PLAN_MONTHLY", cfEnv) ||
-      process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
+      getRuntimeEnv(autoRenewPlan.envVar, cfEnv) ||
+      process.env[autoRenewPlan.envVar];
 
     if (!razorpayPlanId || !razorpayPlanId.trim()) {
-      log.error("Payment configuration error: RAZORPAY_AUTORENEW_PLAN_MONTHLY env var missing");
+      log.error(`Payment configuration error: ${autoRenewPlan.envVar} env var missing`);
       return NextResponse.json(
         {
           error: "Subscription plan is not configured on server",
@@ -324,7 +325,7 @@ export async function POST(req: Request) {
       razorpayPlanId,
       keyId,
       keySecret,
-      { fetchFn: deps.fetchFn, timeoutMs: deps.planValidationTimeoutMs }
+      { fetchFn: deps.fetchFn, timeoutMs: deps.planValidationTimeoutMs, expected: autoRenewPlan }
     );
 
     if (!planValidation.valid) {
@@ -341,8 +342,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const amountInPaise = PLAN_PRICING.monthly.price_paise; // 49900 paise = Rs 499
-    const totalCount = 12;
+    const amountInPaise = autoRenewPlan.amountPaise;
+    const totalCount = autoRenewPlan.totalCount;
 
     // 9. Atomic single-flight per user & plan
     const flightKey = `sub_create:${user.id}:${planCode}`;

@@ -519,7 +519,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
       }
 
       // -------------------------------------------------------------------------
-      // (5) Subscription Lifecycle Events (pending, halted, cancelled, past_due, completed)
+      // (5) Subscription Lifecycle Events (pending, halted, cancelled, past_due, completed, paused, resumed)
       // Only mutates if subscription_id is the currently bound mandate.
       // -------------------------------------------------------------------------
       const isLifecycleEvent =
@@ -528,7 +528,9 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         eventType === "subscription.cancelled" ||
         eventType === "subscription.canceled" ||
         eventType === "subscription.completed" ||
-        eventType === "subscription.past_due";
+        eventType === "subscription.past_due" ||
+        eventType === "subscription.paused" ||
+        eventType === "subscription.resumed";
 
       if (isLifecycleEvent) {
         const subId =

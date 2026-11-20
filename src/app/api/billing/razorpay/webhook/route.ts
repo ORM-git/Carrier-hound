@@ -597,7 +597,7 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------------------
-    // (5) Subscription Lifecycle Events (halted, cancelled, completed, past_due, pending)
+    // (5) Subscription Lifecycle Events (halted, cancelled, completed, past_due, pending, paused, resumed)
     // Only mutates if subscription_id is the currently bound mandate.
     // Ignores out-of-order older events.
     // -------------------------------------------------------------------------
@@ -607,7 +607,9 @@ export async function POST(req: Request) {
       eventType === "subscription.cancelled" ||
       eventType === "subscription.canceled" ||
       eventType === "subscription.completed" ||
-      eventType === "subscription.past_due";
+      eventType === "subscription.past_due" ||
+      eventType === "subscription.paused" ||
+      eventType === "subscription.resumed";
 
     if (isLifecycleEvent) {
       const subId =

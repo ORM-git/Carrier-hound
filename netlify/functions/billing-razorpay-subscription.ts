@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { normalizePlanCode } from "../../src/lib/billing/quota";
-import { PLAN_PRICING } from "../../src/config/plans";
+import { getAutoRenewPlan } from "../../src/lib/billing/autorenewPlans";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { singleFlight } from "../../src/lib/cache/singleFlight";
 import { validateRazorpayPlan } from "../../src/lib/billing/validatePlan";
@@ -449,16 +449,17 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      // Plan code validation: Flat Rs 499 monthly plan ONLY
+      // Plan code validation: weekly Rs 399, monthly Rs 499, quarterly Rs 2,199
       const rawPlan = body?.planCode || body?.planId || "monthly";
       const planCode = normalizePlanCode(rawPlan);
+      const autoRenewPlan = getAutoRenewPlan(planCode);
 
-      if (planCode !== "monthly") {
+      if (!planCode || !autoRenewPlan) {
         return {
           statusCode: 400,
           headers,
           body: JSON.stringify({
-            error: "Only the flat Rs 499 monthly auto-renew subscription is supported",
+            error: "Auto-renew is supported only for the weekly, monthly and quarterly plans",
             code: "UNSUPPORTED_PLAN",
           }),
         };
@@ -508,11 +509,11 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
       };
 
       // Plan ID from environment variables only — NEVER hardcoded
-      const razorpayPlanId = process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY;
+      const razorpayPlanId = process.env[autoRenewPlan.envVar];
 
       if (!razorpayPlanId || !razorpayPlanId.trim()) {
         safeLog.error(
-          "[Netlify /billing-razorpay-subscription] RAZORPAY_AUTORENEW_PLAN_MONTHLY missing"
+          `[Netlify /billing-razorpay-subscription] ${autoRenewPlan.envVar} missing`
         );
         return {
           statusCode: 503,
@@ -529,7 +530,7 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         razorpayPlanId,
         keyId,
         keySecret,
-        { fetchFn: deps.fetchFn, timeoutMs: (deps as any)?.planValidationTimeoutMs }
+        { fetchFn: deps.fetchFn, timeoutMs: (deps as any)?.planValidationTimeoutMs, expected: autoRenewPlan }
       );
 
       if (!planValidation.valid) {
@@ -547,8 +548,8 @@ export function createHandler(deps: BillingSubscriptionDeps = {}) {
         };
       }
 
-      const amountInPaise = PLAN_PRICING.monthly.price_paise; // 49900 paise = Rs 499
-      const totalCount = 12;
+      const amountInPaise = autoRenewPlan.amountPaise;
+      const totalCount = autoRenewPlan.totalCount;
 
       // Single flight coalescing
       const flightKey = `sub_create:${user.id}:${planCode}`;

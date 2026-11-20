@@ -494,9 +494,12 @@ function createMockSupabase(db: MockDbState) {
         } else if (
           eventType === "subscription.cancelled" ||
           eventType === "subscription.canceled" ||
-          eventType === "subscription.completed"
+          eventType === "subscription.completed" ||
+          eventType === "subscription.paused"
         ) {
           sub.cancel_at_period_end = true;
+        } else if (eventType === "subscription.resumed") {
+          sub.cancel_at_period_end = false;
         }
 
         return {
@@ -1700,6 +1703,102 @@ async function runTestSuite() {
 
     assert.strictEqual(targetSub.status, "active");
   });
+
+  await runTest("36b. Lifecycle events: paused ends renewal at period end and keeps access; resumed turns renewal back on; a replayed pause is deduped", async () => {
+    const sub: MockSubscription = {
+      id: "sub_row_pause",
+      subscription_id: "sub_rzp_pause",
+      user_id: "user_pause",
+      plan_id: "quarterly",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: { mode: "test" },
+    };
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([["sub_row_pause", sub]]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const send = (event: string, eventId: string) => {
+      const body = JSON.stringify({ event, payload: { subscription: { entity: { id: "sub_rzp_pause" } } } });
+      return POST(buildMockRequest({ body, eventId, signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb }));
+    };
+
+    const paused = await send("subscription.paused", "evt_pause_1");
+    assert.strictEqual(paused.status, 200);
+    assert.strictEqual((await paused.json()).applied, true);
+    assert.strictEqual(sub.status, "active");
+    assert.strictEqual(sub.cancel_at_period_end, true);
+
+    const resumed = await send("subscription.resumed", "evt_resume_1");
+    assert.strictEqual(resumed.status, 200);
+    assert.strictEqual(sub.cancel_at_period_end, false);
+
+    const replay = await send("subscription.paused", "evt_pause_1");
+    assert.strictEqual(replay.status, 200);
+    assert.strictEqual((await replay.json()).alreadyProcessed, true);
+    assert.strictEqual(sub.cancel_at_period_end, false, "replayed pause must not change state");
+  });
+
+  for (const plan of [
+    { code: "weekly" as const, days: 7 },
+    { code: "quarterly" as const, days: 90 },
+  ]) {
+    await runTest(`36c. ${plan.code} auto-renew: subscription.charged at ${PLAN_PRICING[plan.code].price_inr} extends ${plan.days} days; wrong amount refused`, async () => {
+      const initialEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+      const sub: MockSubscription = {
+        id: `sub_row_${plan.code}`,
+        subscription_id: `sub_rzp_${plan.code}`,
+        user_id: `user_${plan.code}`,
+        plan_id: plan.code,
+        status: "active",
+        current_period_end: initialEnd,
+        metadata: { processed_payments: ["pay_first"] },
+      };
+      const mockDb: MockDbState = {
+        orders: new Map([[
+          `sub_rzp_${plan.code}`,
+          {
+            id: `order_${plan.code}`,
+            provider_order_id: `sub_rzp_${plan.code}`,
+            user_id: `user_${plan.code}`,
+            provider: "razorpay",
+            mode: "test",
+            status: "paid",
+            amount_paise: PLAN_PRICING[plan.code].price_paise,
+            plan_code: plan.code,
+          },
+        ]]),
+        subscriptions: new Map([[`sub_row_${plan.code}`, sub]]),
+        webhookEvents: new Set(),
+        failedEvents: [],
+        rpcFulfilCalls: [],
+        rpcRenewalCalls: [],
+      };
+      const charge = (paymentId: string, amount: number) => {
+        const body = JSON.stringify({
+          event: "subscription.charged",
+          payload: {
+            subscription: { entity: { id: `sub_rzp_${plan.code}` } },
+            payment: { entity: { id: paymentId, amount } },
+          },
+        });
+        return POST(buildMockRequest({ body, eventId: `evt_${paymentId}`, signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb }));
+      };
+
+      const res = await charge(`pay_${plan.code}_2`, PLAN_PRICING[plan.code].price_paise);
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual((await res.json()).renewed, true);
+      const extendedMs = new Date(sub.current_period_end!).getTime() - new Date(initialEnd).getTime();
+      assert.ok(Math.abs(extendedMs - plan.days * 86_400_000) < 60000, `period must extend by ${plan.days} days`);
+
+      const wrong = await charge(`pay_${plan.code}_wrong`, PLAN_PRICING.monthly.price_paise);
+      assert.strictEqual(wrong.status, 400);
+      assert.strictEqual((await wrong.json()).code, "PLAN_AMOUNT_MISMATCH");
+    });
+  }
 
   await runTest("37. Deduplication: Duplicate webhook event_id returns 200 alreadyProcessed without re-running RPC", async () => {
     const mockDb: MockDbState = {

@@ -294,9 +294,9 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
   });
 
   describe("Plan validation & Server configuration (Blocker 4)", () => {
-    it("rejects non-monthly plans (weekly, quarterly) with 400 UNSUPPORTED_PLAN", async () => {
+    it("rejects plans outside weekly/monthly/quarterly with 400 UNSUPPORTED_PLAN", async () => {
       const mockDb = createMockSupabase();
-      for (const invalidPlan of ["weekly", "quarterly", "annual"]) {
+      for (const invalidPlan of ["annual", "lifetime", "addon_30"]) {
         const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
@@ -484,6 +484,113 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
       const body = JSON.parse(res.body);
       expect(body.subscriptionId).toBe("sub_netlify_monthly_499");
       expect(body.planCode).toBe("monthly");
+    });
+
+    describe.each([
+      { planCode: "weekly", envVar: "RAZORPAY_AUTORENEW_PLAN_WEEKLY", planId: "plan_weekly_rzp_399", period: "weekly", interval: 1, amount: 39900, totalCount: 52 },
+      { planCode: "quarterly", envVar: "RAZORPAY_AUTORENEW_PLAN_QUARTERLY", planId: "plan_quarterly_rzp_2199", period: "monthly", interval: 3, amount: 219900, totalCount: 4 },
+    ])("$planCode auto-renew", ({ planCode, envVar, planId, period, interval, amount, totalCount }) => {
+      const planResponse = { id: planId, entity: "plan", period, interval, item: { amount, currency: "INR" } };
+
+      const mockGateway = () => {
+        const calls: { url: string; body: any }[] = [];
+        fetchSpy.mockImplementation(async (url: any, init: any) => {
+          const urlStr = String(url);
+          calls.push({ url: urlStr, body: init?.body ? JSON.parse(init.body) : null });
+          if (urlStr.includes("/plans/")) {
+            return new Response(JSON.stringify(planResponse), { status: 200 });
+          }
+          return new Response(JSON.stringify({ id: `sub_rzp_${planCode}`, status: "created" }), { status: 200 });
+        });
+        return calls;
+      };
+
+      beforeEach(() => {
+        process.env[envVar] = planId;
+      });
+
+      it("Next.js route creates the subscription with its own plan id, amount and ~1 year cap", async () => {
+        const calls = mockGateway();
+        const mockDb = createMockSupabase();
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode, consent: validConsent }),
+        });
+        (req as any).__testDeps = {
+          getSupabaseAdmin: () => mockDb,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: fetchSpy,
+        };
+
+        const res = await nextSubscriptionPOST(req);
+        expect(res.status).toBe(200);
+        expect((await res.json()).planCode).toBe(planCode);
+        expect(calls[0].url).toContain(`/plans/${planId}`);
+        const createCall = calls.find((c) => c.url.endsWith("/v1/subscriptions"));
+        expect(createCall?.body.plan_id).toBe(planId);
+        expect(createCall?.body.total_count).toBe(totalCount);
+        expect(createCall?.body.notes.plan_code).toBe(planCode);
+        const [order] = mockDb._getOrders();
+        expect(order.plan_code).toBe(planCode);
+        expect(order.amount_paise).toBe(amount);
+      });
+
+      it("Netlify handler creates the same subscription", async () => {
+        const calls = mockGateway();
+        const handler = createNetlifySubscriptionHandler({
+          getSupabaseAdmin: () => createMockSupabase(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: fetchSpy,
+        });
+        const res = await handler({
+          httpMethod: "POST",
+          headers: { authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode, consent: validConsent }),
+        });
+        expect(res.statusCode).toBe(200);
+        const createCall = calls.find((c) => c.url.endsWith("/v1/subscriptions"));
+        expect(createCall?.body.plan_id).toBe(planId);
+        expect(createCall?.body.total_count).toBe(totalCount);
+      });
+
+      it(`returns 503 PLAN_NOT_CONFIGURED when ${envVar} is missing`, async () => {
+        delete process.env[envVar];
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode, consent: validConsent }),
+        });
+        (req as any).__testDeps = {
+          getSupabaseAdmin: () => createMockSupabase(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: fetchSpy,
+        };
+        const res = await nextSubscriptionPOST(req);
+        expect(res.status).toBe(503);
+        expect((await res.json()).code).toBe("PLAN_NOT_CONFIGURED");
+        expect(fetchSpy).not.toHaveBeenCalled();
+      });
+
+      it("refuses a Razorpay plan whose amount does not match this plan's price", async () => {
+        fetchSpy.mockImplementation(async () =>
+          new Response(JSON.stringify({ ...planResponse, item: { amount: 49900, currency: "INR" } }), { status: 200 })
+        );
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode, consent: validConsent }),
+        });
+        (req as any).__testDeps = {
+          getSupabaseAdmin: () => createMockSupabase(),
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: fetchSpy,
+        };
+        const res = await nextSubscriptionPOST(req);
+        expect(res.status).toBe(502);
+        expect((await res.json()).code).toBe("INVALID_PLAN_AMOUNT");
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+      });
     });
 
     it("Netlify handler rejects request without consent before calling Razorpay", async () => {
