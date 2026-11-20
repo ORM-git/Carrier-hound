@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
-import { computeFitDiagnostics, StandardJobScoringInput } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, StandardJobScoringInput, withSharedScore } from "@/lib/matcher/scoring";
+import { answersFromCandidate, scoreJobRecommendation } from "@/lib/jobs/recommendations";
 import { formatSalary } from "@/lib/salary/parser";
 import { extractCandidateRelevanceTerms, LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -257,8 +258,12 @@ export async function POST(req: Request) {
       }
     }
 
-    // 5. Score Candidates with Shared Unified Scoring Function
-    const scoredJobs = jobsToScore.map((row) => {
+    // 5. Score with the shared recommendation scorer (relevance gate included); computeFitDiagnostics only
+    // explains the match (matched/missing skills) and carries the shared score.
+    const sharedAnswers = answersFromCandidate(candidate, null);
+    const scoredJobs = jobsToScore.flatMap((row) => {
+      const shared = scoreJobRecommendation(row, sharedAnswers);
+      if (shared.score <= 0) return [];
       const originalSalary =
         formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) ||
         row.salary_text || null;
@@ -279,7 +284,7 @@ export async function POST(req: Request) {
         salary_text: displaySalary || originalSalary || "",
       };
 
-      const diagnostics = computeFitDiagnostics(candidate, standardizedJob);
+      const diagnostics = withSharedScore(computeFitDiagnostics(candidate, standardizedJob), shared.score);
 
       const liveJob: LiveJob = {
         id: row.id,
@@ -303,7 +308,7 @@ export async function POST(req: Request) {
         postedAt: row.posted_at || row.first_seen_at,
       };
 
-      return { job: liveJob, diagnostics };
+      return [{ job: liveJob, diagnostics }];
     });
 
     // 6. Sort by Match Score descending, then Recency descending

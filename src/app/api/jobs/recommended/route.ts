@@ -5,7 +5,7 @@ import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRat
 import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
-import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers, hasResumeSignals } from "@/lib/jobs/recommendations";
+import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers, hasResumeSignals, buildRelevancePrefilter } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
 import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
@@ -426,6 +426,14 @@ export async function GET(req: Request) {
       }
     }
 
+    // 14. Relevance pre-filter: only jobs whose title (or trusted category) can match the user's target role,
+    // field or skills enter the pool, so the pool is the latest RECOMMENDED_POOL_SIZE *relevant* jobs rather
+    // than the latest jobs overall. The relevance gate in the shared scorer then decides per job.
+    const relevancePrefilter = buildRelevancePrefilter(answers);
+    if (relevancePrefilter) {
+      query = query.or(relevancePrefilter.orClause);
+    }
+
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -456,8 +464,8 @@ export async function GET(req: Request) {
       ? rankJobsByRecommendation(candidateJobs, answers)
       : rankJobsByRecommendation(candidateJobs, null);
 
-    // Drop rows with matchScore <= 0 (ineligible under saved preferences). A saved "remote" preference is
-    // additive and is handled in ranking; resume alone never drops jobs.
+    // Drop rows with matchScore <= 0 (ineligible under saved preferences or not relevant to the user's role).
+    // A saved "remote" preference is additive and is handled in ranking.
     const qualifyingJobs = isPersonalized
       ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
       : rankedJobs;

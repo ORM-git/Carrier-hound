@@ -1,6 +1,6 @@
 import { createClient } from "../supabase/client";
 import { getCandidateProfile } from "../resume/storage";
-import { computeFitDiagnostics } from "../matcher/scoring";
+import { computeFitDiagnostics, withSharedScore } from "../matcher/scoring";
 import { getLiveJobs } from "../jobs/service";
 import { getProAccessStatus } from "../billing/subscription";
 import { createLogger } from "@/lib/observability/logger";
@@ -114,12 +114,14 @@ export async function getTodayDigest(userId?: string, isProUser?: boolean): Prom
       };
     }
 
-    // Scan full relevant dataset (up to 200 jobs) rather than subset of 50
-    const liveRes = await getLiveJobs({ page: 1, pageSize: 200, isPro });
+    // Shared recommendation scorer (relevance gate included) over up to 200 relevant jobs;
+    // computeFitDiagnostics only explains each match and carries the shared score.
+    const liveRes = await getLiveJobs({ page: 1, pageSize: 200, isPro, sortBy: "match", candidate: profile });
     const matches: DigestMatchItem[] = [];
 
     for (const job of liveRes.jobs) {
-      const diagnostics = computeFitDiagnostics(profile, {
+      if (typeof job.matchScore !== "number" || job.matchScore <= 0) continue;
+      const fit = computeFitDiagnostics(profile, {
         id: job.id,
         title: job.title,
         company: job.company,
@@ -129,21 +131,20 @@ export async function getTodayDigest(userId?: string, isProUser?: boolean): Prom
         skills: job.skills,
         salary_text: job.salary,
       });
+      const diagnostics = withSharedScore(fit, job.matchScore);
 
-      if (diagnostics.score >= 35) {
-        matches.push({
-          jobId: job.id,
-          title: job.title,
-          company: isPro ? job.company : "Confidential Employer",
-          location: job.location || "Remote",
-          salaryText: isPro ? job.salary : "",
-          applyUrl: isPro ? job.applyUrl : "",
-          score: diagnostics.score,
-          scoreGrade: diagnostics.scoreGrade,
-          matchedSkills: diagnostics.matchedSkills,
-          missingSkills: diagnostics.missingSkills,
-        });
-      }
+      matches.push({
+        jobId: job.id,
+        title: job.title,
+        company: isPro ? job.company : "Confidential Employer",
+        location: job.location || "Remote",
+        salaryText: isPro ? job.salary : "",
+        applyUrl: isPro ? job.applyUrl : "",
+        score: diagnostics.score,
+        scoreGrade: diagnostics.scoreGrade,
+        matchedSkills: diagnostics.matchedSkills,
+        missingSkills: diagnostics.missingSkills,
+      });
     }
 
     matches.sort((a, b) => b.score - a.score);

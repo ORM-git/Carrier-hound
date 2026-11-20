@@ -879,7 +879,8 @@ describe("5. Signed-in Free (no subscription): India + Open to Remote + intern",
   const ELIGIBLE = {
     inIntern: mk("in-intern", "Software Engineering Intern", { location: "Bengaluru, India", country_code: "IN", job_type: "internship" }),
     wwGrad: mk("ww-grad", "Graduate Software Engineer", { location: "Remote (Worldwide)", remote: true, remote_scope: "worldwide" }, 2),
-    unrestrictedRemote: mk("remote-junior", "Junior Data Analyst", { location: "Remote", remote: true, remote_scope: "remote" }, 3),
+    // On-role title: the relevance gate (correctly) drops off-role jobs such as a Data Analyst for a Software Engineer
+    unrestrictedRemote: mk("remote-junior", "Junior Software Developer", { location: "Remote", remote: true, remote_scope: "remote" }, 3),
     inInternal: mk("in-internal", "Internal Tools Engineer", { location: "Pune, India", country_code: "IN" }, 4),
   };
   // Must never appear: restricted elsewhere, Indiana (not India), or senior
@@ -1164,5 +1165,60 @@ describe("6. Non-success HTTP from /api/jobs/recommended is a retryable error, n
     respond(403);
     const res = await call();
     expect(res.error).toBe("forbidden");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Relevance gate + relevant candidate pool (one scoring path).
+// 1,100 newest jobs are all off-role (sales, legal stored as category "engineering"); 5 older jobs are backend.
+// The old pool (latest 1,000 jobs, then score) could never reach the backend jobs and recommended off-role ones.
+// ---------------------------------------------------------------------------------------------------
+describe("6. Relevance gate and relevant candidate pool", () => {
+  const day = 864e5;
+  const mk = (id: string, title: string, category: string, ageDays: number) => ({
+    id,
+    title,
+    company: `Company ${id}`,
+    company_id: `co_${id}`,
+    category,
+    job_type: "full-time",
+    location: "Remote (Worldwide)",
+    remote: true,
+    remote_scope: "worldwide",
+    remote_eligibility: "worldwide",
+    status: "active",
+    is_active: true,
+    posted_at: new Date(Date.now() - ageDays * day).toISOString(),
+    created_at: new Date(Date.now() - ageDays * day).toISOString(),
+    skills: [],
+  });
+
+  beforeEach(() => {
+    const offRole = Array.from({ length: 1100 }, (_, i) =>
+      i % 2 === 0
+        ? mk(`ae-${i}`, `Enterprise Account Executive ${i}`, "sales", 1 + i / 1000)
+        : mk(`counsel-${i}`, `Commercial Counsel ${i}`, "engineering", 1 + i / 1000)
+    );
+    const backend = Array.from({ length: 5 }, (_, i) => mk(`be-${i}`, `Backend Engineer ${i}`, "engineering", 60 + i));
+    state.tables.jobs = [...offRole, ...backend];
+    state.tables.jobs_public = state.tables.jobs;
+  });
+
+  it("finds older on-role jobs beyond the latest 1,000 and never returns off-role ones", async () => {
+    const res = await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?roles=Backend%20Developer&experienceLevel=mid&remotePreference=remote&pageSize=50")
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.jobs.map((j: any) => j.id).sort()).toEqual(["be-0", "be-1", "be-2", "be-3", "be-4"]);
+    expect(body.jobs.every((j: any) => /backend/i.test(j.title))).toBe(true);
+    expect(body.totalCount).toBe(5);
+  });
+
+  it("a user with no role, field or skills keeps the latest-jobs fallback (gate open)", async () => {
+    const res = await recommendedRoute(req("http://localhost/api/jobs/recommended?pageSize=5"));
+    const body = await res.json();
+    expect(body.jobs).toHaveLength(5);
+    expect(body.personalized).toBe(false);
   });
 });

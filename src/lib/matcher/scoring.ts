@@ -584,11 +584,7 @@ export function computeFitDiagnostics(
     Math.max(5, skillScore + titleScore + experienceScore + remoteScore + seniorityAdjustment)
   );
 
-  let scoreGrade: "high" | "good" | "moderate" | "low" = "low";
-  if (finalScore >= 75) scoreGrade = "high";
-  else if (finalScore >= 55) scoreGrade = "good";
-  else if (finalScore >= 35) scoreGrade = "moderate";
-  else scoreGrade = "low";
+  const scoreGrade = gradeForScore(finalScore);
 
   // Construct factual "Why You Fit" reasons
   const whyYouFit: string[] = [];
@@ -681,6 +677,23 @@ export function computeFitDiagnostics(
  */
 export const calculateConsistentJobMatchScore = computeFitDiagnostics;
 
+export function gradeForScore(score: number): FitDiagnosticsResult["scoreGrade"] {
+  if (score >= 75) return "high";
+  if (score >= 55) return "good";
+  if (score >= 35) return "moderate";
+  return "low";
+}
+
+/**
+ * Recommendation lists rank and display the shared recommendation score (src/lib/jobs/recommendations.ts);
+ * computeFitDiagnostics only supplies the explanation (matched/missing skills, why-you-fit). This puts the
+ * shared score and its grade on the diagnostics so the number shown matches the ranking.
+ */
+export function withSharedScore(diagnostics: FitDiagnosticsResult, sharedScore: number): FitDiagnosticsResult {
+  const score = Math.max(0, Math.min(100, Math.round(sharedScore)));
+  return { ...diagnostics, score, scoreGrade: gradeForScore(score) };
+}
+
 /**
  * Constructs a factual, 1-2 line summary built strictly from real diagnostics
  * (matched skills, years of experience) with zero invented claims or marketing fluff.
@@ -745,6 +758,8 @@ export interface RecommendedRankingJobInput {
   salary?: string | null;
   /** Most recent known timestamp for the listing (posted/discovered), ISO string. */
   postedAt?: string | null;
+  /** Shared recommendation score from the server (src/lib/jobs/recommendations.ts), when the feed provides one. */
+  matchScore?: number | null;
 }
 
 export interface RecommendedRankingPreferences {
@@ -870,8 +885,12 @@ export function compareByRecommendedRanking(
   preferences?: RecommendedRankingPreferences | null,
   now: number = Date.now()
 ): number {
-  const scoreA = computeRecommendedRankingScore(a, candidate, preferences, now);
-  const scoreB = computeRecommendedRankingScore(b, candidate, preferences, now);
+  // The feed already ranked these with the shared recommendation score: keep that order (one scoring path).
+  // The weighted local score below only orders lists that carry no shared score.
+  const sharedA = typeof a.matchScore === "number" && Number.isFinite(a.matchScore) ? a.matchScore : null;
+  const sharedB = typeof b.matchScore === "number" && Number.isFinite(b.matchScore) ? b.matchScore : null;
+  const scoreA = sharedA !== null && sharedB !== null ? sharedA : computeRecommendedRankingScore(a, candidate, preferences, now);
+  const scoreB = sharedA !== null && sharedB !== null ? sharedB : computeRecommendedRankingScore(b, candidate, preferences, now);
   if (scoreB !== scoreA) return scoreB - scoreA;
 
   const dateA = a.postedAt ? new Date(a.postedAt).getTime() : 0;

@@ -1,7 +1,9 @@
 /**
  * src/lib/jobs/recommendations.ts
  *
- * Deterministic recommendation scoring engine for CareerMonke.
+ * Deterministic recommendation scoring engine for CareerMonke: the ONE scoring path for every recommendation
+ * surface (/api/jobs/recommended, the jobs service, Top 10, the daily digest). Jobs that fail the relevance gate
+ * (isRelevantToProfile: no overlap with the user's target role, field or skills) are never recommended.
  * Ranks active jobs against user onboarding answers:
  * 1. Target Role / Category match (up to 40 pts)
  * 2. Location / Work Model (Remote) match (up to 30 pts)
@@ -19,6 +21,7 @@ import { isJobEligible } from "./eligibility";
 import { isEarlyCareerJob } from "./experienceLevels";
 import { detectPayPeriod, parseSalary } from "../salary/parser";
 import { convertCurrency } from "../salary/fx";
+import type { CandidateProfile } from "../resume/types";
 
 export interface OnboardingAnswers {
   roles?: string[];
@@ -115,6 +118,227 @@ export function scoreResumeMatch(
   if (matched.length > 0) reasons.push(`Matches your resume skills: ${matched.slice(0, 3).join(", ")}`);
 
   return { score: Math.min(RESUME_TITLE_MAX + RESUME_SKILL_MAX, titleScore + skillScore), reasons };
+}
+
+// =============================================================================
+// RELEVANCE GATE
+// A job is only recommended when its title or field overlaps the user's target role, field or
+// skills, whatever its numeric score (location/seniority/recency alone never qualify a job).
+// =============================================================================
+
+/** Title keywords per field. Used to classify job titles and user roles, and as SQL pre-filter terms. */
+export const FIELD_TITLE_KEYWORDS: Record<string, string[]> = {
+  engineering: [
+    "software", "developer", "backend", "back-end", "back end", "frontend", "front-end", "front end",
+    "full stack", "full-stack", "fullstack", "programmer", "sde", "swe", "devops", "sre", "site reliability",
+    "platform engineer", "infrastructure engineer", "cloud engineer", "mobile engineer", "ios", "android",
+    "qa engineer", "sdet", "test engineer", "automation engineer", "web developer", "firmware", "embedded",
+    "security engineer", "application engineer", "software architect",
+    "engineering manager", "member of technical staff",
+  ],
+  data: [
+    "data scientist", "data analyst", "data engineer", "analytics", "business intelligence", "bi analyst",
+    "bi developer", "machine learning", "ml engineer", "ai engineer", "data science", "statistician",
+  ],
+  design: ["designer", "ux", "user experience", "product design", "graphic design", "visual design", "interaction design"],
+  product: ["product manager", "product owner", "product lead", "program manager", "project manager", "technical program"],
+  marketing: [
+    "marketing", "marketer", "growth", "seo", "sem", "content", "brand", "social media", "communications", "copywriter",
+    "demand generation", "campaign", "public relations", "community manager",
+  ],
+  sales: ["sales", "account executive", "business development", "sdr", "bdr", "account manager", "partnerships"],
+  // Role nouns only: "financial" / "finance" alone are domain words ("Account Executive - Financial Services")
+  finance: [
+    "financial analyst", "finance analyst", "finance manager", "finance director", "head of finance", "finance business partner",
+    "strategic finance", "financial planning", "financial controller", "financial reporting", "corporate finance",
+    "accountant", "accounting", "controller", "fp&a", "auditor", "audit", "tax", "treasury", "bookkeeper", "payroll",
+    "credit analyst", "risk analyst", "investment analyst", "actuary", "actuarial", "accounts payable", "accounts receivable", "cfo",
+  ],
+  legal: ["legal", "counsel", "attorney", "lawyer", "paralegal", "compliance", "contracts", "solicitor"],
+  hr: ["recruiter", "recruiting", "talent acquisition", "human resources", "hr", "people operations", "people partner", "hrbp"],
+  operations: ["operations", "logistics", "supply chain", "procurement"],
+  support: ["customer support", "customer success", "support specialist", "help desk", "helpdesk", "technical support", "customer service", "support engineer"],
+  healthcare: ["nurse", "clinical", "physician", "medical", "healthcare", "pharmacist", "therapist"],
+  admin: ["executive assistant", "administrative assistant", "personal assistant", "receptionist", "office manager", "office coordinator"],
+};
+
+/**
+ * Role nouns that decide the field on their own, whatever domain words follow: "Account Executive -
+ * Financial Services" is a sales role, "Executive Assistant, Marketing" an admin role.
+ */
+const EXCLUSIVE_FIELD_KEYWORDS: Record<string, string[]> = {
+  admin: FIELD_TITLE_KEYWORDS.admin,
+  sales: [
+    "account executive", "sales development", "business development", "sdr", "bdr", "account manager", "sales representative",
+    "presales", "pre-sales", "sales engineer", "solution engineer", "solutions engineer",
+  ],
+  hr: ["recruiter", "talent acquisition"],
+  engineering: [
+    "software engineer", "software developer", "software development engineer", "backend engineer", "back-end engineer",
+    "frontend engineer", "front-end engineer", "full stack engineer", "full-stack engineer", "fullstack engineer",
+    "forward deployed engineer", "devops engineer", "site reliability engineer", "platform engineer", "growth engineer",
+  ],
+};
+
+/** jobs.category slug -> field. "engineering" is the ingest default for many non-tech roles, so it is never trusted alone. */
+const CATEGORY_FIELD: Record<string, string> = {
+  software: "engineering", devops: "engineering", "qa-testing": "engineering", "cyber-security": "engineering",
+  ai: "data", "ai-ml": "data", data: "data", "data-analytics": "data", "data-science": "data",
+  design: "design", product: "product", marketing: "marketing", sales: "sales", finance: "finance",
+  legal: "legal", hr: "hr", operations: "operations", "customer-support": "support", healthcare: "healthcare",
+};
+const UNTRUSTED_JOB_CATEGORIES = new Set(["engineering"]);
+const GENERIC_ENGINEERING_TITLE = /\b(engineer|engineering|developer|programmer|technical)\b/i;
+
+/** Words that say nothing about the field (seniority, generic job nouns). Never enough to pass the gate. */
+const GATE_GENERIC_TOKENS = new Set([
+  "and", "or", "the", "for", "with", "in", "at", "of", "to", "developer", "engineer", "specialist", "manager",
+  "senior", "sr", "junior", "jr", "lead", "staff", "principal", "head", "director", "chief", "vp", "intern",
+  "internship", "associate", "analyst", "consultant", "coordinator", "officer", "executive", "representative",
+  "assistant", "administrator", "remote", "contract", "full", "time", "part", "level", "entry", "mid",
+]);
+
+const MAX_PROFILE_SKILLS = 40;
+const MAX_PREFILTER_SKILLS = 15;
+
+/** Fields a title (or a role the user typed) belongs to, from FIELD_TITLE_KEYWORDS. */
+export function fieldsForTitle(text?: string | null): Set<string> {
+  const t = (text || "").toLowerCase();
+  const out = new Set<string>();
+  if (!t) return out;
+  for (const [field, keywords] of Object.entries(EXCLUSIVE_FIELD_KEYWORDS)) {
+    if (keywords.some((k) => containsTerm(t, k))) return new Set([field]);
+  }
+  for (const [field, keywords] of Object.entries(FIELD_TITLE_KEYWORDS)) {
+    if (keywords.some((k) => containsTerm(t, k))) out.add(field);
+  }
+  return out;
+}
+
+function fieldForCategory(category?: string | null): string | null {
+  const c = (category || "").toLowerCase().trim();
+  if (!c) return null;
+  return CATEGORY_FIELD[c] ?? (FIELD_TITLE_KEYWORDS[c] ? c : null);
+}
+
+interface RelevanceProfile {
+  roleTexts: string[];
+  roleTokens: string[];
+  fields: Set<string>;
+  skills: string[];
+}
+
+/** What the gate compares a job against: target roles, resume titles/roles, user fields, resume skills. */
+function relevanceProfile(answers?: OnboardingAnswers | null): RelevanceProfile | null {
+  if (!answers) return null;
+  const clean = (a?: (string | null | undefined)[] | null) =>
+    (Array.isArray(a) ? a : []).filter((s): s is string => typeof s === "string" && s.trim().length > 0).map((s) => s.trim());
+  const roleTexts = [
+    ...clean(answers.roles),
+    ...clean(answers.resumeProfile?.preferredRoles).map((s) => s.slice(0, 80)),
+    ...clean(answers.resumeProfile?.jobTitles),
+  ].slice(0, 20);
+  const fields = new Set<string>();
+  for (const r of roleTexts) fieldsForTitle(r).forEach((f) => fields.add(f));
+  for (const c of clean(answers.categories)) {
+    const f = fieldForCategory(c);
+    if (f) fields.add(f);
+  }
+  const skills = clean(answers.resumeProfile?.skills).filter((s) => s.length >= 3).slice(0, MAX_PROFILE_SKILLS);
+  const roleTokens = extractRoleTokens(roleTexts).filter((t) => t.length >= 3 && !GATE_GENERIC_TOKENS.has(t));
+  if (roleTokens.length === 0 && fields.size === 0 && skills.length === 0) return null;
+  return { roleTexts, roleTokens, fields, skills };
+}
+
+/**
+ * Relevance gate.
+ * - User with a known field (from target roles, resume titles or categories): the job must be in one of those
+ *   fields. The job's field comes from the role noun in its title ("Commercial Counsel" -> legal,
+ *   "Account Executive - Financial Services" -> sales), or from its category when the title names no field
+ *   ("engineering", the ingest default for many non-tech roles, is not trusted alone).
+ * - User with no classifiable field: the title must share a distinctive role word or a resume skill.
+ * Users with no role/field/skill signals have nothing to compare against, so the gate is open for them.
+ */
+export function isRelevantToProfile(job: JobScoringCandidate, answers?: OnboardingAnswers | null): boolean {
+  const profile = relevanceProfile(answers);
+  if (!profile) return true;
+  const title = (job.title || "").toLowerCase();
+  if (!title) return false;
+
+  const sharesRoleWordOrSkill = () =>
+    profile.roleTokens.some((t) => containsTerm(title, t)) || profile.skills.some((s) => containsTerm(title, s));
+
+  if (profile.fields.size > 0) {
+    // 1. The title's role noun decides when it names a field
+    const titleFields = fieldsForTitle(title);
+    if (titleFields.size > 0) return Array.from(titleFields).some((f) => profile.fields.has(f));
+
+    // 2. Otherwise a trustworthy category decides
+    const category = (job.category || "").toLowerCase().trim();
+    const categoryField = UNTRUSTED_JOB_CATEGORIES.has(category) ? null : fieldForCategory(category);
+    if (categoryField) return profile.fields.has(categoryField);
+
+    // 3. "engineering" (the ingest default) only counts when the title itself says so ("Founding Engineer")
+    if (UNTRUSTED_JOB_CATEGORIES.has(category) && profile.fields.has("engineering") && GENERIC_ENGINEERING_TITLE.test(title)) {
+      return true;
+    }
+  }
+
+  // 4. Nothing reliable in title or category: a distinctive shared role word or resume skill decides
+  return sharesRoleWordOrSkill();
+}
+
+/**
+ * SQL pre-filter for the candidate pool: a superset of the jobs the relevance gate can pass, so the
+ * pool is "latest N relevant jobs" instead of "latest N jobs". Null when the gate is open (no signals).
+ * Terms are plain words safe for PostgREST ilike (no %_(),"'`;\\$* characters).
+ */
+export function buildRelevancePrefilter(answers?: OnboardingAnswers | null): { orClause: string; terms: string[]; categories: string[] } | null {
+  const profile = relevanceProfile(answers);
+  if (!profile) return null;
+  const safe = (s: string) => s.toLowerCase().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim();
+  // Superset of every way isRelevantToProfile can pass a job
+  const terms = new Set<string>();
+  for (const f of Array.from(profile.fields)) {
+    for (const k of [...(FIELD_TITLE_KEYWORDS[f] || []), ...(EXCLUSIVE_FIELD_KEYWORDS[f] || [])]) terms.add(safe(k));
+  }
+  if (profile.fields.has("engineering")) ["engineer", "engineering", "developer", "programmer", "technical"].forEach((t) => terms.add(t));
+  for (const t of profile.roleTokens) terms.add(safe(t));
+  for (const s of profile.skills.slice(0, MAX_PREFILTER_SKILLS)) terms.add(safe(s));
+  const termList = Array.from(terms).filter((t) => t.length >= 2);
+  const categories = Object.entries(CATEGORY_FIELD)
+    .filter(([, f]) => profile.fields.has(f))
+    .map(([c]) => c)
+    .concat(Array.from(profile.fields).filter((f) => !UNTRUSTED_JOB_CATEGORIES.has(f)));
+  const uniqueCategories = Array.from(new Set(categories));
+  const parts = termList.map((t) => `title.ilike.%${t}%`);
+  if (uniqueCategories.length > 0) parts.push(`category.in.(${uniqueCategories.join(",")})`);
+  return { orClause: parts.join(","), terms: termList, categories: uniqueCategories };
+}
+
+/**
+ * Shared-scorer inputs for a user with a confirmed resume (CandidateProfile): saved preferences plus the
+ * resume's titles, headline and skills. With no saved target roles, the most recent resume title is the role.
+ */
+export function answersFromCandidate(
+  candidate: CandidateProfile | null | undefined,
+  preferences?: Partial<OnboardingAnswers> | null
+): OnboardingAnswers {
+  const jobTitles = (candidate?.experience || [])
+    .map((e) => (typeof e?.role === "string" ? e.role.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 5);
+  const headline = typeof candidate?.headline === "string" ? candidate.headline.trim().slice(0, 80) : "";
+  const savedRoles = (preferences?.roles || []).filter((r) => typeof r === "string" && r.trim());
+  return {
+    ...(preferences || {}),
+    roles: savedRoles.length > 0 ? savedRoles : jobTitles.slice(0, 1),
+    resumeProfile: {
+      jobTitles,
+      skills: Array.isArray(candidate?.skills) ? candidate!.skills.filter((s) => typeof s === "string") : [],
+      preferredRoles: headline ? [headline] : [],
+    },
+  };
 }
 
 export interface ScoredJobResult<T = any> {
@@ -391,6 +615,23 @@ export function scoreJobRecommendation(
     }
   }
 
+  // 5. Relevance gate: no overlap with the user's target role, field or skills means not recommended,
+  // however well location, seniority or recency score.
+  if (!isRelevantToProfile(job, answers)) {
+    return {
+      job,
+      score: 0,
+      breakdown: {
+        roleScore: 0,
+        locationScore: 0,
+        experienceScore: 0,
+        jobTypeScore: 0,
+        recencyScore: 0,
+      },
+      reasons: ["Not relevant: no overlap with your target role, field or skills"],
+    };
+  }
+
   // --- DETERMINISTIC SCORING (For Qualifying Roles) ---
 
   // 1. ROLE & CATEGORY MATCHING (0 - 40 pts)
@@ -614,9 +855,9 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
       });
     }
 
-    // With resume but no other onboarding answers: ALL jobs remain eligible (none dropped).
-    // Resume match provides a soft score boost for ranking order.
-    const scored = jobs.map((job) => {
+    // With resume but no other onboarding answers: every job relevant to the resume stays eligible
+    // (relevance gate only); resume match provides a soft score boost for ranking order.
+    const scored = jobs.filter((job) => isRelevantToProfile(job, answers)).map((job) => {
       const resume = scoreResumeMatch(job, answers!.resumeProfile);
       return { job, score: resume.score };
     });
@@ -655,9 +896,11 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
       base: scoreJobRecommendation(job, baseAnswers),
       full: scoreJobRecommendation(job, answers!),
     }))
-    .filter(({ job, base }) => {
-      // Must have positive score from base onboarding answers (resume never qualifies or drops)
+    .filter(({ job, base, full }) => {
+      // Must have positive score from base onboarding answers (resume never qualifies on its own)
       if (base.score <= 0) return false;
+      // The relevance gate also counts resume titles/skills, so it is checked on the full answers
+      if (full.score <= 0) return false;
 
       const title = (job.title || "").toLowerCase();
       const location = (job.location || "").toLowerCase();
