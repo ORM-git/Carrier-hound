@@ -7,6 +7,8 @@ export interface CompanyLogoProps {
   applyUrl?: string;
   sourceUrl?: string;
   logoUrl?: string | null;
+  /** Company website domain from companies.domain */
+  domain?: string | null;
   className?: string;
 }
 
@@ -57,14 +59,18 @@ export default function CompanyLogo({
   applyUrl,
   sourceUrl,
   logoUrl,
+  domain: companyDomain,
   className = "w-10 h-10",
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
 
-  // Derive domain strictly from a real apply or source URL that is not an ATS host
+  // Domain: stored companies.domain first, then a non-ATS apply/source URL
   // ZERO name-slug guessing
-  const domain = extractDomainFromUrl(applyUrl) || extractDomainFromUrl(sourceUrl);
+  const domain =
+    (companyDomain ? extractDomainFromUrl(`https://${companyDomain.trim()}`) : "") ||
+    extractDomainFromUrl(applyUrl) ||
+    extractDomainFromUrl(sourceUrl);
   const unavatarUrl = domain ? `https://unavatar.io/${domain}?fallback=false` : null;
 
   // Stages: self-hosted (companies.logo_url) -> unavatar.io -> fallback (letter tile)

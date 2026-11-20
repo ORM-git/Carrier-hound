@@ -43,6 +43,7 @@ export interface LiveJob {
   companyGroupId?: string | null;
   logoUrl?: string | null;
   logo_url?: string | null;
+  companyDomain?: string | null;
   salary_display?: string | null;
   salary_original?: string | null;
   matchScore?: number | null;
