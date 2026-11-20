@@ -396,6 +396,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
         status: isInactive ? "expired" : (jobRow.status || "active"),
+        companyDomain: (isPro && !isInactive) ? (jobRow.companies?.domain || null) : null,
         logoUrl: (isPro && !isInactive) ? resolvedLogo : null,
         logo_url: (isPro && !isInactive) ? resolvedLogo : null,
       };
@@ -943,6 +944,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           description: row.description || "",
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
+          companyDomain: row.companies?.domain || null,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
         };

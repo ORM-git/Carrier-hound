@@ -20,8 +20,33 @@ const ROOT = process.cwd();
 const OUT_DIR = path.join(ROOT, "out");
 const REPORTS_DIR = path.join(ROOT, "reports");
 const PORT = 3399;
-const CHROME_PATH =
-  process.env.CHROME_PATH || "/usr/bin/google-chrome";
+
+function getChromePath() {
+  if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) return process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (process.platform === "win32") {
+    const winCandidates = [
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
+    ];
+    for (const c of winCandidates) {
+      if (existsSync(c)) return c;
+    }
+  }
+  const linuxCandidates = [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ];
+  for (const c of linuxCandidates) {
+    if (existsSync(c)) return c;
+  }
+  return process.env.CHROME_PATH || "/usr/bin/google-chrome";
+}
+
+const CHROME_PATH = getChromePath();
 
 const ROUTES = [
   "/",
@@ -80,13 +105,36 @@ function serve() {
 const server = await serve();
 const report = { generatedAt: new Date().toISOString(), axe: {}, lighthouse: null };
 
+async function launchBrowser() {
+  const launchOptions = {
+    executablePath: CHROME_PATH,
+    headless: "new",
+    timeout: 60000,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--hide-scrollbars",
+      "--disable-gpu",
+    ],
+  };
+
+  try {
+    return await puppeteer.launch(launchOptions);
+  } catch (firstErr) {
+    console.warn(`[advisory-quality] First browser launch attempt failed: ${firstErr}. Retrying...`);
+    try {
+      return await puppeteer.launch({ ...launchOptions, timeout: 90000 });
+    } catch (secondErr) {
+      console.warn(`[advisory-quality] Second browser launch attempt failed: ${secondErr}`);
+      throw secondErr;
+    }
+  }
+}
+
 let browser;
 try {
-  browser = await puppeteer.launch({
-    executablePath: CHROME_PATH,
-    headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage", "--remote-debugging-port=0"],
-  });
+  browser = await launchBrowser();
   const axeSource = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
   for (const route of ROUTES) {
@@ -133,7 +181,11 @@ try {
     console.log(`[lighthouse] ERROR ${err}`);
   }
 } finally {
-  if (browser) await browser.close();
+  if (browser) {
+    try {
+      await browser.close();
+    } catch {}
+  }
   server.close();
 }
 

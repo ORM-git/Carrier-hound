@@ -891,6 +891,7 @@ module.exports = {
   REPORT_DIR,
   createServer,
   setupPageMocks,
+  mockJobs,
   getLuminance,
   parseRgb,
   getContrastRatio,

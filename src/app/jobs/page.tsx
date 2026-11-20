@@ -26,6 +26,7 @@ import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
 import JobDetailView from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
+import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
@@ -2107,6 +2108,7 @@ function JobsPageInner() {
                         const companyPills = getCompanyTagPills(job.category);
                         const locInfo = parseJobLocation(job.location);
                         const jobLevel = inferJobLevel(job.title);
+                        const formattedJobType = formatJobType(job.type);
 
                         return (
                           <motion.article
@@ -2140,6 +2142,7 @@ function JobsPageInner() {
                                     company={job.company}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
+                                    domain={job.companyDomain}
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
 
@@ -2178,21 +2181,21 @@ function JobsPageInner() {
                                     </div>
 
                                     {/* Title: 20px / 600 / 24px line-height with ellipsis */}
-                                    <h2 className="text-[20px] font-semibold text-[#0F172A] leading-[24px] truncate" title={job.title}>
+                                    <h2 className="text-[20px] font-semibold text-[#0F172A] leading-[24px] truncate my-0" title={job.title}>
                                       {job.title}
                                     </h2>
 
                                     {/* Company and category/type pills */}
-                                    <div className="flex items-center gap-1.5 text-[13px] text-[#475569] min-w-0 flex-wrap">
-                                      <span className={!isPro ? "filter blur-[4.5px] select-none font-medium text-[#334155]" : "font-medium text-[#334155]"}>
+                                    <div className="flex items-center gap-1.5 text-[13px] text-[#475569] min-w-0 flex-wrap h-5">
+                                      <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-medium text-[#334155]" : "font-medium text-[#334155]"}`}>
                                         {job.company || "Verified Employer"}
                                       </span>
                                       {companyPills.length > 0 && (
-                                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap" data-testid="job-card-category-pills">
+                                        <div className="inline-flex items-center gap-1.5 min-w-0" data-testid="job-card-category-pills">
                                           {companyPills.map((pill) => (
                                             <span
                                               key={pill}
-                                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium border ${getTagColorClass(pill)}`}
+                                              className={`inline-flex items-center h-5 px-1.5 py-0.5 rounded text-[11px] font-medium border leading-none ${getTagColorClass(pill)}`}
                                             >
                                               {pill}
                                             </span>
@@ -2207,16 +2210,16 @@ function JobsPageInner() {
                                 <div className="border-b border-[#E2E8F0]" />
 
                                 {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
-                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] text-[#475569]">
+                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
                                   {/* Row 1, Col 1: Location */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
                                     <span className="truncate" title={isPro ? (locInfo.primary || "Location unlisted") : undefined}>
-                                      {isPro ? (locInfo.primary || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
+                                      {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                                     </span>
                                     {isPro && locInfo.extraCount > 0 && (
                                       <span
-                                        className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help"
+                                        className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help leading-none"
                                         title={locInfo.all.join(", ")}
                                         aria-label={`${locInfo.extraCount} additional locations`}
                                       >
@@ -2226,18 +2229,18 @@ function JobsPageInner() {
                                   </div>
 
                                   {/* Row 1, Col 2: Job type */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
-                                    {job.type ? (
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
+                                    {formattedJobType ? (
                                       <>
                                         <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
-                                        <span className="truncate">{job.type}</span>
+                                        <span className="truncate">{formattedJobType}</span>
                                       </>
                                     ) : null}
                                   </div>
 
                                   {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
                                   <div
-                                    className="flex items-center gap-1.5 min-w-0 truncate"
+                                    className="flex items-center gap-1.5 min-w-0 truncate h-5"
                                     title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
@@ -2252,13 +2255,13 @@ function JobsPageInner() {
                                   </div>
 
                                   {/* Row 2, Col 1: Work mode */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
                                     <span className="truncate">{job.remote ? "Remote" : "On-site"}</span>
                                   </div>
 
                                   {/* Row 2, Col 2: Seniority level */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     {jobLevel ? (
                                       <>
                                         <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
@@ -2268,7 +2271,7 @@ function JobsPageInner() {
                                   </div>
 
                                   {/* Row 2, Col 3: Empty cell */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate" />
+                                  <div className="flex items-center gap-1.5 min-w-0 truncate h-5" />
                                 </div>
 
                                 {/* Horizontal divider 2: thin 1px light gray line */}
@@ -2400,16 +2403,17 @@ function JobsPageInner() {
                                     company={job.company}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
+                                    domain={job.companyDomain}
                                     className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
                                   />
                                   <div className="min-w-0 flex-1">
-                                    <div className="text-[14px] text-[#475569] truncate">
-                                      <span className={!isPro ? "filter blur-[4.5px] select-none font-semibold text-[#0F172A]" : "font-semibold text-[#0F172A]"}>
+                                    <div className="flex items-center gap-1.5 text-[14px] text-[#475569] truncate h-5">
+                                      <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-semibold text-[#0F172A]" : "font-semibold text-[#0F172A]"}`}>
                                         {job.company || "Verified Employer"}
                                       </span>
                                     </div>
                                     {(job.category || job.remote) ? (
-                                      <div className="text-xs text-[#475569] truncate">
+                                      <div className="text-xs text-[#475569] truncate mt-0.5">
                                         {job.category && <span className="capitalize">{job.category}</span>}
                                         {job.category && job.remote && <span> · </span>}
                                         {job.remote && <span>Remote</span>}
@@ -2455,28 +2459,28 @@ function JobsPageInner() {
                               {/* Horizontal divider 1 on mobile */}
                               <div className="border-b border-[#E2E8F0]" />
 
-                              {/* Small wrapping metadata chips beneath title: roughly 24px high, 13px text (posted time not duplicated here) */}
+                              {/* Small wrapping metadata chips beneath title: roughly 24px high, 12px text (posted time not duplicated here) */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <MapPin className="w-3 h-3 text-[#475569]" />
-                                  {isPro ? (locInfo.primary || "Location unlisted") : <span className="filter blur-[3px] select-none">Location Locked</span>}
+                                  {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                                   {isPro && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
                                 </span>
-                                {job.type && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                {formattedJobType && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                     <Briefcase className="w-3 h-3 text-[#475569]" />
-                                    {job.type}
+                                    {formattedJobType}
                                   </span>
                                 )}
                                 {job.remote && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                     <Laptop className="w-3 h-3 text-[#475569]" />
                                     Remote
                                   </span>
                                 )}
                                 {job.salary && (
                                   <span
-                                    className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1"
+                                    className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
                                     title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
