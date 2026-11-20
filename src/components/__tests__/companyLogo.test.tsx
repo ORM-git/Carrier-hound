@@ -4,7 +4,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
 import CompanyLogo from "../CompanyLogo";
 
-// jsdom never loads images and reports every <img> as complete with naturalWidth 0. Model a real browser:
+// jsdom never loads images and reports every image element as complete with naturalWidth 0. Model a real browser:
 // a freshly mounted image is still loading (complete = false) unless a test says otherwise.
 beforeEach(() => {
   vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
