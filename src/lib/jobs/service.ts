@@ -13,10 +13,12 @@ import {
   type RoleCategory,
 } from "@/lib/jobs/highVolumeEnrichment";
 import { rankJobsByRecommendation, hasOnboardingAnswers } from "./recommendations";
+import { isJobEligible } from "./eligibility";
 import {
   applyExperienceLevelQuery,
   formatExperienceLevels,
   parseExperienceLevels,
+  EARLY_CAREER_OR_CLAUSE,
 } from "./experienceLevels";
 
 export interface LiveJob {
@@ -422,7 +424,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (company && company.trim() && company.toLowerCase() !== "all") recParams.set("company", company.trim());
         if (search && search.trim()) recParams.set("search", search.trim());
 
-        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers });
+        // A failed request is a retryable error, never a silently unpersonalized or empty feed.
+        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers }).catch(() => null);
+        if (!recRes) return DEGRADED_JOBS_RESULT;
         if (recRes.status === 403) {
           return {
             jobs: [],
@@ -442,19 +446,19 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
             error: "degraded",
           };
         }
-        if (recRes.ok) {
-          const json = await recRes.json();
-          const count = json.totalCount ?? (json.jobs?.length || 0);
-          return {
-            jobs: json.jobs || [],
-            totalCount: count,
-            nextCursor: null,
-            hasNextPage: (page * pageSize) < count,
-            isDegraded: false,
-          };
-        } else {
-          log.warn(`Recommended endpoint responded with status ${recRes.status}, falling back to public preview query.`);
+        if (!recRes.ok) {
+          log.warn(`Recommended endpoint responded with status ${recRes.status}; returning a retryable error.`);
+          return DEGRADED_JOBS_RESULT;
         }
+        const json = await recRes.json();
+        const count = json.totalCount ?? (json.jobs?.length || 0);
+        return {
+          jobs: json.jobs || [],
+          totalCount: count,
+          nextCursor: null,
+          hasNextPage: (page * pageSize) < count,
+          isDegraded: false,
+        };
       }
 
       const params = new URLSearchParams({
@@ -627,7 +631,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           .not("title", "ilike", "%entry%");
       } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
         query = query
-          .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+          .or(EARLY_CAREER_OR_CLAUSE)
           .not("title", "ilike", "%senior%")
           .not("title", "ilike", "%sr.%")
           .not("title", "ilike", "%staff%")
@@ -763,7 +767,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
               .not("title", "ilike", "%entry%");
           } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
             catQuery = catQuery
-              .or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%")
+              .or(EARLY_CAREER_OR_CLAUSE)
               .not("title", "ilike", "%senior%")
               .not("title", "ilike", "%sr.%")
               .not("title", "ilike", "%staff%")
@@ -810,13 +814,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           const diagnostics = computeFitDiagnostics(candidate, teaserJob);
           let score = diagnostics.score;
           if (preferences) {
-            const userRemote = (preferences.remotePreference || (preferences as any).remote_preference || "").toLowerCase().trim();
-            const isRemote =
-              row.remote === true ||
-              (row.remote_scope || "").toLowerCase() === "remote" ||
-              (row.remote_scope || "").toLowerCase() === "worldwide" ||
-              (row.location || "").toLowerCase().includes("remote");
-            if (userRemote === "remote" && !isRemote) {
+            // A saved "remote" preference (Open to Remote) is additive, so it never zeroes a non-remote job.
+            // Geography: saved countries admit their jobs plus eligible worldwide/unrestricted remote roles only.
+            const savedLocations = [
+              ...(preferences.locations || []),
+              (preferences as any).country,
+              (preferences as any).countryCode,
+            ].filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+            if (savedLocations.length > 0 && !isJobEligible(row, savedLocations)) {
               score = 0;
             }
             const userExp = (preferences.experienceLevel || (preferences as any).experience_level || "").toLowerCase().trim();

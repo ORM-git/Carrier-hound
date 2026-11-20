@@ -1,0 +1,1012 @@
+{
+ "generated": "2026-11-20",
+ "source_head": "see docs/10m-schema-step1-rehearsal.md",
+ "checks": [
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "20261116b applies on the populated baseline",
+   "ok": true,
+   "detail": "281 ms"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "row count unchanged: jobs",
+   "ok": true,
+   "detail": "240 -> 240"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "checksum of original columns unchanged: jobs",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "row count unchanged: companies",
+   "ok": true,
+   "detail": "12 -> 12"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "checksum of original columns unchanged: companies",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "row count unchanged: job_descriptions",
+   "ok": true,
+   "detail": "120 -> 120"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "checksum of original columns unchanged: job_descriptions",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "row count unchanged: saved_jobs",
+   "ok": true,
+   "detail": "9 -> 9"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "checksum of original columns unchanged: saved_jobs",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "jobs.last_seen_at preserved for every row",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "#645 F state unchanged (progress rows, similarity hashes)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "column order/types of every pre-existing public relation preserved",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "pre-existing index definitions unchanged (incl. #645 E and partial idx_companies_category)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "every index is valid (indisvalid)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "no new triggers on public.jobs (no automatic merge/expiry)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "app query results unchanged (feed, categories, saved_jobs join, descriptions join, cross-vendor ids)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "owners/grants/RLS of pre-existing schemas, relations and functions unchanged",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+   "ok": false
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "no merge_job_by_dedupe_priority function or trigger",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "canonical UNIQUE (source_id, source_job_id) present and valid",
+   "ok": true,
+   "detail": "CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "same posting from another board inserts; nothing merged or expired",
+   "ok": true,
+   "detail": "hash set, active same-hash 2 -> 3"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "duplicate canonical (source_id, source_job_id) rejected",
+   "ok": true,
+   "detail": "duplicate key value violates unique constraint \"idx_jobs_source_id_source_job_id_uniq\""
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "same-vendor duplicate external id rejected (legacy key)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "cross-vendor identical external ids coexist",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "jobs.source_id is text with no FK (live board key, never cast)",
+   "ok": true,
+   "detail": "type=text, fk=0"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+   "ok": false,
+   "detail": "type=undefined, fk=undefined"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+   "ok": false,
+   "detail": "column \"source_registry_id\" of relation \"jobs\" does not exist"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "unknown registry uuid rejected by the FK",
+   "ok": true,
+   "detail": "column \"source_registry_id\" of relation \"jobs\" does not exist"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "job_postings: two boards with the same similarity hash coexist",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "job_postings: duplicate canonical (source_id, external_id) rejected",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "job_postings: ON CONFLICT upsert on the canonical key is idempotent",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "job_postings: nothing silently expired",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "no UNIQUE index on job_postings.dedupe_hash",
+   "ok": false
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
+   "ok": true,
+   "detail": "{\"a\":false,\"u\":false,\"s\":true}"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "internal_ingestion.ingestion_sources denied to anon",
+   "ok": true,
+   "detail": "permission denied for schema internal_ingestion"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "raw public.job_postings not readable by anon",
+   "ok": true,
+   "detail": "permission denied for table job_postings"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "internal_ingestion.ingestion_sources denied to authenticated",
+   "ok": true,
+   "detail": "permission denied for schema internal_ingestion"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "raw public.job_postings not readable by authenticated",
+   "ok": true,
+   "detail": "permission denied for table job_postings"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "internal_ingestion.ingestion_sources readable by service_role",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+   "ok": true,
+   "detail": "{\"company_name\":\"Verified Employer\",\"company_slug\":null,\"salary_min\":null,\"salary_max\":null,\"direct_apply_url\":null,\"raw_payload\":null}"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "saved_jobs RLS: authenticated user sees only own rows",
+   "ok": true,
+   "detail": "[\"00000000-0000-4000-8000-0000000000a1\"]"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "saved_jobs RLS: anon sees no rows",
+   "ok": true,
+   "detail": "permission denied for table saved_jobs"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "second apply succeeds",
+   "ok": true,
+   "detail": "42 ms"
+  },
+  {
+   "scenario": "A:recon-incomplete",
+   "name": "second apply changes nothing",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "20261116b applies on the populated baseline",
+   "ok": true,
+   "detail": "325 ms"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "row count unchanged: jobs",
+   "ok": true,
+   "detail": "240 -> 240"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "checksum of original columns unchanged: jobs",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "row count unchanged: companies",
+   "ok": true,
+   "detail": "12 -> 12"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "checksum of original columns unchanged: companies",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "row count unchanged: job_descriptions",
+   "ok": true,
+   "detail": "120 -> 120"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "checksum of original columns unchanged: job_descriptions",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "row count unchanged: saved_jobs",
+   "ok": true,
+   "detail": "9 -> 9"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "checksum of original columns unchanged: saved_jobs",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "jobs.last_seen_at preserved for every row",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "#645 F state unchanged (progress rows, similarity hashes)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "column order/types of every pre-existing public relation preserved",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "pre-existing index definitions unchanged (incl. #645 E and partial idx_companies_category)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "every index is valid (indisvalid)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "no new triggers on public.jobs (no automatic merge/expiry)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "app query results unchanged (feed, categories, saved_jobs join, descriptions join, cross-vendor ids)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "owners/grants/RLS of pre-existing schemas, relations and functions unchanged",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+   "ok": false
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "no merge_job_by_dedupe_priority function or trigger",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "canonical UNIQUE (source_id, source_job_id) present and valid",
+   "ok": true,
+   "detail": "CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "same posting from another board inserts; nothing merged or expired",
+   "ok": true,
+   "detail": "hash set, active same-hash 2 -> 3"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "duplicate canonical (source_id, source_job_id) rejected",
+   "ok": true,
+   "detail": "duplicate key value violates unique constraint \"idx_jobs_source_id_source_job_id_uniq\""
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "same-vendor duplicate external id rejected (legacy key)",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "cross-vendor identical external ids coexist",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "jobs.source_id is text with no FK (live board key, never cast)",
+   "ok": true,
+   "detail": "type=text, fk=0"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+   "ok": false,
+   "detail": "type=undefined, fk=undefined"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+   "ok": false,
+   "detail": "column \"source_registry_id\" of relation \"jobs\" does not exist"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "unknown registry uuid rejected by the FK",
+   "ok": true,
+   "detail": "column \"source_registry_id\" of relation \"jobs\" does not exist"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "job_postings: two boards with the same similarity hash coexist",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "job_postings: duplicate canonical (source_id, external_id) rejected",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "job_postings: ON CONFLICT upsert on the canonical key is idempotent",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "job_postings: nothing silently expired",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)",
+   "ok": false,
+   "detail": "duplicate key value violates unique constraint \"idx_job_postings_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "no UNIQUE index on job_postings.dedupe_hash",
+   "ok": false
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
+   "ok": true,
+   "detail": "{\"a\":false,\"u\":false,\"s\":true}"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "internal_ingestion.ingestion_sources denied to anon",
+   "ok": true,
+   "detail": "permission denied for schema internal_ingestion"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "raw public.job_postings not readable by anon",
+   "ok": true,
+   "detail": "permission denied for table job_postings"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "internal_ingestion.ingestion_sources denied to authenticated",
+   "ok": true,
+   "detail": "permission denied for schema internal_ingestion"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "raw public.job_postings not readable by authenticated",
+   "ok": true,
+   "detail": "permission denied for table job_postings"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "internal_ingestion.ingestion_sources readable by service_role",
+   "ok": true
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+   "ok": true,
+   "detail": "{\"company_name\":\"Verified Employer\",\"company_slug\":null,\"salary_min\":null,\"salary_max\":null,\"direct_apply_url\":null,\"raw_payload\":null}"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "saved_jobs RLS: authenticated user sees only own rows",
+   "ok": true,
+   "detail": "[\"00000000-0000-4000-8000-0000000000a1\"]"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "saved_jobs RLS: anon sees no rows",
+   "ok": true,
+   "detail": "permission denied for table saved_jobs"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "second apply succeeds",
+   "ok": true,
+   "detail": "41 ms"
+  },
+  {
+   "scenario": "A:recon-complete",
+   "name": "second apply changes nothing",
+   "ok": true
+  },
+  {
+   "scenario": "A:full",
+   "name": "20261116b applies on the populated baseline",
+   "ok": false,
+   "detail": "could not create unique index \"idx_jobs_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "R:recon-incomplete",
+   "name": "20261116b applies",
+   "ok": true
+  },
+  {
+   "scenario": "R:recon-incomplete",
+   "name": "rollback scenario completed",
+   "ok": false,
+   "detail": "relation \"internal_ingestion.schema_migration_provenance\" does not exist"
+  },
+  {
+   "scenario": "R:full",
+   "name": "20261116b applies",
+   "ok": false,
+   "detail": "could not create unique index \"idx_jobs_active_dedupe_hash_uniq\""
+  },
+  {
+   "scenario": "C",
+   "name": "injected failure aborts the migration",
+   "ok": true,
+   "detail": "division by zero"
+  },
+  {
+   "scenario": "C",
+   "name": "failed run leaves the database exactly as before (atomic rollback)",
+   "ok": true
+  },
+  {
+   "scenario": "C",
+   "name": "no partial objects after failure (internal_ingestion absent)",
+   "ok": true
+  },
+  {
+   "scenario": "C",
+   "name": "retry after the failure succeeds",
+   "ok": true,
+   "detail": "437 ms"
+  },
+  {
+   "scenario": "B",
+   "name": "filename order: every migration incl. 16b and #645 D/E/F applies",
+   "ok": true
+  },
+  {
+   "scenario": "B",
+   "name": "same fixture loads in filename order",
+   "ok": false,
+   "detail": "column \"source_id\" is of type uuid but expression is of type text"
+  },
+  {
+   "scenario": "X",
+   "name": "recon-incomplete vs recon-complete: every 16b column/constraint/FK present",
+   "ok": true,
+   "detail": "201 contract entries"
+  },
+  {
+   "scenario": "X",
+   "name": "recon-incomplete vs recon-complete: identical types, constraints and FKs",
+   "ok": true
+  },
+  {
+   "scenario": "X",
+   "name": "recon-incomplete vs filename: every 16b column/constraint/FK present",
+   "ok": true,
+   "detail": "201 contract entries"
+  },
+  {
+   "scenario": "X",
+   "name": "recon-incomplete vs filename: identical types, constraints and FKs",
+   "ok": false,
+   "detail": "col public.jobs.source_id"
+  },
+  {
+   "scenario": "L",
+   "name": "no deadlock: writer holds jobs (INSERT), then FK-checks companies",
+   "ok": false,
+   "detail": "deadlock detected"
+  },
+  {
+   "scenario": "L",
+   "name": "no deadlock: writer holds saved_jobs (UPDATE), then reads jobs",
+   "ok": false,
+   "detail": "deadlock detected"
+  },
+  {
+   "scenario": "S",
+   "name": "under contention 16b aborts on lock_timeout (no indefinite wait)",
+   "ok": true,
+   "detail": "canceling statement due to lock timeout"
+  },
+  {
+   "scenario": "S",
+   "name": "while 16b waited, later writers/readers queued behind its ACCESS EXCLUSIVE request (measured)",
+   "ok": true,
+   "detail": "queued 2651 ms"
+  },
+  {
+   "scenario": "S",
+   "name": "aborted run left data, schema, grants and #645 state unchanged",
+   "ok": true,
+   "detail": "11 probe writes removed"
+  },
+  {
+   "scenario": "S",
+   "name": "no partial objects after the abort",
+   "ok": true
+  },
+  {
+   "scenario": "S",
+   "name": "statement_timeout mid-migration aborts cleanly",
+   "ok": true,
+   "detail": "canceling statement due to statement timeout"
+  },
+  {
+   "scenario": "S",
+   "name": "statement_timeout abort left everything unchanged",
+   "ok": true
+  },
+  {
+   "scenario": "S",
+   "name": "retry with live writes and reads succeeds",
+   "ok": true,
+   "detail": "2672 ms"
+  },
+  {
+   "scenario": "S",
+   "name": "live traffic kept working (no errors) and was blocked only while 16b held its locks",
+   "ok": false,
+   "detail": "write max 1573 ms, feed read max 2599 ms"
+  },
+  {
+   "scenario": "S",
+   "name": "at scale: row counts, checksums, last_seen_at, #645 state and app queries unchanged",
+   "ok": true
+  },
+  {
+   "scenario": "S",
+   "name": "second apply at scale succeeds (no-op), still takes table locks",
+   "ok": true,
+   "detail": "52 ms; companies:AccessExclusiveLock, job_descriptions:AccessExclusiveLock, jobs:AccessExclusiveLock, saved_jobs:AccessExclusiveLock"
+  }
+ ],
+ "notes": {
+  "migration_file": "<supabase/migrations/20261116b_ten_million_system_design_schema.sql at f8280087 (original #643)>",
+  "hardware": {
+   "cpu": "13th Gen Intel(R) Core(TM) i5-13420H",
+   "cores": 12,
+   "memory_gb": 16,
+   "platform": "win32 10.0.26300"
+  },
+  "db_version": "PostgreSQL 17.12 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
+  "server_settings": [
+   {
+    "name": "fsync",
+    "setting": "on"
+   },
+   {
+    "name": "maintenance_work_mem",
+    "setting": "65536"
+   },
+   {
+    "name": "max_wal_size",
+    "setting": "1024"
+   },
+   {
+    "name": "shared_buffers",
+    "setting": "16384"
+   },
+   {
+    "name": "synchronous_commit",
+    "setting": "on"
+   },
+   {
+    "name": "work_mem",
+    "setting": "4096"
+   }
+  ],
+  "engine": "PostgreSQL (local disposable cluster)",
+  "migration_md5": "0e10b741b4247d736c0b2f5b8b3e5c31",
+  "A:recon-incomplete:setup_ms": 3230,
+  "A:recon-incomplete:fixture_counts": {
+   "jobs": 240,
+   "companies": 12,
+   "job_descriptions": 120,
+   "saved_jobs": 9
+  },
+  "A:recon-incomplete:active_missing_similarity_hash": 0,
+  "A:recon-incomplete:f_progress_phases": [
+   "jobs_similarity_hash_v2"
+  ],
+  "A:recon-incomplete:first_run": {
+   "ok": true,
+   "ms": 281,
+   "locks": [
+    "companies:AccessExclusiveLock",
+    "companies:AccessShareLock",
+    "companies:ShareLock",
+    "companies:ShareRowExclusiveLock",
+    "job_descriptions:AccessExclusiveLock",
+    "job_descriptions:AccessShareLock",
+    "job_descriptions:ShareLock",
+    "job_descriptions:ShareRowExclusiveLock",
+    "jobs:AccessExclusiveLock",
+    "jobs:AccessShareLock",
+    "jobs:ShareLock",
+    "jobs:ShareRowExclusiveLock",
+    "saved_jobs:AccessExclusiveLock",
+    "saved_jobs:AccessShareLock",
+    "saved_jobs:ShareLock",
+    "saved_jobs:ShareRowExclusiveLock"
+   ]
+  },
+  "A:recon-incomplete:unique_on_source_source_job_id": [
+   "idx_jobs_source_vendor_source_job_id_uniq",
+   "jobs_source_source_job_id_key"
+  ],
+  "A:recon-incomplete:idx_companies_category": "CREATE INDEX idx_companies_category ON public.companies USING btree (category) WHERE (category IS NOT NULL)",
+  "A:recon-incomplete:second_run": {
+   "ok": true,
+   "ms": 42
+  },
+  "A:recon-complete:setup_ms": 3188,
+  "A:recon-complete:fixture_counts": {
+   "jobs": 240,
+   "companies": 12,
+   "job_descriptions": 120,
+   "saved_jobs": 9
+  },
+  "A:recon-complete:active_missing_similarity_hash": 0,
+  "A:recon-complete:f_progress_phases": [
+   "companies_canonical_domain",
+   "jobs_similarity_hash_v2",
+   "jobs_source_priority"
+  ],
+  "A:recon-complete:first_run": {
+   "ok": true,
+   "ms": 325,
+   "locks": [
+    "companies:AccessExclusiveLock",
+    "companies:AccessShareLock",
+    "companies:ShareLock",
+    "companies:ShareRowExclusiveLock",
+    "job_descriptions:AccessExclusiveLock",
+    "job_descriptions:AccessShareLock",
+    "job_descriptions:ShareLock",
+    "job_descriptions:ShareRowExclusiveLock",
+    "jobs:AccessExclusiveLock",
+    "jobs:AccessShareLock",
+    "jobs:ShareLock",
+    "jobs:ShareRowExclusiveLock",
+    "saved_jobs:AccessExclusiveLock",
+    "saved_jobs:AccessShareLock",
+    "saved_jobs:ShareLock",
+    "saved_jobs:ShareRowExclusiveLock"
+   ]
+  },
+  "A:recon-complete:unique_on_source_source_job_id": [
+   "idx_jobs_source_vendor_source_job_id_uniq",
+   "jobs_source_source_job_id_key"
+  ],
+  "A:recon-complete:idx_companies_category": "CREATE INDEX idx_companies_category ON public.companies USING btree (category) WHERE (category IS NOT NULL)",
+  "A:recon-complete:second_run": {
+   "ok": true,
+   "ms": 41
+  },
+  "A:full:setup_ms": 3676,
+  "A:full:fixture_counts": {
+   "jobs": 240,
+   "companies": 12,
+   "job_descriptions": 120,
+   "saved_jobs": 9
+  },
+  "A:full:active_missing_similarity_hash": 0,
+  "A:full:f_progress_phases": [
+   "companies_canonical_domain",
+   "jobs_similarity_hash_v2",
+   "jobs_source_priority"
+  ],
+  "A:full:first_run": {
+   "ok": false,
+   "ms": 250,
+   "error": "could not create unique index \"idx_jobs_active_dedupe_hash_uniq\"",
+   "locks": []
+  },
+  "contract_size": 201,
+  "cross_order": {
+   "recon-complete": {
+    "contract": 201,
+    "missing": [],
+    "differ": []
+   },
+   "filename": {
+    "contract": 201,
+    "missing": [],
+    "differ": [
+     "col public.jobs.source_id: text null=YES default=null | uuid null=YES default=null"
+    ]
+   }
+  },
+  "lock_order_probes": [
+   {
+    "probe": "writer holds jobs (INSERT), then FK-checks companies",
+    "writerError": "deadlock detected",
+    "migrationOk": true,
+    "migrationMs": 1207
+   },
+   {
+    "probe": "writer holds saved_jobs (UPDATE), then reads jobs",
+    "writerError": "deadlock detected",
+    "migrationOk": true,
+    "migrationMs": 1115
+   }
+  ],
+  "scale_setup_ms": 29774,
+  "scale_counts": {
+   "jobs": 20000,
+   "active": 16000,
+   "companies": 200,
+   "descriptions": 10000,
+   "saved_jobs": 500,
+   "jobs_size": "74 MB"
+  },
+  "scale_contention": {
+   "result": {
+    "ok": false,
+    "ms": 3210,
+    "error": "canceling statement due to lock timeout"
+   },
+   "lock_timeout": "3s",
+   "timeline": {
+    "migWaitingForLock": {
+     "from": 213,
+     "to": 3117,
+     "ms": 2904
+    },
+    "accessExclusiveOnJobsHeld": null,
+    "trafficQueued": {
+     "from": 466,
+     "to": 3117,
+     "ms": 2651
+    },
+    "samples": 56
+   },
+   "events": [
+    {
+     "t": 0,
+     "who": "reader",
+     "what": "holds ACCESS SHARE on public.jobs (open transaction)"
+    },
+    {
+     "t": 403,
+     "who": "traffic",
+     "what": "writer + feed reader start while 16b waits"
+    },
+    {
+     "t": 3211,
+     "who": "migration",
+     "what": "aborted: canceling statement due to lock timeout"
+    }
+   ],
+   "write_ms": {
+    "n": 11,
+    "p50": 5,
+    "p95": 2772,
+    "max": 2772
+   },
+   "read_ms": {
+    "n": 10,
+    "p50": 2,
+    "p95": 2801,
+    "max": 2801
+   }
+  },
+  "scale_statement_timeout": {
+   "ok": false,
+   "ms": 412,
+   "error": "canceling statement due to statement timeout",
+   "statement_timeout": "250ms"
+  },
+  "scale_retry": {
+   "result": {
+    "ok": true,
+    "ms": 2672,
+    "locks_before_commit": [
+     "companies:AccessExclusiveLock",
+     "companies:AccessShareLock",
+     "companies:ShareLock",
+     "companies:ShareRowExclusiveLock",
+     "job_descriptions:AccessExclusiveLock",
+     "job_descriptions:AccessShareLock",
+     "job_descriptions:ShareLock",
+     "job_descriptions:ShareRowExclusiveLock",
+     "jobs:AccessExclusiveLock",
+     "jobs:AccessShareLock",
+     "jobs:ShareLock",
+     "jobs:ShareRowExclusiveLock",
+     "saved_jobs:AccessExclusiveLock",
+     "saved_jobs:AccessShareLock",
+     "saved_jobs:ShareLock",
+     "saved_jobs:ShareRowExclusiveLock"
+    ]
+   },
+   "lock_timeout": "3s",
+   "timeline": {
+    "migWaitingForLock": {
+     "from": 620,
+     "to": 1563,
+     "ms": 943
+    },
+    "accessExclusiveOnJobsHeld": {
+     "from": 1625,
+     "to": 3141,
+     "ms": 1516
+    },
+    "trafficQueued": {
+     "from": 620,
+     "to": 3141,
+     "ms": 2521
+    },
+    "samples": 60
+   },
+   "events": [
+    {
+     "t": 503,
+     "who": "migration",
+     "what": "16b start"
+    },
+    {
+     "t": 1592,
+     "who": "writer",
+     "what": "error deadlock detected"
+    },
+    {
+     "t": 3176,
+     "who": "migration",
+     "what": "committed (2672 ms)"
+    }
+   ],
+   "steady_state_ms": {
+    "write": {
+     "n": 15,
+     "p50": 4,
+     "p95": 34,
+     "max": 34
+    },
+    "read": {
+     "n": 16,
+     "p50": 1,
+     "p95": 3,
+     "max": 3
+    }
+   },
+   "during_ms": {
+    "write": {
+     "n": 33,
+     "p50": 5,
+     "p95": 34,
+     "max": 1573
+    },
+    "read": {
+     "n": 35,
+     "p50": 1,
+     "p95": 3,
+     "max": 2599
+    }
+   }
+  },
+  "scale_second_apply": {
+   "ok": true,
+   "ms": 52,
+   "locks_before_commit": [
+    "companies:AccessExclusiveLock",
+    "companies:ShareLock",
+    "job_descriptions:AccessExclusiveLock",
+    "job_descriptions:ShareLock",
+    "jobs:AccessExclusiveLock",
+    "jobs:ShareLock",
+    "saved_jobs:AccessExclusiveLock",
+    "saved_jobs:ShareLock"
+   ]
+  },
+  "server_log_lock_reports": [
+   "2026-11-20 01:19:35.894 IST [11364] ERROR:  deadlock detected at character 15",
+   "2026-11-20 01:19:35.894 IST [11364] DETAIL:  Process 11364 waits for RowShareLock on relation 28863 of database 28632; blocked by process 7508.",
+   "\tProcess 7508 waits for AccessExclusiveLock on relation 28687 of database 28632; blocked by process 11364.",
+   "2026-11-20 01:19:40.940 IST [6916] ERROR:  deadlock detected at character 22",
+   "2026-11-20 01:19:40.940 IST [6916] DETAIL:  Process 6916 waits for AccessShareLock on relation 30404 of database 30349; blocked by process 25536.",
+   "\tProcess 25536 waits for AccessExclusiveLock on relation 31019 of database 30349; blocked by process 6916.",
+   "2026-11-20 01:20:16.252 IST [21268] ERROR:  canceling statement due to lock timeout",
+   "2026-11-20 01:20:16.252 IST [21268] STATEMENT:  -- ============================================================================",
+   "2026-11-20 01:20:21.457 IST [14212] ERROR:  deadlock detected",
+   "2026-11-20 01:20:21.457 IST [14212] DETAIL:  Process 14212 waits for RowShareLock on relation 32298 of database 32067; blocked by process 21268.",
+   "\tProcess 21268 waits for AccessExclusiveLock on relation 32122 of database 32067; blocked by process 14212."
+  ]
+ },
+ "skippedExtensionLines": [
+  "20261108a_pg_cron_scheduled_jobs.sql: pg_cron"
+ ]
+}

@@ -14,7 +14,7 @@ const MIGRATIONS = "supabase/migrations";
 const SCHEMA = "supabase/schema.sql";
 const DOC = "docs/schema-drift-baseline.md";
 
-const CREATE_TABLE = /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?([a-z_][a-z0-9_]*)/gi;
+const CREATE_TABLE = /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)/gi;
 
 function migrationTables(): { table: string; file: string }[] {
   const out: { table: string; file: string }[] = [];

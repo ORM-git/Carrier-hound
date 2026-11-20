@@ -1,0 +1,1877 @@
+{
+  "checks": [
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "20261116b applies on the populated baseline",
+      "ok": true,
+      "detail": "7089 ms"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "row count unchanged: jobs",
+      "ok": true,
+      "detail": "240 -> 240"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "checksum of original columns unchanged: jobs",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "row count unchanged: companies",
+      "ok": true,
+      "detail": "12 -> 12"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "checksum of original columns unchanged: companies",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "row count unchanged: job_descriptions",
+      "ok": true,
+      "detail": "120 -> 120"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "checksum of original columns unchanged: job_descriptions",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "row count unchanged: saved_jobs",
+      "ok": true,
+      "detail": "9 -> 9"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "checksum of original columns unchanged: saved_jobs",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "jobs.last_seen_at preserved for every row",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "#645 F state unchanged (progress rows, similarity hashes)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "column order/types of every pre-existing public relation preserved",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "pre-existing index definitions unchanged (incl. #645 E and partial idx_companies_category)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "every index is valid (indisvalid)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "no new triggers on public.jobs (no automatic merge/expiry)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "app query results unchanged (feed, categories, saved_jobs join, descriptions join, cross-vendor ids)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "owners/grants/RLS of pre-existing schemas, relations and functions unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "no merge_job_by_dedupe_priority function or trigger",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "canonical UNIQUE (source_id, source_job_id) present and valid",
+      "ok": true,
+      "detail": "CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "same posting from another board inserts; nothing merged or expired",
+      "ok": true,
+      "detail": "hash set, active same-hash 2 -> 3"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "duplicate canonical (source_id, source_job_id) rejected",
+      "ok": true,
+      "detail": "duplicate key value violates unique constraint \"idx_jobs_source_id_source_job_id_uniq\""
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "same-vendor duplicate external id rejected (legacy key)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "cross-vendor identical external ids coexist",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "jobs.source_id is text with no FK (live board key, never cast)",
+      "ok": true,
+      "detail": "type=text, fk=0"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+      "ok": true,
+      "detail": "type=uuid, fk=FOREIGN KEY (source_registry_id) REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+      "ok": true,
+      "detail": "{\"key\":\"greenhouse:fixture-company-3\",\"expected\":2,\"mapped\":2,\"wrong\":0,\"afterDelete\":0,\"jobsAfterDelete\":2}"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "unknown registry uuid rejected by the FK",
+      "ok": true,
+      "detail": "insert or update on table \"jobs\" violates foreign key constraint \"jobs_source_registry_id_"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "job_postings: two boards with the same similarity hash coexist",
+      "ok": true,
+      "detail": "rows=2"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "job_postings: duplicate canonical (source_id, external_id) rejected",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "job_postings: ON CONFLICT upsert on the canonical key is idempotent",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "job_postings: nothing silently expired",
+      "ok": true,
+      "detail": "active=2"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "no UNIQUE index on job_postings.dedupe_hash",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
+      "ok": true,
+      "detail": "{\"a\":false,\"u\":false,\"s\":true}"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "internal_ingestion.ingestion_sources denied to anon",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "raw public.job_postings not readable by anon",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "internal_ingestion.ingestion_sources denied to authenticated",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "raw public.job_postings not readable by authenticated",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "internal_ingestion.ingestion_sources readable by service_role",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+      "ok": true,
+      "detail": "{\"company_name\":\"Verified Employer\",\"company_slug\":null,\"salary_min\":null,\"salary_max\":null,\"direct_apply_url\":null,\"raw_payload\":null}"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "saved_jobs RLS: authenticated user sees only own rows",
+      "ok": true,
+      "detail": "[\"00000000-0000-4000-8000-0000000000a1\"]"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "saved_jobs RLS: anon sees no rows",
+      "ok": true,
+      "detail": "permission denied for table saved_jobs"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "second apply succeeds",
+      "ok": true,
+      "detail": "359 ms"
+    },
+    {
+      "scenario": "A:recon-incomplete",
+      "name": "second apply changes nothing",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "20261116b applies on the populated baseline",
+      "ok": true,
+      "detail": "1292 ms"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "row count unchanged: jobs",
+      "ok": true,
+      "detail": "240 -> 240"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "checksum of original columns unchanged: jobs",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "row count unchanged: companies",
+      "ok": true,
+      "detail": "12 -> 12"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "checksum of original columns unchanged: companies",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "row count unchanged: job_descriptions",
+      "ok": true,
+      "detail": "120 -> 120"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "checksum of original columns unchanged: job_descriptions",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "row count unchanged: saved_jobs",
+      "ok": true,
+      "detail": "9 -> 9"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "checksum of original columns unchanged: saved_jobs",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "jobs.last_seen_at preserved for every row",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "#645 F state unchanged (progress rows, similarity hashes)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "column order/types of every pre-existing public relation preserved",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "pre-existing index definitions unchanged (incl. #645 E and partial idx_companies_category)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "every index is valid (indisvalid)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "no new triggers on public.jobs (no automatic merge/expiry)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "app query results unchanged (feed, categories, saved_jobs join, descriptions join, cross-vendor ids)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "owners/grants/RLS of pre-existing schemas, relations and functions unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "no merge_job_by_dedupe_priority function or trigger",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "canonical UNIQUE (source_id, source_job_id) present and valid",
+      "ok": true,
+      "detail": "CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "same posting from another board inserts; nothing merged or expired",
+      "ok": true,
+      "detail": "hash set, active same-hash 2 -> 3"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "duplicate canonical (source_id, source_job_id) rejected",
+      "ok": true,
+      "detail": "duplicate key value violates unique constraint \"idx_jobs_source_id_source_job_id_uniq\""
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "same-vendor duplicate external id rejected (legacy key)",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "cross-vendor identical external ids coexist",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "jobs.source_id is text with no FK (live board key, never cast)",
+      "ok": true,
+      "detail": "type=text, fk=0"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+      "ok": true,
+      "detail": "type=uuid, fk=FOREIGN KEY (source_registry_id) REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+      "ok": true,
+      "detail": "{\"key\":\"greenhouse:fixture-company-3\",\"expected\":2,\"mapped\":2,\"wrong\":0,\"afterDelete\":0,\"jobsAfterDelete\":2}"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "unknown registry uuid rejected by the FK",
+      "ok": true,
+      "detail": "insert or update on table \"jobs\" violates foreign key constraint \"jobs_source_registry_id_"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "job_postings: two boards with the same similarity hash coexist",
+      "ok": true,
+      "detail": "rows=2"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "job_postings: duplicate canonical (source_id, external_id) rejected",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "job_postings: ON CONFLICT upsert on the canonical key is idempotent",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "job_postings: nothing silently expired",
+      "ok": true,
+      "detail": "active=2"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "no UNIQUE index on job_postings.dedupe_hash",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
+      "ok": true,
+      "detail": "{\"a\":false,\"u\":false,\"s\":true}"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "internal_ingestion.ingestion_sources denied to anon",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "raw public.job_postings not readable by anon",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "internal_ingestion.ingestion_sources denied to authenticated",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "raw public.job_postings not readable by authenticated",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "internal_ingestion.ingestion_sources readable by service_role",
+      "ok": true
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+      "ok": true,
+      "detail": "{\"company_name\":\"Verified Employer\",\"company_slug\":null,\"salary_min\":null,\"salary_max\":null,\"direct_apply_url\":null,\"raw_payload\":null}"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "saved_jobs RLS: authenticated user sees only own rows",
+      "ok": true,
+      "detail": "[\"00000000-0000-4000-8000-0000000000a1\"]"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "saved_jobs RLS: anon sees no rows",
+      "ok": true,
+      "detail": "permission denied for table saved_jobs"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "second apply succeeds",
+      "ok": true,
+      "detail": "892 ms"
+    },
+    {
+      "scenario": "A:recon-complete",
+      "name": "second apply changes nothing",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "20261116b applies on the populated baseline",
+      "ok": true,
+      "detail": "590 ms"
+    },
+    {
+      "scenario": "A:full",
+      "name": "row count unchanged: jobs",
+      "ok": true,
+      "detail": "240 -> 240"
+    },
+    {
+      "scenario": "A:full",
+      "name": "checksum of original columns unchanged: jobs",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "row count unchanged: companies",
+      "ok": true,
+      "detail": "12 -> 12"
+    },
+    {
+      "scenario": "A:full",
+      "name": "checksum of original columns unchanged: companies",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "row count unchanged: job_descriptions",
+      "ok": true,
+      "detail": "120 -> 120"
+    },
+    {
+      "scenario": "A:full",
+      "name": "checksum of original columns unchanged: job_descriptions",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "row count unchanged: saved_jobs",
+      "ok": true,
+      "detail": "9 -> 9"
+    },
+    {
+      "scenario": "A:full",
+      "name": "checksum of original columns unchanged: saved_jobs",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "jobs.last_seen_at preserved for every row",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "#645 F state unchanged (progress rows, similarity hashes)",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "column order/types of every pre-existing public relation preserved",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "pre-existing index definitions unchanged (incl. #645 E and partial idx_companies_category)",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "every index is valid (indisvalid)",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "no new triggers on public.jobs (no automatic merge/expiry)",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "app query results unchanged (feed, categories, saved_jobs join, descriptions join, cross-vendor ids)",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "owners/grants/RLS of pre-existing schemas, relations and functions unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "no merge_job_by_dedupe_priority function or trigger",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "canonical UNIQUE (source_id, source_job_id) present and valid",
+      "ok": true,
+      "detail": "CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))"
+    },
+    {
+      "scenario": "A:full",
+      "name": "same posting from another board inserts; nothing merged or expired",
+      "ok": true,
+      "detail": "hash set, active same-hash 2 -> 3"
+    },
+    {
+      "scenario": "A:full",
+      "name": "duplicate canonical (source_id, source_job_id) rejected",
+      "ok": true,
+      "detail": "duplicate key value violates unique constraint \"idx_jobs_source_id_source_job_id_uniq\""
+    },
+    {
+      "scenario": "A:full",
+      "name": "same-vendor duplicate external id rejected (legacy key)",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "cross-vendor identical external ids coexist",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "jobs.source_id is text with no FK (live board key, never cast)",
+      "ok": true,
+      "detail": "type=text, fk=0"
+    },
+    {
+      "scenario": "A:full",
+      "name": "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+      "ok": true,
+      "detail": "type=uuid, fk=FOREIGN KEY (source_registry_id) REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL"
+    },
+    {
+      "scenario": "A:full",
+      "name": "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+      "ok": true,
+      "detail": "{\"key\":\"greenhouse:fixture-company-3\",\"expected\":2,\"mapped\":2,\"wrong\":0,\"afterDelete\":0,\"jobsAfterDelete\":2}"
+    },
+    {
+      "scenario": "A:full",
+      "name": "unknown registry uuid rejected by the FK",
+      "ok": true,
+      "detail": "insert or update on table \"jobs\" violates foreign key constraint \"jobs_source_registry_id_"
+    },
+    {
+      "scenario": "A:full",
+      "name": "job_postings: two boards with the same similarity hash coexist",
+      "ok": true,
+      "detail": "rows=2"
+    },
+    {
+      "scenario": "A:full",
+      "name": "job_postings: duplicate canonical (source_id, external_id) rejected",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "job_postings: ON CONFLICT upsert on the canonical key is idempotent",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "A:full",
+      "name": "job_postings: nothing silently expired",
+      "ok": true,
+      "detail": "active=2"
+    },
+    {
+      "scenario": "A:full",
+      "name": "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "A:full",
+      "name": "no UNIQUE index on job_postings.dedupe_hash",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
+      "ok": true,
+      "detail": "{\"a\":false,\"u\":false,\"s\":true}"
+    },
+    {
+      "scenario": "A:full",
+      "name": "internal_ingestion.ingestion_sources denied to anon",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "A:full",
+      "name": "raw public.job_postings not readable by anon",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "A:full",
+      "name": "internal_ingestion.ingestion_sources denied to authenticated",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "A:full",
+      "name": "raw public.job_postings not readable by authenticated",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "A:full",
+      "name": "internal_ingestion.ingestion_sources readable by service_role",
+      "ok": true
+    },
+    {
+      "scenario": "A:full",
+      "name": "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+      "ok": true,
+      "detail": "{\"company_name\":\"Verified Employer\",\"company_slug\":null,\"salary_min\":null,\"salary_max\":null,\"direct_apply_url\":null,\"raw_payload\":null}"
+    },
+    {
+      "scenario": "A:full",
+      "name": "saved_jobs RLS: authenticated user sees only own rows",
+      "ok": true,
+      "detail": "[\"00000000-0000-4000-8000-0000000000a1\"]"
+    },
+    {
+      "scenario": "A:full",
+      "name": "saved_jobs RLS: anon sees no rows",
+      "ok": true,
+      "detail": "permission denied for table saved_jobs"
+    },
+    {
+      "scenario": "A:full",
+      "name": "second apply succeeds",
+      "ok": true,
+      "detail": "177 ms"
+    },
+    {
+      "scenario": "A:full",
+      "name": "second apply changes nothing",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "ACL fixture has grant options on a pre-existing table",
+      "ok": true,
+      "detail": "postgres=daxrtDw/postgres,anon=r*/postgres,authenticated=daxrtDw/postgres,service_role=dax*rtDw/postgres"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "20261116b applies",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "provenance records exactly the relations 20261116b created",
+      "ok": true,
+      "detail": "11 created, 11 recorded"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "provenance recorded the prior grants/RLS of pre-existing tables 20261116b changed",
+      "ok": true,
+      "detail": "2 rows"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "writing new data did not touch original data",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "comparison is sensitive: 20261116b visibly changed pre-existing tables before rollback",
+      "ok": true,
+      "detail": "24 attributes, e.g. rls public.saved_jobs; priv public.saved_jobs anon SELECT; index companies.idx_companies_slug_uniq"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove-if-empty refuses before disable",
+      "ok": true,
+      "detail": "20261116b removal refused: run supabase/scripts/rollback-20261116b-disable.sql first"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable refuses an unsupported ACL shape (grantor is not the owner)",
+      "ok": true,
+      "detail": "20261116b rollback refused (unsupported ACL shape, nothing changed): saved_jobs: grantor is not the owner (current grant service_role->anon);"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "refused disable changed nothing (constraints, policies, indexes, exact ACLs, RLS, data)",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "documented disable script succeeds",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable: original data unchanged (counts, checksums, last_seen_at, #645 state, app queries)",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable: new data preserved (new tables, registry links, saved_jobs posting links, consent rows)",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable: pre-existing tables' indexes, constraints, policies, privileges, RLS and triggers equal pre-20261116b",
+      "ok": true,
+      "detail": "1591 attributes compared"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable: exact prior ACL items restored (grantee, privilege, grant option, grantor)",
+      "ok": true,
+      "detail": "55 relations; saved_jobs postgres=daxrtDw/postgres,anon=r*/postgres,authenticated=daxrtDw/postgres,service_role=dax*rtDw/postgres"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable: no anon/authenticated access to any relation 20261116b created",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable: columns added to pre-existing tables are kept (no DROP COLUMN)",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "disable is idempotent (second run succeeds, changes nothing)",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove-if-empty refuses while new data exists (names the blocking tables/columns)",
+      "ok": true,
+      "detail": "20261116b removal refused (data would be lost): internal_ingestion.ingestion_sources has 1 rows; public.consent_logs has 1 rows; public.job_postings has 2 rows;"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "refused removal changed nothing",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove-if-empty succeeds once the new objects are empty",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove: only the provenance record remains of the created relations",
+      "ok": true,
+      "detail": "internal_ingestion.schema_migration_provenance"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove: original data unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove: pre-existing objects equal pre-20261116b",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "remove: exact prior ACL items still in place",
+      "ok": true
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "re-applying 20261116b after removal re-enables it",
+      "ok": true,
+      "detail": "664 ms"
+    },
+    {
+      "scenario": "R:recon-incomplete",
+      "name": "re-apply recreated the registry FK and cleared the rollback state",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "ACL fixture has grant options on a pre-existing table",
+      "ok": true,
+      "detail": "postgres=daxrtDw/postgres,anon=r*/postgres,authenticated=daxrtDw/postgres,service_role=dax*rtDw/postgres"
+    },
+    {
+      "scenario": "R:full",
+      "name": "20261116b applies",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "provenance records exactly the relations 20261116b created",
+      "ok": true,
+      "detail": "11 created, 11 recorded"
+    },
+    {
+      "scenario": "R:full",
+      "name": "provenance recorded the prior grants/RLS of pre-existing tables 20261116b changed",
+      "ok": true,
+      "detail": "2 rows"
+    },
+    {
+      "scenario": "R:full",
+      "name": "writing new data did not touch original data",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "comparison is sensitive: 20261116b visibly changed pre-existing tables before rollback",
+      "ok": true,
+      "detail": "18 attributes, e.g. rls public.saved_jobs; priv public.saved_jobs anon SELECT; index companies.idx_companies_canonical_domain"
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove-if-empty refuses before disable",
+      "ok": true,
+      "detail": "20261116b removal refused: run supabase/scripts/rollback-20261116b-disable.sql first"
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable refuses an unsupported ACL shape (grantor is not the owner)",
+      "ok": true,
+      "detail": "20261116b rollback refused (unsupported ACL shape, nothing changed): saved_jobs: grantor is not the owner (current grant service_role->anon);"
+    },
+    {
+      "scenario": "R:full",
+      "name": "refused disable changed nothing (constraints, policies, indexes, exact ACLs, RLS, data)",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "documented disable script succeeds",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable: original data unchanged (counts, checksums, last_seen_at, #645 state, app queries)",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable: new data preserved (new tables, registry links, saved_jobs posting links, consent rows)",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable: pre-existing tables' indexes, constraints, policies, privileges, RLS and triggers equal pre-20261116b",
+      "ok": true,
+      "detail": "1598 attributes compared"
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable: exact prior ACL items restored (grantee, privilege, grant option, grantor)",
+      "ok": true,
+      "detail": "55 relations; saved_jobs postgres=daxrtDw/postgres,anon=r*/postgres,authenticated=daxrtDw/postgres,service_role=dax*rtDw/postgres"
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable: no anon/authenticated access to any relation 20261116b created",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable: columns added to pre-existing tables are kept (no DROP COLUMN)",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "disable is idempotent (second run succeeds, changes nothing)",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove-if-empty refuses while new data exists (names the blocking tables/columns)",
+      "ok": true,
+      "detail": "20261116b removal refused (data would be lost): internal_ingestion.ingestion_sources has 1 rows; public.consent_logs has 1 rows; public.job_postings has 2 rows;"
+    },
+    {
+      "scenario": "R:full",
+      "name": "refused removal changed nothing",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove-if-empty succeeds once the new objects are empty",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove: only the provenance record remains of the created relations",
+      "ok": true,
+      "detail": "internal_ingestion.schema_migration_provenance"
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove: original data unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove: pre-existing objects equal pre-20261116b",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "remove: exact prior ACL items still in place",
+      "ok": true
+    },
+    {
+      "scenario": "R:full",
+      "name": "re-applying 20261116b after removal re-enables it",
+      "ok": true,
+      "detail": "531 ms"
+    },
+    {
+      "scenario": "R:full",
+      "name": "re-apply recreated the registry FK and cleared the rollback state",
+      "ok": true
+    },
+    {
+      "scenario": "C",
+      "name": "injected failure aborts the migration",
+      "ok": true,
+      "detail": "division by zero"
+    },
+    {
+      "scenario": "C",
+      "name": "failed run leaves the database exactly as before (atomic rollback)",
+      "ok": true
+    },
+    {
+      "scenario": "C",
+      "name": "no partial objects after failure (internal_ingestion absent)",
+      "ok": true
+    },
+    {
+      "scenario": "C",
+      "name": "retry after the failure succeeds",
+      "ok": true,
+      "detail": "495 ms"
+    },
+    {
+      "scenario": "B",
+      "name": "filename order: every migration incl. 16b and #645 D/E/F applies",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "same fixture loads in filename order",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "#645 containment kept: no idx_jobs_active_dedupe_hash_uniq",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "no merge_job_by_dedupe_priority function or trigger",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "canonical UNIQUE (source_id, source_job_id) present and valid",
+      "ok": true,
+      "detail": "CREATE UNIQUE INDEX idx_jobs_source_id_source_job_id_uniq ON public.jobs USING btree (source_id, source_job_id) WHERE ((source_id IS NOT NULL) AND (source_job_id IS NOT NULL))"
+    },
+    {
+      "scenario": "B",
+      "name": "same posting from another board inserts; nothing merged or expired",
+      "ok": true,
+      "detail": "hash set, active same-hash 2 -> 3"
+    },
+    {
+      "scenario": "B",
+      "name": "duplicate canonical (source_id, source_job_id) rejected",
+      "ok": true,
+      "detail": "duplicate key value violates unique constraint \"idx_jobs_source_id_source_job_id_uniq\""
+    },
+    {
+      "scenario": "B",
+      "name": "same-vendor duplicate external id rejected (legacy key)",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "cross-vendor identical external ids coexist",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "jobs.source_id is text with no FK (live board key, never cast)",
+      "ok": true,
+      "detail": "type=text, fk=0"
+    },
+    {
+      "scenario": "B",
+      "name": "jobs.source_registry_id is uuid FK -> internal_ingestion.ingestion_sources ON DELETE SET NULL",
+      "ok": true,
+      "detail": "type=uuid, fk=FOREIGN KEY (source_registry_id) REFERENCES internal_ingestion.ingestion_sources(id) ON DELETE SET NULL"
+    },
+    {
+      "scenario": "B",
+      "name": "slug = source_id maps board-key jobs to the registry; deleting the source only clears the link",
+      "ok": true,
+      "detail": "{\"key\":\"greenhouse:fixture-company-3\",\"expected\":2,\"mapped\":2,\"wrong\":0,\"afterDelete\":0,\"jobsAfterDelete\":2}"
+    },
+    {
+      "scenario": "B",
+      "name": "unknown registry uuid rejected by the FK",
+      "ok": true,
+      "detail": "insert or update on table \"jobs\" violates foreign key constraint \"jobs_source_registry_id_"
+    },
+    {
+      "scenario": "B",
+      "name": "job_postings: two boards with the same similarity hash coexist",
+      "ok": true,
+      "detail": "rows=2"
+    },
+    {
+      "scenario": "B",
+      "name": "job_postings: duplicate canonical (source_id, external_id) rejected",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "job_postings: ON CONFLICT upsert on the canonical key is idempotent",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "B",
+      "name": "job_postings: nothing silently expired",
+      "ok": true,
+      "detail": "active=2"
+    },
+    {
+      "scenario": "B",
+      "name": "deleting a posting keeps the user's saved_jobs row and the job description (SET NULL)",
+      "ok": true,
+      "detail": "{\"sameHash\":2,\"dupRejected\":true,\"afterUpsert\":1,\"title\":\"Same Posting (updated)\",\"stillActive\":2,\"savedKept\":1,\"descKept\":true}"
+    },
+    {
+      "scenario": "B",
+      "name": "no UNIQUE index on job_postings.dedupe_hash",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "internal_ingestion: no USAGE for anon/authenticated, USAGE for service_role",
+      "ok": true,
+      "detail": "{\"a\":false,\"u\":false,\"s\":true}"
+    },
+    {
+      "scenario": "B",
+      "name": "internal_ingestion.ingestion_sources denied to anon",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "B",
+      "name": "raw public.job_postings not readable by anon",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "B",
+      "name": "internal_ingestion.ingestion_sources denied to authenticated",
+      "ok": true,
+      "detail": "permission denied for schema internal_ingestion"
+    },
+    {
+      "scenario": "B",
+      "name": "raw public.job_postings not readable by authenticated",
+      "ok": true,
+      "detail": "permission denied for table job_postings"
+    },
+    {
+      "scenario": "B",
+      "name": "internal_ingestion.ingestion_sources readable by service_role",
+      "ok": true
+    },
+    {
+      "scenario": "B",
+      "name": "job_postings_public (as anon) masks company/salary/apply url/raw payload",
+      "ok": true,
+      "detail": "{\"company_name\":\"Verified Employer\",\"company_slug\":null,\"salary_min\":null,\"salary_max\":null,\"direct_apply_url\":null,\"raw_payload\":null}"
+    },
+    {
+      "scenario": "B",
+      "name": "saved_jobs RLS: authenticated user sees only own rows",
+      "ok": true,
+      "detail": "[\"00000000-0000-4000-8000-0000000000a1\"]"
+    },
+    {
+      "scenario": "B",
+      "name": "saved_jobs RLS: anon sees no rows",
+      "ok": true,
+      "detail": "permission denied for table saved_jobs"
+    },
+    {
+      "scenario": "X",
+      "name": "recon-incomplete vs recon-complete: every 16b column/constraint/FK present",
+      "ok": true,
+      "detail": "211 contract entries"
+    },
+    {
+      "scenario": "X",
+      "name": "recon-incomplete vs recon-complete: identical types, constraints and FKs",
+      "ok": true
+    },
+    {
+      "scenario": "X",
+      "name": "recon-incomplete vs filename: every 16b column/constraint/FK present",
+      "ok": true,
+      "detail": "211 contract entries"
+    },
+    {
+      "scenario": "X",
+      "name": "recon-incomplete vs filename: identical types, constraints and FKs",
+      "ok": true
+    },
+    {
+      "scenario": "L",
+      "name": "no deadlock: writer holds jobs (INSERT), then FK-checks companies",
+      "ok": true,
+      "detail": "writer committed first; 16b then committed after 1306 ms"
+    },
+    {
+      "scenario": "L",
+      "name": "no deadlock: writer holds saved_jobs (UPDATE), then reads jobs",
+      "ok": true,
+      "detail": "writer committed first; 16b then committed after 1731 ms"
+    },
+    {
+      "scenario": "W",
+      "name": "setup: 16b applied and disabled (Level 1)",
+      "ok": true
+    },
+    {
+      "scenario": "W",
+      "name": "writer first, created table (INSERT internal_ingestion.ingestion_sources): removal refuses on lock_timeout, nothing dropped",
+      "ok": true,
+      "detail": "20261116b removal refused: could not take write-blocking locks (canceling statement due to lock timeout: a concurrent session holds a conflicting lock); nothing was changed, retry later"
+    },
+    {
+      "scenario": "W",
+      "name": "writer first, created table (INSERT internal_ingestion.ingestion_sources): once the write commits, removal refuses (data would be lost); the write is present",
+      "ok": true,
+      "detail": "20261116b removal refused (data would be lost): internal_ingestion.ingestion_sources has 1 rows;"
+    },
+    {
+      "scenario": "W",
+      "name": "writer first, pre-existing reference holder (UPDATE public.jobs.source_registry_id): removal refuses on lock_timeout, nothing dropped",
+      "ok": true,
+      "detail": "20261116b removal refused: could not take write-blocking locks (canceling statement due to lock timeout: a concurrent session holds a conflicting lock); nothing was changed, retry later"
+    },
+    {
+      "scenario": "W",
+      "name": "writer first, pre-existing reference holder (UPDATE public.jobs.source_registry_id): once the write commits, removal refuses (data would be lost); the write is present",
+      "ok": true,
+      "detail": "20261116b removal refused (data would be lost): public.jobs.source_registry_id is set on 1 rows;"
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: checks pass and the drops run inside the still-open transaction",
+      "ok": true
+    },
+    {
+      "scenario": "W",
+      "name": "removal holds write-blocking locks on every pre-existing holder/parent until COMMIT",
+      "ok": true,
+      "detail": "auth.users:AccessExclusiveLock, public.companies:AccessExclusiveLock, public.job_descriptions:AccessShareLock, public.job_descriptions:ExclusiveLock, public.jobs:AccessExclusiveLock, public.jobs:AccessShareLock, public.saved_jobs:AccessShareLock, public.saved_jobs:ExclusiveLock"
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: a late INSERT into a created table blocks on removal's lock",
+      "ok": true
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: a late write to a reference-holder column blocks on removal's lock",
+      "ok": true
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: reads of a holder-only table (saved_jobs, EXCLUSIVE) still run",
+      "ok": true,
+      "detail": "8 ms"
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: removal committed, created tables gone, state 'removed' recorded",
+      "ok": true
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: the blocked INSERT then failed (never committed, so no data disappeared)",
+      "ok": true,
+      "detail": "relation \"internal_ingestion.ingestion_sources\" does not exist"
+    },
+    {
+      "scenario": "W",
+      "name": "removal first: the blocked reference-holder write committed after removal and is present",
+      "ok": true
+    },
+    {
+      "scenario": "S",
+      "name": "under contention 16b aborts on lock_timeout (no indefinite wait)",
+      "ok": true,
+      "detail": "canceling statement due to lock timeout"
+    },
+    {
+      "scenario": "S",
+      "name": "while 16b waited, later writers/readers queued behind its ACCESS EXCLUSIVE request (measured)",
+      "ok": true,
+      "detail": "queued 2590 ms"
+    },
+    {
+      "scenario": "S",
+      "name": "aborted run left data, schema, grants and #645 state unchanged",
+      "ok": true,
+      "detail": "7 probe writes removed"
+    },
+    {
+      "scenario": "S",
+      "name": "no partial objects after the abort",
+      "ok": true
+    },
+    {
+      "scenario": "S",
+      "name": "statement_timeout mid-migration aborts cleanly",
+      "ok": true,
+      "detail": "canceling statement due to statement timeout"
+    },
+    {
+      "scenario": "S",
+      "name": "statement_timeout abort left everything unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "S",
+      "name": "retry with live writes and reads succeeds",
+      "ok": true,
+      "detail": "7978 ms"
+    },
+    {
+      "scenario": "S",
+      "name": "live traffic kept working (no errors) and was blocked only while 16b held its locks",
+      "ok": true,
+      "detail": "write max 7981 ms, feed read max 7983 ms"
+    },
+    {
+      "scenario": "S",
+      "name": "at scale: row counts, checksums, last_seen_at, #645 state and app queries unchanged",
+      "ok": true
+    },
+    {
+      "scenario": "S",
+      "name": "second apply at scale succeeds (no-op), still takes table locks",
+      "ok": true,
+      "detail": "175 ms; companies:AccessExclusiveLock, job_descriptions:AccessExclusiveLock, jobs:AccessExclusiveLock, saved_jobs:AccessExclusiveLock"
+    }
+  ],
+  "notes": {
+    "migration_file": "supabase\\migrations\\20261116b_ten_million_system_design_schema.sql",
+    "hardware": {
+      "cpu": "13th Gen Intel(R) Core(TM) i5-13420H",
+      "cores": 12,
+      "memory_gb": 16,
+      "platform": "win32 10.0.26300"
+    },
+    "db_version": "PostgreSQL 16.3, compiled by Visual C++ build 1938, 64-bit",
+    "server_settings": [
+      {
+        "name": "fsync",
+        "setting": "on"
+      },
+      {
+        "name": "maintenance_work_mem",
+        "setting": "65536"
+      },
+      {
+        "name": "max_wal_size",
+        "setting": "1024"
+      },
+      {
+        "name": "shared_buffers",
+        "setting": "16384"
+      },
+      {
+        "name": "synchronous_commit",
+        "setting": "on"
+      },
+      {
+        "name": "work_mem",
+        "setting": "4096"
+      }
+    ],
+    "engine": "PostgreSQL (local disposable cluster)",
+    "migration_md5": "02c9f75bb49f72bbb0f8aa2c776ac021",
+    "A:recon-incomplete:setup_ms": 8876,
+    "A:recon-incomplete:fixture_counts": {
+      "jobs": 240,
+      "companies": 12,
+      "job_descriptions": 120,
+      "saved_jobs": 9
+    },
+    "A:recon-incomplete:active_missing_similarity_hash": 0,
+    "A:recon-incomplete:f_progress_phases": [
+      "jobs_similarity_hash_v2"
+    ],
+    "A:recon-incomplete:first_run": {
+      "ok": true,
+      "ms": 7089,
+      "locks": [
+        "companies:AccessExclusiveLock",
+        "companies:AccessShareLock",
+        "companies:ShareLock",
+        "companies:ShareRowExclusiveLock",
+        "job_descriptions:AccessExclusiveLock",
+        "job_descriptions:AccessShareLock",
+        "job_descriptions:ShareLock",
+        "job_descriptions:ShareRowExclusiveLock",
+        "jobs:AccessExclusiveLock",
+        "jobs:AccessShareLock",
+        "jobs:ShareLock",
+        "jobs:ShareRowExclusiveLock",
+        "saved_jobs:AccessExclusiveLock",
+        "saved_jobs:AccessShareLock",
+        "saved_jobs:ShareLock",
+        "saved_jobs:ShareRowExclusiveLock"
+      ]
+    },
+    "A:recon-incomplete:unique_on_source_source_job_id": [
+      "idx_jobs_source_vendor_source_job_id_uniq",
+      "jobs_source_source_job_id_key"
+    ],
+    "A:recon-incomplete:idx_companies_category": "CREATE INDEX idx_companies_category ON public.companies USING btree (category) WHERE (category IS NOT NULL)",
+    "A:recon-incomplete:second_run": {
+      "ok": true,
+      "ms": 359
+    },
+    "A:recon-complete:setup_ms": 3682,
+    "A:recon-complete:fixture_counts": {
+      "jobs": 240,
+      "companies": 12,
+      "job_descriptions": 120,
+      "saved_jobs": 9
+    },
+    "A:recon-complete:active_missing_similarity_hash": 0,
+    "A:recon-complete:f_progress_phases": [
+      "companies_canonical_domain",
+      "jobs_similarity_hash_v2",
+      "jobs_source_priority"
+    ],
+    "A:recon-complete:first_run": {
+      "ok": true,
+      "ms": 1292,
+      "locks": [
+        "companies:AccessExclusiveLock",
+        "companies:AccessShareLock",
+        "companies:ShareLock",
+        "companies:ShareRowExclusiveLock",
+        "job_descriptions:AccessExclusiveLock",
+        "job_descriptions:AccessShareLock",
+        "job_descriptions:ShareLock",
+        "job_descriptions:ShareRowExclusiveLock",
+        "jobs:AccessExclusiveLock",
+        "jobs:AccessShareLock",
+        "jobs:ShareLock",
+        "jobs:ShareRowExclusiveLock",
+        "saved_jobs:AccessExclusiveLock",
+        "saved_jobs:AccessShareLock",
+        "saved_jobs:ShareLock",
+        "saved_jobs:ShareRowExclusiveLock"
+      ]
+    },
+    "A:recon-complete:unique_on_source_source_job_id": [
+      "idx_jobs_source_vendor_source_job_id_uniq",
+      "jobs_source_source_job_id_key"
+    ],
+    "A:recon-complete:idx_companies_category": "CREATE INDEX idx_companies_category ON public.companies USING btree (category) WHERE (category IS NOT NULL)",
+    "A:recon-complete:second_run": {
+      "ok": true,
+      "ms": 892
+    },
+    "A:full:setup_ms": 5708,
+    "A:full:fixture_counts": {
+      "jobs": 240,
+      "companies": 12,
+      "job_descriptions": 120,
+      "saved_jobs": 9
+    },
+    "A:full:active_missing_similarity_hash": 0,
+    "A:full:f_progress_phases": [
+      "companies_canonical_domain",
+      "jobs_similarity_hash_v2",
+      "jobs_source_priority"
+    ],
+    "A:full:first_run": {
+      "ok": true,
+      "ms": 590,
+      "locks": [
+        "companies:AccessExclusiveLock",
+        "companies:AccessShareLock",
+        "companies:ShareLock",
+        "companies:ShareRowExclusiveLock",
+        "job_descriptions:AccessExclusiveLock",
+        "job_descriptions:AccessShareLock",
+        "job_descriptions:ShareLock",
+        "job_descriptions:ShareRowExclusiveLock",
+        "jobs:AccessExclusiveLock",
+        "jobs:AccessShareLock",
+        "jobs:ShareLock",
+        "jobs:ShareRowExclusiveLock",
+        "saved_jobs:AccessExclusiveLock",
+        "saved_jobs:AccessShareLock",
+        "saved_jobs:ShareLock",
+        "saved_jobs:ShareRowExclusiveLock"
+      ]
+    },
+    "A:full:unique_on_source_source_job_id": [
+      "idx_jobs_source_vendor_source_job_id_uniq",
+      "jobs_source_source_job_id_key"
+    ],
+    "A:full:idx_companies_category": "CREATE INDEX idx_companies_category ON public.companies USING btree (category)",
+    "A:full:second_run": {
+      "ok": true,
+      "ms": 177
+    },
+    "R:recon-incomplete:provenance": {
+      "created_relations": 11,
+      "added_columns_on_existing_tables": 33,
+      "prior_acl_rls": 2
+    },
+    "R:recon-incomplete:preexisting_attributes_changed_by_20261116b": 24,
+    "R:recon-incomplete:disable_ms": 93,
+    "R:full:provenance": {
+      "created_relations": 11,
+      "added_columns_on_existing_tables": 26,
+      "prior_acl_rls": 2
+    },
+    "R:full:preexisting_attributes_changed_by_20261116b": 18,
+    "R:full:disable_ms": 81,
+    "B:unique_on_source_source_job_id": [
+      "idx_jobs_source_vendor_source_job_id_uniq",
+      "jobs_source_source_job_id_key"
+    ],
+    "B:idx_companies_category": "CREATE INDEX idx_companies_category ON public.companies USING btree (category)",
+    "contract_size": 211,
+    "cross_order": {
+      "recon-complete": {
+        "contract": 211,
+        "missing": [],
+        "differ": []
+      },
+      "full": {
+        "contract": 211,
+        "missing": [],
+        "differ": [
+          "col public.jobs.is_remote: boolean null=YES default=false | boolean null=YES default=null"
+        ]
+      },
+      "filename": {
+        "contract": 211,
+        "missing": [],
+        "differ": []
+      }
+    },
+    "lock_order_probes": [
+      {
+        "probe": "writer holds jobs (INSERT), then FK-checks companies",
+        "writerError": null,
+        "migrationOk": true,
+        "migrationMs": 1306
+      },
+      {
+        "probe": "writer holds saved_jobs (UPDATE), then reads jobs",
+        "writerError": null,
+        "migrationOk": true,
+        "migrationMs": 1731
+      }
+    ],
+    "late_writer_regression": [
+      {
+        "case": "writer first: created table (INSERT internal_ingestion.ingestion_sources)",
+        "removal_while_writer_open": {
+          "ok": false,
+          "error": "20261116b removal refused: could not take write-blocking locks (canceling statement due to lock timeout: a concurrent session holds a conflicting lock); nothing was changed, retry later"
+        },
+        "waited_ms": 3014,
+        "removal_after_commit": {
+          "ok": false,
+          "error": "20261116b removal refused (data would be lost): internal_ingestion.ingestion_sources has 1 rows;"
+        },
+        "write_present": 1
+      },
+      {
+        "case": "writer first: pre-existing reference holder (UPDATE public.jobs.source_registry_id)",
+        "removal_while_writer_open": {
+          "ok": false,
+          "error": "20261116b removal refused: could not take write-blocking locks (canceling statement due to lock timeout: a concurrent session holds a conflicting lock); nothing was changed, retry later"
+        },
+        "waited_ms": 3020,
+        "removal_after_commit": {
+          "ok": false,
+          "error": "20261116b removal refused (data would be lost): public.jobs.source_registry_id is set on 1 rows;"
+        },
+        "write_present": 1
+      },
+      {
+        "case": "removal first",
+        "blocked": {
+          "created": true,
+          "holder": true
+        },
+        "late_insert_created": {
+          "ok": false,
+          "error": "relation \"internal_ingestion.ingestion_sources\" does not exist"
+        },
+        "late_update_holder": {
+          "ok": true
+        },
+        "removed": true,
+        "holder_write_present": 1,
+        "saved_jobs_reader_ms": 8,
+        "removal_locks": [
+          "auth.users:AccessExclusiveLock",
+          "public.companies:AccessExclusiveLock",
+          "public.job_descriptions:AccessShareLock",
+          "public.job_descriptions:ExclusiveLock",
+          "public.jobs:AccessExclusiveLock",
+          "public.jobs:AccessShareLock",
+          "public.saved_jobs:AccessShareLock",
+          "public.saved_jobs:ExclusiveLock"
+        ]
+      }
+    ],
+    "scale_setup_ms": 400012,
+    "scale_counts": {
+      "jobs": 200000,
+      "active": 160000,
+      "companies": 2000,
+      "descriptions": 100000,
+      "saved_jobs": 5000,
+      "jobs_size": "505 MB"
+    },
+    "scale_contention": {
+      "result": {
+        "ok": false,
+        "ms": 3083,
+        "error": "canceling statement due to lock timeout"
+      },
+      "lock_timeout": "3s",
+      "timeline": {
+        "migWaitingForLock": {
+          "from": 47,
+          "to": 3007,
+          "ms": 2960
+        },
+        "accessExclusiveOnJobsHeld": null,
+        "trafficQueued": {
+          "from": 417,
+          "to": 3007,
+          "ms": 2590
+        },
+        "samples": 54
+      },
+      "events": [
+        {
+          "t": 0,
+          "who": "reader",
+          "what": "holds ACCESS SHARE on public.jobs (open transaction)"
+        },
+        {
+          "t": 413,
+          "who": "traffic",
+          "what": "writer + feed reader start while 16b waits"
+        },
+        {
+          "t": 3084,
+          "who": "migration",
+          "what": "aborted: canceling statement due to lock timeout"
+        }
+      ],
+      "write_ms": {
+        "n": 7,
+        "p50": 4,
+        "p95": 2772,
+        "max": 2772
+      },
+      "read_ms": {
+        "n": 8,
+        "p50": 1,
+        "p95": 2731,
+        "max": 2731
+      }
+    },
+    "scale_statement_timeout": {
+      "ok": false,
+      "ms": 799,
+      "error": "canceling statement due to statement timeout",
+      "statement_timeout": "250ms"
+    },
+    "scale_retry": {
+      "result": {
+        "ok": true,
+        "ms": 7978,
+        "locks_before_commit": [
+          "companies:AccessExclusiveLock",
+          "companies:AccessShareLock",
+          "companies:ShareLock",
+          "companies:ShareRowExclusiveLock",
+          "job_descriptions:AccessExclusiveLock",
+          "job_descriptions:AccessShareLock",
+          "job_descriptions:ShareLock",
+          "job_descriptions:ShareRowExclusiveLock",
+          "jobs:AccessExclusiveLock",
+          "jobs:AccessShareLock",
+          "jobs:ShareLock",
+          "jobs:ShareRowExclusiveLock",
+          "saved_jobs:AccessExclusiveLock",
+          "saved_jobs:AccessShareLock",
+          "saved_jobs:ShareLock",
+          "saved_jobs:ShareRowExclusiveLock"
+        ]
+      },
+      "lock_timeout": "3s",
+      "timeline": {
+        "migWaitingForLock": {
+          "from": 563,
+          "to": 1508,
+          "ms": 945
+        },
+        "accessExclusiveOnJobsHeld": {
+          "from": 1573,
+          "to": 8435,
+          "ms": 6862
+        },
+        "trafficQueued": {
+          "from": 563,
+          "to": 8435,
+          "ms": 7872
+        },
+        "samples": 144
+      },
+      "events": [
+        {
+          "t": 507,
+          "who": "migration",
+          "what": "16b start"
+        },
+        {
+          "t": 8485,
+          "who": "migration",
+          "what": "committed (7978 ms)"
+        }
+      ],
+      "steady_state_ms": {
+        "write": {
+          "n": 16,
+          "p50": 6,
+          "p95": 11,
+          "max": 11
+        },
+        "read": {
+          "n": 16,
+          "p50": 2,
+          "p95": 2,
+          "max": 2
+        }
+      },
+      "during_ms": {
+        "write": {
+          "n": 30,
+          "p50": 5,
+          "p95": 29,
+          "max": 7981
+        },
+        "read": {
+          "n": 32,
+          "p50": 2,
+          "p95": 2,
+          "max": 7983
+        }
+      }
+    },
+    "scale_second_apply": {
+      "ok": true,
+      "ms": 175,
+      "locks_before_commit": [
+        "companies:AccessExclusiveLock",
+        "companies:ShareLock",
+        "job_descriptions:AccessExclusiveLock",
+        "job_descriptions:ShareLock",
+        "jobs:AccessExclusiveLock",
+        "jobs:ShareLock",
+        "saved_jobs:AccessExclusiveLock",
+        "saved_jobs:ShareLock"
+      ]
+    },
+    "server_log_lock_reports": [
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "\t-- REPAIR (docs/10m-schema-step1-rehearsal.md, deadlock): take every pre-existing table lock this migration",
+      "\t-- companies; a saved_jobs write then a read of jobs): with the previous statement-by-statement order both",
+      "\t-- deadlocked on real PostgreSQL 17, with this prelude both only wait. Other lock orders are not proven.",
+      "2026-11-20 08:26:32.315 IST [20720] ERROR:  20261116b removal refused: could not take write-blocking locks (canceling statement due to lock timeout: a concurrent session holds a conflicting lock); nothing was changed, retry later",
+      "2026-11-20 08:26:32.315 IST [20720] CONTEXT:  PL/pgSQL function inline_code_block line 72 at RAISE",
+      "2026-11-20 08:26:32.315 IST [20720] STATEMENT:  -- ============================================================================",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "2026-11-20 08:26:35.556 IST [20720] ERROR:  20261116b removal refused: could not take write-blocking locks (canceling statement due to lock timeout: a concurrent session holds a conflicting lock); nothing was changed, retry later",
+      "2026-11-20 08:26:35.556 IST [20720] CONTEXT:  PL/pgSQL function inline_code_block line 72 at RAISE",
+      "2026-11-20 08:26:35.556 IST [20720] STATEMENT:  -- ============================================================================",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "\t-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).",
+      "\t  -- deadlock while locking refuses the removal with nothing changed.",
+      "\t         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')",
+      "\t  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN",
+      "2026-11-20 08:33:38.981 IST [22992] ERROR:  canceling statement due to lock timeout",
+      "2026-11-20 08:33:38.981 IST [22992] CONTEXT:  SQL statement \"LOCK TABLE public.jobs IN ACCESS EXCLUSIVE MODE\"",
+      "2026-11-20 08:33:38.981 IST [22992] STATEMENT:  -- ============================================================================",
+      "\t-- REPAIR (docs/10m-schema-step1-rehearsal.md, deadlock): take every pre-existing table lock this migration",
+      "\t-- companies; a saved_jobs write then a read of jobs): with the previous statement-by-statement order both",
+      "\t-- deadlocked on real PostgreSQL 17, with this prelude both only wait. Other lock orders are not proven.",
+      "\t-- REPAIR (docs/10m-schema-step1-rehearsal.md, deadlock): take every pre-existing table lock this migration",
+      "\t-- companies; a saved_jobs write then a read of jobs): with the previous statement-by-statement order both",
+      "\t-- deadlocked on real PostgreSQL 17, with this prelude both only wait. Other lock orders are not proven.",
+      "\t-- REPAIR (docs/10m-schema-step1-rehearsal.md, deadlock): take every pre-existing table lock this migration",
+      "\t-- companies; a saved_jobs write then a read of jobs): with the previous statement-by-statement order both",
+      "\t-- deadlocked on real PostgreSQL 17, with this prelude both only wait. Other lock orders are not proven."
+    ]
+  },
+  "skippedExtensionLines": [
+    "20261108a_pg_cron_scheduled_jobs.sql: pg_cron"
+  ]
+}

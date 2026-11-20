@@ -73,29 +73,11 @@ export const NAV_ITEMS: NavItem[] = [
 
 interface AppIconRailProps {
   currentRoute?: string;
-  /** Jobs-only layout option: at >=1440px always show the labeled 240px sidebar (narrower desktops keep the 72px rail so the centre stays usable). Below 1440px it has no effect. */
-  expandOnDesktop?: boolean;
 }
 
-/** True at >=1440px (false during SSR and on first render). */
-function useIsDesktop(): boolean {
-  const [isDesktop, setIsDesktop] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1440px)");
-    const update = () => setIsDesktop(mq.matches);
-    update();
-    mq.addEventListener?.("change", update);
-    return () => mq.removeEventListener?.("change", update);
-  }, []);
-  return isDesktop;
-}
-
-export default function AppIconRail({ currentRoute, expandOnDesktop = false }: AppIconRailProps) {
+export default function AppIconRail({ currentRoute }: AppIconRailProps) {
   const pathname = usePathname() || currentRoute || "/jobs";
-  const { isExpanded: storedExpanded, toggle } = useSidebarMode();
-  const isDesktop = useIsDesktop();
-  const forcedExpanded = expandOnDesktop && isDesktop && !storedExpanded;
-  const isExpanded = storedExpanded || forcedExpanded;
+  const { isExpanded, toggle } = useSidebarMode();
   const cookieNoticeHeight = useCookieNoticeHeight();
   const [isDetailOpen, setIsDetailOpen] = React.useState(false);
 
@@ -141,7 +123,7 @@ export default function AppIconRail({ currentRoute, expandOnDesktop = false }: A
                 </span>
               </Link>
 
-              {!forcedExpanded && <button
+              <button
                 type="button"
                 onClick={toggle}
                 aria-label="Collapse sidebar"
@@ -149,7 +131,7 @@ export default function AppIconRail({ currentRoute, expandOnDesktop = false }: A
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-[#090E34] hover:text-[#2563EB] hover:bg-[#EFF6FF] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
               >
                 <ChevronLeft className="w-5 h-5 stroke-[2]" />
-              </button>}
+              </button>
             </div>
           ) : (
             /* Narrow Mode Header: Logo Mark + Expand Button */
