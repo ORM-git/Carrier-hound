@@ -724,7 +724,8 @@ async function runSuite() {
   }
 
   // 5f. Uses self-hosted logo first
-  if (!logoCode.includes('"self-hosted"') || !logoCode.includes("logoUrl")) {
+  // Candidate order: stored logo_url first, then the domain logo (behaviour covered by companyLogo.test.tsx)
+  if (!logoCode.includes("[logoUrl, unavatarUrl]")) {
     failures.push("CompanyLogo must prioritize self-hosted logoUrl first");
   } else {
     console.log("  [PASS] 5f. CompanyLogo prioritizes self-hosted logoUrl first");

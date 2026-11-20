@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useState } from "react";
 
 export interface CompanyLogoProps {
   company: string;
   applyUrl?: string;
   sourceUrl?: string;
   logoUrl?: string | null;
+  /** Company website domain from companies.domain */
+  domain?: string | null;
   className?: string;
 }
 
@@ -52,33 +54,47 @@ export function extractDomainFromUrl(urlStr?: string): string {
   }
 }
 
+// Logo URLs that failed this session (error, CSP block, cached failure or zero-size load). Kept for the
+// page lifetime so a failed stored logo stays on the next candidate / letter tile, including on remount.
+const failedLogoSrcs = new Set<string>();
+
 export default function CompanyLogo({
   company,
   applyUrl,
   sourceUrl,
   logoUrl,
+  domain: companyDomain,
   className = "w-10 h-10",
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
 
-  // Derive domain strictly from a real apply or source URL that is not an ATS host
+  // Domain: stored companies.domain first, then a non-ATS apply/source URL
   // ZERO name-slug guessing
-  const domain = extractDomainFromUrl(applyUrl) || extractDomainFromUrl(sourceUrl);
+  const domain =
+    (companyDomain ? extractDomainFromUrl(`https://${companyDomain.trim()}`) : "") ||
+    extractDomainFromUrl(applyUrl) ||
+    extractDomainFromUrl(sourceUrl);
   const unavatarUrl = domain ? `https://unavatar.io/${domain}?fallback=false` : null;
 
-  // Stages: self-hosted (companies.logo_url) -> unavatar.io -> fallback (letter tile)
-  const initialStage: "self-hosted" | "unavatar" | "fallback" = logoUrl
-    ? "self-hosted"
-    : unavatarUrl
-    ? "unavatar"
-    : "fallback";
-
-  const [imgStage, setImgStage] = useState<"self-hosted" | "unavatar" | "fallback">(initialStage);
-
-  useEffect(() => {
-    setImgStage(logoUrl ? "self-hosted" : unavatarUrl ? "unavatar" : "fallback");
-  }, [logoUrl, unavatarUrl]);
+  // Order: stored logo_url -> domain logo (unavatar) -> letter tile. The first candidate that has not
+  // failed is shown; no reset effect, so a failure can never be raced back to a broken image.
+  const candidates = [logoUrl, unavatarUrl].filter((u): u is string => Boolean(u));
+  const [, bumpFailures] = useState(0);
+  const src = candidates.find((u) => !failedLogoSrcs.has(u)) ?? null;
+  // Always re-render this instance: another instance may already have recorded the same URL as failed.
+  const markFailed = useCallback((u: string) => {
+    failedLogoSrcs.add(u);
+    bumpFailures((n) => n + 1);
+  }, []);
+  // Catches failures that happened before React attached onError (CSP block, cached failure).
+  // shortcut: an SVG without intrinsic size also reports naturalWidth 0; resolver stores raster only.
+  const checkImage = useCallback(
+    (img: HTMLImageElement | null) => {
+      if (img && img.complete && img.naturalWidth === 0 && src) markFailed(src);
+    },
+    [markFailed, src]
+  );
 
   // Deterministic gradient for fallback
   const gradients = [
@@ -91,7 +107,7 @@ export default function CompanyLogo({
   const charCode = (cleanCompany.charCodeAt(0) || 0) + (cleanCompany.charCodeAt(1) || 0);
   const gradient = gradients[charCode % gradients.length];
 
-  if (imgStage === "fallback" || (!logoUrl && !domain)) {
+  if (!src) {
     return (
       <div
         className={`rounded-xl bg-gradient-to-br ${gradient} text-white font-black flex items-center justify-center shrink-0 shadow-2xs select-none border border-white/20 ${className}`}
@@ -101,23 +117,20 @@ export default function CompanyLogo({
     );
   }
 
-  const src = imgStage === "self-hosted" && logoUrl ? logoUrl : unavatarUrl!;
-
   return (
     <div
       className={`rounded-xl overflow-hidden bg-white border border-slate-200/90 p-1 flex items-center justify-center shrink-0 shadow-2xs ${className}`}
     >
       <img
+        key={src}
+        ref={checkImage}
         src={src}
         alt={`${cleanCompany} logo`}
         className="w-full h-full object-contain rounded-lg"
         loading="lazy"
-        onError={() => {
-          if (imgStage === "self-hosted") {
-            setImgStage(unavatarUrl ? "unavatar" : "fallback");
-          } else {
-            setImgStage("fallback");
-          }
+        onError={() => markFailed(src)}
+        onLoad={(e) => {
+          if (e.currentTarget.naturalWidth === 0) markFailed(src);
         }}
       />
     </div>

@@ -269,7 +269,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     const normalizedUserCountries = normalizeUserCountries(userLocations);
 
     const selectColumns = (isPro && hasServiceKey)
-      ? "*, companies(name, logo_url)"
+      ? "*, companies(name, logo_url, domain)"
       : hasServiceKey
       ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url)"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
@@ -278,7 +278,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
       const singleColumns = (isPro && hasServiceKey)
-        ? "*, companies(name, logo_url)"
+        ? "*, companies(name, logo_url, domain)"
         : hasServiceKey
         ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url)"
         : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active";
@@ -355,6 +355,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
         status: isInactive ? "expired" : (jobRow.status || "active"),
+        companyDomain: (isPro && !isInactive) ? (jobRow.companies?.domain || null) : null,
         logoUrl: (isPro && !isInactive) ? resolvedLogo : null,
         logo_url: (isPro && !isInactive) ? resolvedLogo : null,
       };
@@ -872,6 +873,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           description: row.description || "",
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
+          companyDomain: row.companies?.domain || null,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
         };

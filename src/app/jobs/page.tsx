@@ -2142,6 +2142,7 @@ function JobsPageInner() {
                                     company={job.company}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
+                                    domain={job.companyDomain}
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
 
@@ -2209,7 +2210,7 @@ function JobsPageInner() {
                                 <div className="border-b border-[#E2E8F0]" />
 
                                 {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
-                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] text-[#475569]">
+                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
                                   {/* Row 1, Col 1: Location */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
@@ -2402,6 +2403,7 @@ function JobsPageInner() {
                                     company={job.company}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
+                                    domain={job.companyDomain}
                                     className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
                                   />
                                   <div className="min-w-0 flex-1">
@@ -2459,26 +2461,26 @@ function JobsPageInner() {
 
                               {/* Small wrapping metadata chips beneath title: roughly 24px high, 12px text (posted time not duplicated here) */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <MapPin className="w-3 h-3 text-[#475569]" />
                                   {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                                   {isPro && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
                                 </span>
                                 {formattedJobType && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                     <Briefcase className="w-3 h-3 text-[#475569]" />
                                     {formattedJobType}
                                   </span>
                                 )}
                                 {job.remote && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1">
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                     <Laptop className="w-3 h-3 text-[#475569]" />
                                     Remote
                                   </span>
                                 )}
                                 {job.salary && (
                                   <span
-                                    className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[12px] font-medium inline-flex items-center gap-1"
+                                    className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
                                     title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />

@@ -211,7 +211,7 @@ export async function GET(req: Request) {
 
     // Query active candidate jobs from Supabase
     const selectCols = hasServiceKey
-      ? "id, title, company, location, remote, remote_scope, remote_eligibility, job_type, salary_text, salary_min, salary_max, salary_period, currency, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code, apply_url, description, skills, logo_url, company_id"
+      ? "id, title, company, location, remote, remote_scope, remote_eligibility, job_type, salary_text, salary_min, salary_max, salary_period, currency, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code, apply_url, description, skills, logo_url, company_id, companies(logo_url, domain)"
       : "id, title, location, remote, remote_scope, remote_eligibility, job_type, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code";
 
     let query = supabaseAdmin
@@ -512,8 +512,9 @@ export async function GET(req: Request) {
           description: row.description || "",
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
-          logoUrl: row.logo_url || null,
-          logo_url: row.logo_url || null,
+          companyDomain: row.companies?.domain || null,
+          logoUrl: row.logo_url || row.companies?.logo_url || null,
+          logo_url: row.logo_url || row.companies?.logo_url || null,
           matchScore: typeof row.matchScore === "number" ? row.matchScore : (typeof row._matchScore === "number" ? row._matchScore : null),
         };
       }
