@@ -599,6 +599,22 @@ async function objectState(db: Db, relations: string[]): Promise<Record<string, 
   return out;
 }
 
+/** Exact ACL per relation: every (grantee, privilege, grant option, grantor) item, NULL ACL expanded to its default. */
+export async function aclItems(db: Db, relations: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const r of (await db.query<{ q: string; a: string }>(
+    `SELECT n.nspname || '.' || c.relname q,
+            (SELECT string_agg(CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END || '=' || x.p, ',' ORDER BY x.grantee, x.p)
+               FROM (SELECT a.grantee, string_agg(CASE a.privilege_type WHEN 'SELECT' THEN 'r' WHEN 'INSERT' THEN 'a' WHEN 'UPDATE' THEN 'w'
+                       WHEN 'DELETE' THEN 'd' WHEN 'TRUNCATE' THEN 'D' WHEN 'REFERENCES' THEN 'x' WHEN 'TRIGGER' THEN 't' WHEN 'MAINTAIN' THEN 'm'
+                       ELSE a.privilege_type END || CASE WHEN a.is_grantable THEN '*' ELSE '' END, '' ORDER BY a.privilege_type)
+                       || '/' || pg_get_userbyid(a.grantor) p
+                       FROM aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a GROUP BY a.grantee, a.grantor) x) a
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname || '.' || c.relname = ANY($1)`, [relations])).rows)
+    out[r.q] = r.a ?? "";
+  return out;
+}
+
 async function relationsNow(db: Db): Promise<string[]> {
   return (await db.query<{ q: string }>(
     `SELECT n.nspname || '.' || c.relname q FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -647,11 +663,18 @@ export async function rollbackScenario(engine: Engine, kind: Baseline, targetSql
 async function rollbackSteps(scn: string, db: Db, targetSql: string) {
   // A production variant whose saved_jobs grants / RLS differ from what 20261116b sets, so the migration
   // changes them and the disable script has to restore the exact prior state from the provenance record.
-  await db.exec(`GRANT SELECT ON public.saved_jobs TO anon; ALTER TABLE public.saved_jobs NO FORCE ROW LEVEL SECURITY;`);
+  // The variant carries grant options (anon SELECT WITH GRANT OPTION, which 16b revokes; service_role REFERENCES
+  // WITH GRANT OPTION, which 16b's GRANT ALL widens) so the restore must reproduce is_grantable exactly.
+  await db.exec(`GRANT SELECT ON public.saved_jobs TO anon WITH GRANT OPTION;
+    GRANT REFERENCES ON public.saved_jobs TO service_role WITH GRANT OPTION;
+    ALTER TABLE public.saved_jobs NO FORCE ROW LEVEL SECURITY;`);
   const cols = await originalColumns(db);
   const preRelations = await relationsNow(db);
   const s0 = await snapshot(db, cols);
   const pre0 = await objectState(db, preRelations);
+  const acl0 = await aclItems(db, preRelations);
+  check(scn, "ACL fixture has grant options on a pre-existing table", /(^|,)anon=[^,/]*r\*/.test(acl0["public.saved_jobs"] ?? "") && /(^|,)service_role=[^,/]*x\*/.test(acl0["public.saved_jobs"] ?? ""),
+    acl0["public.saved_jobs"]);
 
   const applied = await applyTarget(db, targetSql);
   check(scn, "20261116b applies", applied.ok, applied.error);
@@ -696,6 +719,21 @@ async function rollbackSteps(scn: string, db: Db, targetSql: string) {
   const early = await runFile(db, ROLLBACK_REMOVE);
   check(scn, "remove-if-empty refuses before disable", !early.ok && /disable/i.test(early.error || ""), early.error);
 
+  // Level 1 must fail closed, changing nothing, on an ACL shape it cannot restore exactly: a grant whose
+  // grantor is not the owner (service_role regrants through a grant option; REVOKE would need CASCADE)
+  await db.exec(`GRANT SELECT ON public.saved_jobs TO service_role WITH GRANT OPTION;
+    SET ROLE service_role; GRANT SELECT ON public.saved_jobs TO anon; RESET ROLE;`);
+  const odd = { state: await objectState(db, preRelations), acl: await aclItems(db, await relationsNow(db)), data: await newDataChecksum(db, created) };
+  const unsupported = await runFile(db, ROLLBACK_DISABLE);
+  check(scn, "disable refuses an unsupported ACL shape (grantor is not the owner)", !unsupported.ok && /unsupported ACL shape/.test(unsupported.error || ""), unsupported.error?.slice(0, 160));
+  const oddAfter = { state: await objectState(db, preRelations), acl: await aclItems(db, await relationsNow(db)), data: await newDataChecksum(db, created) };
+  const oddDiff = [...diffMaps(odd.state, oddAfter.state), ...diffMaps(odd.acl, oddAfter.acl)];
+  check(scn, "refused disable changed nothing (constraints, policies, indexes, exact ACLs, RLS, data)",
+    oddDiff.length === 0 && odd.data === oddAfter.data
+      && (await n(db, `SELECT count(*) n FROM internal_ingestion.schema_migration_provenance WHERE kind = 'state'`)) === 0, oddDiff.slice(0, 5).join("; ") || undefined);
+  await db.exec(`SET ROLE service_role; REVOKE SELECT ON public.saved_jobs FROM anon; RESET ROLE;
+    REVOKE GRANT OPTION FOR SELECT ON public.saved_jobs FROM service_role;`);
+
   // Level 1
   const t0 = performance.now();
   const dis = await runFile(db, ROLLBACK_DISABLE);
@@ -708,6 +746,9 @@ async function rollbackSteps(scn: string, db: Db, targetSql: string) {
   const preNow = await objectState(db, preRelations);
   const preDiff = diffMaps(pre0, preNow);
   check(scn, "disable: pre-existing tables' indexes, constraints, policies, privileges, RLS and triggers equal pre-20261116b", preDiff.length === 0, preDiff.slice(0, 5).join("; ") || `${Object.keys(pre0).length} attributes compared`);
+  const aclDiff = diffMaps(acl0, await aclItems(db, preRelations));
+  check(scn, "disable: exact prior ACL items restored (grantee, privilege, grant option, grantor)", aclDiff.length === 0,
+    aclDiff.slice(0, 5).join("; ") || `${Object.keys(acl0).length} relations; saved_jobs ${acl0["public.saved_jobs"]}`);
   const apiLeft = (await db.query<{ q: string }>(
     `SELECT n.nspname || '.' || c.relname q FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname || '.' || c.relname = ANY($1) AND (has_table_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,DELETE')
@@ -741,6 +782,8 @@ async function rollbackSteps(scn: string, db: Db, targetSql: string) {
   check(scn, "remove: original data unchanged", dataDiff3.length === 0, dataDiff3.join("; ") || undefined);
   const preDiff3 = diffMaps(pre0, await objectState(db, preRelations));
   check(scn, "remove: pre-existing objects equal pre-20261116b", preDiff3.length === 0, preDiff3.slice(0, 5).join("; ") || undefined);
+  const aclDiff3 = diffMaps(acl0, await aclItems(db, preRelations));
+  check(scn, "remove: exact prior ACL items still in place", aclDiff3.length === 0, aclDiff3.slice(0, 5).join("; ") || undefined);
 
   // Re-enable
   const re = await applyTarget(db, targetSql);

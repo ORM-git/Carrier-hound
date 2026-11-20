@@ -5,7 +5,10 @@
 -- internal_ingestion.schema_migration_provenance (written by the migration) to decide what to undo:
 --   1. drop the policies, constraints and indexes the migration CREATED on tables that existed before it
 --      (pre-existing objects are never touched, even when the migration file mentions their names)
---   2. restore the exact prior grants and RLS flags of pre-existing tables the migration changed
+--   2. restore the exact prior grants (grantee, privilege, grant option, grantor) and RLS flags of
+--      pre-existing tables the migration changed. Before changing anything it refuses ACL shapes it cannot
+--      restore exactly (a grantor other than the owner, or a changed owner entry), and after restoring it
+--      verifies every ACL item equals the recorded prior ACL, else the whole script rolls back.
 --   3. revoke API access (PUBLIC, anon, authenticated) from relations the migration created
 -- No CASCADE, no DROP TABLE, no DROP COLUMN. Idempotent. Re-enable by re-applying the migration.
 --
@@ -24,6 +27,8 @@ DECLARE
   rel regclass;
   owner_oid oid;
   n_created integer;
+  unsupported text := '';
+  mismatch text;
 BEGIN
   IF to_regclass('internal_ingestion.schema_migration_provenance') IS NULL THEN
     RAISE EXCEPTION '20261116b rollback refused: provenance record missing, cannot tell what the migration created';
@@ -40,6 +45,42 @@ BEGIN
       EXECUTE format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE', t);
     END IF;
   END LOOP;
+
+  -- 0. Fail closed BEFORE changing anything if any ACL to restore has a shape this script cannot restore
+  --    exactly. Supported: every grant (prior and current) made by the relation owner, with or without
+  --    grant option, and the owner's own privileges unchanged by the migration. Unsupported, refused:
+  --    grants whose grantor is another role (incl. regrants through a grant option: REVOKE would need
+  --    CASCADE, and GRANT cannot reproduce another grantor), or a changed owner entry.
+  FOR r IN
+    SELECT p.schema_name, p.object_name, p.detail FROM internal_ingestion.schema_migration_provenance p
+     WHERE p.migration = '20261116b' AND p.kind = 'prior_acl'
+     ORDER BY p.schema_name, p.object_name
+  LOOP
+    rel := to_regclass(format('%I.%I', r.schema_name, r.object_name));
+    CONTINUE WHEN rel IS NULL;
+    SELECT relowner INTO owner_oid FROM pg_class WHERE oid = rel;
+    SELECT string_agg(DISTINCT format('%s grant %s->%s', x.side, pg_get_userbyid(x.grantor),
+                                      CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END), ', ')
+      INTO t
+      FROM (SELECT 'prior' AS side, a.* FROM aclexplode(coalesce(nullif(r.detail, '')::aclitem[], acldefault('r', owner_oid))) a
+            UNION ALL
+            SELECT 'current', a.* FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE c.oid = rel) x
+     WHERE x.grantor <> owner_oid;
+    IF t IS NOT NULL THEN
+      unsupported := unsupported || format(' %s: grantor is not the owner (%s);', rel, t);
+    END IF;
+    IF EXISTS (
+         (SELECT a.privilege_type, a.is_grantable FROM aclexplode(coalesce(nullif(r.detail, '')::aclitem[], acldefault('r', owner_oid))) a WHERE a.grantee = owner_oid
+          EXCEPT SELECT a.privilege_type, a.is_grantable FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE c.oid = rel AND a.grantee = owner_oid)
+         UNION ALL
+         (SELECT a.privilege_type, a.is_grantable FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE c.oid = rel AND a.grantee = owner_oid
+          EXCEPT SELECT a.privilege_type, a.is_grantable FROM aclexplode(coalesce(nullif(r.detail, '')::aclitem[], acldefault('r', owner_oid))) a WHERE a.grantee = owner_oid)) THEN
+      unsupported := unsupported || format(' %s: the owner''s own privileges differ from the recorded prior ACL;', rel);
+    END IF;
+  END LOOP;
+  IF unsupported <> '' THEN
+    RAISE EXCEPTION '20261116b rollback refused (unsupported ACL shape, nothing changed):%', unsupported;
+  END IF;
 
   -- 1a. policies created by the migration on pre-existing tables
   FOR r IN
@@ -95,11 +136,26 @@ BEGIN
                      CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END);
     END LOOP;
     IF r.detail <> '' THEN
-      FOR g IN SELECT a.grantee, string_agg(a.privilege_type, ', ') AS privs
-                 FROM aclexplode(r.detail::aclitem[]) a WHERE a.grantee <> owner_oid GROUP BY a.grantee LOOP
-        EXECUTE format('GRANT %s ON %s TO %s', g.privs, rel,
-                       CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END);
+      -- one GRANT per (grantee, grant option), so grant options are restored exactly (step 0 proved the
+      -- grantor of every prior entry is the owner, which is who these GRANTs are recorded as)
+      FOR g IN SELECT a.grantee, a.is_grantable, string_agg(a.privilege_type, ', ' ORDER BY a.privilege_type) AS privs
+                 FROM aclexplode(r.detail::aclitem[]) a WHERE a.grantee <> owner_oid GROUP BY a.grantee, a.is_grantable LOOP
+        EXECUTE format('GRANT %s ON %s TO %s%s', g.privs, rel,
+                       CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(g.grantee)) END,
+                       CASE WHEN g.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END);
       END LOOP;
+    END IF;
+    -- verify the restore is exact: every (grantee, grantor, privilege, grant option) equals the prior ACL
+    SELECT string_agg(format('%s %s %s/%s%s', x.side, CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,
+                             x.privilege_type, pg_get_userbyid(x.grantor), CASE WHEN x.is_grantable THEN '*' ELSE '' END), ', ')
+      INTO mismatch
+      FROM ((SELECT 'missing' AS side, a.* FROM aclexplode(coalesce(nullif(r.detail, '')::aclitem[], acldefault('r', owner_oid))) a
+             EXCEPT SELECT 'missing', a.* FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE c.oid = rel)
+            UNION ALL
+            (SELECT 'extra', a.* FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE c.oid = rel
+             EXCEPT SELECT 'extra', a.* FROM aclexplode(coalesce(nullif(r.detail, '')::aclitem[], acldefault('r', owner_oid))) a)) x;
+    IF mismatch IS NOT NULL THEN
+      RAISE EXCEPTION '20261116b rollback refused: restored ACL of % is not exactly the prior ACL (%); nothing changed', rel, mismatch;
     END IF;
   END LOOP;
 

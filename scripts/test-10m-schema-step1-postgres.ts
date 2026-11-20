@@ -22,6 +22,9 @@
  *        d. second apply: safe no-op (still takes the locks; measured)
  *   3. deterministic lock-order probes: a writer holding jobs (or saved_jobs) in an open transaction that
  *      then touches companies (or jobs) must never deadlock with 16b
+ *   4. remove-if-empty late-writer regression (two sessions): a concurrent write into a created table or a
+ *      pre-existing reference-holder column either blocks until removal has committed, or makes removal
+ *      refuse; a committed write is never dropped
  *
  * Flags: --jobs=N, --skip-correctness, --negative-control, --migration=<path>, --json=<path>
  * Exit: 0 all checks passed; 1 a check failed; 2 environment refused / prerequisites missing.
@@ -33,7 +36,7 @@ import net from "node:net";
 import { spawnSync } from "node:child_process";
 import {
   Db, Engine, check, checks, notes, finish, runScenarios, setUnavailableExtensions, populatedProductionOrder,
-  applyTarget, snapshot, originalColumns, diffSnapshots, TARGET, MIG_DIR, ROOT,
+  applyTarget, snapshot, originalColumns, diffSnapshots, TARGET, MIG_DIR, ROOT, ROLLBACK_DISABLE, ROLLBACK_REMOVE, splitFinalCommit,
 } from "./test-10m-schema-step1-rehearsal";
 
 const args = process.argv.slice(2);
@@ -392,6 +395,120 @@ async function lockOrderProbes(c: Cluster, admin: any, targetSql: string) {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// remove-if-empty vs a late writer (two real sessions). The script must take its write-blocking locks
+// before any emptiness/reference check and hold them through COMMIT, so a concurrent write either blocks
+// until removal has committed, or makes removal refuse. A committed write must never be dropped.
+// ---------------------------------------------------------------------------------------------------
+async function lateWriterRegression(c: Cluster, admin: any, targetSql: string) {
+  console.log(`\n=== W: remove-if-empty vs concurrent late writers (two sessions) ===`);
+  const engine = engineFor(c, admin);
+  const db = (await populatedProductionOrder(engine, "recon-incomplete", "latewriter")) as any;
+  const removeSql = fs.readFileSync(ROLLBACK_REMOVE, "utf8");
+  const run = async (sql: string): Promise<{ ok: boolean; error?: string }> => {
+    try { await db.exec(sql); return { ok: true }; }
+    catch (e: any) { await db.exec("ROLLBACK").catch(() => {}); return { ok: false, error: String(e?.message || e).slice(0, 240) }; }
+  };
+  const one = async (sql: string) => Number((await db.query(sql)).rows[0].n);
+  const sourcesExist = async () => (await one(`SELECT count(*) n FROM pg_class WHERE oid = to_regclass('internal_ingestion.ingestion_sources')`)) === 1;
+  const settle = (p: Promise<any>) => p.then(() => ({ ok: true, error: undefined as string | undefined }),
+    (e: any) => ({ ok: false, error: String(e?.message || e).slice(0, 200) }));
+  const results: any[] = [];
+  const observer = await connect(c, db._name, "latewriter-observer");
+  const blocked = async (app: string, ms = 10000) => {
+    const until = now() + ms;
+    while (now() < until) {
+      const r = await observer.query(`SELECT count(*)::int n FROM pg_stat_activity
+        WHERE datname = current_database() AND application_name = $1 AND wait_event_type = 'Lock'`, [app]);
+      if (r.rows[0].n > 0) return true;
+      await sleep(50);
+    }
+    return false;
+  };
+  try {
+    const applied = await applyTarget(db, targetSql);
+    const dis = await run(fs.readFileSync(ROLLBACK_DISABLE, "utf8"));
+    check("W", "setup: 16b applied and disabled (Level 1)", applied.ok && dis.ok, applied.error || dis.error);
+    const jobId = (await db.query(`SELECT id FROM public.jobs ORDER BY id LIMIT 1`)).rows[0].id;
+    const lateRef = "00000000-0000-4000-8000-00000000f00d";
+
+    // ---- writer first (open transaction), removal second: removal must refuse; the write survives -----
+    const writerFirst = [
+      { name: "created table (INSERT internal_ingestion.ingestion_sources)",
+        write: `INSERT INTO internal_ingestion.ingestion_sources (name, slug, source_type) VALUES ('Late writer', 'late:writer-1', 'ats')`,
+        present: `SELECT count(*) n FROM internal_ingestion.ingestion_sources WHERE slug = 'late:writer-1'`,
+        cleanup: `DELETE FROM internal_ingestion.ingestion_sources WHERE slug = 'late:writer-1'` },
+      { name: "pre-existing reference holder (UPDATE public.jobs.source_registry_id)",
+        write: `UPDATE public.jobs SET source_registry_id = '${lateRef}' WHERE id = '${jobId}'`,
+        present: `SELECT count(*) n FROM public.jobs WHERE id = '${jobId}' AND source_registry_id = '${lateRef}'`,
+        cleanup: `UPDATE public.jobs SET source_registry_id = NULL WHERE id = '${jobId}'` },
+    ];
+    for (const p of writerFirst) {
+      const w = await connect(c, db._name, "late-writer");
+      await w.query(`BEGIN`);
+      await w.query(p.write);
+      const t0 = now();
+      const r1 = await run(removeSql); // the script's own lock_timeout (3 s) applies
+      const waited = Math.round(now() - t0);
+      await w.query(`COMMIT`);
+      const kept = await sourcesExist();
+      const r2 = await run(removeSql);
+      const present = await one(p.present);
+      results.push({ case: `writer first: ${p.name}`, removal_while_writer_open: r1, waited_ms: waited, removal_after_commit: r2, write_present: present });
+      check("W", `writer first, ${p.name}: removal refuses on lock_timeout, nothing dropped`,
+        !r1.ok && /removal refused: could not take write-blocking locks/.test(r1.error || "") && kept, r1.error ?? "removal did NOT refuse");
+      check("W", `writer first, ${p.name}: once the write commits, removal refuses (data would be lost); the write is present`,
+        !r2.ok && /data would be lost/.test(r2.error || "") && present === 1 && (await sourcesExist()), r2.error ?? `write present: ${present}`);
+      await db.exec(p.cleanup);
+      await w.end().catch(() => {});
+    }
+
+    // ---- removal first (checks passed, drop done, locks held, not committed), late writers second ------
+    const begun = await run(splitFinalCommit(removeSql).body);
+    check("W", "removal first: checks pass and the drops run inside the still-open transaction", begun.ok, begun.error);
+    const held = (await db.query(`SELECT n.nspname || '.' || c.relname rel, l.mode FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE l.pid = pg_backend_pid() AND l.granted AND l.locktype = 'relation' AND c.relkind IN ('r', 'p')
+         AND n.nspname || '.' || c.relname IN ('public.jobs', 'public.companies', 'public.saved_jobs', 'public.job_descriptions', 'auth.users')
+       ORDER BY 1, 2`)).rows.map((r: any) => `${r.rel}:${r.mode}`);
+    const want = ["auth.users:AccessExclusiveLock", "public.companies:AccessExclusiveLock", "public.job_descriptions:ExclusiveLock",
+      "public.jobs:AccessExclusiveLock", "public.saved_jobs:ExclusiveLock"];
+    check("W", "removal holds write-blocking locks on every pre-existing holder/parent until COMMIT",
+      want.every((x) => held.includes(x)), held.join(", "));
+    const w1 = await connect(c, db._name, "late-writer-created");
+    const w2 = await connect(c, db._name, "late-writer-holder");
+    const rd = await connect(c, db._name, "late-reader");
+    for (const w of [w1, w2, rd]) await w.query(`SET lock_timeout = '30s'`);
+    const p1 = settle(w1.query(`INSERT INTO internal_ingestion.ingestion_sources (name, slug, source_type) VALUES ('Late writer', 'late:writer-2', 'ats')`));
+    const p2 = settle(w2.query(`UPDATE public.jobs SET source_registry_id = '${lateRef}' WHERE id = '${jobId}'`));
+    const b1 = await blocked("late-writer-created");
+    const b2 = await blocked("late-writer-holder");
+    const readT0 = now();
+    const readOk = await settle(rd.query(`SELECT count(*) FROM public.saved_jobs`));
+    const readMs = Math.round(now() - readT0);
+    check("W", "removal first: a late INSERT into a created table blocks on removal's lock", b1);
+    check("W", "removal first: a late write to a reference-holder column blocks on removal's lock", b2);
+    check("W", "removal first: reads of a holder-only table (saved_jobs, EXCLUSIVE) still run",
+      readOk.ok && readMs < 2000, readOk.error ?? `${readMs} ms`);
+    await db.exec(`COMMIT`);
+    const [r1, r2] = await Promise.all([p1, p2]);
+    const dropped = !(await sourcesExist());
+    const holderKept = await one(`SELECT count(*) n FROM public.jobs WHERE id = '${jobId}' AND source_registry_id = '${lateRef}'`);
+    results.push({ case: "removal first", blocked: { created: b1, holder: b2 }, late_insert_created: r1, late_update_holder: r2,
+      removed: dropped, holder_write_present: holderKept, saved_jobs_reader_ms: readMs, removal_locks: held });
+    check("W", "removal first: removal committed, created tables gone, state 'removed' recorded", dropped
+      && (await one(`SELECT count(*) n FROM internal_ingestion.schema_migration_provenance WHERE kind = 'state' AND object_name = 'removed'`)) === 1);
+    check("W", "removal first: the blocked INSERT then failed (never committed, so no data disappeared)",
+      !r1.ok && /does not exist|could not open relation/i.test(r1.error || ""), r1.error ?? "late INSERT unexpectedly succeeded");
+    check("W", "removal first: the blocked reference-holder write committed after removal and is present", r2.ok && holderKept === 1, r2.error);
+    for (const w of [w1, w2, rd]) await w.end().catch(() => {});
+  } finally {
+    notes.late_writer_regression = results;
+    await observer.end().catch(() => {});
+    await engine.close(db);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
 async function main() {
   const targetSql = fs.readFileSync(TARGET_PATH, "utf8");
   notes.migration_file = path.relative(ROOT, TARGET_PATH);
@@ -415,6 +532,7 @@ async function main() {
       }
     }
     await lockOrderProbes(cluster, admin, targetSql);
+    await lateWriterRegression(cluster, admin, targetSql);
     await concurrency(cluster, admin, targetSql);
     await admin.end();
     exitCode = checks.some((x) => !x.ok) ? 1 : 0;

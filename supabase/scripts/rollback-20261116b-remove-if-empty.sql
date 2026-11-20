@@ -7,6 +7,13 @@
 -- Then drops: created views -> created tables in FK-dependency order -> created enum types nothing uses.
 -- Never drops: pre-existing objects, columns added to pre-existing tables, jobs.source_id, #645 objects,
 -- the internal_ingestion schema or the provenance record. No CASCADE. Atomic: any refusal changes nothing.
+-- Concurrency: before any check it locks, in one fixed order (FK children before parents), every created
+-- table and every pre-existing FK parent of one in ACCESS EXCLUSIVE (what the DROPs take), and every other
+-- pre-existing table that holds or can hold references into them in EXCLUSIVE (writes blocked, reads not),
+-- and holds the locks through COMMIT. A concurrent writer therefore either blocks until removal has
+-- committed, or makes removal refuse (lock_timeout / deadlock while locking, or non-empty at check time).
+-- A committed write is never dropped. Reads of jobs, companies and auth.users also wait while it runs
+-- (DROP TABLE of a child needs ACCESS EXCLUSIVE on its parent): run it in a maintenance window.
 --
 -- Run as one unit:  psql -v ON_ERROR_STOP=1 -f supabase/scripts/rollback-20261116b-remove-if-empty.sql
 -- Tested by scripts/test-10m-schema-step1-rehearsal.ts (PGlite) and scripts/test-10m-schema-step1-postgres.ts.
@@ -27,6 +34,69 @@ BEGIN
   IF to_regclass('internal_ingestion.schema_migration_provenance') IS NULL THEN
     RAISE EXCEPTION '20261116b removal refused: provenance record missing';
   END IF;
+
+  -- Lock prelude. No state, emptiness or reference check runs before these locks are held, and they are
+  -- held through COMMIT, so no write can land between a check and the DROP that relies on it, and no
+  -- lock is requested after the checks (no upgrade, no mid-script lock_timeout). Locked tables:
+  --   - created tables: ACCESS EXCLUSIVE (what DROP TABLE takes);
+  --   - pre-existing FK parents of created tables (e.g. jobs, companies, auth.users): ACCESS EXCLUSIVE, which
+  --     DROP TABLE of the referencing child takes anyway (it removes the FK triggers on the parent);
+  --   - pre-existing reference holders (tables where 16b added a column pointing into a created table, or
+  --     with a live FK into one), unless already a parent above: EXCLUSIVE (blocks writes, allows reads).
+  -- Order: one fixed topological order over all of them, FK children before parents (the migration
+  -- prelude's saved_jobs -> job_descriptions -> jobs -> companies), ties by name. A lock_timeout or a
+  -- deadlock while locking refuses the removal with nothing changed.
+  BEGIN
+    FOR r IN
+      WITH RECURSIVE created AS (
+        SELECT to_regclass(format('%I.%I', p.schema_name, p.object_name))::oid AS oid_
+          FROM internal_ingestion.schema_migration_provenance p
+         WHERE p.migration = '20261116b' AND p.kind = 'relation' AND p.detail IN ('r', 'p')
+           AND NOT (p.schema_name = 'internal_ingestion' AND p.object_name = 'schema_migration_provenance')
+           AND to_regclass(format('%I.%I', p.schema_name, p.object_name)) IS NOT NULL
+      ), recorded_refs AS (   -- 16b FK columns on pre-existing tables (Level 1 dropped the constraint itself)
+        SELECT to_regclass(format('%I.%I', p.schema_name, p.object_name))::oid AS child,
+               to_regclass(substring(p.detail FROM 'REFERENCES ([^ (]+)\('))::oid AS parent
+          FROM internal_ingestion.schema_migration_provenance p
+         WHERE p.migration = '20261116b' AND p.kind = 'constraint' AND p.detail LIKE 'FOREIGN KEY%'
+           AND NOT EXISTS (SELECT 1 FROM internal_ingestion.schema_migration_provenance x WHERE x.migration = '20261116b'
+                             AND x.kind = 'relation' AND x.schema_name = p.schema_name AND x.object_name = p.object_name)
+      ), live_refs AS (
+        SELECT k.conrelid AS child, k.confrelid AS parent FROM pg_constraint k
+         WHERE k.contype = 'f' AND k.conrelid <> k.confrelid
+           AND (k.conrelid IN (SELECT oid_ FROM created) OR k.confrelid IN (SELECT oid_ FROM created))
+      ), touching AS (
+        SELECT child, parent FROM recorded_refs WHERE child IS NOT NULL AND parent IN (SELECT oid_ FROM created)
+        UNION SELECT child, parent FROM live_refs
+      ), nodes AS (
+        SELECT oid_, 'ACCESS EXCLUSIVE' AS mode FROM created
+        UNION ALL SELECT DISTINCT parent, 'ACCESS EXCLUSIVE' FROM touching
+         WHERE child IN (SELECT oid_ FROM created) AND parent NOT IN (SELECT oid_ FROM created)
+        UNION ALL SELECT DISTINCT child, 'EXCLUSIVE' FROM touching
+         WHERE parent IN (SELECT oid_ FROM created) AND child NOT IN (SELECT oid_ FROM created)
+           AND child NOT IN (SELECT parent FROM touching WHERE child IN (SELECT oid_ FROM created))
+      ), edges AS (   -- every FK child -> parent among the nodes (recorded 16b columns included)
+        SELECT DISTINCT e.child, e.parent FROM (
+          SELECT child, parent FROM recorded_refs
+          UNION SELECT k.conrelid, k.confrelid FROM pg_constraint k WHERE k.contype = 'f' AND k.conrelid <> k.confrelid) e
+         WHERE e.child IN (SELECT oid_ FROM nodes) AND e.parent IN (SELECT oid_ FROM nodes) AND e.child <> e.parent
+      ), d(oid_, lvl) AS (   -- lvl = longest FK chain below it (0 = nothing among the nodes references it)
+        SELECT oid_, 0 FROM nodes
+        UNION ALL
+        SELECT e.parent, d.lvl + 1 FROM d JOIN edges e ON e.child = d.oid_ WHERE d.lvl < 32
+      )
+      SELECT nd.oid_::regclass AS rel, nd.mode, max(d.lvl) AS lvl
+        FROM nodes nd JOIN d ON d.oid_ = nd.oid_
+       GROUP BY nd.oid_, nd.mode
+       ORDER BY 3, (SELECT format('%I.%I', ns.nspname, c.relname) FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace WHERE c.oid = nd.oid_)
+    LOOP
+      EXECUTE format('LOCK TABLE %s IN %s MODE', r.rel, r.mode);
+    END LOOP;
+  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
+    RAISE EXCEPTION '20261116b removal refused: could not take write-blocking locks (%: a concurrent session holds a conflicting lock); nothing was changed, retry later',
+      SQLERRM USING ERRCODE = 'lock_not_available';
+  END;
+
   IF NOT EXISTS (SELECT 1 FROM internal_ingestion.schema_migration_provenance
                   WHERE migration = '20261116b' AND kind = 'state' AND object_name = 'disabled') THEN
     RAISE EXCEPTION '20261116b removal refused: run supabase/scripts/rollback-20261116b-disable.sql first';

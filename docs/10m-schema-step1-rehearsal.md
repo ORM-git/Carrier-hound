@@ -76,10 +76,10 @@ Committed machine output: [`docs/evidence/10m-schema-step1/`](evidence/10m-schem
 
 | Run | Engine | Result |
 |---|---|---|
-| `test:10m-rehearsal` (repaired) | PGlite (PostgreSQL 18.6 WASM) | **213 passed, 0 failed** (exit 0) |
+| `test:10m-rehearsal` (repaired) | PGlite (PostgreSQL 18.6 WASM) | **223 passed, 0 failed** (exit 0): the previous 213 plus 10 ACL grant-option / fail-closed checks |
 | `test:10m-rehearsal -- --negative-control` | PGlite | exit 1, 8 checks caught the tampering |
-| `test:10m-rehearsal -- --migration=<#643 original f8280087>` | PGlite | exit 1, 81 passed, 23 failed (old failures reproduced) |
-| `test:10m-postgres` (repaired, 200,000 jobs) | **PostgreSQL 17.12**, real server | **225 passed, 0 failed** (exit 0) |
+| `test:10m-rehearsal -- --migration=<#643 original f8280087>` | PGlite | exit 1, 83 passed, 23 failed (old failures reproduced) |
+| `test:10m-postgres` (repaired, 200,000 jobs) | **PostgreSQL 17.12**, real server | **248 passed, 0 failed** (exit 0): the previous 225, plus 10 ACL checks and 13 remove-if-empty late-writer checks |
 | `test:10m-postgres -- --negative-control` | PostgreSQL 17.12 | exit 1, the same 8 checks caught it |
 | `test:10m-postgres -- --migration=<original>` (20,000 jobs) | PostgreSQL 17.12 | exit 1, 90 passed, 26 failed. Lock-order probes: **deadlock detected** (both); no provenance, so no safe rollback |
 | `test-10m-schema-step1-fixtures.ts` / `--negative-control` | PGlite | exit 0 / exit 1 |
@@ -125,38 +125,59 @@ and the **prior** ACL and RLS of pre-existing tables it **changed**. Re-applies 
 
 | Script | What it does | Never does |
 |---|---|---|
-| `supabase/scripts/rollback-20261116b-disable.sql` (Level 1) | Refuses without provenance. Uses the same lock order as the migration. Drops only the policies, constraints and non-constraint indexes the migration created on **pre-existing** tables. Restores their exact prior grants and RLS flags. Revokes PUBLIC/anon/authenticated access to relations the migration created. Marks the state `disabled`. Idempotent. | DROP TABLE, DROP COLUMN, CASCADE, touching pre-existing or #645 objects |
-| `supabase/scripts/rollback-20261116b-remove-if-empty.sql` (Level 2) | Refuses unless disabled, every created table is empty, and no added column still references a created table. Then drops created views, created tables leaves-first (refuses on outside references instead of cascading) and unused created enum types. | Dropping added columns, `jobs.source_id`, the `internal_ingestion` schema or the provenance record |
+| `supabase/scripts/rollback-20261116b-disable.sql` (Level 1) | Refuses without provenance. Uses the same lock order as the migration. **Before changing anything, refuses ACL shapes it cannot restore exactly**: a grant whose grantor is not the table owner (e.g. a regrant through a grant option, which `REVOKE` could only undo with CASCADE), or an owner entry 16b changed. Drops only the policies, constraints and non-constraint indexes the migration created on **pre-existing** tables. Restores their exact prior grants item by item (grantee, privilege, **grant option**, grantor) and RLS flags, then verifies every ACL item equals the recorded prior ACL, else rolls back. Revokes PUBLIC/anon/authenticated access to relations the migration created. Marks the state `disabled`. Idempotent. | DROP TABLE, DROP COLUMN, CASCADE, touching pre-existing or #645 objects |
+| `supabase/scripts/rollback-20261116b-remove-if-empty.sql` (Level 2) | **First takes write-blocking locks, before any check, and holds them through COMMIT**, in one fixed order (FK children before parents, ties by name): `ACCESS EXCLUSIVE` on every created table and every pre-existing FK parent of one (`jobs`, `companies`, `auth.users`: the mode the DROPs take anyway), `EXCLUSIVE` on the other reference holders (`saved_jobs`, `job_descriptions`: writes blocked, reads not). A `lock_timeout` or deadlock while locking refuses with nothing changed. Then it refuses unless disabled, every created table is empty, and no added column still references a created table. Then drops created views, created tables leaves-first (refuses on outside references instead of cascading) and unused created enum types. | Dropping added columns, `jobs.source_id`, the `internal_ingestion` schema or the provenance record |
 
 Both scripts run in one transaction with `lock_timeout = 3s`, so a refusal or a timeout changes nothing.
+Because remove-if-empty locks before it checks, a concurrent writer either **blocks** until removal has
+committed or makes removal **refuse**; a committed write is never dropped. While it runs, reads of `jobs`,
+`companies` and `auth.users` also wait (a few ms on empty tables, but run it in a maintenance window).
 **Re-enable** by re-applying the migration. It recreates the dropped indexes, constraints and policies, and its
 guarded block recreates the FKs that `ADD COLUMN IF NOT EXISTS … REFERENCES` would otherwise skip.
 
 **Tested** (`R:recon-incomplete`, `R:full`) on PGlite and real PostgreSQL 17, executing the exact files. The
-`saved_jobs` grants and RLS were first set to differ from what 16b sets, so the restore path is exercised.
+`saved_jobs` grants and RLS were first set to differ from what 16b sets, so the restore path is exercised. The
+variant carries **grant options** (`anon` SELECT WITH GRANT OPTION, which 16b revokes, and `service_role`
+REFERENCES WITH GRANT OPTION), so the restore must reproduce `is_grantable` exactly.
 
 1. **Apply 16b, then check provenance.** It must list exactly the relations 16b created (11). It recorded 33 columns added to pre-existing tables and 2 prior grant/RLS states.
 2. **Write new data:** a registered source, linked jobs, postings, a saved job linked to a posting, and a consent row.
 3. **Remove before disable:** refused.
-4. **Disable.**
+4. **Unsupported ACL shape:** `service_role` regrants SELECT to `anon` through a grant option (grantor is not the owner). Disable refuses before changing anything: constraints, policies, indexes, exact ACL items, RLS, data and the rollback state are all unchanged. The regrant is then removed.
+5. **Disable.**
    - Original data is unchanged: counts, checksums, `last_seen_at`, #645 F state and app queries.
    - New data is preserved.
    - Every pre-existing table's indexes, constraints, policies, effective privileges per role, RLS and triggers equal the pre-16b state: 1,549 attributes compared (1,556 on full D). On full D this includes #645 D's `companies_category_check` and E's indexes, which the old notes would have dropped.
+   - Every pre-existing relation's **exact ACL items** (grantee, privilege, grant option, grantor) equal the pre-16b state (53 relations), including `anon=r*/postgres` on `saved_jobs`. After removal they are still equal.
    - There is no API access to created relations, and added columns are kept.
-   - A sensitivity check confirms the same comparison saw 22 (16 on full D) attributes 16b had changed.
-5. **Disable again:** a no-op.
-6. **Remove with data present:** refused, naming the blocking tables and columns; nothing changed.
-7. **Operator clears the new data, then remove succeeds.** Only the provenance table remains of the created relations. Original data and pre-existing objects equal the pre-16b state.
-8. **Re-apply:** 16b is re-enabled, with the registry FK recreated and the rollback state cleared.
+   - A sensitivity check confirms the same comparison saw 24 (18 on full D) attributes 16b had changed.
+6. **Disable again:** a no-op.
+7. **Remove with data present:** refused, naming the blocking tables and columns; nothing changed.
+8. **Operator clears the new data, then remove succeeds.** Only the provenance table remains of the created relations. Original data and pre-existing objects equal the pre-16b state.
+9. **Re-apply:** 16b is re-enabled, with the registry FK recreated and the rollback state cleared.
 
-Disable took 72–82 ms on the 200k-row real-PG cluster's small-fixture databases.
+Disable took 81–93 ms on the 200k-row real-PG cluster's small-fixture databases.
+
+**Late writers vs remove-if-empty** (scenario `W`, real PostgreSQL only: it needs two sessions). On a disabled 16b
+with empty created tables:
+
+- **Writer first.** An open transaction INSERTs into `internal_ingestion.ingestion_sources`, or sets
+  `public.jobs.source_registry_id`. Removal waits for its `lock_timeout` (3 s) and refuses with nothing dropped.
+  Once the writer commits, removal refuses with `data would be lost`, and the write is present.
+- **Removal first.** The checks have passed and the drops are done, with the transaction still open. Removal holds
+  `ACCESS EXCLUSIVE` on jobs, companies and auth.users and `EXCLUSIVE` on saved_jobs and job_descriptions. A late
+  INSERT into the created table and a late `jobs.source_registry_id` write both block, and a saved_jobs read
+  runs. After COMMIT the INSERT fails (`relation does not exist`, so it never committed) and the `jobs` write
+  commits and is present.
+
+In every order a concurrent write either blocks or makes removal refuse, and no committed data disappears.
 
 ## Real PostgreSQL: scale and concurrency (measured)
 
 **Hardware and settings.** 13th Gen Intel Core i5-13420H, 12 logical cores, 16 GB RAM, Windows 11. PostgreSQL
 17.12 with defaults (`shared_buffers` 128 MB, `maintenance_work_mem` 64 MB, `fsync` on, `synchronous_commit`
 on), on a local SSD temp directory. **Fixture:** 200,000 jobs (160,000 active, 505 MB with indexes), 2,000
-companies, 100,000 descriptions and 5,000 saved jobs, populated in 285 s. Full timelines are in
+companies, 100,000 descriptions and 5,000 saved jobs, populated in 400 s. Full timelines are in
 [`evidence/10m-schema-step1/README.md`](evidence/10m-schema-step1/README.md).
 
 The sessions are independent connections: the migration, a held reader, a live writer (INSERT every 25 ms), a
@@ -164,15 +185,15 @@ feed reader (`jobs_public`, every 25 ms) and a lock observer (`pg_locks` + `pg_s
 
 | Phase | Measured |
 |---|---|
-| a. A reader holds `ACCESS SHARE` on `jobs`; 16b runs with `lock_timeout = 3s` | 16b waited 2,940 ms, then aborted (`canceling statement due to lock timeout`). **The writer and feed reader queued behind 16b's pending `ACCESS EXCLUSIVE` request for 2,566 ms** (worst write 2,723 ms, worst read 2,683 ms). Afterwards data, schema, grants and #645 state were unchanged, with no partial objects. |
-| b. `statement_timeout = 250ms` fires mid-migration (injected 1 s statement before COMMIT) | Aborted (`canceling statement due to statement timeout`) in 852 ms; everything unchanged. |
-| c. Retry under live writes and reads (`lock_timeout = 3s`) | Committed in **6,790 ms**. The lock prelude waited 942 ms for in-flight statements, then `ACCESS EXCLUSIVE` on jobs, companies, job_descriptions and saved_jobs was held for **~5.7 s** and all traffic queued. Steady state: write p50 5 ms, read p50 1 ms. During the migration: **worst write 6,812 ms, worst read 6,783 ms**, no errors. Counts, checksums, `last_seen_at`, #645 state and app queries were unchanged at scale. |
-| d. Second apply | No-op in 136 ms, but it **still takes `ACCESS EXCLUSIVE` on all four tables**. |
-| Lock-order probes | **Only these two writer patterns are proven.** A writer holding `jobs` (INSERT) then FK-checking `companies`, or holding `saved_jobs` (UPDATE) then reading `jobs`: no deadlock; the writer committed first and 16b followed 1.2–1.4 s later. **Original 16b: `deadlock detected` in both.** Other lock orders, such as unprobed triggers or multi-table application transactions, are not claimed. |
+| a. A reader holds `ACCESS SHARE` on `jobs`; 16b runs with `lock_timeout = 3s` | 16b waited 2,960 ms, then aborted (`canceling statement due to lock timeout`). **The writer and feed reader queued behind 16b's pending `ACCESS EXCLUSIVE` request for 2,590 ms** (worst write 2,772 ms, worst read 2,731 ms). Afterwards data, schema, grants and #645 state were unchanged, with no partial objects. |
+| b. `statement_timeout = 250ms` fires mid-migration (injected 1 s statement before COMMIT) | Aborted (`canceling statement due to statement timeout`) in 799 ms; everything unchanged. |
+| c. Retry under live writes and reads (`lock_timeout = 3s`) | Committed in **7,978 ms**. The lock prelude waited 945 ms for in-flight statements, then `ACCESS EXCLUSIVE` on jobs, companies, job_descriptions and saved_jobs was held for **~6.9 s** and all traffic queued. Steady state: write p50 6 ms, read p50 2 ms. During the migration: **worst write 7,981 ms, worst read 7,983 ms**, no errors. Counts, checksums, `last_seen_at`, #645 state and app queries were unchanged at scale. |
+| d. Second apply | No-op in 175 ms, but it **still takes `ACCESS EXCLUSIVE` on all four tables**. |
+| Lock-order probes | **Only these two writer patterns are proven.** A writer holding `jobs` (INSERT) then FK-checking `companies`, or holding `saved_jobs` (UPDATE) then reading `jobs`: no deadlock; the writer committed first and 16b followed 1.3–1.7 s later. **Original 16b: `deadlock detected` in both.** Other lock orders, such as unprobed triggers or multi-table application transactions, are not claimed. |
 
 ### What this means for production (honest limits)
 
-- **Not zero-downtime.** One transaction holds `ACCESS EXCLUSIVE` on `jobs`, `companies`, `job_descriptions` and `saved_jobs` while building 7 or more indexes on `jobs` with plain `CREATE INDEX`. At 200k rows on this laptop that blocked the feed, saved jobs and ingestion for about 6.8 s. **Duration at production size is unmeasured**; it grows with rows and indexes, and these numbers support no 10M capacity claim.
+- **Not zero-downtime.** One transaction holds `ACCESS EXCLUSIVE` on `jobs`, `companies`, `job_descriptions` and `saved_jobs` while building 7 or more indexes on `jobs` with plain `CREATE INDEX`. At 200k rows on this laptop that blocked the feed, saved jobs and ingestion for about 8 s. **Duration at production size is unmeasured**; it grows with rows and indexes, and these numbers support no 10M capacity claim.
 - **Keep `lock_timeout` set for any apply (3 s used here) and use a maintenance window.** While 16b *waits* for its locks, every new reader and writer queues behind it.
 - A second apply also locks everything.
 
