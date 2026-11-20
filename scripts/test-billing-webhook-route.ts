@@ -35,6 +35,8 @@ interface MockOrder {
   amount_paise: number;
   plan_code?: string;
   addon_code?: string;
+  created_at?: string;
+  metadata?: any;
 }
 
 interface MockSubscription {
@@ -122,6 +124,13 @@ function createMockSupabase(db: MockDbState) {
               Object.assign(sub, updatePayloadData);
             }
             return resolve({ data: sub ? { ...sub } : null, error: null });
+          }
+          if (table === "payment_orders" && updatePayloadData) {
+            const order = filterOrderId
+              ? db.orders.get(filterOrderId) || Array.from(db.orders.values()).find((o) => o.provider_order_id === filterOrderId)
+              : null;
+            if (order && order.status === "created") Object.assign(order, updatePayloadData);
+            return resolve({ data: null, error: null });
           }
           return resolve({ data: null, error: null });
         },
@@ -301,6 +310,24 @@ function createMockSupabase(db: MockDbState) {
             data: { success: false, code: "USER_BANNED", error: "Account is suspended" },
             error: null,
           };
+        }
+
+        // Same rebind rule as the SQL: a mandate that is not the user's bound one only binds if it is a newer pending order
+        const boundForUser = !sub && order
+          ? Array.from(db.subscriptions?.values() || []).find(
+              (s) => s.user_id === order!.user_id && s.subscription_id && s.subscription_id !== subId
+            )
+          : undefined;
+        if (boundForUser) {
+          const boundOrder = Array.from(db.orders.values()).find((o) => o.provider_order_id === boundForUser.subscription_id);
+          const newerPending =
+            order!.status === "created" && !!order!.created_at && !!boundOrder?.created_at && order!.created_at > boundOrder.created_at;
+          if (!newerPending) {
+            return {
+              data: { success: true, ignored: true, code: "OLD_MANDATE_IGNORED", reason: "OLD_MANDATE_IGNORED" },
+              error: null,
+            };
+          }
         }
 
         const effectiveMode = order?.mode || sub?.metadata?.mode || "live";
@@ -494,9 +521,12 @@ function createMockSupabase(db: MockDbState) {
         } else if (
           eventType === "subscription.cancelled" ||
           eventType === "subscription.canceled" ||
-          eventType === "subscription.completed"
+          eventType === "subscription.completed" ||
+          eventType === "subscription.paused"
         ) {
           sub.cancel_at_period_end = true;
+        } else if (eventType === "subscription.resumed") {
+          sub.cancel_at_period_end = false;
         }
 
         return {
@@ -528,6 +558,7 @@ function buildMockRequest(
     body?: string | Uint8Array;
     mockDb?: MockDbState;
     verifyUserNotBanned?: (client: any, userId: string) => Promise<{ isBlocked: boolean; error?: string }>;
+    fetchFn?: typeof fetch;
   } = {}
 ): Request {
   const method = options.method || "POST";
@@ -558,6 +589,7 @@ function buildMockRequest(
     (req as any).__testDeps = {
       getSupabaseAdmin: () => mockClient,
       verifyUserNotBanned: options.verifyUserNotBanned,
+      fetchFn: options.fetchFn,
     };
   }
 
@@ -1699,6 +1731,247 @@ async function runTestSuite() {
     assert.strictEqual(json.reason, "OUT_OF_ORDER_EVENT");
 
     assert.strictEqual(targetSub.status, "active");
+  });
+
+  await runTest("36b. Lifecycle events: paused ends renewal at period end and keeps access; resumed turns renewal back on; a replayed pause is deduped", async () => {
+    const sub: MockSubscription = {
+      id: "sub_row_pause",
+      subscription_id: "sub_rzp_pause",
+      user_id: "user_pause",
+      plan_id: "quarterly",
+      status: "active",
+      cancel_at_period_end: false,
+      metadata: { mode: "test" },
+    };
+    const mockDb: MockDbState = {
+      orders: new Map(),
+      subscriptions: new Map([["sub_row_pause", sub]]),
+      webhookEvents: new Set(),
+      failedEvents: [],
+      rpcFulfilCalls: [],
+    };
+    const send = (event: string, eventId: string) => {
+      const body = JSON.stringify({ event, payload: { subscription: { entity: { id: "sub_rzp_pause" } } } });
+      return POST(buildMockRequest({ body, eventId, signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb }));
+    };
+
+    const paused = await send("subscription.paused", "evt_pause_1");
+    assert.strictEqual(paused.status, 200);
+    assert.strictEqual((await paused.json()).applied, true);
+    assert.strictEqual(sub.status, "active");
+    assert.strictEqual(sub.cancel_at_period_end, true);
+
+    const resumed = await send("subscription.resumed", "evt_resume_1");
+    assert.strictEqual(resumed.status, 200);
+    assert.strictEqual(sub.cancel_at_period_end, false);
+
+    const replay = await send("subscription.paused", "evt_pause_1");
+    assert.strictEqual(replay.status, 200);
+    assert.strictEqual((await replay.json()).alreadyProcessed, true);
+    assert.strictEqual(sub.cancel_at_period_end, false, "replayed pause must not change state");
+  });
+
+  for (const plan of [
+    { code: "weekly" as const, days: 7 },
+    { code: "quarterly" as const, days: 90 },
+  ]) {
+    await runTest(`36c. ${plan.code} auto-renew: subscription.charged at ${PLAN_PRICING[plan.code].price_inr} extends ${plan.days} days; wrong amount refused`, async () => {
+      const initialEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+      const sub: MockSubscription = {
+        id: `sub_row_${plan.code}`,
+        subscription_id: `sub_rzp_${plan.code}`,
+        user_id: `user_${plan.code}`,
+        plan_id: plan.code,
+        status: "active",
+        current_period_end: initialEnd,
+        metadata: { processed_payments: ["pay_first"] },
+      };
+      const mockDb: MockDbState = {
+        orders: new Map([[
+          `sub_rzp_${plan.code}`,
+          {
+            id: `order_${plan.code}`,
+            provider_order_id: `sub_rzp_${plan.code}`,
+            user_id: `user_${plan.code}`,
+            provider: "razorpay",
+            mode: "test",
+            status: "paid",
+            amount_paise: PLAN_PRICING[plan.code].price_paise,
+            plan_code: plan.code,
+          },
+        ]]),
+        subscriptions: new Map([[`sub_row_${plan.code}`, sub]]),
+        webhookEvents: new Set(),
+        failedEvents: [],
+        rpcFulfilCalls: [],
+        rpcRenewalCalls: [],
+      };
+      const charge = (paymentId: string, amount: number) => {
+        const body = JSON.stringify({
+          event: "subscription.charged",
+          payload: {
+            subscription: { entity: { id: `sub_rzp_${plan.code}` } },
+            payment: { entity: { id: paymentId, amount } },
+          },
+        });
+        return POST(buildMockRequest({ body, eventId: `evt_${paymentId}`, signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb }));
+      };
+
+      const res = await charge(`pay_${plan.code}_2`, PLAN_PRICING[plan.code].price_paise);
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual((await res.json()).renewed, true);
+      const extendedMs = new Date(sub.current_period_end!).getTime() - new Date(initialEnd).getTime();
+      assert.ok(Math.abs(extendedMs - plan.days * 86_400_000) < 60000, `period must extend by ${plan.days} days`);
+
+      const wrong = await charge(`pay_${plan.code}_wrong`, PLAN_PRICING.monthly.price_paise);
+      assert.strictEqual(wrong.status, 400);
+      assert.strictEqual((await wrong.json()).code, "PLAN_AMOUNT_MISMATCH");
+    });
+  }
+
+  const cancelRecorder = () => {
+    const cancelled: string[] = [];
+    const fetchFn = (async (url: any) => {
+      const id = String(url).match(/\/subscriptions\/(\w+)\/cancel$/)?.[1];
+      if (id) cancelled.push(id);
+      return new Response(JSON.stringify({ id, status: "cancelled" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    return { cancelled, fetchFn };
+  };
+
+  await runTest("36d. Quarterly paid before the older weekly: weekly charge grants nothing, is cancelled at Razorpay and recorded for refund", async () => {
+    process.env.RAZORPAY_KEY_SECRET = "rzp_test_secret_for_cancel";
+    try {
+      const quarterlyEnd = new Date(Date.now() + 90 * 86_400_000).toISOString();
+      const bound: MockSubscription = {
+        id: "sub_row_q_first",
+        user_id: "user_q_first",
+        subscription_id: "sub_rzp_q_first",
+        plan_id: "quarterly",
+        status: "active",
+        current_period_end: quarterlyEnd,
+        metadata: { processed_payments: ["pay_q_1"] },
+      };
+      const mockDb: MockDbState = {
+        orders: new Map([
+          ["sub_rzp_w_old", {
+            id: "order_w_old", provider_order_id: "sub_rzp_w_old", user_id: "user_q_first", provider: "razorpay",
+            mode: "test", status: "created", amount_paise: PLAN_PRICING.weekly.price_paise, plan_code: "weekly",
+            created_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+          }],
+          ["sub_rzp_q_first", {
+            id: "order_q_first", provider_order_id: "sub_rzp_q_first", user_id: "user_q_first", provider: "razorpay",
+            mode: "test", status: "paid", amount_paise: PLAN_PRICING.quarterly.price_paise, plan_code: "quarterly",
+            created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+          }],
+        ]),
+        subscriptions: new Map([["sub_row_q_first", bound]]),
+        webhookEvents: new Set(),
+        failedEvents: [],
+        rpcFulfilCalls: [],
+        rpcRenewalCalls: [],
+      };
+      const { cancelled, fetchFn } = cancelRecorder();
+      const body = JSON.stringify({
+        event: "subscription.activated",
+        payload: {
+          subscription: { entity: { id: "sub_rzp_w_old" } },
+          payment: { entity: { id: "pay_w_late", amount: PLAN_PRICING.weekly.price_paise } },
+        },
+      });
+      const res = await POST(buildMockRequest({ body, eventId: "evt_w_late", signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb, fetchFn }));
+      assert.strictEqual(res.status, 200);
+      const json = await res.json();
+      assert.strictEqual(json.ignored, true);
+      assert.strictEqual(json.reason, "OLD_MANDATE_IGNORED");
+      assert.strictEqual(json.razorpayCancelled, true);
+      assert.deepStrictEqual(cancelled, ["sub_rzp_w_old"], "the weekly mandate must be cancelled at Razorpay");
+      assert.strictEqual(mockDb.orders.get("sub_rzp_w_old")!.status, "expired");
+      assert.strictEqual(bound.subscription_id, "sub_rzp_q_first", "quarterly stays the bound mandate");
+      assert.strictEqual(bound.current_period_end, quarterlyEnd, "no extra days from the weekly payment");
+      assert.ok(mockDb.failedEvents.some((e) => JSON.stringify(e).includes("refund required")), "payment recorded for refund");
+    } finally {
+      delete process.env.RAZORPAY_KEY_SECRET;
+    }
+  });
+
+  await runTest("36e. A paid event on an expired pending order with no other bound mandate is reconciled (granted), not refunded", async () => {
+    process.env.RAZORPAY_KEY_SECRET = "rzp_test_secret_for_cancel";
+    try {
+      const mockDb: MockDbState = {
+        orders: new Map([["sub_rzp_expired", {
+          id: "order_expired", provider_order_id: "sub_rzp_expired", user_id: "user_expired", provider: "razorpay",
+          mode: "test", status: "expired", amount_paise: PLAN_PRICING.weekly.price_paise, plan_code: "weekly",
+        }]]),
+        subscriptions: new Map(),
+        webhookEvents: new Set(),
+        failedEvents: [],
+        rpcFulfilCalls: [],
+        rpcRenewalCalls: [],
+      };
+      const { cancelled, fetchFn } = cancelRecorder();
+      const body = JSON.stringify({
+        event: "subscription.charged",
+        payload: {
+          subscription: { entity: { id: "sub_rzp_expired" } },
+          payment: { entity: { id: "pay_on_expired", amount: PLAN_PRICING.weekly.price_paise } },
+        },
+      });
+      const res = await POST(buildMockRequest({ body, eventId: "evt_on_expired", signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb, fetchFn }));
+      assert.strictEqual(res.status, 200);
+      const json = await res.json();
+      assert.strictEqual(json.renewed, true);
+      assert.strictEqual(mockDb.rpcRenewalCalls!.length, 1, "the grant RPC reconciles the payment");
+      assert.deepStrictEqual(cancelled, [], "a paid mandate the user is entitled to is not cancelled");
+      assert.strictEqual(mockDb.failedEvents.length, 0, "no manual refund");
+    } finally {
+      delete process.env.RAZORPAY_KEY_SECRET;
+    }
+  });
+
+  await runTest("36f. Unentitled paid mandate that Razorpay will not confirm cancelled: webhook returns retryable 500, no 200", async () => {
+    process.env.RAZORPAY_KEY_SECRET = "rzp_test_secret_for_cancel";
+    try {
+      const bound: MockSubscription = {
+        id: "sub_row_q2", user_id: "user_q2", subscription_id: "sub_rzp_q2", plan_id: "quarterly", status: "active",
+        current_period_end: new Date(Date.now() + 90 * 86_400_000).toISOString(), metadata: {},
+      };
+      const mockDb: MockDbState = {
+        orders: new Map([
+          ["sub_rzp_w2", {
+            id: "order_w2", provider_order_id: "sub_rzp_w2", user_id: "user_q2", provider: "razorpay", mode: "test",
+            status: "created", amount_paise: PLAN_PRICING.weekly.price_paise, plan_code: "weekly",
+            created_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+          }],
+          ["sub_rzp_q2", {
+            id: "order_q2", provider_order_id: "sub_rzp_q2", user_id: "user_q2", provider: "razorpay", mode: "test",
+            status: "paid", amount_paise: PLAN_PRICING.quarterly.price_paise, plan_code: "quarterly",
+            created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+          }],
+        ]),
+        subscriptions: new Map([["sub_row_q2", bound]]),
+        webhookEvents: new Set(),
+        failedEvents: [],
+        rpcFulfilCalls: [],
+        rpcRenewalCalls: [],
+      };
+      // Cancel is refused and Razorpay still reports the mandate active
+      const fetchFn = (async (url: any) =>
+        String(url).endsWith("/cancel")
+          ? new Response(JSON.stringify({ error: { description: "nope" } }), { status: 400 })
+          : new Response(JSON.stringify({ status: "active" }), { status: 200 })) as unknown as typeof fetch;
+      const body = JSON.stringify({
+        event: "subscription.charged",
+        payload: { subscription: { entity: { id: "sub_rzp_w2" } }, payment: { entity: { id: "pay_w2", amount: PLAN_PRICING.weekly.price_paise } } },
+      });
+      const res = await POST(buildMockRequest({ body, eventId: "evt_w2", signature: computeHmacSignature(body, TEST_WEBHOOK_SECRET), mockDb, fetchFn }));
+      assert.strictEqual(res.status, 500);
+      assert.strictEqual((await res.json()).code, "MANDATE_RETIRE_FAILED");
+      assert.strictEqual(mockDb.orders.get("sub_rzp_w2")!.status, "created", "nothing freed until Razorpay confirms");
+      assert.strictEqual(mockDb.failedEvents.length, 0);
+    } finally {
+      delete process.env.RAZORPAY_KEY_SECRET;
+    }
   });
 
   await runTest("37. Deduplication: Duplicate webhook event_id returns 200 alreadyProcessed without re-running RPC", async () => {

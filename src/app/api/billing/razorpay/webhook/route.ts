@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { recordFailedEvent } from "@/lib/events/failedEvents";
+import { retireUnentitledMandate } from "@/lib/billing/retireMandate";
 import { createLogger } from "@/lib/observability/logger";
 import { verifyWebhookSignatureBytes } from "@/lib/billing/webhookSignature";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
@@ -134,6 +135,10 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+    const serverKeySecret = getRuntimeEnv("RAZORPAY_KEY_SECRET", cfEnv);
+    const mandateGateway = serverKeySecret
+      ? { keyId: serverKeyId, keySecret: serverKeySecret, fetchFn: deps?.fetchFn }
+      : null;
 
     // 3. Signature Header Extraction
     const signature =
@@ -365,7 +370,7 @@ export async function POST(req: Request) {
       // Mode isolation, provider, and ban pre-check
       let { data: dbOrder, error: orderLookupErr } = await supabaseAdmin
         .from("payment_orders")
-        .select("id, provider, mode, user_id, status, plan_code, amount_paise")
+        .select("id, provider, mode, user_id, status, plan_code, amount_paise, metadata")
         .eq("provider_order_id", cleanSubId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -499,11 +504,36 @@ export async function POST(req: Request) {
           subId: cleanSubId,
           reason: renewalRes.reason,
         });
+        // Paid but not the user's bound mandate: stop it charging again and record the payment for refund
+        const retired = await retireUnentitledMandate({
+          supabaseAdmin,
+          subscriptionId: cleanSubId,
+          paymentId: cleanPaymentId,
+          eventId,
+          eventType,
+          mode: serverMode,
+          reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
+          gateway: mandateGateway,
+        });
+        if (!retired.ok) {
+          // Retryable: Razorpay redelivers until the mandate is confirmed cancelled and the refund is recorded
+          log.error("[Razorpay Webhook] Could not retire unentitled mandate; asking Razorpay to retry", {
+            subId: cleanSubId,
+            razorpayCancelled: retired.razorpayCancelled,
+            recorded: retired.recorded,
+          });
+          return NextResponse.json(
+            { error: "Could not secure the unentitled mandate; retry", code: "MANDATE_RETIRE_FAILED" },
+            { status: 500 }
+          );
+        }
+        const razorpayCancelled = retired.razorpayCancelled;
         return NextResponse.json(
           {
             received: true,
             ignored: true,
             reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
+            razorpayCancelled,
             event: eventType,
             eventId,
             details: renewalRes,
@@ -597,7 +627,7 @@ export async function POST(req: Request) {
     }
 
     // -------------------------------------------------------------------------
-    // (5) Subscription Lifecycle Events (halted, cancelled, completed, past_due, pending)
+    // (5) Subscription Lifecycle Events (halted, cancelled, completed, past_due, pending, paused, resumed)
     // Only mutates if subscription_id is the currently bound mandate.
     // Ignores out-of-order older events.
     // -------------------------------------------------------------------------
@@ -607,7 +637,9 @@ export async function POST(req: Request) {
       eventType === "subscription.cancelled" ||
       eventType === "subscription.canceled" ||
       eventType === "subscription.completed" ||
-      eventType === "subscription.past_due";
+      eventType === "subscription.past_due" ||
+      eventType === "subscription.paused" ||
+      eventType === "subscription.resumed";
 
     if (isLifecycleEvent) {
       const subId =

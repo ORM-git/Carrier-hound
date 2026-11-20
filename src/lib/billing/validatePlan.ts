@@ -2,14 +2,13 @@
  * src/lib/billing/validatePlan.ts
  *
  * Pre-flight validation of Razorpay Auto-Renew Subscription Plan.
- * Before creating a subscription, fetches the plan from Razorpay API and asserts:
- * - amount: 49900 paise (₹499)
- * - currency: INR
- * - period: monthly
- * - interval: 1
+ * Before creating a subscription, fetches the plan from Razorpay API and asserts it matches
+ * the expected auto-renew spec (amount, INR, period, interval). Defaults to the ₹499 monthly plan.
  *
  * Refuses subscription creation if any attribute fails to match.
  */
+
+import { AUTORENEW_PLANS, AutoRenewPlanSpec } from "./autorenewPlans";
 
 export interface PlanValidationResult {
   valid: boolean;
@@ -22,8 +21,9 @@ export async function validateRazorpayPlan(
   planId: string,
   keyId: string,
   keySecret: string,
-  options?: { fetchFn?: typeof fetch; timeoutMs?: number }
+  options?: { fetchFn?: typeof fetch; timeoutMs?: number; expected?: AutoRenewPlanSpec }
 ): Promise<PlanValidationResult> {
+  const expected = options?.expected ?? AUTORENEW_PLANS.monthly;
   const trimmedPlanId = planId?.trim();
   if (!trimmedPlanId) {
     return {
@@ -77,11 +77,11 @@ export async function validateRazorpayPlan(
     const period = String(plan?.period ?? "").toLowerCase();
     const interval = Number(plan?.interval ?? 0);
 
-    if (amount !== 49900) {
+    if (amount !== expected.amountPaise) {
       return {
         valid: false,
         code: "INVALID_PLAN_AMOUNT",
-        error: `Configured Razorpay plan amount (${amount} paise) does not match required flat ₹499 (49900 paise)`,
+        error: `Configured Razorpay plan amount (${amount} paise) does not match required ${expected.planCode} amount (${expected.amountPaise} paise)`,
       };
     }
 
@@ -93,19 +93,19 @@ export async function validateRazorpayPlan(
       };
     }
 
-    if (period !== "monthly") {
+    if (period !== expected.period) {
       return {
         valid: false,
         code: "INVALID_PLAN_PERIOD",
-        error: `Configured Razorpay plan period (${period}) does not match required monthly period`,
+        error: `Configured Razorpay plan period (${period}) does not match required ${expected.period} period`,
       };
     }
 
-    if (interval !== 1) {
+    if (interval !== expected.interval) {
       return {
         valid: false,
         code: "INVALID_PLAN_INTERVAL",
-        error: `Configured Razorpay plan interval (${interval}) does not match required interval 1`,
+        error: `Configured Razorpay plan interval (${interval}) does not match required interval ${expected.interval}`,
       };
     }
 

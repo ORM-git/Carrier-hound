@@ -242,7 +242,7 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
     );
   });
 
-  it("subscription route reads AUTORENEW from Cloudflare context and refuses non-monthly plans", async () => {
+  it("subscription route reads AUTORENEW and the weekly plan id from Cloudflare context", async () => {
     mockRequestContextEnv = {
       NEXT_PUBLIC_BILLING_ENABLED: "true",
       NEXT_PUBLIC_AUTORENEW_ENABLED: "true",
@@ -260,14 +260,21 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
         authorization: "Bearer valid-session-token",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ planCode: "weekly" }),
+      body: JSON.stringify({
+        planCode: "weekly",
+        consent: { agreed: true, version: "2026-11-autorenew-v1", timestamp: new Date().toISOString() },
+      }),
     });
+    const planFetch = vi.fn(async () => new Response(JSON.stringify({ error: { description: "stop here" } }), { status: 404 }));
+    (req as any).__testDeps = { fetchFn: planFetch };
 
     const res = await handleSubscription(req);
     const body = await res.json();
 
-    expect(res.status).toBe(400);
-    expect(body.code).toBe("UNSUPPORTED_PLAN");
+    // Gets past the flag, auth, plan and consent checks, then looks up the context-only weekly plan id
+    expect(res.status).toBe(502);
+    expect(body.code).toBe("PLAN_FETCH_FAILED");
+    expect(String((planFetch.mock.calls[0] as unknown[])[0])).toContain("/plans/plan_test_weekly_cf_123");
   });
 
   it("webhook route picks up RAZORPAY_WEBHOOK_SECRET and SUPABASE_SERVICE_ROLE_KEY present ONLY in Cloudflare request context", async () => {

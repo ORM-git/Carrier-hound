@@ -12,7 +12,7 @@
  * 4) Next.js route /api/billing/razorpay/subscription:
  *    - Flag off -> 503 AUTORENEW_DISABLED.
  *    - Missing auth -> 401.
- *    - Non-monthly plan -> 400 UNSUPPORTED_PLAN.
+ *    - Plan outside weekly/monthly/quarterly -> 400 UNSUPPORTED_PLAN.
  *    - Missing consent -> 400 CONSENT_REQUIRED.
  *    - Missing plan env var -> 503 PLAN_NOT_CONFIGURED.
  *    - Plan validation failure (amount != 49900) -> 502 INVALID_PLAN_AMOUNT.
@@ -208,21 +208,21 @@ async function runAutorenewTests() {
     assert.strictEqual(resNoAuth.status, 401, "Missing auth must return 401");
     console.log("  ✓ Missing auth returns 401");
 
-    // 4c. Non-monthly plan returns 400 UNSUPPORTED_PLAN
+    // 4c. Plans outside weekly/monthly/quarterly return 400 UNSUPPORTED_PLAN
     const mockDb1 = createMockSupabase();
-    const reqWeekly = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+    const reqAnnual = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer valid_token" },
-      body: JSON.stringify({ planCode: "weekly", consent: validConsent }),
+      body: JSON.stringify({ planCode: "annual", consent: validConsent }),
     });
-    (reqWeekly as any).__testDeps = {
+    (reqAnnual as any).__testDeps = {
       getSupabaseAdmin: () => mockDb1,
       verifyUserNotBanned: async () => ({ isBlocked: false }),
     };
-    const resWeekly = await nextSubscriptionPOST(reqWeekly);
-    assert.strictEqual(resWeekly.status, 400, "Weekly auto-renew must return 400");
-    assert.strictEqual((await resWeekly.json()).code, "UNSUPPORTED_PLAN");
-    console.log("  ✓ Weekly/quarterly plan rejected with 400 UNSUPPORTED_PLAN (flat 499 monthly only)");
+    const resAnnual = await nextSubscriptionPOST(reqAnnual);
+    assert.strictEqual(resAnnual.status, 400, "Unknown auto-renew plan must return 400");
+    assert.strictEqual((await resAnnual.json()).code, "UNSUPPORTED_PLAN");
+    console.log("  ✓ Plans outside weekly/monthly/quarterly rejected with 400 UNSUPPORTED_PLAN");
 
     // 4d. Missing consent returns 400 CONSENT_REQUIRED
     const reqNoConsent = new Request("http://localhost:3000/api/billing/razorpay/subscription", {

@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { recordFailedEvent } from "../../src/lib/events/failedEvents";
+import { retireUnentitledMandate } from "../../src/lib/billing/retireMandate";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
@@ -14,6 +15,7 @@ const CORS_OPTIONS = {
 export interface BillingWebhookDeps {
   getSupabaseAdmin?: () => any;
   verifyUserNotBanned?: (admin: any, userId: string, meta?: any) => Promise<any>;
+  fetchFn?: typeof fetch;
 }
 
 function getDefaultSupabaseAdmin() {
@@ -100,6 +102,10 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           }),
         };
       }
+      const serverKeySecret = process.env.RAZORPAY_KEY_SECRET;
+      const mandateGateway = serverKeySecret
+        ? { keyId: serverKeyId, keySecret: serverKeySecret, fetchFn: deps.fetchFn }
+        : null;
 
       const signature =
         event.headers?.["x-razorpay-signature"] ||
@@ -303,7 +309,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         // Mode isolation, provider, and ban pre-check
         const { data: dbOrder, error: orderLookupErr } = await supabaseAdmin
           .from("payment_orders")
-          .select("id, provider, mode, user_id, status, plan_code, amount_paise")
+          .select("id, provider, mode, user_id, status, plan_code, amount_paise, metadata")
           .eq("provider_order_id", cleanSubId)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -436,6 +442,29 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
         if (renewalRes?.ignored) {
           safeLog.info(`[Razorpay Webhook] Paid event ignored by RPC for ${cleanSubId}: ${renewalRes.reason}`);
+          // Paid but not the user's bound mandate: stop it charging again and record the payment for refund
+          const retired = await retireUnentitledMandate({
+            supabaseAdmin,
+            subscriptionId: cleanSubId,
+            paymentId: cleanPaymentId,
+            eventId,
+            eventType,
+            mode: serverMode,
+            reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
+            gateway: mandateGateway,
+          });
+          if (!retired.ok) {
+            // Retryable: Razorpay redelivers until the mandate is confirmed cancelled and the refund is recorded
+            safeLog.error(
+              `[Razorpay Webhook] Could not retire unentitled mandate ${cleanSubId} (cancelled=${retired.razorpayCancelled}, recorded=${retired.recorded}); asking Razorpay to retry`
+            );
+            return {
+              statusCode: 500,
+              headers,
+              body: JSON.stringify({ error: "Could not secure the unentitled mandate; retry", code: "MANDATE_RETIRE_FAILED" }),
+            };
+          }
+          const razorpayCancelled = retired.razorpayCancelled;
           return {
             statusCode: 200,
             headers,
@@ -443,6 +472,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
               received: true,
               ignored: true,
               reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
+              razorpayCancelled,
               event: eventType,
               eventId,
               details: renewalRes,
@@ -519,7 +549,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
       }
 
       // -------------------------------------------------------------------------
-      // (5) Subscription Lifecycle Events (pending, halted, cancelled, past_due, completed)
+      // (5) Subscription Lifecycle Events (pending, halted, cancelled, past_due, completed, paused, resumed)
       // Only mutates if subscription_id is the currently bound mandate.
       // -------------------------------------------------------------------------
       const isLifecycleEvent =
@@ -528,7 +558,9 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         eventType === "subscription.cancelled" ||
         eventType === "subscription.canceled" ||
         eventType === "subscription.completed" ||
-        eventType === "subscription.past_due";
+        eventType === "subscription.past_due" ||
+        eventType === "subscription.paused" ||
+        eventType === "subscription.resumed";
 
       if (isLifecycleEvent) {
         const subId =

@@ -19,6 +19,7 @@ flagged cron follow-up below.
 | `src/lib/account/exportHandler.ts` | `for (const table of ACCOUNT_EXPORT_USER_ID_TABLES)` | Bounded: fixed constant table-list fan-out for export. |
 | `src/lib/account/exportHandler.ts` | `for (const table of ACCOUNT_EXPORT_EMAIL_TABLES)` | Bounded: fixed constant table-list fan-out for export. |
 | `src/lib/events/failedEvents.ts` | `for (const event of events)` | Bounded: retry-queue batch processor; the loop iterates one fetched batch of dead-letter events (batch size capped by the select limit), and per-event state transitions are individual updates by design. |
+| `src/lib/billing/pendingMandate.ts` | `for (const invoice of paid)` | Bounded: the paid invoices of one Razorpay subscription (at most its total_count, 52 for weekly; normally one) when a stale pending mandate turns out to be paid. Each payment must go through the idempotent per-payment `fulfil_subscription_renewal` RPC; rare reconcile path, not a hot path. |
 
 <!-- guard-entries: file | loop-header-text, parsed by nPlusOneGuard.test.ts -->
 ```guard
@@ -28,4 +29,5 @@ pattern: src/lib/account/deleteHandler.ts | for (const emailTable of ACCOUNT_DEL
 pattern: src/lib/account/exportHandler.ts | for (const table of ACCOUNT_EXPORT_USER_ID_TABLES)
 pattern: src/lib/account/exportHandler.ts | for (const table of ACCOUNT_EXPORT_EMAIL_TABLES)
 pattern: src/lib/events/failedEvents.ts | for (const event of events)
+pattern: src/lib/billing/pendingMandate.ts | for (const invoice of paid)
 ```
