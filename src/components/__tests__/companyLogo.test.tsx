@@ -80,6 +80,22 @@ describe("CompanyLogo", () => {
     expect(again.container.textContent).toBe("A");
   });
 
+  it("two mounted instances sharing a failing URL both fall back once each errors", () => {
+    const logo = url();
+    const { container } = render(
+      <>
+        <CompanyLogo company="Acme" logoUrl={logo} />
+        <CompanyLogo company="Acme" logoUrl={logo} />
+      </>
+    );
+    const imgs = container.querySelectorAll("img");
+    expect(imgs.length).toBe(2);
+    fireEvent.error(imgs[0]);
+    fireEvent.error(imgs[1]);
+    expect(container.querySelectorAll("img").length).toBe(0);
+    expect(container.textContent).toBe("AA");
+  });
+
   it("stored domain wins over the apply URL, and ATS domains are ignored", () => {
     const d = dom();
     const { container, rerender } = render(

@@ -82,8 +82,8 @@ export default function CompanyLogo({
   const candidates = [logoUrl, unavatarUrl].filter((u): u is string => Boolean(u));
   const [, bumpFailures] = useState(0);
   const src = candidates.find((u) => !failedLogoSrcs.has(u)) ?? null;
+  // Always re-render this instance: another instance may already have recorded the same URL as failed.
   const markFailed = useCallback((u: string) => {
-    if (failedLogoSrcs.has(u)) return;
     failedLogoSrcs.add(u);
     bumpFailures((n) => n + 1);
   }, []);
