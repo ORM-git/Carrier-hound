@@ -20,7 +20,7 @@ import crypto from "node:crypto";
 import {
   MIG_DIR, TARGET, PLATFORM_STUBS, DRIFT_SHIM, BASELINES, type Baseline, type Db,
   allMigrations, applyChain, applySql, buildBaselineSchema, applyBaselineState, loadFixture,
-  setUnavailableExtensions, check, checks,
+  setUnavailableExtensions, check, checks, splitFinalCommit,
 } from "./test-10m-schema-step1-rehearsal";
 
 const A16 = "20261116a_high_volume_ingestion_schema.sql";
@@ -159,6 +159,17 @@ async function main() {
 
     const rollbackSql = fs.readFileSync(ROLLBACK_16A, "utf8");
     if (added.length) {
+      // 2b. The rollback takes ACCESS EXCLUSIVE before its emptiness check and holds it through DROP COLUMN
+      // (two-session behaviour: scripts/test-16a-rollback-concurrency.ts on real PostgreSQL)
+      check(scn, "rollback script locks before the emptiness check",
+        rollbackSql.indexOf("IN ACCESS EXCLUSIVE MODE") > 0 && rollbackSql.indexOf("IN ACCESS EXCLUSIVE MODE") < rollbackSql.indexOf("SELECT EXISTS (SELECT 1 FROM public."));
+      const open = await run(db, splitFinalCommit(rollbackSql).body);
+      const held = open === null ? (await db.query<{ rel: string }>(`SELECT c.relname rel FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+         WHERE l.pid = pg_backend_pid() AND l.granted AND l.mode = 'AccessExclusiveLock' AND c.relname IN ('jobs', 'companies') ORDER BY 1`)).rows.map((r) => r.rel) : [];
+      if (open === null) await db.exec("ROLLBACK");
+      check(scn, "inside the uncommitted rollback, ACCESS EXCLUSIVE is held on public.jobs", held.includes("jobs"), open ?? held.join(", "));
+      check(scn, "aborting that transaction changes nothing", diff(again, await catalog(db)).length === 0);
+
       // 3. A 16a column that received data is kept by the rollback; nothing else moves
       const [t, c] = added[0].split(".");
       await db.exec(`BEGIN; SET LOCAL careermonke.skip_touch_last_seen = 'on';
