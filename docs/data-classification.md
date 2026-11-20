@@ -40,6 +40,9 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `row_change_history` | before/after row images of user and billing tables | Per-row change audit; service-role only, append-only (20261106c). |
 | `push_subscriptions` | Web Push endpoint URL and `p256dh`/`auth` keys per browser subscription | Endpoint and keys identify a device; deleted with the account or on unsubscribe (20261106i, NOT APPLIED). |
 | `inbound_replies` | sender address, subject, truncated body excerpt of replies to product mail | Personal correspondence; service-role only, no user-facing policies (20261106j, NOT APPLIED). |
+| `ai_generations` | user id, feature type, prompt/completion tokens, model, latency, metadata | AI feature usage accounting and audit log; owner-only RLS and service-role access (20261116b, NOT APPLIED). |
+| `consent_logs` | user id (nullable), session id, consent type, granted boolean, IP address, user agent | Statutory DPDP and GDPR consent audit trail; owner-only read, service-role all (20261116b, NOT APPLIED). |
+| `user_age_attestations` | user id, age confirmation boolean, IP address, user agent, timestamp | Statutory minor data protection compliance under DPDP; owner-only read, service-role all (20261116b, NOT APPLIED). |
 
 ## Internal tables
 
@@ -57,12 +60,14 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `matview_refresh_log` | Materialized-view refresh telemetry (when, duration). Service-role only (20261106d). |
 | `deleted_account_tombstones` | PII-free account-deletion audit anchor (user id, SHA-256 email hash, purge deadline). 30-day undo window, then hard-purged (20261106h). |
 | `supabase_migrations.schema_migrations` | Applied-migration ledger (Supabase-internal schema). |
+| `internal_ingestion.ingestion_sources` / `internal_ingestion.job_source_records` / `internal_ingestion.company_aliases` / `internal_ingestion.search_outbox` / `internal_ingestion.category_overrides` | High-volume ingestion engine configuration, raw staging records, company aliases, CDC search outbox, and category overrides. Strictly isolated internal schema, zero PostgREST exposure, service-role only (20261116b, NOT APPLIED). |
 
 ## Public data
 
 | Object | Contents |
 | --- | --- |
 | `jobs` / `jobs_public` view | Job listings. The view masks paid fields (company, salary, description, apply URL) for free users. |
+| `job_postings` / `job_postings_public` view | Dedicated high-volume job postings table for 10M scale (Document 1, Section 3.3). Raw table restricted to service_role; public view masks paid fields (company_name, salary, apply URL) for free users (20261116b, NOT APPLIED). |
 | `job_descriptions` | Full job description text. |
 | `search_alert_dispatches` | Sent-log of (alert id, job id) pairs for search alerts (20261107b, not applied). Ids only, no email or personal text. Service-role only; no client access. |
 | `search_alert_windows` | One row per alert with send-window timestamps (20261107f, not applied). Alert id and timestamps only, no email or personal text. Service-role only; no client access. |
