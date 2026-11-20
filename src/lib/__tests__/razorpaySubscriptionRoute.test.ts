@@ -31,8 +31,9 @@ const validPlanResponse = {
 function createMockSupabase(
   initialSub?: any,
   // raceOrder: the row another server instance inserted first; it appears when this insert gets 23505
-  opts: { orders?: any[]; insertConflict?: boolean; failOrderUpdate?: boolean; raceOrder?: any } = {}
+  opts: { orders?: any[]; insertConflict?: boolean; failOrderUpdate?: boolean; raceOrder?: any; concurrentPaid?: boolean } = {}
 ) {
+  const rpcCalls: any[] = [];
   let sub = initialSub ? { ...initialSub } : null;
   const orders: any[] = (opts.orders || []).map((o) => ({ ...o }));
 
@@ -97,6 +98,7 @@ function createMockSupabase(
               filters[col] = val;
               return q;
             },
+            select: () => q,
             then: (resolve: any, reject: any) => {
               if (table === "payment_orders" && opts.failOrderUpdate) {
                 return Promise.resolve({ error: { message: "write failed" } }).then(resolve, reject);
@@ -104,12 +106,18 @@ function createMockSupabase(
               if (table === "subscriptions" && sub) {
                 sub = { ...sub, ...updates };
               }
+              const affected: any[] = [];
               if (table === "payment_orders") {
+                // concurrentPaid: another request marks the row paid just before this update runs
+                if (opts.concurrentPaid) orders.forEach((o) => (o.status = "paid"));
                 orders.forEach((o, i) => {
-                  if (Object.entries(filters).every(([k, v]) => o[k] === v)) orders[i] = { ...o, ...updates };
+                  if (Object.entries(filters).every(([k, v]) => o[k] === v)) {
+                    orders[i] = { ...o, ...updates };
+                    affected.push({ id: o.id });
+                  }
                 });
               }
-              return Promise.resolve({ error: null }).then(resolve, reject);
+              return Promise.resolve({ data: affected, error: null }).then(resolve, reject);
             },
           };
           return q;
@@ -119,6 +127,13 @@ function createMockSupabase(
     },
     _getSub: () => sub,
     _getOrders: () => orders,
+    _getRpcCalls: () => rpcCalls,
+    rpc: async (fn: string, args: any) => {
+      rpcCalls.push({ fn, args });
+      const order = orders.find((o) => o.provider_order_id === args.p_razorpay_subscription_id);
+      if (order) order.status = "paid";
+      return { data: { success: true, is_pro: true, payment_id: args.p_payment_id }, error: null };
+    },
   };
 
   return mockClient;
@@ -620,6 +635,11 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
     };
     let created: any[] = [];
     let cancelled: string[] = [];
+    // Razorpay-side state of existing mandates, and whether Razorpay answers state/cancel calls
+    let providerState: Record<string, { status: string; paid_count?: number }> = {};
+    let providerInvoices: Record<string, any[]> = {};
+    let providerDown = false;
+    let cancelFails = false;
 
     beforeEach(() => {
       process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY = "plan_w";
@@ -627,15 +647,26 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
       process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY = "plan_q";
       created = [];
       cancelled = [];
+      providerState = {};
+      providerInvoices = {};
+      providerDown = false;
+      cancelFails = false;
       fetchSpy.mockImplementation(async (url: any, init: any) => {
         const u = String(url);
         const plan = u.match(/\/plans\/(\w+)$/)?.[1];
         if (plan) return new Response(JSON.stringify(plans[plan]), { status: 200 });
+        if (providerDown) return new Response(JSON.stringify({ error: "unavailable" }), { status: 503 });
         const cancel = u.match(/\/subscriptions\/(\w+)\/cancel$/)?.[1];
         if (cancel) {
+          if (cancelFails) return new Response(JSON.stringify({ error: { description: "cannot cancel" } }), { status: 400 });
           cancelled.push(cancel);
+          providerState[cancel] = { status: "cancelled", paid_count: 0 };
           return new Response(JSON.stringify({ id: cancel, status: "cancelled" }), { status: 200 });
         }
+        const invoicesFor = u.match(/\/invoices\?subscription_id=(\w+)$/)?.[1];
+        if (invoicesFor) return new Response(JSON.stringify({ items: providerInvoices[invoicesFor] || [] }), { status: 200 });
+        const stateOf = u.match(/\/subscriptions\/(\w+)$/)?.[1];
+        if (stateOf) return new Response(JSON.stringify({ id: stateOf, ...(providerState[stateOf] || { status: "created", paid_count: 0 }) }), { status: 200 });
         const body = JSON.parse(init.body);
         created.push(body);
         return new Response(JSON.stringify({ id: `sub_new_${created.length}`, status: "created" }), { status: 200 });
@@ -705,25 +736,88 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
         expect(created).toHaveLength(1);
       });
 
-      it(`${platform}: new mandates carry expire_by; a pending one past it is expired so another plan can start`, async () => {
-        const stale = pending("weekly", { metadata: { expire_by: Math.floor(Date.now() / 1000) - 5 * 60 } });
-        const mockDb = createMockSupabase(null, { orders: [stale] });
+      const pastWindow = () => pending("weekly", { metadata: { expire_by: Math.floor(Date.now() / 1000) - 5 * 60 } });
+
+      it(`${platform}: new mandates carry expire_by; past it, the slot is freed only after Razorpay confirms the mandate expired`, async () => {
+        providerState.sub_pending_weekly = { status: "expired", paid_count: 0 };
+        const mockDb = createMockSupabase(null, { orders: [pastWindow()] });
         const res = await call(mockDb, "quarterly");
         expect(res.status).toBe(200);
         expect(mockDb._getOrders()[0].status).toBe("expired");
+        expect(cancelled).toEqual([]);
         const expireBy = created[0].expire_by;
         expect(expireBy).toBeGreaterThan(Date.now() / 1000 + 25 * 60);
         expect(expireBy).toBeLessThanOrEqual(Date.now() / 1000 + 30 * 60);
         expect(mockDb._getOrders()[1].metadata.expire_by).toBe(expireBy);
       });
 
-      it(`${platform}: a stale #670 mandate without expire_by is cancelled at Razorpay before it is expired`, async () => {
-        const legacy = pending("monthly", { metadata: {}, created_at: new Date(Date.now() - 40 * 60 * 1000).toISOString() });
-        const mockDb = createMockSupabase(null, { orders: [legacy] });
+      const legacyStale = () => pending("monthly", { metadata: {}, created_at: new Date(Date.now() - 40 * 60 * 1000).toISOString() });
+
+      it(`${platform}: a stale #670 mandate still 'created' at Razorpay is cancelled there before its slot is freed`, async () => {
+        const mockDb = createMockSupabase(null, { orders: [legacyStale()] });
         const res = await call(mockDb, "weekly");
         expect(res.status).toBe(200);
         expect(cancelled).toEqual(["sub_pending_monthly"]);
         expect(mockDb._getOrders()[0].status).toBe("expired");
+      });
+
+      for (const [label, makeOrder] of [["legacy", legacyStale], ["past expire_by", pastWindow]] as const) {
+        it(`${platform}: ${label}: Razorpay unreachable keeps the slot pending and refuses the new plan`, async () => {
+          providerDown = true;
+          const mockDb = createMockSupabase(null, { orders: [makeOrder()] });
+          const res = await call(mockDb, "quarterly");
+          expect(res.status).toBe(503);
+          expect(res.body.code).toBe("PENDING_MANDATE_UNVERIFIED");
+          expect(mockDb._getOrders()[0].status).toBe("created");
+          expect(created).toHaveLength(0);
+        });
+
+        it(`${platform}: ${label}: Razorpay refuses the cancel and still says 'created': slot kept, new plan refused`, async () => {
+          cancelFails = true;
+          const mockDb = createMockSupabase(null, { orders: [makeOrder()] });
+          const res = await call(mockDb, "quarterly");
+          expect(res.status).toBe(503);
+          expect(mockDb._getOrders()[0].status).toBe("created");
+          expect(created).toHaveLength(0);
+        });
+      }
+
+      it(`${platform}: past expire_by but already paid at Razorpay: reconciled (access granted), never freed or refunded`, async () => {
+        providerState.sub_pending_weekly = { status: "active", paid_count: 1 };
+        providerInvoices.sub_pending_weekly = [{ status: "paid", payment_id: "pay_late_weekly", amount_paid: 39900, paid_at: 1_800_000_000 }];
+        const mockDb = createMockSupabase(null, { orders: [pastWindow()] });
+        const res = await call(mockDb, "quarterly");
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("PENDING_MANDATE_RECONCILED");
+        expect(mockDb._getRpcCalls()).toEqual([
+          {
+            fn: "fulfil_subscription_renewal",
+            args: expect.objectContaining({ p_razorpay_subscription_id: "sub_pending_weekly", p_payment_id: "pay_late_weekly", p_amount_paise: 39900 }),
+          },
+        ]);
+        expect(mockDb._getOrders()[0].status).toBe("paid");
+        expect(cancelled).toEqual([]);
+        expect(created).toHaveLength(0);
+      });
+
+      it(`${platform}: past expire_by but authorised and not yet charged: slot kept, 409`, async () => {
+        providerState.sub_pending_weekly = { status: "authenticated", paid_count: 0 };
+        const mockDb = createMockSupabase(null, { orders: [pastWindow()] });
+        const res = await call(mockDb, "quarterly");
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("SUBSCRIPTION_ALREADY_AUTHORIZED");
+        expect(mockDb._getOrders()[0].status).toBe("created");
+        expect(cancelled).toEqual([]);
+      });
+
+      it(`${platform}: the pending row turns paid concurrently: zero rows expired, no replacement mandate`, async () => {
+        providerState.sub_pending_weekly = { status: "expired", paid_count: 0 };
+        const mockDb = createMockSupabase(null, { orders: [pastWindow()], concurrentPaid: true });
+        const res = await call(mockDb, "quarterly");
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("PENDING_MANDATE_STATE_CHANGED");
+        expect(mockDb._getOrders()[0].status).toBe("paid");
+        expect(created).toHaveLength(0);
       });
 
       it(`${platform}: 23505 race with another plan's mandate returns 409, never that mandate, and cancels the orphan`, async () => {

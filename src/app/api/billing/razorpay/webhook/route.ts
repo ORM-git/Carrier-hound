@@ -417,21 +417,6 @@ export async function POST(req: Request) {
             );
           }
         }
-        // An expired pending mandate never grants access: cancel it at Razorpay and record the payment for refund
-        if (dbOrder.status === "expired") {
-          log.error("[Razorpay Webhook] Paid event on expired mandate; not granting", { subId: cleanSubId, paymentId: cleanPaymentId });
-          const { razorpayCancelled } = await retireUnentitledMandate({
-            supabaseAdmin,
-            subscriptionId: cleanSubId,
-            paymentId: cleanPaymentId,
-            eventId,
-            eventType,
-            mode: serverMode,
-            reason: "EXPIRED_MANDATE",
-            gateway: mandateGateway,
-          });
-          return NextResponse.json({ received: true, ignored: true, reason: "EXPIRED_MANDATE", razorpayCancelled, event: eventType, eventId });
-        }
       } else {
         const { data: subRow } = await supabaseAdmin
           .from("subscriptions")
@@ -520,7 +505,7 @@ export async function POST(req: Request) {
           reason: renewalRes.reason,
         });
         // Paid but not the user's bound mandate: stop it charging again and record the payment for refund
-        const { razorpayCancelled } = await retireUnentitledMandate({
+        const retired = await retireUnentitledMandate({
           supabaseAdmin,
           subscriptionId: cleanSubId,
           paymentId: cleanPaymentId,
@@ -530,6 +515,19 @@ export async function POST(req: Request) {
           reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
           gateway: mandateGateway,
         });
+        if (!retired.ok) {
+          // Retryable: Razorpay redelivers until the mandate is confirmed cancelled and the refund is recorded
+          log.error("[Razorpay Webhook] Could not retire unentitled mandate; asking Razorpay to retry", {
+            subId: cleanSubId,
+            razorpayCancelled: retired.razorpayCancelled,
+            recorded: retired.recorded,
+          });
+          return NextResponse.json(
+            { error: "Could not secure the unentitled mandate; retry", code: "MANDATE_RETIRE_FAILED" },
+            { status: 500 }
+          );
+        }
+        const razorpayCancelled = retired.razorpayCancelled;
         return NextResponse.json(
           {
             received: true,

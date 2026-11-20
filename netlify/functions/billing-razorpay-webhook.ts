@@ -357,25 +357,6 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
               };
             }
           }
-          // An expired pending mandate never grants access: cancel it at Razorpay and record the payment for refund
-          if (dbOrder.status === "expired") {
-            safeLog.error(`[Razorpay Webhook] Paid event on expired mandate ${cleanSubId}; not granting`);
-            const { razorpayCancelled } = await retireUnentitledMandate({
-              supabaseAdmin,
-              subscriptionId: cleanSubId,
-              paymentId: cleanPaymentId,
-              eventId,
-              eventType,
-              mode: serverMode,
-              reason: "EXPIRED_MANDATE",
-              gateway: mandateGateway,
-            });
-            return {
-              statusCode: 200,
-              headers,
-              body: JSON.stringify({ received: true, ignored: true, reason: "EXPIRED_MANDATE", razorpayCancelled, event: eventType, eventId }),
-            };
-          }
         } else {
           const { data: subRow } = await supabaseAdmin
             .from("subscriptions")
@@ -462,7 +443,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         if (renewalRes?.ignored) {
           safeLog.info(`[Razorpay Webhook] Paid event ignored by RPC for ${cleanSubId}: ${renewalRes.reason}`);
           // Paid but not the user's bound mandate: stop it charging again and record the payment for refund
-          const { razorpayCancelled } = await retireUnentitledMandate({
+          const retired = await retireUnentitledMandate({
             supabaseAdmin,
             subscriptionId: cleanSubId,
             paymentId: cleanPaymentId,
@@ -472,6 +453,18 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
             reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
             gateway: mandateGateway,
           });
+          if (!retired.ok) {
+            // Retryable: Razorpay redelivers until the mandate is confirmed cancelled and the refund is recorded
+            safeLog.error(
+              `[Razorpay Webhook] Could not retire unentitled mandate ${cleanSubId} (cancelled=${retired.razorpayCancelled}, recorded=${retired.recorded}); asking Razorpay to retry`
+            );
+            return {
+              statusCode: 500,
+              headers,
+              body: JSON.stringify({ error: "Could not secure the unentitled mandate; retry", code: "MANDATE_RETIRE_FAILED" }),
+            };
+          }
+          const razorpayCancelled = retired.razorpayCancelled;
           return {
             statusCode: 200,
             headers,
