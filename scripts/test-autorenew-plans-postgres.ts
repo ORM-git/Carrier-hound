@@ -241,6 +241,55 @@ async function main() {
       const res = await lifecycle("sub_never_seen", "subscription.paused", t0);
       assert.deepStrictEqual([res.ignored, res.reason], [true, "UNBOUND_MANDATE"]);
     });
+
+    await check("quarterly paid before an older weekly mandate: the weekly payment is ignored and grants nothing", async () => {
+      // Pre-index data shape (two pending mandates); the webhook then cancels the ignored one at Razorpay
+      const user = await newUser("sub_w_older", "weekly", 39900);
+      await db.query(`UPDATE public.payment_orders SET created_at = now() - interval '20 minutes' WHERE provider_order_id = 'sub_w_older'`);
+      await db.query(
+        `INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+         VALUES ($1, 'sub_q_newer', 'razorpay', 'live', 'created', 'quarterly', 219900)`, [user]
+      );
+      await renew("sub_q_newer", "pay_q_newer", 219900, t0);
+      const res = await renew("sub_w_older", "pay_w_older", 39900, t0 + 10);
+      assert.deepStrictEqual([res.ignored, res.reason], [true, "OLD_MANDATE_IGNORED"], JSON.stringify(res));
+      const row = await subRow(user);
+      assert.deepStrictEqual([row.subscription_id, row.plan_id], ["sub_q_newer", "quarterly"]);
+      assert.strictEqual(daysLeft(row.current_period_end), 90);
+    });
+
+    const ONE_PENDING = fs.readFileSync(path.join(MIG_DIR, "20261120c_payment_orders_one_pending_mandate.sql"), "utf8");
+
+    await check("20261120c pre-check refuses while a user has two pending sub_ orders", async () => {
+      // the previous check left user sub_w_older/sub_q_newer; add a fresh duplicate pair
+      const user = await newUser("sub_dup_1", "weekly", 39900);
+      await db.query(
+        `INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+         VALUES ($1, 'sub_dup_2', 'razorpay', 'live', 'created', 'quarterly', 219900)`, [user]
+      );
+      await assert.rejects(db.query(ONE_PENDING), /more than one pending sub_ order/);
+      await db.query("ROLLBACK").catch(() => {});
+      await db.query(`UPDATE public.payment_orders SET status = 'expired' WHERE provider_order_id IN ('sub_dup_1', 'sub_w_older')`);
+    });
+
+    await check("20261120c: one pending sub_ order per user; one-time, paid, expired and other users unaffected", async () => {
+      await db.query(ONE_PENDING);
+      await db.query(ONE_PENDING); // re-apply is a no-op
+      const user = await newUser("sub_slot_1", "weekly", 39900);
+      const insert = (sub: string, status: string, who = user) =>
+        db.query(
+          `INSERT INTO public.payment_orders (user_id, provider_order_id, provider, mode, status, plan_code, amount_paise)
+           VALUES ($1, $2, 'razorpay', 'live', $3, 'quarterly', 219900)`, [who, sub, status]
+        );
+      await assert.rejects(insert("sub_slot_2", "created"), (e: any) => e.code === "23505");
+      await insert("order_one_time_1", "created");
+      await insert("sub_slot_paid", "paid");
+      await insert("sub_slot_expired", "expired");
+      await insert("sub_other_user", "created", (await db.query(`SELECT gen_random_uuid()::text id`)).rows[0].id);
+      // once the pending one is expired, a new pending mandate fits
+      await db.query(`UPDATE public.payment_orders SET status = 'expired' WHERE provider_order_id = 'sub_slot_1'`);
+      await insert("sub_slot_3", "created");
+    });
   } finally {
     await db.end().catch(() => {});
     stop();

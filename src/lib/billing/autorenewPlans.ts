@@ -2,7 +2,7 @@
  * Auto-renew (Razorpay Subscriptions) plan mapping for the three prepaid price points.
  *
  * Razorpay plan IDs are never hardcoded: each plan reads its ID from the env var named here.
- * Razorpay has no "quarterly" period, so quarterly is period=monthly, interval=3.
+ * Quarterly bills every 3 months: period=monthly, interval=3.
  * total_count caps every mandate at about one year of cycles.
  */
 import { PLAN_PRICING } from "../../config/plans";

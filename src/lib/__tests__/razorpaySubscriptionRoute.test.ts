@@ -30,7 +30,8 @@ const validPlanResponse = {
 
 function createMockSupabase(
   initialSub?: any,
-  opts: { orders?: any[]; insertConflict?: boolean; failOrderUpdate?: boolean } = {}
+  // raceOrder: the row another server instance inserted first; it appears when this insert gets 23505
+  opts: { orders?: any[]; insertConflict?: boolean; failOrderUpdate?: boolean; raceOrder?: any } = {}
 ) {
   let sub = initialSub ? { ...initialSub } : null;
   const orders: any[] = (opts.orders || []).map((o) => ({ ...o }));
@@ -79,6 +80,7 @@ function createMockSupabase(
         },
         insert: async (row: any) => {
           if (table === "payment_orders" && opts.insertConflict) {
+            if (opts.raceOrder) orders.push({ ...opts.raceOrder });
             return { error: { code: "23505", message: "duplicate key value violates unique constraint" } };
           }
           if (table === "payment_orders") {
@@ -610,6 +612,151 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
     });
   });
 
+  describe("One pending mandate per user across plans (Next.js & Netlify)", () => {
+    const plans: Record<string, any> = {
+      plan_w: { period: "weekly", interval: 1, item: { amount: 39900, currency: "INR" } },
+      plan_m: { period: "monthly", interval: 1, item: { amount: 49900, currency: "INR" } },
+      plan_q: { period: "monthly", interval: 3, item: { amount: 219900, currency: "INR" } },
+    };
+    let created: any[] = [];
+    let cancelled: string[] = [];
+
+    beforeEach(() => {
+      process.env.RAZORPAY_AUTORENEW_PLAN_WEEKLY = "plan_w";
+      process.env.RAZORPAY_AUTORENEW_PLAN_MONTHLY = "plan_m";
+      process.env.RAZORPAY_AUTORENEW_PLAN_QUARTERLY = "plan_q";
+      created = [];
+      cancelled = [];
+      fetchSpy.mockImplementation(async (url: any, init: any) => {
+        const u = String(url);
+        const plan = u.match(/\/plans\/(\w+)$/)?.[1];
+        if (plan) return new Response(JSON.stringify(plans[plan]), { status: 200 });
+        const cancel = u.match(/\/subscriptions\/(\w+)\/cancel$/)?.[1];
+        if (cancel) {
+          cancelled.push(cancel);
+          return new Response(JSON.stringify({ id: cancel, status: "cancelled" }), { status: 200 });
+        }
+        const body = JSON.parse(init.body);
+        created.push(body);
+        return new Response(JSON.stringify({ id: `sub_new_${created.length}`, status: "created" }), { status: 200 });
+      });
+    });
+
+    const pending = (planCode: string, extra: any = {}) => ({
+      id: `po_${planCode}`,
+      user_id: mockUser.id,
+      provider: "razorpay",
+      provider_order_id: `sub_pending_${planCode}`,
+      plan_code: planCode,
+      status: "created",
+      mode: "test",
+      created_at: new Date().toISOString(),
+      metadata: { expire_by: Math.floor(Date.now() / 1000) + 20 * 60 },
+      ...extra,
+    });
+
+    const routes = {
+      "Next.js": async (mockDb: any, planCode: string) => {
+        const req = new Request("http://localhost:3000/api/billing/razorpay/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode, consent: validConsent }),
+        });
+        (req as any).__testDeps = { getSupabaseAdmin: () => mockDb, verifyUserNotBanned: async () => ({ isBlocked: false }), fetchFn: fetchSpy };
+        const res = await nextSubscriptionPOST(req);
+        return { status: res.status, body: await res.json() };
+      },
+      Netlify: async (mockDb: any, planCode: string) => {
+        const handler = createNetlifySubscriptionHandler({
+          getSupabaseAdmin: () => mockDb,
+          verifyUserNotBanned: async () => ({ isBlocked: false }),
+          fetchFn: fetchSpy,
+        });
+        const res = await handler({
+          httpMethod: "POST",
+          headers: { authorization: "Bearer valid-token" },
+          body: JSON.stringify({ planCode, consent: validConsent }),
+        });
+        return { status: res.statusCode, body: JSON.parse(res.body) };
+      },
+    };
+
+    for (const [platform, call] of Object.entries(routes)) {
+      for (const [first, second] of [["weekly", "quarterly"], ["quarterly", "weekly"]]) {
+        it(`${platform}: ${first} then ${second} refuses the second with 409 and creates one mandate`, async () => {
+          const mockDb = createMockSupabase();
+          const a = await call(mockDb, first);
+          const b = await call(mockDb, second);
+          expect(a.status).toBe(200);
+          expect(b.status).toBe(409);
+          expect(b.body.code).toBe("PENDING_SUBSCRIPTION_OTHER_PLAN");
+          expect(b.body.subscriptionId).toBeUndefined();
+          expect(created).toHaveLength(1);
+          expect(mockDb._getOrders().map((o: any) => o.plan_code)).toEqual([first]);
+        });
+      }
+
+      it(`${platform}: same-plan retry reuses the pending mandate`, async () => {
+        const mockDb = createMockSupabase();
+        const a = await call(mockDb, "quarterly");
+        const b = await call(mockDb, "quarterly");
+        expect(b.status).toBe(200);
+        expect(b.body).toMatchObject({ reused: true, subscriptionId: a.body.subscriptionId, planCode: "quarterly" });
+        expect(created).toHaveLength(1);
+      });
+
+      it(`${platform}: new mandates carry expire_by; a pending one past it is expired so another plan can start`, async () => {
+        const stale = pending("weekly", { metadata: { expire_by: Math.floor(Date.now() / 1000) - 5 * 60 } });
+        const mockDb = createMockSupabase(null, { orders: [stale] });
+        const res = await call(mockDb, "quarterly");
+        expect(res.status).toBe(200);
+        expect(mockDb._getOrders()[0].status).toBe("expired");
+        const expireBy = created[0].expire_by;
+        expect(expireBy).toBeGreaterThan(Date.now() / 1000 + 25 * 60);
+        expect(expireBy).toBeLessThanOrEqual(Date.now() / 1000 + 30 * 60);
+        expect(mockDb._getOrders()[1].metadata.expire_by).toBe(expireBy);
+      });
+
+      it(`${platform}: a stale #670 mandate without expire_by is cancelled at Razorpay before it is expired`, async () => {
+        const legacy = pending("monthly", { metadata: {}, created_at: new Date(Date.now() - 40 * 60 * 1000).toISOString() });
+        const mockDb = createMockSupabase(null, { orders: [legacy] });
+        const res = await call(mockDb, "weekly");
+        expect(res.status).toBe(200);
+        expect(cancelled).toEqual(["sub_pending_monthly"]);
+        expect(mockDb._getOrders()[0].status).toBe("expired");
+      });
+
+      it(`${platform}: 23505 race with another plan's mandate returns 409, never that mandate, and cancels the orphan`, async () => {
+        const mockDb = createMockSupabase(null, { insertConflict: true, raceOrder: pending("weekly") });
+        const res = await call(mockDb, "quarterly");
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("PENDING_SUBSCRIPTION_EXISTS");
+        expect(res.body.subscriptionId).toBeUndefined();
+        expect(cancelled).toEqual(["sub_new_1"]);
+      });
+
+      it(`${platform}: 23505 race with a same-plan mandate in the other key mode is not reused`, async () => {
+        const mockDb = createMockSupabase(null, { insertConflict: true, raceOrder: pending("quarterly", { mode: "live" }) });
+        const res = await call(mockDb, "quarterly");
+        expect(res.status).toBe(409);
+        expect(res.body.subscriptionId).toBeUndefined();
+      });
+
+      it(`${platform}: a bound mandate in grace (still retrying charges) blocks a new plan`, async () => {
+        const mockDb = createMockSupabase({
+          user_id: mockUser.id,
+          subscription_id: "sub_bound_grace",
+          status: "in_grace_period",
+          current_period_end: new Date(Date.now() - 86400 * 1000).toISOString(),
+        });
+        const res = await call(mockDb, "weekly");
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("ACTIVE_SUBSCRIPTION_EXISTS");
+        expect(created).toHaveLength(0);
+      });
+    }
+  });
+
   describe("Consent persisted on reused pending orders", () => {
     const legacyOrder = (minutesAgo: number, metadata: any = { source: "legacy" }) => ({
       user_id: mockUser.id,
@@ -673,8 +820,8 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
 
       it(`${platform}: uniqueness-race reuse writes consent onto the existing pending order`, async () => {
         mockGateway();
-        // Older than the 15-min reuse window, so only the race path can return it
-        const mockDb = createMockSupabase(null, { orders: [legacyOrder(30)], insertConflict: true });
+        // Invisible to the pre-check; another instance inserts it first, so only the race path can return it
+        const mockDb = createMockSupabase(null, { insertConflict: true, raceOrder: legacyOrder(0) });
         const { status, body } = await call(mockDb);
         expect(status).toBe(200);
         expect(body.reused).toBe(true);
@@ -690,7 +837,7 @@ describe("Auto-Renew Subscription Route & Handlers (Flat Rs 499)", () => {
         expect(recent.status).toBe(500);
         expect(recent.body.code).toBe("CONSENT_RECORD_FAILED");
         const race = await call(
-          createMockSupabase(null, { orders: [legacyOrder(30)], insertConflict: true, failOrderUpdate: true })
+          createMockSupabase(null, { insertConflict: true, raceOrder: legacyOrder(0), failOrderUpdate: true })
         );
         expect(race.status).toBe(500);
         expect(race.body.code).toBe("CONSENT_RECORD_FAILED");

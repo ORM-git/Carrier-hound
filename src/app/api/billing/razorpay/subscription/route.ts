@@ -3,6 +3,14 @@ import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { normalizePlanCode } from "@/lib/billing/quota";
 import { getAutoRenewPlan } from "@/lib/billing/autorenewPlans";
+import {
+  KeyMode,
+  MandateDecision,
+  PendingMandateOrder,
+  mandateExpireBy,
+  recoverFromPendingConflict,
+  resolvePendingMandates,
+} from "@/lib/billing/pendingMandate";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
@@ -365,8 +373,9 @@ export async function POST(req: Request) {
         periodEnd &&
         periodEnd.getTime() > Date.now();
 
+      // A bound mandate in grace (Razorpay "pending") still retries charges, so it blocks a new one too
       const hasActiveRecurringMandate =
-        isActiveAndValid &&
+        (isActiveAndValid || existingSub?.status === "in_grace_period") &&
         typeof existingSub?.subscription_id === "string" &&
         existingSub.subscription_id.startsWith("sub_");
 
@@ -380,54 +389,48 @@ export async function POST(req: Request) {
         );
       }
 
-      // Check for a recent pending order in payment_orders
-      const { data: existingPendingOrder } = await supabaseAdmin
-        .from("payment_orders")
-        .select("provider_order_id, plan_code, mode, created_at, metadata")
-        .eq("user_id", user.id)
-        .eq("plan_code", planCode)
-        .eq("status", "created")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const fetchCaller = deps.fetchFn || fetch;
+      const gateway = { keyId, keySecret, fetchFn: fetchCaller };
 
-      const isRecent =
-        existingPendingOrder?.created_at &&
-        Date.now() - new Date(existingPendingOrder.created_at).getTime() < 15 * 60 * 1000;
-      const isSubOrder =
-        typeof existingPendingOrder?.provider_order_id === "string" &&
-        existingPendingOrder.provider_order_id.startsWith("sub_");
-      const isMatchingMode =
-        resolvedMode === "live"
-          ? existingPendingOrder?.mode === "live"
-          : existingPendingOrder?.mode !== "live";
-
-      if (existingPendingOrder && isRecent && isSubOrder && isMatchingMode) {
-        if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingPendingOrder, consentRecord))) {
-          log.error("Failed to record consent on reused pending order", {
-            subscriptionId: existingPendingOrder.provider_order_id,
-          });
+      const reuseResponse = async (order: PendingMandateOrder) => {
+        if (!(await ensureOrderConsent(supabaseAdmin, user.id, order, consentRecord))) {
+          log.error("Failed to record consent on reused pending order", { subscriptionId: order.provider_order_id });
           return NextResponse.json(
             { error: "Failed to record subscription consent. Please try again.", code: "CONSENT_RECORD_FAILED" },
             { status: 500 }
           );
         }
-        log.info("Reusing existing pending subscription mandate", {
-          subscriptionId: existingPendingOrder.provider_order_id,
-        });
+        log.info("Reusing existing pending subscription mandate", { subscriptionId: order.provider_order_id });
         return NextResponse.json({
-          subscriptionId: existingPendingOrder.provider_order_id,
+          subscriptionId: order.provider_order_id,
           keyId,
           planId: razorpayPlanId.trim(),
           planCode,
           status: "created",
           reused: true,
         });
+      };
+
+      // One pending mandate per user across plans: same plan reuses it, a different plan gets 409
+      const keyMode = resolvedMode as KeyMode; // checked equal to configuredMode (test | live) above
+      const decision = await resolvePendingMandates({
+        supabaseAdmin,
+        userId: user.id,
+        planCode,
+        mode: keyMode,
+        gateway,
+      });
+      if (decision.kind === "conflict") {
+        log.warn("Subscription create refused by pending-mandate check", { code: decision.code });
+        return NextResponse.json({ error: decision.error, code: decision.code }, { status: decision.status });
+      }
+      if (decision.kind === "reuse") {
+        return await reuseResponse(decision.order);
       }
 
-      // Create Razorpay Subscription via REST API
+      // Create Razorpay Subscription via REST API; expire_by bounds how long it can be authorised
+      const expireBy = mandateExpireBy();
       const credentials = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-      const fetchCaller = deps.fetchFn || fetch;
       const rzpRes = await fetchCaller("https://api.razorpay.com/v1/subscriptions", {
         method: "POST",
         headers: {
@@ -437,6 +440,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           plan_id: razorpayPlanId.trim(),
           total_count: totalCount,
+          expire_by: expireBy,
           customer_notify: 1,
           notes: {
             user_id: user.id,
@@ -474,6 +478,7 @@ export async function POST(req: Request) {
           mode: resolvedMode,
           metadata: {
             consent: consentRecord,
+            expire_by: expireBy,
           },
         });
 
@@ -483,52 +488,22 @@ export async function POST(req: Request) {
           orderInsertErr.message?.includes("duplicate") ||
           orderInsertErr.message?.includes("unique")
         ) {
-          log.warn("Unique constraint collision on payment_orders; fetching and reusing existing pending order", {
+          log.warn("Unique constraint collision on payment_orders; another pending mandate won the race", {
             error: orderInsertErr,
           });
-          const { data: existingRace } = await supabaseAdmin
-            .from("payment_orders")
-            .select("provider_order_id, plan_code, mode, metadata")
-            .eq("user_id", user.id)
-            .eq("status", "created")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          const isRaceSub =
-            typeof existingRace?.provider_order_id === "string" &&
-            existingRace.provider_order_id.startsWith("sub_");
-          const isRaceMatchingMode =
-            resolvedMode === "live"
-              ? existingRace?.mode === "live"
-              : existingRace?.mode !== "live";
-
-          if (isRaceSub && isRaceMatchingMode) {
-            if (!(await ensureOrderConsent(supabaseAdmin, user.id, existingRace, consentRecord))) {
-              log.error("Failed to record consent on race-reused pending order", {
-                subscriptionId: existingRace.provider_order_id,
-              });
-              return NextResponse.json(
-            { error: "Failed to record subscription consent. Please try again.", code: "CONSENT_RECORD_FAILED" },
-            { status: 500 }
-          );
-            }
-            return NextResponse.json({
-              subscriptionId: existingRace.provider_order_id,
-              keyId,
-              planId: razorpayPlanId.trim(),
-              planCode,
-              status: "created",
-              reused: true,
-            });
+          const recovered = await recoverFromPendingConflict({
+            supabaseAdmin,
+            userId: user.id,
+            planCode,
+            mode: keyMode,
+            orphanSubscriptionId: subscriptionData.id,
+            gateway,
+          });
+          if (recovered.kind === "reuse") {
+            return await reuseResponse(recovered.order);
           }
-          return NextResponse.json(
-            {
-              error: "A subscription checkout is already in progress. Please complete the pending payment.",
-              code: "PENDING_SUBSCRIPTION_EXISTS",
-            },
-            { status: 409 }
-          );
+          const conflict = recovered as Extract<MandateDecision, { kind: "conflict" }>;
+          return NextResponse.json({ error: conflict.error, code: conflict.code }, { status: conflict.status });
         }
 
         log.error("Failed to insert pending subscription into payment_orders", { error: orderInsertErr });

@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { recordFailedEvent } from "../../src/lib/events/failedEvents";
+import { retireUnentitledMandate } from "../../src/lib/billing/retireMandate";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
@@ -14,6 +15,7 @@ const CORS_OPTIONS = {
 export interface BillingWebhookDeps {
   getSupabaseAdmin?: () => any;
   verifyUserNotBanned?: (admin: any, userId: string, meta?: any) => Promise<any>;
+  fetchFn?: typeof fetch;
 }
 
 function getDefaultSupabaseAdmin() {
@@ -100,6 +102,10 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
           }),
         };
       }
+      const serverKeySecret = process.env.RAZORPAY_KEY_SECRET;
+      const mandateGateway = serverKeySecret
+        ? { keyId: serverKeyId, keySecret: serverKeySecret, fetchFn: deps.fetchFn }
+        : null;
 
       const signature =
         event.headers?.["x-razorpay-signature"] ||
@@ -303,7 +309,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
         // Mode isolation, provider, and ban pre-check
         const { data: dbOrder, error: orderLookupErr } = await supabaseAdmin
           .from("payment_orders")
-          .select("id, provider, mode, user_id, status, plan_code, amount_paise")
+          .select("id, provider, mode, user_id, status, plan_code, amount_paise, metadata")
           .eq("provider_order_id", cleanSubId)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -350,6 +356,25 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
                 }),
               };
             }
+          }
+          // An expired pending mandate never grants access: cancel it at Razorpay and record the payment for refund
+          if (dbOrder.status === "expired") {
+            safeLog.error(`[Razorpay Webhook] Paid event on expired mandate ${cleanSubId}; not granting`);
+            const { razorpayCancelled } = await retireUnentitledMandate({
+              supabaseAdmin,
+              subscriptionId: cleanSubId,
+              paymentId: cleanPaymentId,
+              eventId,
+              eventType,
+              mode: serverMode,
+              reason: "EXPIRED_MANDATE",
+              gateway: mandateGateway,
+            });
+            return {
+              statusCode: 200,
+              headers,
+              body: JSON.stringify({ received: true, ignored: true, reason: "EXPIRED_MANDATE", razorpayCancelled, event: eventType, eventId }),
+            };
           }
         } else {
           const { data: subRow } = await supabaseAdmin
@@ -436,6 +461,17 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
 
         if (renewalRes?.ignored) {
           safeLog.info(`[Razorpay Webhook] Paid event ignored by RPC for ${cleanSubId}: ${renewalRes.reason}`);
+          // Paid but not the user's bound mandate: stop it charging again and record the payment for refund
+          const { razorpayCancelled } = await retireUnentitledMandate({
+            supabaseAdmin,
+            subscriptionId: cleanSubId,
+            paymentId: cleanPaymentId,
+            eventId,
+            eventType,
+            mode: serverMode,
+            reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
+            gateway: mandateGateway,
+          });
           return {
             statusCode: 200,
             headers,
@@ -443,6 +479,7 @@ export function createHandler(deps: BillingWebhookDeps = {}) {
               received: true,
               ignored: true,
               reason: renewalRes.reason || "OLD_MANDATE_IGNORED",
+              razorpayCancelled,
               event: eventType,
               eventId,
               details: renewalRes,
