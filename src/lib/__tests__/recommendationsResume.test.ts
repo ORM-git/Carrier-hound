@@ -64,7 +64,7 @@ describe("resume boost (soft ranking only)", () => {
     expect(hasOnboardingAnswers({ resumeProfile: { skills: [], jobTitles: [" "] } })).toBe(false);
   });
 
-  it("the job ID set is unchanged with and without a resume, keeping existing hard preferences", () => {
+  it("a resume only removes off-role jobs (relevance gate) and never re-admits jobs the hard preferences exclude", () => {
     const jobsList = [
       job("j1", "Frontend Engineer", { skills: ["React"] }),
       job("j2", "Data Analyst", { skills: ["SQL", "Tableau"] }),
@@ -73,29 +73,43 @@ describe("resume boost (soft ranking only)", () => {
       job("j5", "Onsite Sales", { remote: false, remote_scope: "onsite", location: "Pune" }),
     ];
 
-    // Case 1: No onboarding answers - all jobs returned with or without resume
+    // Case 1: No onboarding answers - no profile, so every job; a Data Analyst resume keeps only the data role
     const withoutResume1 = rankJobsByRecommendation(jobsList, {});
     const withResume1 = rankJobsByRecommendation(jobsList, { resumeProfile: resume });
-    expect(withResume1.map((j) => j.id).sort()).toEqual(withoutResume1.map((j) => j.id).sort());
+    expect(withoutResume1.map((j) => j.id).sort()).toEqual(["j1", "j2", "j3", "j4", "j5"]);
+    expect(withResume1.map((j) => j.id)).toEqual(["j2"]);
 
-    // Case 2: With onboarding answers and hard preferences (entry level hard-excludes senior/lead)
-    const baseAnswers = { roles: ["Engineer"], remotePreference: "remote", experienceLevel: "entry" };
+    // Case 2: Software target role + hard preferences (entry level hard-excludes senior/lead)
+    const baseAnswers = { roles: ["Software Engineer"], remotePreference: "remote", experienceLevel: "entry" };
     const withoutResume2 = rankJobsByRecommendation(jobsList, baseAnswers);
     const withResume2 = rankJobsByRecommendation(jobsList, { ...baseAnswers, resumeProfile: resume });
-    expect(withResume2.map((j) => j.id).sort()).toEqual(withoutResume2.map((j) => j.id).sort());
-    // Seniority is still a hard preference; Open to Remote is additive, so the onsite job stays
-    expect(withResume2.map((j) => j.id)).not.toContain("j4"); // Senior excluded for entry
-    expect(withResume2.map((j) => j.id)).toContain("j5"); // Onsite kept: remote preference is additive
+    // Off-role "Onsite Sales" never appears; Senior is still excluded for entry level
+    expect(withoutResume2.map((j) => j.id).sort()).toEqual(["j1", "j3"]);
+    // With a target role saved, the resume never widens the set (no Data Analyst) or re-admits the senior role
+    expect(withResume2.map((j) => j.id).sort()).toEqual(["j1", "j3"]);
+    expect(withResume2.map((j) => j.id)).not.toContain("j4");
   });
 
-  it("ranks resume-matching jobs above equal jobs that don't match", () => {
+  it("Open to Remote stays additive: an on-site on-role job is kept", () => {
+    const ranked = rankJobsByRecommendation(
+      [job("onsite", "Software Engineer", { remote: false, remote_scope: "onsite", location: "Pune" })],
+      { roles: ["Software Engineer"], remotePreference: "remote" }
+    );
+    expect(ranked.map((j) => j.id)).toEqual(["onsite"]);
+  });
+
+  it("ranks resume-matching jobs above other on-role jobs and drops off-role ones", () => {
     const answers = { remotePreference: "remote", resumeProfile: resume };
     const ranked = rankJobsByRecommendation(
-      [job("a", "Sales Executive"), job("b", "Data Analyst", { skills: ["SQL", "Tableau"] }), job("c", "Office Manager")],
+      [
+        job("a", "Sales Executive"),
+        job("b", "Data Analyst", { skills: ["SQL", "Tableau"] }),
+        job("c", "Office Manager"),
+        job("d", "Analytics Engineer"),
+      ],
       answers
     );
-    expect(ranked[0].id).toBe("b");
-    expect(ranked.map((j) => j.id)).toEqual(expect.arrayContaining(["a", "c"])); // nothing dropped by the resume
+    expect(ranked.map((j) => j.id)).toEqual(["b", "d"]);
   });
 
   it("never overrides the user's hard preferences (seniority, not open to remote)", () => {

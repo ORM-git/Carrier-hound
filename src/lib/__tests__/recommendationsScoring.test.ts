@@ -168,9 +168,9 @@ describe("Deterministic Recommendation Scoring Engine", () => {
       ];
 
       const ranked = rankJobsByRecommendation(jobs, answers);
-      expect(ranked.map((j) => j.id)).toEqual(["perfect", "partial", "unrelated"]);
+      // The off-role "Sales Director" is removed by the relevance gate, not just ranked last
+      expect(ranked.map((j) => j.id)).toEqual(["perfect", "partial"]);
       expect(ranked[0].matchScore).toBeGreaterThan(ranked[1].matchScore!);
-      expect(ranked[1].matchScore).toBeGreaterThan(ranked[2].matchScore!);
     });
 
     it("hard filters: entry-level Open-to-Remote seeker never gets Senior/Staff jobs; remote is additive, not remote-only", () => {

@@ -1,6 +1,6 @@
 import { createClient } from "../supabase/client";
 import { CandidateProfile } from "../resume/types";
-import { computeFitDiagnostics, FitDiagnosticsResult } from "../matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
@@ -12,8 +12,12 @@ import {
   type CompanyCategory,
   type RoleCategory,
 } from "@/lib/jobs/highVolumeEnrichment";
-import { rankJobsByRecommendation, hasOnboardingAnswers } from "./recommendations";
-import { isJobEligible } from "./eligibility";
+import {
+  rankJobsByRecommendation,
+  hasOnboardingAnswers,
+  buildRelevancePrefilter,
+  answersFromCandidate,
+} from "./recommendations";
 import {
   applyExperienceLevelQuery,
   formatExperienceLevels,
@@ -800,65 +804,19 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         data = fallbackRes.data;
         count = fallbackRes.count;
       } else {
-        // Score each candidate against the candidate profile using unified attributes
-        const scoredPool: { row: any; score: number }[] = candidatePool.map((row: any) => {
-          const teaserJob = {
-            id: row.id,
-            title: row.title || "Untitled Position",
-            company: "Verified Employer",
-            location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
-            category: row.category,
-            remote_scope: row.remote_scope || (row.remote ? "worldwide" : undefined),
-            skills: row.skills,
-            description: row.description,
-          };
-          const diagnostics = computeFitDiagnostics(candidate, teaserJob);
-          let score = diagnostics.score;
-          if (preferences) {
-            // A saved "remote" preference (Open to Remote) is additive, so it never zeroes a non-remote job.
-            // Geography: saved countries admit their jobs plus eligible worldwide/unrestricted remote roles only.
-            const savedLocations = [
-              ...(preferences.locations || []),
-              (preferences as any).country,
-              (preferences as any).countryCode,
-            ].filter((l): l is string => typeof l === "string" && l.trim().length > 0);
-            if (savedLocations.length > 0 && !isJobEligible(row, savedLocations)) {
-              score = 0;
-            }
-            const userExp = (preferences.experienceLevel || (preferences as any).experience_level || "").toLowerCase().trim();
-            const title = (row.title || "").toLowerCase();
-            const isLeadOrPrincipal = /\b(lead|staff|principal|head|director|architect|manager|vp|chief)\b/i.test(title);
-            const isSenior = /\b(senior|sr\.?)\b/i.test(title);
-            if ((userExp === "entry" || userExp === "intern") && (isSenior || isLeadOrPrincipal)) {
-              score = 0;
-            }
-          }
-          const finalScore = score > 0 ? Math.max(10, Math.min(99, Math.round(score))) : 0;
-          row.matchScore = finalScore;
-          return { row, score: finalScore };
-        });
-
-        // Hard filter enforcement: only include qualifying roles; never show disqualified jobs
-        const qualifyingPool = scoredPool.filter((item) => item.score > 0);
-        const poolToSort = qualifyingPool;
-
-        // Sort by match score descending, then recency descending
-        poolToSort.sort((a, b) => {
-          if (b.score !== a.score) return b.score - a.score;
-          const timeA = new Date(a.row.posted_at || a.row.created_at || 0).getTime();
-          const timeB = new Date(b.row.posted_at || b.row.created_at || 0).getTime();
-          return timeB - timeA;
-        });
-
-        // Cap jobs per company: max 3 per company in visible top-30
-        const cappedPool = capJobsPerCompany(poolToSort.map((item) => item.row), 3, 30);
+        // Shared recommendation scorer (relevance gate, seniority/location/salary filters, score, order),
+        // with the resume's titles, headline and skills added to the saved preferences.
+        const ranked = rankJobsByRecommendation(candidatePool, answersFromCandidate(candidate, preferences));
+        const cappedPool = capJobsPerCompany(ranked, 3, 30);
         data = cappedPool.slice(from, to + 1);
         count = cappedPool.length;
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       if (hasOnboardingAnswers(preferences)) {
         const poolLimit = 1000;
-        const poolQuery = query
+        // Pool = latest relevant jobs (same pre-filter as /api/jobs/recommended), then the shared scorer
+        const relevancePrefilter = buildRelevancePrefilter(preferences);
+        const poolQuery = (relevancePrefilter ? query.or(relevancePrefilter.orClause) : query)
           .order("posted_at", { ascending: false, nullsFirst: false })
           .order("id", { ascending: false })
           .range(0, poolLimit - 1);
@@ -1369,21 +1327,25 @@ export async function getTopRankedJobsForCandidate(
     isPro,
   });
 
-  const scored = result.jobs.map((job) => {
-    const diagnostics = computeFitDiagnostics(candidate, {
-      id: job.id,
-      title: job.title,
-      company: job.company,
-      location: job.location,
-      remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
-      category: job.category,
-      skills: job.skills,
-      salary_text: job.salary,
-      description: job.description,
-    });
+  // getLiveJobs already ranked these with the shared recommendation scorer (relevance gate included);
+  // diagnostics only explain the match and carry that same score.
+  const scored = result.jobs
+    .filter((job) => typeof job.matchScore === "number" && job.matchScore > 0)
+    .map((job) => {
+      const diagnostics = computeFitDiagnostics(candidate, {
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
+        category: job.category,
+        skills: job.skills,
+        salary_text: job.salary,
+        description: job.description,
+      });
 
-    return { job, diagnostics };
-  });
+      return { job, diagnostics: withSharedScore(diagnostics, job.matchScore as number) };
+    });
 
   scored.sort((a, b) => b.diagnostics.score - a.diagnostics.score);
   return scored.slice(0, limit);
