@@ -103,14 +103,14 @@ describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
     // Assert migration is non-destructive (no destructive row mutations or renames)
     expect(sql).not.toMatch(/UPDATE public\.jobs[\s\S]*?__dup_/i);
 
-    // 3. Dedupe trigger handles both INSERT and UPDATE
-    expect(sql).toMatch(/BEFORE INSERT OR UPDATE OF is_active, dedupe_hash, source_priority ON public\.jobs/i);
+    // 3. dedupe_hash is advisory (#643 contract): no merge trigger, no unique index on it
+    expect(sql).not.toMatch(/merge_job_by_dedupe_priority|trg_jobs_merge_dedupe_priority/i);
+    expect(sql).not.toMatch(/idx_jobs_active_dedupe_hash_uniq/i);
 
     // 4. Partial indexes on is_active = TRUE and unique constraints
     expect(sql).toMatch(/idx_jobs_active_category[\s\S]*?WHERE is_active = TRUE/i);
     expect(sql).toMatch(/idx_jobs_active_country[\s\S]*?WHERE is_active = TRUE/i);
     expect(sql).toMatch(/idx_jobs_active_posted_at_desc[\s\S]*?WHERE is_active = TRUE/i);
     expect(sql).toMatch(/idx_jobs_source_id_source_job_id_uniq/i);
-    expect(sql).toMatch(/idx_jobs_active_dedupe_hash_uniq[\s\S]*?WHERE is_active = TRUE AND dedupe_hash IS NOT NULL/i);
   });
 });

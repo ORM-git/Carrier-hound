@@ -110,21 +110,24 @@ def partition_set_diff(
     """
     Set-diff partitioning:
     Returns (to_insert, to_update [(existing_id, payload)], unchanged_ids).
-    - Deduplicates incoming batch by dedupe_hash (Direct ATS priority=1 beats Aggregator priority=2).
-    - Compares incoming jobs against existing DB rows by (source_type, source_job_id) first,
-      then by active dedupe_hash for cross-source deduplication.
+    - Deduplicates the incoming batch by board identity (source_id, source_job_id), legacy
+      (source_type, source_job_id) when source_id is absent; higher priority (lower number) wins.
+    - Matches existing DB rows by (source_id, source_job_id), then legacy (source_type, source_job_id).
+      dedupe_hash is advisory (#643 contract): two boards with the same hash coexist, never merged.
     - Only emits writes for brand-new jobs or jobs whose content fingerprint / priority changed.
     """
     deduped_incoming: dict[str, dict[str, Any]] = {}
     for job in incoming_jobs:
-        d_hash = job.get("dedupe_hash") or f"{job.get('source_type')}:{job.get('source_job_id')}"
-        prev = deduped_incoming.get(d_hash)
+        if not job.get("source_job_id"):
+            deduped_incoming[f"no-id:{len(deduped_incoming)}"] = job  # no identity: never collapse
+            continue
+        key = f"{job.get('source_id') or job.get('source_type')}:{job.get('source_job_id')}"
+        prev = deduped_incoming.get(key)
         if prev is None or int(job.get("source_priority", 2)) < int(prev.get("source_priority", 2)):
-            deduped_incoming[d_hash] = job
+            deduped_incoming[key] = job
 
     by_source_id_key: dict[tuple[str, str], dict[str, Any]] = {}
     by_source_key: dict[tuple[str, str], dict[str, Any]] = {}
-    by_dedupe_hash: dict[str, dict[str, Any]] = {}
     for ex in existing_rows:
         src_id = str(ex.get("source_id") or "")
         st = str(ex.get("source_type") or "")
@@ -133,9 +136,6 @@ def partition_set_diff(
             by_source_id_key[(src_id, sid)] = ex
         if st and sid:
             by_source_key[(st, sid)] = ex
-        dh = ex.get("dedupe_hash")
-        if dh and ex.get("is_active", True):
-            by_dedupe_hash[str(dh)] = ex
 
     to_insert: list[dict[str, Any]] = []
     to_update: list[tuple[str, dict[str, Any]]] = []
@@ -144,18 +144,14 @@ def partition_set_diff(
     for job in deduped_incoming.values():
         src_id_key = (str(job.get("source_id") or ""), str(job.get("source_job_id") or ""))
         s_key = (str(job.get("source_type") or ""), str(job.get("source_job_id") or ""))
-        d_hash = str(job.get("dedupe_hash") or "")
 
         # Look up by exact board (source_id, source_job_id) first,
-        # then fallback to legacy (source_type, source_job_id),
-        # then dedupe_hash for cross-source deduplication.
+        # then fallback to legacy (source_type, source_job_id).
         existing = None
         if src_id_key[0] and src_id_key[1]:
             existing = by_source_id_key.get(src_id_key)
         if existing is None and s_key[0] and s_key[1]:
             existing = by_source_key.get(s_key)
-        if existing is None and d_hash:
-            existing = by_dedupe_hash.get(d_hash)
 
         if existing is None:
             to_insert.append(job)
@@ -345,16 +341,12 @@ class SupabaseSetDiffWriter:
                 if slug and slug in company_id_map:
                     j["company_id"] = company_id_map[slug]
 
-            # Look up existing rows by source_job_id and dedupe_hash
+            # Look up existing rows by source_job_id (identity only; dedupe_hash is advisory)
             sids = [j["source_job_id"] for j in chunk if j.get("source_job_id")]
-            hashes = [j["dedupe_hash"] for j in chunk if j.get("dedupe_hash")]
             or_parts: list[str] = []
             if sids:
                 quoted_sids = ",".join(f'"{s}"' for s in sids)
                 or_parts.append(f"source_job_id.in.({quoted_sids})")
-            if hashes:
-                quoted_hashes = ",".join(f'"{h}"' for h in hashes)
-                or_parts.append(f"dedupe_hash.in.({quoted_hashes})")
 
             existing_rows: list[dict[str, Any]] = []
             if or_parts:

@@ -9952,7 +9952,6 @@ COMMIT;
 --    WHERE n.nspname = 'public'
 --      AND c.relname IN (
 --        'idx_jobs_source_id_source_job_id_uniq',
---        'idx_jobs_active_dedupe_hash_uniq',
 --        'idx_companies_slug_uniq',
 --        'idx_jobs_active_category',
 --        'idx_jobs_active_role_category'
@@ -9976,13 +9975,7 @@ COMMIT;
 --    WHERE n.nspname = 'public'
 --      AND conname IN ('jobs_source_type_check', 'jobs_role_category_check', 'jobs_source_priority_check', 'companies_category_check');
 --
--- 4. Verify trigger trg_jobs_merge_dedupe_priority is active:
---    SELECT tgname, tgenabled, relname
---    FROM pg_trigger t
---    JOIN pg_class c ON c.oid = t.tgrelid
---    WHERE tgname = 'trg_jobs_merge_dedupe_priority';
---
--- 5. Verify backfills:
+-- 4. Verify backfills:
 --    SELECT
 --      (SELECT count(*) FROM public.jobs WHERE is_active = TRUE AND dedupe_hash IS NULL) AS unhashed_active_jobs,
 --      (SELECT count(*) FROM public.jobs WHERE source_priority IS NULL) AS unprioritized_jobs,
@@ -10157,105 +10150,10 @@ SET dedupe_hash = public.compute_job_dedupe_hash(
 WHERE is_active = TRUE
   AND dedupe_hash IS NULL;
 
--- Priority-aware merge trigger function so duplicate jobs across aggregators
--- (priority = 2) and direct ATS boards (priority = 1) automatically merge
--- without violating idx_jobs_active_dedupe_hash_uniq.
--- Handles both INSERT and UPDATE (e.g. reactivating an expired row or updating dedupe_hash).
-CREATE OR REPLACE FUNCTION public.merge_job_by_dedupe_priority()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_existing record;
-  v_new_priority smallint;
-BEGIN
-  IF NEW.is_remote IS NULL THEN
-    NEW.is_remote := COALESCE(NEW.remote, false);
-  END IF;
-
-  v_new_priority := COALESCE(
-    NEW.source_priority,
-    CASE
-      WHEN NEW.source_type IN ('ats', 'direct', 'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'amazon', 'microsoft')
-        OR lower(COALESCE(NEW.source, '')) IN ('greenhouse', 'lever', 'ashby', 'smartrecruiters', 'recruitee', 'workable', 'breezy', 'teamtailor', 'personio', 'bamboohr', 'join')
-      THEN 1
-      ELSE 2
-    END
-  );
-  NEW.source_priority := v_new_priority;
-
-  IF NEW.dedupe_hash IS NULL AND NEW.company IS NOT NULL AND NEW.title IS NOT NULL THEN
-    NEW.dedupe_hash := public.compute_job_dedupe_hash(
-      NEW.company,
-      NEW.title,
-      COALESCE(NEW.country_code, NEW.country),
-      NEW.location
-    );
-  END IF;
-
-  -- Deduplicate active rows on INSERT or when an UPDATE sets an inactive row active / changes dedupe_hash
-  IF (
-    (TG_OP = 'INSERT' AND COALESCE(NEW.is_active, true) = TRUE)
-    OR (TG_OP = 'UPDATE' AND NEW.is_active = TRUE AND (OLD.is_active IS DISTINCT FROM TRUE OR OLD.dedupe_hash IS DISTINCT FROM NEW.dedupe_hash))
-  ) AND NEW.dedupe_hash IS NOT NULL THEN
-    SELECT id, source_priority, top_keywords, skills
-    INTO v_existing
-    FROM public.jobs
-    WHERE is_active = TRUE
-      AND dedupe_hash = NEW.dedupe_hash
-      AND (
-        TG_OP = 'INSERT'
-        OR id <> NEW.id
-      )
-      AND (
-        NEW.source_type IS NULL
-        OR NEW.source_job_id IS NULL
-        OR (source_type, source_job_id) IS DISTINCT FROM (NEW.source_type, NEW.source_job_id)
-      )
-    ORDER BY source_priority ASC NULLS LAST, last_seen_at DESC NULLS LAST
-    LIMIT 1;
-
-    IF v_existing.id IS NOT NULL THEN
-      IF v_new_priority < COALESCE(v_existing.source_priority, 2) THEN
-        -- Incoming Direct ATS (priority = 1) supersedes existing Aggregator row (priority = 2):
-        -- Deactivate the aggregator duplicate so the Direct ATS row becomes the active canonical row.
-        UPDATE public.jobs
-        SET is_active = FALSE,
-            status = 'expired',
-            last_seen_at = now()
-        WHERE id = v_existing.id;
-      ELSE
-        -- Existing row has equal or higher priority (e.g. Direct ATS priority = 1 vs incoming Aggregator priority = 2):
-        -- Refresh last_seen_at on the existing row and mark incoming duplicate inactive so unique partial index is satisfied.
-        UPDATE public.jobs
-        SET last_seen_at = now(),
-            top_keywords = CASE
-              WHEN COALESCE(array_length(top_keywords, 1), 0) = 0 AND COALESCE(array_length(NEW.top_keywords, 1), 0) > 0
-              THEN NEW.top_keywords
-              ELSE top_keywords
-            END
-        WHERE id = v_existing.id;
-
-        NEW.is_active := FALSE;
-        NEW.status := 'expired';
-      END IF;
-    END IF;
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
-CREATE TRIGGER trg_jobs_merge_dedupe_priority
-  BEFORE INSERT OR UPDATE OF is_active, dedupe_hash, source_priority ON public.jobs
-  FOR EACH ROW
-  EXECUTE FUNCTION public.merge_job_by_dedupe_priority();
+-- dedupe_hash is advisory only (#643 contract): no merge trigger and no unique index on it.
 
 -- ----------------------------------------------------------------------------
--- 4. PARTIAL INDEXES & UNIQUE DEDUPE CONSTRAINTS
+-- 4. PARTIAL INDEXES & SOURCE IDENTITY UNIQUE INDEX
 -- ----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_jobs_active_category
   ON public.jobs (category)
@@ -10285,10 +10183,6 @@ DROP INDEX IF EXISTS public.idx_jobs_source_type_source_job_id_uniq;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_id_source_job_id_uniq
   ON public.jobs (source_id, source_job_id)
   WHERE source_id IS NOT NULL AND source_job_id IS NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_dedupe_hash_uniq
-  ON public.jobs (dedupe_hash)
-  WHERE is_active = TRUE AND dedupe_hash IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
 -- 5. NON-BREAKING PUBLIC VIEW UPDATE (appends new public columns at end)
@@ -10336,7 +10230,7 @@ COMMIT;
 -- ROLLBACK (run manually in the Supabase SQL editor if this must be undone):
 --   NON-DESTRUCTIVE ROLLBACK POLICY:
 --   - Restores legacy constraints, views, and database/application behavior.
---   - Drops ONLY objects that this migration clearly created (trigger, functions,
+--   - Drops ONLY objects that this migration clearly created (functions,
 --     perf view, new partial indexes, new check constraints).
 --   - Restores the original jobs_public view definition without Phase 3 columns.
 --   - Keeps the expanded jobs_source_type_check constraint because rows with vendor values may exist.
@@ -10347,9 +10241,7 @@ COMMIT;
 --     or may contain valid ingested data. Additive columns are never removed.
 --   - Retains backfilled data in pre-existing columns without destructive cascades.
 --
---   -- 1. Drop trigger and dedupe merge functions created by this migration
---   DROP TRIGGER IF EXISTS trg_jobs_merge_dedupe_priority ON public.jobs;
---   DROP FUNCTION IF EXISTS public.merge_job_by_dedupe_priority();
+--   -- 1. Drop the dedupe hash function created by this migration
 --   DROP FUNCTION IF EXISTS public.compute_job_dedupe_hash(text, text, text, text);
 --
 --   -- 2. Drop performance view and restore legacy jobs_public view via transactional DROP + CREATE
@@ -10389,7 +10281,6 @@ COMMIT;
 --
 --   -- 3. Drop indexes created by this migration
 --   DROP INDEX IF EXISTS public.idx_jobs_source_id_source_job_id_uniq;
---   DROP INDEX IF EXISTS public.idx_jobs_active_dedupe_hash_uniq;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_category_country_posted_at;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_posted_at_desc;
 --   DROP INDEX IF EXISTS public.idx_jobs_active_country;

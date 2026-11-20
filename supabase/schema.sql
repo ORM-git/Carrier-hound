@@ -64,8 +64,7 @@ create table if not exists public.jobs (
   last_seen_at    timestamptz default now(),
   is_active       boolean     default true,
   status          text        default 'active' check (status in ('active', 'expired')),
-  created_at      timestamptz default now(),
-  constraint jobs_source_type_source_job_id_key unique (source_type, source_job_id)
+  created_at      timestamptz default now()
 );
 
 -- ── PROFILES TABLE ───────────────────────────────────────────────────────────
@@ -134,11 +133,6 @@ create unique index if not exists jobs_source_source_job_id_unique
   on public.jobs (source, source_job_id)
   where source is not null and source_job_id is not null;
 
--- Unique index on (source_type, source_job_id) for multi-source deduplication
-create unique index if not exists idx_jobs_source_type_source_job_id_uniq
-  on public.jobs (source_type, source_job_id)
-  where source_type is not null and source_job_id is not null;
-
 -- Partial indexes on is_active = true for fast filtering by category, country, and posted_at DESC
 create index if not exists idx_jobs_active_category
   on public.jobs (category)
@@ -159,11 +153,6 @@ create index if not exists idx_jobs_active_posted_at_desc
 create index if not exists idx_jobs_active_category_country_posted_at
   on public.jobs (category, country, posted_at desc)
   where is_active = true;
-
--- Unique partial index on active dedupe_hash (Direct ATS priority = 1, Aggregators = 2)
-create unique index if not exists idx_jobs_active_dedupe_hash_uniq
-  on public.jobs (dedupe_hash)
-  where is_active = true and dedupe_hash is not null;
 
 -- Prevent duplicate jobs from the same ATS (same apply URL = same job)
 create unique index if not exists jobs_apply_url_unique

@@ -270,6 +270,21 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertEqual(len(to_update2), 0)
         self.assertEqual(unchanged2, ["uuid-1"])
 
+    def test_same_dedupe_hash_on_two_boards_coexists_never_merged(self) -> None:
+        """#643 contract: dedupe_hash is advisory; two boards with the same hash both persist."""
+        a = {"company": "Stripe", "title": "SWE", "source_type": "greenhouse", "source_id": "greenhouse:stripe",
+             "source_job_id": "1", "source_priority": 1, "dedupe_hash": "same"}
+        b = {**a, "source_type": "lever", "source_id": "lever:stripe", "source_priority": 2}
+        to_insert, to_update, unchanged = partition_set_diff([a, b], [])
+        self.assertEqual(len(to_insert), 2)
+        # an existing row on board A must not absorb board B's job with the same hash
+        to_insert, to_update, unchanged = partition_set_diff([b], [{"id": "uuid-a", **a}])
+        self.assertEqual((len(to_insert), to_update, unchanged), (1, [], []))
+        # jobs without a source_job_id are never collapsed together
+        n1 = {**a, "source_job_id": None, "title": "x"}
+        n2 = {**a, "source_job_id": None, "title": "y"}
+        self.assertEqual(len(partition_set_diff([n1, n2], [])[0]), 2)
+
     def test_persistence_failure_vetos_expiry_step(self) -> None:
         """Requirement 1: HTTP 400/409/500 errors on job or company writes veto expiry step."""
         def handler(request: httpx.Request) -> httpx.Response:
