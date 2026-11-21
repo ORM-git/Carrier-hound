@@ -110,7 +110,7 @@ describe("card and detail read one stored score (withFeedScore)", () => {
 
   it("deep-linked detail (no score, or a recomputed resume score) shows the feed card's score", () => {
     const feed = [{ id: "j1", title: "Frontend Engineer, Ads", matchScore: 83 }];
-    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads" }, feed))).toBe(shown(feed[0]));
+    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: undefined }, feed))).toBe(shown(feed[0]));
     expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: 85 }, feed))).toBe(83);
   });
 
