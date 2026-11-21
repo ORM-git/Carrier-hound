@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { readCookieConsent } from "@/lib/analytics/cookieConsent";
+import { recordErrorEvent } from "@/lib/monitoring/errorEvents";
 
 /**
  * Checks whether error reporting to Sentry is permitted under current DSN configuration
@@ -78,9 +79,12 @@ export function reportErrorToSentry(error: unknown, options?: ReportErrorOptions
  * Server-side convenience: reports an error thrown while handling a request,
  * tagging it with the middleware-assigned x-request-id when present. The
  * request id never comes from the error itself and is pattern-validated
- * before tagging.
+ * before tagging. Also logs the error to public.error_events for /admin/errors
+ * (best-effort, independent of Sentry DSN/consent, never throws).
  */
 export function reportRequestErrorToSentry(request: Request, error: unknown): void {
+  // shortcut: fire-and-forget, so an edge isolate may drop the insert after the response; use waitUntil if rows go missing.
+  void recordErrorEvent(request, error);
   try {
     const requestId =
       request?.headers && typeof request.headers.get === "function"
