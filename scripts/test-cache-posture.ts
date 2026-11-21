@@ -118,6 +118,15 @@ export const BASELINE_CACHE_CATALOG: Record<string, RouteCacheBaseline> = {
     directiveProvidesNoStore: false,
     needsRemediation: true,
   },
+  "src/app/api/admin/errors/route.ts": {
+    filePath: "src/app/api/admin/errors/route.ts",
+    authRequirement: "Admin Auth (Bearer)",
+    classification: "private/no-store",
+    hasCacheControl: true,
+    directiveProvidesNoStore: true,
+    expectedHeaderSnippet: "private, no-store",
+    needsRemediation: false,
+  },
   "src/app/api/admin/replay/route.ts": {
     filePath: "src/app/api/admin/replay/route.ts",
     authRequirement: "Admin Auth (Bearer)",
@@ -631,8 +640,8 @@ const singleModePrivateMissing = sendingNoneSet.filter(
 );
 const remediationCount = routableEndpoints.filter((r) => r.needsRemediation).length;
 
-check("catalog contains 50 total files (47 endpoints + 3 helpers)", entries.length === 50 && routableEndpoints.length === 47);
-check("catalog records exact header presence counts (15 with Cache-Control, 32 none set)", sendingCacheControl.length === 15 && sendingNoneSet.length === 32);
+check("catalog contains 51 total files (48 endpoints + 3 helpers)", entries.length === 51 && routableEndpoints.length === 48);
+check("catalog records exact header presence counts (16 with Cache-Control, 32 none set)", sendingCacheControl.length === 16 && sendingNoneSet.length === 32);
 check("catalog flags 23 single-mode private/no-store routes omitting Cache-Control and 28 total needing remediation", singleModePrivateMissing.length === 23 && remediationCount === 28);
 
 // Verify dual-mode /api/jobs/search and /api/jobs/recommended split (Next and Netlify read Bearer + Pro + prefs)

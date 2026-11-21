@@ -116,6 +116,14 @@ paths:
       responses:
         "200": { description: Replay processed }
         "403": { description: Not an admin }
+  /api/admin/errors:
+    get:
+      tags: [admin]
+      summary: Request errors in the last 7 days, grouped by route and stack hash
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Grouped error events }
+        "403": { description: Not an admin }
   /api/admin/stats:
     get:
       tags: [admin]

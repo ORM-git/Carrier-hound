@@ -55,7 +55,9 @@ function resolveMigrationFile(filenameInput, migrationsDir = DEFAULT_MIGRATIONS_
     throw new Error("Missing migration filename argument.");
   }
 
-  const basename = path.basename(filenameInput.trim());
+  // Migration headers document the name without ".sql"; accept both forms.
+  const trimmed = path.basename(filenameInput.trim());
+  const basename = trimmed.endsWith(".sql") ? trimmed : `${trimmed}.sql`;
   const fullPath = path.resolve(migrationsDir, basename);
 
   if (!fs.existsSync(fullPath)) {

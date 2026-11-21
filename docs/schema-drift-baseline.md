@@ -14,7 +14,7 @@ the uncovered-table count rises above the baseline. New migrations
 that create tables must extend `schema.sql` (preferred) or this file
 in the same PR.
 
-Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 18 Nov 2026 for `20261118_onboarding_resume_uploads.sql` (migration-only: pointer table with preflight, marker comments, and transactional rollback guards): 46 tables, 46 covered only by migrations. Updated 19 Nov 2026 for `20261119_onboarding_resume_profiles.sql` (migration-only: parsed resume profile for ranking, owner-read only, preflight + marker + guarded rollback): 47 tables, 47 covered only by migrations. Updated 19 Nov 2026 (rehearsal merge of #643) for `20261116b_ten_million_system_design_schema.sql` (not applied): 57 tables, 57 covered only by migrations. Updated 20 Nov 2026 for the #643 rollback-provenance table `internal_ingestion.schema_migration_provenance` (`20261116b`, not applied): 58 tables, 58 covered only by migrations.
+Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 18 Nov 2026 for `20261118_onboarding_resume_uploads.sql` (migration-only: pointer table with preflight, marker comments, and transactional rollback guards): 46 tables, 46 covered only by migrations. Updated 19 Nov 2026 for `20261119_onboarding_resume_profiles.sql` (migration-only: parsed resume profile for ranking, owner-read only, preflight + marker + guarded rollback): 47 tables, 47 covered only by migrations. Updated 19 Nov 2026 (rehearsal merge of #643) for `20261116b_ten_million_system_design_schema.sql` (not applied): 57 tables, 57 covered only by migrations. Updated 20 Nov 2026 for the #643 rollback-provenance table `internal_ingestion.schema_migration_provenance` (`20261116b`, not applied): 58 tables, 58 covered only by migrations. Updated 21 Nov 2026 for `20261121a_error_events.sql` (not applied): 59 tables, 59 covered only by migrations.
 
 | Table | Owning migration |
 | --- | --- |
@@ -40,6 +40,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `early_access_approved` | `20261030_early_access_approved.sql` |
 | `early_access_emails` | `20261029_early_access_emails.sql` |
 | `email_suppressions` | `20261105b_email_suppressions.sql` |
+| `error_events` | `20261121a_error_events.sql` |
 | `failed_events` | `20261105a_failed_events.sql` |
 | `funnel_events` | `20261106e_funnel_events.sql` |
 | `gmail_send_log` | `20261029_early_access_emails.sql` |
@@ -79,7 +80,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 58
+baseline-count: 59
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -102,6 +103,7 @@ table: dunning_logs | 20261008_phase3_subscriptions_and_billing.sql
 table: early_access_approved | 20261030_early_access_approved.sql
 table: early_access_emails | 20261029_early_access_emails.sql
 table: email_suppressions | 20261105b_email_suppressions.sql
+table: error_events | 20261121a_error_events.sql
 table: failed_events | 20261105a_failed_events.sql
 table: funnel_events | 20261106e_funnel_events.sql
 table: gmail_send_log | 20261029_early_access_emails.sql
