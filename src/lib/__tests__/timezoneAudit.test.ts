@@ -31,7 +31,6 @@ describe("timezone audit doc", () => {
 
   it("documents the cron schedules against the real workflow files", () => {
     const checks: Array<[string, string]> = [
-      [".github/workflows/early-access-digest-cron.yml", "0 18 * * *"],
       [".github/workflows/dunning-dispatch-cron.yml", "30 4 * * *"],
       [".github/workflows/capacity-report-cron.yml", "0 5 * * 1"],
       [".github/workflows/daily-digest-cron.yml", "30 21 * * *"],

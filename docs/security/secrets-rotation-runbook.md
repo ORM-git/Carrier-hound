@@ -15,7 +15,7 @@ treated as exposed.
 | `UNSUBSCRIBE_SECRET` | Cloudflare/Netlify env (+ GitHub Actions if crons sign links) | One-click unsubscribe HMAC | **PENDING initial setup** - generate random 32+ char value, set in Pages/Netlify env. Code fails closed when missing. |
 | `COMPANY_GROUP_ID_SECRET` | Cloudflare Pages + Netlify env (same value, all environments) | HMAC key for `companyGroupId` in non-Pro job-search responses | **REQUIRED before deploying the B6 change** - generate a random 32+ char value; do not reuse `SUPABASE_SERVICE_ROLE_KEY` or any other secret. Guest searches that contain a company id return 503 when it is missing. Rotating changes every group key (clients only lose per-company capping continuity within a page load). |
 | `APPS_SCRIPT_MAIL_URL` / `APPS_SCRIPT_MAIL_SECRET` | GitHub Actions secrets | Digest + transactional mail via Apps Script | Rotate the shared secret in the Apps Script project and GitHub secrets together. |
-| `EARLY_ACCESS_NOTIFY_EMAIL` | GitHub Actions secrets | Early-access digest recipient | Not a secret value; update in GitHub secrets if the recipient changes. |
+| `EARLY_ACCESS_NOTIFY_EMAIL` | GitHub Actions secrets | Recipient of the admin early-access approve notification | Not a secret value; update in GitHub secrets if the recipient changes. |
 | Razorpay key id/secret + webhook secret | Cloudflare/Netlify env | Billing (disabled pre-launch) | Razorpay dashboard > Settings > API Keys > regenerate; update webhook secret too. |
 | `SENTRY_DSN` / auth token | Cloudflare/Netlify env, GitHub (release upload) | Error monitoring | Sentry > Settings > Projects > Client Keys; revoke old DSN. |
 | Supabase DB password | Supabase | Direct psql access (manual checks) | Supabase dashboard > Database settings > reset password. |

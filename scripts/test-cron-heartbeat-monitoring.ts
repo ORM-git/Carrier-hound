@@ -64,11 +64,10 @@ async function behavioral(): Promise<void> {
   delete process.env.SENTRY_DSN;
 }
 
-// Wiring: all 5 scheduled crons start, close-ok and close-error the heartbeat.
+// Wiring: all 4 scheduled crons start, close-ok and close-error the heartbeat.
 const CRONS: Array<[string, string, string]> = [
   ["daily-digest-cron", "daily-digest", "exit(1)"],
   ["dunning-dispatch-cron", "dunning-dispatch", "exit(2)"],
-  ["early-access-digest-cron", "early-access-digest", "exit(1)"],
   ["email-retry-cron", "email-retry", "exit(1)"],
   ["retention-cron", "retention", "exit(1)"],
 ];

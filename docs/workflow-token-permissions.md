@@ -16,7 +16,7 @@ files under `.github/workflows/`, and the regenerated config-drift baseline.
   `security-scan.yml`, covered by the existing test allowlist.
 - No workflow uses `write-all`, `pull_request_target`, or a hard-coded token.
 - The repaired workflows are `ci.yml`, `daily-digest-cron.yml`,
-  `early-access-digest-cron.yml`, `ingest.yml`, and `retention-cron.yml`. Their
+  `ingest.yml`, and `retention-cron.yml`. Their
   checkout, Node setup and scripts need repository reads, not GitHub writes.
   Their service credentials are independent of GITHUB_TOKEN permissions.
 - The missing-permissions baseline is empty: a future workflow that omits the

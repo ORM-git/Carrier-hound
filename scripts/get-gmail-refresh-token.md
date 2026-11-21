@@ -91,7 +91,7 @@ Add the following environment variables in **Cloudflare Pages → Settings → E
 | `GMAIL_REFRESH_TOKEN` | Refresh token obtained in Step 4 (`offline` access) |
 | `GMAIL_SENDER_EMAIL` | Your personal Gmail address that authorized the token |
 | `GMAIL_SENDER_NAME` | Display name for the `From` header (e.g., `Roman from CareerMonke`) |
-| `EARLY_ACCESS_NOTIFY_EMAIL` | Destination email address for the scheduled daily early-access signup digest |
+| `EARLY_ACCESS_NOTIFY_EMAIL` | Recipient of the admin early-access approve notification |
 
 ---
 
@@ -114,4 +114,3 @@ CREATE TABLE IF NOT EXISTS public.gmail_send_log (
 ```
 
 - `POST /api/early-access` sends at most **one thank-you email per distinct address ever**, checks `gmail_send_log` before each send (failing closed if the log cannot be read), and caps total outgoing messages at **150 messages/day**.
-- The scheduled GitHub Actions workflow (`.github/workflows/early-access-digest-cron.yml` → `scripts/early-access-digest-cron.ts`) runs once a day and sends **one digest email** containing all new `early_access_emails` rows since the last digest (or sends nothing if there are no new rows).

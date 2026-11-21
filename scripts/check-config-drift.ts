@@ -33,7 +33,6 @@ const COVERED_FILES = [
   ".github/workflows/capacity-report-cron.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/daily-digest-cron.yml",
-  ".github/workflows/early-access-digest-cron.yml",
   ".github/workflows/ingest.yml",
   ".github/workflows/plan-regression.yml",
   ".github/workflows/quality-advisory.yml",
