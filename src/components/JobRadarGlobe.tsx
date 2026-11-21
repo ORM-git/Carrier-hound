@@ -144,15 +144,18 @@ interface ActiveSelection {
   isWorldwideRemote?: boolean;
 }
 
-type GlobeMapStyle = "night" | "satellite" | "minimal";
+type GlobeMapStyle = "dots" | "night" | "satellite" | "minimal";
 
 const GLOBE_MAP_TEXTURES: Record<GlobeMapStyle, string> = {
+  // Dotted style tints the dark map as a base; its pure-black land pixels double as the dot mask.
+  dots: "/globe/earth-dark.jpg",
   night: "/globe/earth-night.jpg",
   satellite: "/globe/earth-blue-marble.jpg",
   minimal: "/globe/earth-dark.jpg",
 };
 
 const GLOBE_MAP_LABELS: Record<GlobeMapStyle, string> = {
+  dots: "Dotted",
   night: "Night",
   satellite: "Satellite",
   minimal: "Minimal Dark",
@@ -162,6 +165,9 @@ const GLOBE_MAP_LABELS: Record<GlobeMapStyle, string> = {
 const MARKER_COLOR_HEX = 0x22d3ee;
 const MARKER_COLOR_CSS = "#22d3ee";
 const MARKER_GLOW_CSS = "rgba(34, 211, 238, 0.55)";
+// Dotted style: land dots + the tint multiplied into the dark base map
+const LAND_DOT_COLOR_HEX = 0x5eead4;
+const DOTS_BASE_TINT = 0x7aa7e0;
 
 const NAV_HINT_STORAGE_KEY = "cm_radar_nav_hint_dismissed";
 
@@ -184,6 +190,43 @@ function createCircleSpriteTexture(): THREE.Texture {
   return texture;
 }
 
+// Evenly spaced points on the sphere (Fibonacci lattice), kept only where isLand(lat, lng) is true.
+export function fibonacciLandDots(
+  samples: number,
+  radius: number,
+  isLand: (lat: number, lng: number) => boolean
+): Float32Array {
+  const out: number[] = [];
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < samples; i++) {
+    const y = 1 - (2 * (i + 0.5)) / samples;
+    const lat = (Math.asin(y) * 180) / Math.PI;
+    const lng = ((((i * golden * 180) / Math.PI) % 360) + 360) % 360 - 180;
+    if (!isLand(lat, lng)) continue;
+    const p = latLngToVector3(lat, lng, radius);
+    out.push(p.x, p.y, p.z);
+  }
+  return new Float32Array(out);
+}
+
+// Land test from the equirectangular dark map, where land pixels are (near) pure black.
+function landMaskFromImage(image: CanvasImageSource): (lat: number, lng: number) => boolean {
+  const w = 720;
+  const h = 360;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(image, 0, 0, w, h);
+  const px = ctx.getImageData(0, 0, w, h).data;
+  return (lat, lng) => {
+    const x = Math.min(w - 1, Math.floor(((lng + 180) / 360) * w));
+    const y = Math.min(h - 1, Math.floor(((90 - lat) / 180) * h));
+    const i = (y * w + x) * 4;
+    return lat > -60 && px[i] + px[i + 1] + px[i + 2] < 24; // skip Antarctica, like stripe.com
+  };
+}
+
 export default function JobRadarGlobe() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -202,6 +245,7 @@ export default function JobRadarGlobe() {
   const earthMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const globeTexturesRef = useRef<Partial<Record<GlobeMapStyle, THREE.Texture>>>({});
   const bumpTextureRef = useRef<THREE.Texture | null>(null);
+  const landDotsRef = useRef<THREE.Points | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
   // Camera animation target
@@ -231,7 +275,7 @@ export default function JobRadarGlobe() {
   );
 
   // Map style layer switcher: night lights / satellite (day) / minimal dark
-  const [mapStyle, setMapStyle] = useState<GlobeMapStyle>("night");
+  const [mapStyle, setMapStyle] = useState<GlobeMapStyle>("dots");
 
   // "How to navigate" card: collapsible, auto-hides after first interaction, remembered in localStorage
   const [showNavHint, setShowNavHint] = useState<boolean>(true);
@@ -663,9 +707,11 @@ export default function JobRadarGlobe() {
   // no-ops on initial mount (earthMaterialRef/rendererRef aren't set yet) and reacts once mapStyle
   // actually changes, by which point the main effect has already run and populated those refs.
   useEffect(() => {
+    if (landDotsRef.current) landDotsRef.current.visible = mapStyle === "dots";
     const earthMat = earthMaterialRef.current;
     const renderer = rendererRef.current;
     if (!earthMat || !renderer) return;
+    earthMat.color.set(mapStyle === "dots" ? DOTS_BASE_TINT : 0xffffff);
 
     const cached = globeTexturesRef.current[mapStyle];
     if (cached) {
@@ -706,8 +752,9 @@ export default function JobRadarGlobe() {
       group.remove(child);
     }
 
-    const showArcs = Boolean(telemetry) && Boolean(selectedCity?.isWorldwideRemote) && !prefersReducedMotion;
-    if (!showArcs || !telemetry) return;
+    // Thin static arcs between top hubs always; Worldwide Remote brightens and pulses them.
+    if (!telemetry) return;
+    const isRemote = Boolean(selectedCity?.isWorldwideRemote);
 
     const topCities = [...telemetry.cities].sort((a, b) => b.totalCount - a.totalCount).slice(0, 7);
     if (topCities.length < 2) return;
@@ -725,11 +772,11 @@ export default function JobRadarGlobe() {
       mid.normalize().multiplyScalar(liftScale);
 
       const curve = new THREE.QuadraticBezierCurve3(hubVec, mid, cityVec);
-      const tubeGeo = new THREE.TubeGeometry(curve, 32, 0.012, 6, false);
+      const tubeGeo = new THREE.TubeGeometry(curve, 48, isRemote ? 0.012 : 0.007, 4, false);
       const tubeMat = new THREE.MeshBasicMaterial({
         color: MARKER_COLOR_HEX,
         transparent: true,
-        opacity: 0.35,
+        opacity: isRemote ? 0.35 : 0.22,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
@@ -737,6 +784,8 @@ export default function JobRadarGlobe() {
       group.add(tube);
       materials.push(tubeMat);
     }
+
+    if (!isRemote || prefersReducedMotion) return;
 
     // Subtle breathing pulse; independent of the main render loop (which still draws every frame)
     let rafId: number;
@@ -922,6 +971,7 @@ export default function JobRadarGlobe() {
 
       const earthMat = new THREE.MeshStandardMaterial({
         map: texture,
+        color: mapStyle === "dots" ? DOTS_BASE_TINT : 0xffffff,
         roughness: 0.65,
         metalness: 0.15,
       });
@@ -964,7 +1014,7 @@ export default function JobRadarGlobe() {
     });
 
     // Fresnel atmosphere glow: soft cyan rim, replaces the old flat backside-sphere halo
-    const atmosGeo = new THREE.SphereGeometry(5.22, 64, 64);
+    const atmosGeo = new THREE.SphereGeometry(5.75, isMobile ? 32 : 64, isMobile ? 32 : 64);
     const atmosMat = new THREE.ShaderMaterial({
       uniforms: {
         glowColor: { value: new THREE.Color(0x67e8f9) },
@@ -984,10 +1034,11 @@ export default function JobRadarGlobe() {
         varying vec3 vNormal;
         varying vec3 vViewPos;
         void main() {
-          float facing = clamp(dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0);
-          // Narrower, softer falloff than a plain pow() curve: a subtle glow rather than a solid ring.
-          float fresnel = smoothstep(0.75, 1.0, 1.0 - facing);
-          gl_FragColor = vec4(glowColor, fresnel * 0.5);
+          // Back faces: -dot is ~0.49 just outside the earth's rim and 0 at the halo's outer edge,
+          // so the glow fades smoothly outward instead of drawing a hard ring.
+          float d = clamp(-dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0);
+          float glow = pow(smoothstep(0.0, 0.5, d), 1.6);
+          gl_FragColor = vec4(glowColor, glow * 0.32);
         }
       `,
       transparent: true,
@@ -998,6 +1049,34 @@ export default function JobRadarGlobe() {
     const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
     scene.add(atmosMesh);
     disposablesRef.current.push(atmosGeo, atmosMat);
+
+    // Dotted style: point cloud on land (lighter on mobile). The image is the same file as the
+    // dots base map, so the browser cache serves it.
+    new THREE.ImageLoader().load(
+      GLOBE_MAP_TEXTURES.dots,
+      (image) => {
+        if (isCancelled) return;
+        const positions = fibonacciLandDots(isMobile ? 24000 : 60000, 5.02, landMaskFromImage(image));
+        const dotsGeo = new THREE.BufferGeometry();
+        dotsGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        const dotsMat = new THREE.PointsMaterial({
+          color: LAND_DOT_COLOR_HEX,
+          size: isMobile ? 0.09 : 0.075,
+          map: spriteTexture,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          sizeAttenuation: true,
+        });
+        const dots = new THREE.Points(dotsGeo, dotsMat);
+        dots.visible = mapStyle === "dots";
+        scene.add(dots);
+        landDotsRef.current = dots;
+        disposablesRef.current.push(dotsGeo, dotsMat);
+      },
+      undefined,
+      () => {} // no dots: the tinted base map still shows the continents
+    );
 
     // Group for dynamic 3D marker meshes
     const markersGroup = new THREE.Group();
@@ -1034,9 +1113,10 @@ export default function JobRadarGlobe() {
     };
     window.addEventListener("resize", handleResize);
 
-    // Visibility change handler
+    // Pause the render loop when the tab is hidden or the globe is scrolled off-screen
+    let isOnScreen = true;
     const handleVisibilityChange = () => {
-      if (document.hidden) {
+      if (document.hidden || !isOnScreen) {
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
           animationFrameRef.current = null;
@@ -1048,6 +1128,24 @@ export default function JobRadarGlobe() {
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    const onScreenObserver = new IntersectionObserver(([entry]) => {
+      isOnScreen = entry.isIntersecting;
+      handleVisibilityChange();
+    });
+    onScreenObserver.observe(container);
+
+    // Idle spin slows while the pointer is over the globe or a city marker (stripe.com style)
+    let isHovering = false;
+    const hoverRoot = container.parentElement ?? container;
+    const handlePointerOver = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      isHovering = t === renderer.domElement || Boolean(t?.closest?.(".city-marker-btn"));
+    };
+    const handlePointerLeave = () => {
+      isHovering = false;
+    };
+    hoverRoot.addEventListener("pointerover", handlePointerOver);
+    hoverRoot.addEventListener("pointerleave", handlePointerLeave);
 
     // 60 FPS Animation Loop (Zero React Re-renders)
     const animate = () => {
@@ -1064,6 +1162,8 @@ export default function JobRadarGlobe() {
         }
       } else {
         controls.autoRotate = isSpinningRef.current && !selectedCityRef.current;
+        const targetSpeed = controls.autoRotate ? (isHovering ? 0.15 : 0.75) : 0;
+        controls.autoRotateSpeed += (targetSpeed - controls.autoRotateSpeed) * 0.04;
         controls.update();
       }
 
@@ -1192,6 +1292,10 @@ export default function JobRadarGlobe() {
       if (autoRotateResumeTimeoutRef.current) clearTimeout(autoRotateResumeTimeoutRef.current);
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      onScreenObserver.disconnect();
+      hoverRoot.removeEventListener("pointerover", handlePointerOver);
+      hoverRoot.removeEventListener("pointerleave", handlePointerLeave);
+      landDotsRef.current = null;
 
       disposablesRef.current.forEach((d) => {
         try {
@@ -1280,7 +1384,7 @@ export default function JobRadarGlobe() {
         color: MARKER_COLOR_HEX,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: isVisible ? 0.6 : 0,
+        opacity: isVisible ? 0.3 : 0,
       });
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.position.copy(markerVec);
