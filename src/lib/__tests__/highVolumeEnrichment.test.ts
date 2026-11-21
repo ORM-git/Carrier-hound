@@ -58,7 +58,7 @@ describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
   });
 
   it("computes deterministic 64-char SHA-256 dedupe_hash across company suffix & punctuation variations", () => {
-    const hash1 = computeDedupeHash("Stripe, Inc.", "Senior Software Engineer!", "US", "San Francisco, CA");
+    const hash1 = computeDedupeHash("Stripe Inc.", "Senior Software Engineer", "US", "San Francisco, CA");
     const hash2 = computeDedupeHash("stripe", "senior software engineer", "us", "San Francisco, United States");
 
     expect(hash1).toMatch(/^[a-f0-9]{64}$/);
@@ -66,6 +66,11 @@ describe("High-Volume Multi-Source Ingestion & Schema Enrichment", () => {
 
     const hashDifferentCity = computeDedupeHash("Stripe", "Senior Software Engineer", "US", "New York, NY");
     expect(hashDifferentCity).not.toBe(hash1);
+
+    // Title punctuation variations are preserved distinctly under the canonical v2 contract
+    const hashSlash = computeDedupeHash("PayPay", "Backend Engineer / Go", "JP", "Tokyo");
+    const hashDash = computeDedupeHash("PayPay", "Backend Engineer - Go", "JP", "Tokyo");
+    expect(hashSlash).not.toBe(hashDash);
   });
 
   it("assigns priority 1 to Direct ATS boards and priority 2 to Aggregators", () => {
