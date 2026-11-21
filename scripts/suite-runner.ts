@@ -165,6 +165,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-incremental-ingestion.ts", command: "npx tsx scripts/test-incremental-ingestion.ts", classification: "offline" },
   { name: "scripts/test-identity-and-migration-safety.ts", command: "npx tsx scripts/test-identity-and-migration-safety.ts", classification: "offline" },
   { name: "scripts/test-python-identity-contract.ts", command: "npx tsx scripts/test-python-identity-contract.ts", classification: "offline" },
+  { name: "scripts/test-canonical-dedupe-hash.ts", command: "npx tsx scripts/test-canonical-dedupe-hash.ts", classification: "offline" },
   { name: "scripts/test-16a-repair-aware.ts", command: "npx tsx scripts/test-16a-repair-aware.ts", classification: "offline", timeout: 600000 },
 
   // DB-capable suites: read operations (BLOCKED by default unless authorized on test project)

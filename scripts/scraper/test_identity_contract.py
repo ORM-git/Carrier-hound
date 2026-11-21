@@ -165,8 +165,44 @@ def test_build_scoped_job_identity_validations():
         build_scoped_job_identity("greenhouse:stripe", "")
 
 
+DEDUPE_VECTORS_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "job_dedupe_test_vectors.json"
+
+
+def test_canonical_dedupe_hash_test_vectors():
+    """Requirement 4: Verify shared canonical job dedupe test vectors in Python scraper."""
+    with open(DEDUPE_VECTORS_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data["version"] == "v2"
+    assert data["algorithm"] == "sha256"
+    assert data["contract"] == "length_framed_utf8_sha256"
+
+    vectors = data["vectors"]
+    assert len(vectors) >= 20, f"Expected at least 20 test vectors, found {len(vectors)}"
+
+    for v in vectors:
+        vec_id = v["id"]
+        inp = v["input"]
+        payload = build_similarity_payload_v2(
+            inp["company"], inp["title"], inp["country"], inp["location"]
+        )
+        dedupe_hash = compute_dedupe_hash(
+            inp["company"], inp["title"], inp["country"], inp["location"]
+        )
+
+        assert payload == v["expected_payload"], (
+            f"[{vec_id}] Payload mismatch!\n"
+            f"Computed: {payload}\nExpected: {v['expected_payload']}"
+        )
+        assert dedupe_hash == v["expected_hash"], (
+            f"[{vec_id}] Hash mismatch!\n"
+            f"Computed: {dedupe_hash}\nExpected: {v['expected_hash']}"
+        )
+
+
 if __name__ == "__main__":
     test_golden_cases_all_pass()
+    test_canonical_dedupe_hash_test_vectors()
     test_build_source_id_validations()
     test_build_scoped_job_identity_validations()
     print("ALL PYTHON IDENTITY CONTRACT TESTS PASSED!")

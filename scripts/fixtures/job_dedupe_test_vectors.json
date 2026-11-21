@@ -1,0 +1,309 @@
+{
+  "version": "v2",
+  "algorithm": "sha256",
+  "contract": "length_framed_utf8_sha256",
+  "description": "Shared canonical dedupe hash test vectors verified identically across TypeScript, Python, and PostgreSQL SQL",
+  "total_vectors": 25,
+  "vectors": [
+    {
+      "id": "vec_01_google_staff_swe",
+      "description": "Standard ASCII role with legal suffix 'Inc.' and city/state location",
+      "input": {
+        "company": "Google Inc.",
+        "title": "Staff Software Engineer",
+        "country": "US",
+        "location": "Mountain View, CA"
+      },
+      "expected_payload": "v2|c:6:google|t:23:staff software engineer|co:2:us|loc:13:mountain view",
+      "expected_hash": "14c69420611ec43c96858f7f83a496f656388c4b698b3bac6d19a8559996939a"
+    },
+    {
+      "id": "vec_02_apple_designer_empty_country_loc",
+      "description": "Company with LLC suffix and empty country/location strings",
+      "input": {
+        "company": "Apple LLC",
+        "title": "Designer",
+        "country": "",
+        "location": ""
+      },
+      "expected_payload": "v2|c:5:apple|t:8:designer|co:0:|loc:0:",
+      "expected_hash": "abdf5e012e30eb44a2e41911e58f0a119f82f105fe0a6cdac7682a269fb3722e"
+    },
+    {
+      "id": "vec_03_stripe_backend_sf",
+      "description": "Company with comma Inc. suffix and San Francisco location",
+      "input": {
+        "company": "Stripe Inc.",
+        "title": "Backend Engineer",
+        "country": "US",
+        "location": "San Francisco, CA"
+      },
+      "expected_payload": "v2|c:6:stripe|t:16:backend engineer|co:2:us|loc:13:san francisco",
+      "expected_hash": "bb3b5bb4103be484a932cc64884e09461958139fd3f511d68c48f39e92ae241c"
+    },
+    {
+      "id": "vec_04_stripe_plain_company_sf_variant",
+      "description": "Variant of vec_03 folding to identical company, country and primary city",
+      "input": {
+        "company": "stripe",
+        "title": "Backend Engineer",
+        "country": "us",
+        "location": "San Francisco, United States"
+      },
+      "expected_payload": "v2|c:6:stripe|t:16:backend engineer|co:2:us|loc:13:san francisco",
+      "expected_hash": "bb3b5bb4103be484a932cc64884e09461958139fd3f511d68c48f39e92ae241c"
+    },
+    {
+      "id": "vec_05_datadog_paris",
+      "description": "European location with primary city before comma",
+      "input": {
+        "company": "Datadog",
+        "title": "Security Engineer",
+        "country": "FR",
+        "location": "Paris, France"
+      },
+      "expected_payload": "v2|c:7:datadog|t:17:security engineer|co:2:fr|loc:5:paris",
+      "expected_hash": "a9ea9fd2851daae22cd201382027033403ed21850398d9c2455256fc157d7994"
+    },
+    {
+      "id": "vec_06_automattic_null_country_loc",
+      "description": "Null country and null location handling",
+      "input": {
+        "company": "Automattic",
+        "title": "Technical Writer",
+        "country": null,
+        "location": null
+      },
+      "expected_payload": "v2|c:10:automattic|t:16:technical writer|co:0:|loc:0:",
+      "expected_hash": "6bd75776b3e66a69be8c50e15f5c4b23349cd06452f042e25984fc1d6e5f73f8"
+    },
+    {
+      "id": "vec_07_paypay_product_manager_japanese",
+      "description": "Japanese title and Japanese Kanji location (Tokyo)",
+      "input": {
+        "company": "PayPay Inc.",
+        "title": "プロダクトマネージャー",
+        "country": "JP",
+        "location": "東京都, 日本"
+      },
+      "expected_payload": "v2|c:6:paypay|t:33:プロダクトマネージャー|co:2:jp|loc:9:東京都",
+      "expected_hash": "47a1e880aad0f529ae7f12a56e1ffe02b2b4b3679bc4ee43fde06b126f3c0cfe"
+    },
+    {
+      "id": "vec_08_paypay_backend_engineer_japanese",
+      "description": "Distinct Japanese title at same company and location",
+      "input": {
+        "company": "PayPay Inc.",
+        "title": "バックエンドエンジニア",
+        "country": "JP",
+        "location": "東京都, 日本"
+      },
+      "expected_payload": "v2|c:6:paypay|t:33:バックエンドエンジニア|co:2:jp|loc:9:東京都",
+      "expected_hash": "378c114d9186654e22a7140e7202f81f01bd2c0e44ffc280c87d96c9a9c6de6b"
+    },
+    {
+      "id": "vec_09_new_relic_tokyo",
+      "description": "Japanese sales territory Tokyo",
+      "input": {
+        "company": "New Relic",
+        "title": "Enterprise Account Executive",
+        "country": "JP",
+        "location": "東京"
+      },
+      "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:東京",
+      "expected_hash": "f6e50cb0d5af0056f7e012ff5d6c053187fedf34e289ea7584e7a3e5a671416c"
+    },
+    {
+      "id": "vec_10_new_relic_osaka",
+      "description": "Japanese sales territory Osaka distinct from Tokyo",
+      "input": {
+        "company": "New Relic",
+        "title": "Enterprise Account Executive",
+        "country": "JP",
+        "location": "大阪"
+      },
+      "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:大阪",
+      "expected_hash": "f2a0a09ac852c94c0ae1e96ef5482c859acf77d4db1b6d93e0db3193b3e43da3"
+    },
+    {
+      "id": "vec_11_trendyol_turkish_i",
+      "description": "Turkish dotted capital I (U+0130) folded to ASCII i",
+      "input": {
+        "company": "Trendyol",
+        "title": "İskele Mühendisi",
+        "country": "TR",
+        "location": "İstanbul, Turkey"
+      },
+      "expected_payload": "v2|c:8:trendyol|t:17:iskele mühendisi|co:2:tr|loc:8:istanbul",
+      "expected_hash": "728e5cb36c3bb0acd13a987689234b7a7bd3512e6fce57cc7ed5a8f9afd06056"
+    },
+    {
+      "id": "vec_12_beat_greek_sigma",
+      "description": "Greek final sigma (ς) folded to small sigma (σ)",
+      "input": {
+        "company": "Beat",
+        "title": "Οδηγός",
+        "country": "GR",
+        "location": "Αθήνα"
+      },
+      "expected_payload": "v2|c:4:beat|t:12:οδηγόσ|co:2:gr|loc:10:αθήνα",
+      "expected_hash": "5f5504715d65fbec414350d779b5f9118d61f973d8aff6f51f4da55867bcb60c"
+    },
+    {
+      "id": "vec_13_delivery_hero_german_sharp_s",
+      "description": "German sharp s (ß) folded to 'ss' and 'SE' not stripped as suffix",
+      "input": {
+        "company": "Delivery Hero SE",
+        "title": "Großkundenbetreuer",
+        "country": "DE",
+        "location": "Berlin, Germany"
+      },
+      "expected_payload": "v2|c:16:delivery hero se|t:19:grosskundenbetreuer|co:2:de|loc:6:berlin",
+      "expected_hash": "c01c5b1d5432eea4c3d41be53103315484a0ca636d6717a77560c6beb9f47134"
+    },
+    {
+      "id": "vec_14_wolt_obuda_accented",
+      "description": "Hungarian accented characters preserved in title and location",
+      "input": {
+        "company": "Wolt",
+        "title": "Futár",
+        "country": "HU",
+        "location": "Óbuda, Budapest"
+      },
+      "expected_payload": "v2|c:4:wolt|t:6:futár|co:2:hu|loc:6:óbuda",
+      "expected_hash": "777024a00e4148fa79bddfa4308da9c3bfc86e014261f7adff9e707933f631f9"
+    },
+    {
+      "id": "vec_15_uber_systems_punctuation",
+      "description": "Punctuation in title preserved (slash preserved)",
+      "input": {
+        "company": "Uber Technologies, Inc.",
+        "title": "Systems Engineer / C++",
+        "country": "US",
+        "location": "New York, NY"
+      },
+      "expected_payload": "v2|c:18:uber technologies,|t:22:systems engineer / c++|co:2:us|loc:8:new york",
+      "expected_hash": "5cb5a18a5ad4d2566d956ce9bd0b0890c0cb2bf8d8468f61882ec178a3b19517"
+    },
+    {
+      "id": "vec_16_microsoft_whitespace_collapse",
+      "description": "Excessive leading, trailing, and internal whitespace collapsed",
+      "input": {
+        "company": "  Microsoft  \n  Corp  ",
+        "title": "  Cloud   Solution   Architect  ",
+        "country": "  US  ",
+        "location": "  Redmond,   WA  "
+      },
+      "expected_payload": "v2|c:9:microsoft|t:24:cloud solution architect|co:2:us|loc:7:redmond",
+      "expected_hash": "1478e067cff3257b9c9766e968b48313574aebff2c9a3cc4eaf51948a746bac4"
+    },
+    {
+      "id": "vec_17_amazon_nel_whitespace",
+      "description": "Next Line whitespace character U+0085 collapsed to space",
+      "input": {
+        "company": "AmazonCorp",
+        "title": "SDEII",
+        "country": "US",
+        "location": "SeattleWA"
+      },
+      "expected_payload": "v2|c:6:amazon|t:6:sde ii|co:2:us|loc:10:seattle wa",
+      "expected_hash": "127ade75a8f7a1251696256e81d54ffad9824ad05314ea710e82af937ade00cb"
+    },
+    {
+      "id": "vec_18_sony_fullwidth_nfkc",
+      "description": "Fullwidth characters folded to ASCII via NFKC",
+      "input": {
+        "company": "Ｓｏｎｙ",
+        "title": "Ｓｏｆｔｗａｒｅ　Ｅｎｇｉｎｅｅｒ",
+        "country": "ＪＰ",
+        "location": "Ｔｏｋｙｏ"
+      },
+      "expected_payload": "v2|c:4:sony|t:17:software engineer|co:2:jp|loc:5:tokyo",
+      "expected_hash": "d291f31ea7eccb21a92c2aa2b02da807ea8a56b2737e9996a8d0c74397c38f68"
+    },
+    {
+      "id": "vec_19_flipkart_hindi_devanagari",
+      "description": "Hindi / Devanagari script preserved and 'Pvt Ltd' suffix stripped",
+      "input": {
+        "company": "Flipkart Pvt Ltd",
+        "title": "सॉफ्टवेयर इंजीनियर",
+        "country": "IN",
+        "location": "बेंगलुरु, कर्नाटक"
+      },
+      "expected_payload": "v2|c:8:flipkart|t:52:सॉफ्टवेयर इंजीनियर|co:2:in|loc:24:बेंगलुरु",
+      "expected_hash": "b9e637d2380c2c2b9fb2531527ef17b4d44e484f7c2cbbccc8db2e3b0a72feb7"
+    },
+    {
+      "id": "vec_20_bytedance_chinese",
+      "description": "Chinese simplified script preserved and 'Ltd' suffix stripped",
+      "input": {
+        "company": "ByteDance Ltd",
+        "title": "高级后端工程师",
+        "country": "CN",
+        "location": "北京, 中国"
+      },
+      "expected_payload": "v2|c:9:bytedance|t:21:高级后端工程师|co:2:cn|loc:6:北京",
+      "expected_hash": "bd310b8d6ee144b056309469ef5533e83de6cdf0029a46afb2e8086f6d066560"
+    },
+    {
+      "id": "vec_21_palantir_pipe_delimiter",
+      "description": "Pipe character in title safely framed without delimiter collision",
+      "input": {
+        "company": "Palantir Technologies",
+        "title": "Forward Deployed Engineer | Core",
+        "country": "US",
+        "location": "Denver, CO"
+      },
+      "expected_payload": "v2|c:21:palantir technologies|t:32:forward deployed engineer | core|co:2:us|loc:6:denver",
+      "expected_hash": "68eff5f8574b18cc32b1ace47164942e9c2ff08011b07e9a4825ab52168048f9"
+    },
+    {
+      "id": "vec_22_company_inc_kanji",
+      "description": "Legal suffix 'Inc' attached to Kanji is preserved without stripping",
+      "input": {
+        "company": "Company Inc東京",
+        "title": "Lead Developer",
+        "country": "JP",
+        "location": "Tokyo"
+      },
+      "expected_payload": "v2|c:17:company inc東京|t:14:lead developer|co:2:jp|loc:5:tokyo",
+      "expected_hash": "69f52f5b0f11423d23887c4865fc78e70a861600fd41a4082f4067a6bf7c726c"
+    },
+    {
+      "id": "vec_23_meta_trailing_spaces_mixed_case",
+      "description": "Mixed case, trailing spaces, and 'Platforms, Inc.' legal suffix",
+      "input": {
+        "company": "  Meta Platforms, Inc.  ",
+        "title": "  RESEARCH SCIENTIST  ",
+        "country": "  us  ",
+        "location": "  Menlo Park, CA  "
+      },
+      "expected_payload": "v2|c:15:meta platforms,|t:18:research scientist|co:2:us|loc:10:menlo park",
+      "expected_hash": "9eeb4a2d8bbd43238cf198b3233e388b3055f4d30ad5aae40c936709d02de9ea"
+    },
+    {
+      "id": "vec_24_cloudflare_remote",
+      "description": "Primary city 'Remote' before comma preserved",
+      "input": {
+        "company": "Cloudflare, Inc.",
+        "title": "Systems Reliability Engineer",
+        "country": "US",
+        "location": "Remote, United States"
+      },
+      "expected_payload": "v2|c:11:cloudflare,|t:28:systems reliability engineer|co:2:us|loc:6:remote",
+      "expected_hash": "85dcb50873d0d195ef6692def6784258b4e99e01f4e08eeeec567fd858f4cdff"
+    },
+    {
+      "id": "vec_25_minimal_fields",
+      "description": "Short 2-character fields handled deterministically",
+      "input": {
+        "company": "Go",
+        "title": "SE",
+        "country": "US",
+        "location": "NY"
+      },
+      "expected_payload": "v2|c:2:go|t:2:se|co:2:us|loc:2:ny",
+      "expected_hash": "6c505d0b4117042e6aaed2e4b3fe5bd168ed4f4922b60b37a1dd4d80e3693ba1"
+    }
+  ]
+}

@@ -163,11 +163,52 @@ export function computeSimilarityHashV2(
 }
 
 /**
- * Backward-compatible alias pointing to computeSimilarityHashV2.
+ * Canonical Job Dedupe Hash Contract (v2)
+ *
+ * One canonical hash producing byte-for-byte identical output across:
+ * - PostgreSQL: `public.compute_job_dedupe_hash(company, title, country, location)`
+ * - TypeScript: `computeDedupeHash(company, title, country, location)`
+ * - Python:     `compute_dedupe_hash(company, title, country, location)`
+ *
+ * Normalization specification:
+ * 1. Text Normalization: NFKC normalization + case-folding (lowercase).
+ * 2. Special Characters:
+ *    - Turkish dotted capital 'İ' (U+0130) and combining dot -> 'i' (U+0069)
+ *    - Greek final sigma 'ς' (U+03C2) -> small sigma 'σ' (U+03C3)
+ *    - German sharp s 'ß' (U+00DF) -> 'ss'
+ *    - Next Line 'U+0085' -> ' '
+ * 3. Whitespace Normalization:
+ *    - All whitespace characters [ \t\n\r\f\v\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+
+ *      collapsed to a single ASCII space ' '.
+ *    - Leading and trailing whitespace trimmed.
+ * 4. Field Rules:
+ *    - company: Legal entity suffixes stripped at Unicode word boundaries
+ *      (inc, llc, ltd, corp, corporation, limited, pvt, private, gmbh, plc, co).
+ *    - title: Punctuation, symbols, and non-Latin scripts preserved.
+ *    - country: Lowercased, trimmed; empty/null defaults to "".
+ *    - location: Primary segment before comma (split on ',', index 0), lowercased, trimmed; empty/null defaults to "".
+ * 5. Serialization & Framing:
+ *    Length-framed UTF-8 serialization with pipe '|' separator:
+ *    `v2|c:{byte_len}:{company}|t:{byte_len}:{title}|co:{byte_len}:{country}|loc:{byte_len}:{location}`
+ * 6. Algorithm:
+ *    FIPS 180-4 SHA-256 digest formatted as a 64-character lowercase hexadecimal string.
  */
 export function computeDedupeHash(
-  company: string | null | undefined,
-  title: string | null | undefined,
+  company?: string | null,
+  title?: string | null,
+  country?: string | null,
+  location?: string | null
+): string {
+  return computeSimilarityHashV2(company, title, country, location);
+}
+
+/**
+ * Legacy plain dedupe hash (pre-v2 plain format with [^a-z0-9]+ stripping).
+ * Retained for backward-compatibility verification and backfill audits only.
+ */
+export function computeLegacyDedupeHash(
+  company?: string | null,
+  title?: string | null,
   country?: string | null,
   location?: string | null
 ): string {
@@ -895,8 +936,3 @@ export function sha256Hex(asciiOrUtf8: string): string {
     .map((v) => v.toString(16).padStart(8, '0'))
     .join('');
 }
-
-/**
- * Computes deterministic SHA-256 hex digest of normalized company + normalized title + country + city.
- * Matches PostgreSQL `public.compute_job_dedupe_hash(company, title, country, location)` byte-for-byte.
- */
