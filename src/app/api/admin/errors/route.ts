@@ -9,11 +9,12 @@ export const runtime = "edge";
 const WINDOW_DAYS = 7;
 // shortcut: groups in memory over at most this many recent rows; move to a SQL view/RPC if error volume outgrows it.
 const MAX_ROWS = 5000;
+const NO_STORE = { "Cache-Control": "private, no-store" };
 
 export async function GET(req: Request) {
   const auth = await verifyAdminSession(req);
   if (!auth.isAdmin) {
-    return NextResponse.json({ error: "Forbidden: Admin access only." }, { status: 403 });
+    return NextResponse.json({ error: "Forbidden: Admin access only." }, { status: 403, headers: NO_STORE });
   }
 
   try {
@@ -45,12 +46,12 @@ export async function GET(req: Request) {
       days: WINDOW_DAYS,
       truncated: rows.length === MAX_ROWS,
       groups,
-    });
+    }, { headers: NO_STORE });
   } catch (err: any) {
     reportRequestErrorToSentry(req, err);
     return NextResponse.json(
       { error: err?.message || "Failed to retrieve error events" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE }
     );
   }
 }

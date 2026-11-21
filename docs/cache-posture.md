@@ -13,7 +13,7 @@
 This catalog inventories every API route and serverless function in CareerMonke, detailing its authentication requirements, current `Cache-Control` header handling, target classification (split by caller state for dual-mode endpoints), and remediation posture.
 
 ### Summary Metrics
-- **Total Files Audited**: 47 files (`32` Next.js API route files under `src/app/api/**` + `12` Netlify routable serverless functions + `3` internal Netlify helper modules).
+- **Total Files Audited**: 48 files (`33` Next.js API route files under `src/app/api/**` + `12` Netlify routable serverless functions + `3` internal Netlify helper modules).
 - **Routable Endpoints**: 44 active endpoints.
 - **Explicitly Sending `Cache-Control`**: 14 endpoints (`12` fully aligned + `2` with partial/unsafe directives noted below).
 - **Sending `none set` (No Explicit `Cache-Control`)**: 30 endpoints (`7` `intentionally uncached` POST webhooks/telemetry/ingest/AI RPCs + `21` single-mode `private/no-store` routes + `2` dual-mode `/jobs/search` routes).
@@ -46,6 +46,7 @@ This catalog inventories every API route and serverless function in CareerMonke,
 | `src/app/api/admin/early-access/approve/route.ts` | POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Administrative approval mutation lacks explicit `no-store`. |
 | `src/app/api/admin/early-access/reject/route.ts` | POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Administrative rejection mutation lacks explicit `no-store`. |
 | `src/app/api/admin/early-access/route.ts` | GET, POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: GET returns early access email PII to admins without `no-store`. |
+| `src/app/api/admin/errors/route.ts` | GET | Admin Auth (`Bearer`) | `"private, no-store"` | `private/no-store` | ✅ **Compliant**: Admin error-log read (grouped error_events) sends `private, no-store`. |
 | `src/app/api/admin/replay/route.ts` | GET, POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Admin dead-letter inspection and replay lacks explicit `no-store`. |
 | `src/app/api/admin/stats/route.ts` | GET | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Internal admin analytics read without `private, no-store`. |
 | `src/app/api/admin/users/activity/route.ts` | GET | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Security audit log and IP activity returned without `private, no-store`. |
