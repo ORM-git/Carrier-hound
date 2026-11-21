@@ -63,7 +63,7 @@
 - **Verdict**: `GAP`
 - **Classification**: `Code + Owner step`
 - **Evidence on `main`**:
-  - Script-level Sentry & check-ins: `scripts/lib/cron-sentry.ts` (`reportCronFailure`) and `scripts/lib/cron-heartbeat.ts` (`startCronHeartbeat`, `buildCheckInUrl`) are wired into all 5 script crons (`scripts/daily-digest-cron.ts`, `scripts/dunning-dispatch-cron.ts`, `scripts/early-access-digest-cron.ts`, `scripts/email-retry-cron.ts`, `scripts/retention-cron.ts`).
+  - Script-level Sentry & check-ins: `scripts/lib/cron-sentry.ts` (`reportCronFailure`) and `scripts/lib/cron-heartbeat.ts` (`startCronHeartbeat`, `buildCheckInUrl`) are wired into all 4 script crons (`scripts/daily-digest-cron.ts`, `scripts/dunning-dispatch-cron.ts`, `scripts/email-retry-cron.ts`, `scripts/retention-cron.ts`).
   - Workflow-level alerting: `.github/workflows/workflow-failure-alert.yml` and `scripts/lib/workflow-failure-alert.ts` (`SCHEDULED_CRON_WORKFLOWS`) monitor scheduled workflows with daily deduplicated GitHub issue creation and Sentry error reporting.
   - Registered guards: `scripts/test-cron-failure-visibility.ts`, `scripts/test-cron-heartbeat-monitoring.ts`, and `scripts/test-workflow-failure-alert.ts` are all registered in `scripts/suite-runner.ts`.
 - **Remaining Gap**:

@@ -31,7 +31,6 @@ check(!/email|recipient|user_id/.test(helperCode.replace(/@sentry|sentry/gi, "")
 const CRONS: Array<[string, string, string]> = [
   ["daily-digest-cron", "daily-digest", "exit(1)"],
   ["dunning-dispatch-cron", "dunning-dispatch", "exit(2)"],
-  ["early-access-digest-cron", "early-access-digest", "exit(1)"],
   ["email-retry-cron", "email-retry", "exit(1)"],
   ["retention-cron", "retention", "exit(1)"],
 ];
