@@ -62,6 +62,7 @@ import {
   type CanonicalExperienceLevel,
 } from "@/lib/jobs/experienceLevels";
 import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
+import { withFeedScore } from "@/lib/jobs/recommendations";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -1711,8 +1712,11 @@ function JobsPageInner() {
     {
       id: "recommended",
       label: "Recommended",
-      count: hasActiveFilters
-        ? (displayedJobs.length === 0 && !loadingJobs ? "0" : (totalCount > 0 ? totalCount.toLocaleString() : displayedJobs.length.toLocaleString()))
+      // Hidden (undefined) while the skeleton is up, so it never flashes 0.
+      count: loadingJobs
+        ? undefined
+        : hasActiveFilters
+        ? (displayedJobs.length === 0 ? "0" : (totalCount > 0 ? totalCount.toLocaleString() : displayedJobs.length.toLocaleString()))
         : (totalCount > 0 ? totalCount.toLocaleString() : liveJobs.length),
       active: activeTab === "recommended",
       onClick: () => {
@@ -1825,7 +1829,7 @@ function JobsPageInner() {
             /* In-place job detail swap inside the same shell */
             <div className="max-w-[880px] w-full mx-auto">
               <JobDetailView
-                job={selectedJob}
+                job={withFeedScore(selectedJob, liveJobs)}
                 candidate={candidate}
                 user={user}
                 isPro={isPro}
