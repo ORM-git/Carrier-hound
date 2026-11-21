@@ -58,6 +58,12 @@ BEGIN
   IF to_regclass('public.jobs') IS NULL THEN
     RAISE EXCEPTION 'Preflight check failed: public.jobs table does not exist';
   END IF;
+  -- The SQL hash relies on lower() folding non-ASCII like TS/Python do. A C/POSIX-ctype database only folds ASCII
+  -- (measured: 22/25 shared vectors on a C-locale PG17), so refuse rather than write hashes that disagree.
+  IF lower(chr(931) || chr(196)) <> chr(963) || chr(228) THEN
+    RAISE EXCEPTION 'Preflight check failed: lower() does not fold non-ASCII in this database (ctype %); SQL dedupe hashes would not match TS/Python',
+      (SELECT datctype FROM pg_database WHERE datname = current_database());
+  END IF;
 END $$;
 
 BEGIN;
@@ -153,7 +159,6 @@ CREATE OR REPLACE FUNCTION public.compute_job_dedupe_hash(
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
-PARALLEL SAFE
 SET search_path = public
 AS $$
   SELECT public.compute_job_similarity_hash_v2(p_company, p_title, p_country, p_location);
@@ -180,17 +185,23 @@ DECLARE
   v_city text;
   v_payload text;
 BEGIN
-  v_company := lower(trim(COALESCE(p_company, '')));
-  v_company := regexp_replace(v_company, '\m(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\M\.?', '', 'gi');
+  -- 'İ' (chr 304) is expanded BEFORE lower() to what JS/Python full case mapping gives ('i' + U+0307); libc/
+  -- C.UTF-8 simple mapping would give plain 'i' and diverge from the legacy TS writer ('i̇skele' -> 'i skele').
+  v_company := lower(replace(trim(COALESCE(p_company, '')), chr(304), 'i' || chr(775)));
+  -- Mirrors the legacy TS writer: JS \b is an ASCII word boundary, so 'Inc東京' strips 'inc'.
+  v_company := regexp_replace(v_company, '(^|[^a-z0-9_])(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)(?![a-z0-9_])\.?', '\1', 'gi');
   v_company := trim(regexp_replace(v_company, '[^a-z0-9]+', ' ', 'g'));
 
-  v_title := lower(trim(COALESCE(p_title, '')));
+  v_title := lower(replace(trim(COALESCE(p_title, '')), chr(304), 'i' || chr(775)));
   v_title := trim(regexp_replace(v_title, '[^a-z0-9]+', ' ', 'g'));
 
-  v_country := lower(trim(COALESCE(NULLIF(trim(p_country), ''), 'any')));
+  v_country := lower(replace(trim(COALESCE(NULLIF(trim(p_country), ''), 'any')), chr(304), 'i' || chr(775)));
   v_country := trim(regexp_replace(v_country, '[^a-z0-9]+', ' ', 'g'));
+  IF v_country = '' THEN
+    v_country := 'any';  -- TS: `|| 'any'` after stripping (e.g. full-width 'ＪＰ')
+  END IF;
 
-  v_city := lower(trim(split_part(COALESCE(p_location, ''), ',', 1)));
+  v_city := lower(replace(trim(split_part(COALESCE(p_location, ''), ',', 1)), chr(304), 'i' || chr(775)));
   v_city := trim(regexp_replace(v_city, '[^a-z0-9]+', ' ', 'g'));
   IF v_city = '' THEN
     v_city := 'any';
@@ -209,65 +220,102 @@ GRANT EXECUTE ON FUNCTION public.compute_legacy_job_dedupe_hash(text, text, text
 -- ----------------------------------------------------------------------------
 -- 5. RESUMABLE BATCH BACKFILL INFRASTRUCTURE
 -- ----------------------------------------------------------------------------
+-- last_id is the keyset cursor: NULL = start a new pass; set after every committed window.
 CREATE TABLE IF NOT EXISTS public.canonical_dedupe_hash_backfill_progress (
   phase text PRIMARY KEY,
+  last_id uuid,
+  batches integer NOT NULL DEFAULT 0,
   total_rows_updated integer NOT NULL DEFAULT 0,
   last_batch_rows integer NOT NULL DEFAULT 0,
+  passes_completed integer NOT NULL DEFAULT 0,
+  completed_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 REVOKE ALL ON public.canonical_dedupe_hash_backfill_progress FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.canonical_dedupe_hash_backfill_progress TO service_role;
 
+-- Resumable, bounded backfill of jobs.dedupe_hash for ACTIVE rows only. Contract:
+--   - Walks jobs in primary-key (id) windows of p_batch_size and COMMITs after each window, storing the cursor,
+--     so each batch does bounded work and a cancelled/failed run resumes from the last committed window.
+--   - Updates only rows whose hash differs: a second pass rewrites nothing (idempotent).
+--   - Never changes last_seen_at, is_active, status, row counts, inactive rows or other columns.
+--   - skip_touch_last_seen and lock_timeout are TRANSACTION-local (set_config(..., true)) and re-set per window,
+--     so neither can leak into a pooled session after an error.
+--   - No SKIP LOCKED: a row held by a writer makes the window wait up to lock_timeout (2s) and then fail loudly;
+--     the cursor stays at the last committed window and a re-run finishes it. Rows are never silently skipped.
+--   - A transaction-scoped advisory lock serializes concurrent runs window by window (nothing to leak).
+--   - Must be CALLed as its own top-level statement (not inside BEGIN ... COMMIT), because it commits per window.
+--   - No SET clause on the procedure: PostgreSQL forbids COMMIT in procedures that have one; names are qualified.
 CREATE OR REPLACE PROCEDURE public.backfill_canonical_job_dedupe_hashes(p_batch_size integer DEFAULT 500)
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_batch_count integer := 0;
-  v_phase_total integer := 0;
+  v_last uuid;
+  v_max uuid;
+  v_rows integer;
 BEGIN
   IF p_batch_size IS NULL OR p_batch_size < 1 OR p_batch_size > 5000 THEN
     RAISE EXCEPTION 'backfill_canonical_job_dedupe_hashes: p_batch_size must be between 1 and 5000, got %', p_batch_size;
   END IF;
 
-  -- Ensure last_seen_at ranking order is never altered during dedupe hash maintenance
-  SET careermonke.skip_touch_last_seen = 'on';
+  INSERT INTO public.canonical_dedupe_hash_backfill_progress (phase)
+  VALUES ('jobs_canonical_dedupe_hash')
+  ON CONFLICT (phase) DO NOTHING;
+  COMMIT;
 
   LOOP
-    WITH batch AS (
-      SELECT id,
-        public.compute_job_dedupe_hash(
-          company,
-          title,
-          COALESCE(country_code, country),
-          location
-        ) AS new_hash
-      FROM public.jobs
-      WHERE is_active = TRUE
-        AND (dedupe_hash IS NULL OR dedupe_hash IS DISTINCT FROM public.compute_job_dedupe_hash(company, title, COALESCE(country_code, country), location))
+    PERFORM pg_catalog.set_config('careermonke.skip_touch_last_seen', 'on', true);
+    PERFORM pg_catalog.set_config('lock_timeout', '2s', true);
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('public.backfill_canonical_job_dedupe_hashes'));
+
+    SELECT p.last_id INTO v_last
+    FROM public.canonical_dedupe_hash_backfill_progress p
+    WHERE p.phase = 'jobs_canonical_dedupe_hash'
+    FOR UPDATE;
+
+    -- Last id of the next window (PostgreSQL has no max(uuid)).
+    SELECT w.id INTO v_max
+    FROM (
+      SELECT j.id FROM public.jobs j
+      WHERE v_last IS NULL OR j.id > v_last
+      ORDER BY j.id
       LIMIT p_batch_size
-      FOR UPDATE SKIP LOCKED
-    )
+    ) w
+    ORDER BY w.id DESC
+    LIMIT 1;
+
+    IF v_max IS NULL THEN
+      -- Pass finished: reset the cursor so a later CALL starts a fresh (idempotent) verification pass.
+      UPDATE public.canonical_dedupe_hash_backfill_progress
+      SET last_id = NULL, passes_completed = passes_completed + 1, completed_at = now(), updated_at = now()
+      WHERE phase = 'jobs_canonical_dedupe_hash';
+      COMMIT;
+      EXIT;
+    END IF;
+
     UPDATE public.jobs j
-    SET dedupe_hash = b.new_hash
-    FROM batch b
-    WHERE j.id = b.id;
+    SET dedupe_hash = h.new_hash
+    FROM (
+      SELECT s.id, public.compute_job_dedupe_hash(s.company, s.title, COALESCE(s.country_code, s.country), s.location) AS new_hash
+      FROM public.jobs s
+      WHERE (v_last IS NULL OR s.id > v_last) AND s.id <= v_max AND s.is_active = TRUE
+    ) h
+    WHERE j.id = h.id
+      AND j.dedupe_hash IS DISTINCT FROM h.new_hash;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
 
-    GET DIAGNOSTICS v_batch_count = ROW_COUNT;
-    EXIT WHEN v_batch_count = 0;
-
-    v_phase_total := v_phase_total + v_batch_count;
-    INSERT INTO public.canonical_dedupe_hash_backfill_progress (phase, total_rows_updated, last_batch_rows, updated_at)
-    VALUES ('jobs_canonical_dedupe_hash', v_phase_total, v_batch_count, now())
-    ON CONFLICT (phase) DO UPDATE
-    SET total_rows_updated = canonical_dedupe_hash_backfill_progress.total_rows_updated + EXCLUDED.last_batch_rows,
-        last_batch_rows = EXCLUDED.last_batch_rows,
-        updated_at = EXCLUDED.updated_at;
+    UPDATE public.canonical_dedupe_hash_backfill_progress
+    SET last_id = v_max,
+        batches = batches + 1,
+        total_rows_updated = total_rows_updated + v_rows,
+        last_batch_rows = v_rows,
+        completed_at = NULL,
+        updated_at = now()
+    WHERE phase = 'jobs_canonical_dedupe_hash';
 
     COMMIT;
   END LOOP;
-
-  RESET careermonke.skip_touch_last_seen;
 END;
 $$;
 

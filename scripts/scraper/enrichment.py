@@ -203,6 +203,10 @@ def compute_dedupe_hash(
     return compute_similarity_hash_v2(company, title, country, location)
 
 
+# Legacy rows were written by the TS ingest, whose /\b...\b/ boundary is ASCII-only ("Inc東京" strips "inc").
+_LEGACY_SUFFIX_RE = re.compile(r"\b(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\b\.?", re.IGNORECASE | re.ASCII)
+
+
 def compute_legacy_dedupe_hash(
     company: str | None,
     title: str | None,
@@ -214,7 +218,7 @@ def compute_legacy_dedupe_hash(
     Retained for backward-compatibility audits and backfill verification only.
     """
     raw_comp = (company or "").lower().strip()
-    norm_comp = _COMPANY_SUFFIX_RE.sub(" ", raw_comp)
+    norm_comp = _LEGACY_SUFFIX_RE.sub("", raw_comp)
     norm_comp = re.sub(r"[^a-z0-9]+", " ", norm_comp).strip()
 
     raw_title = (title or "").lower().strip()

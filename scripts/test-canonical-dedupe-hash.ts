@@ -39,6 +39,8 @@ interface DedupeTestVector {
   };
   expected_payload: string;
   expected_hash: string;
+  /** Legacy (pre-v2) hash as written by the old TS ingest; audit-only. */
+  expected_legacy_hash: string;
 }
 
 interface TestVectorFile {
@@ -105,6 +107,9 @@ export async function runCanonicalDedupeHashSuite(): Promise<void> {
       vec.expected_hash,
       `[TS v2 Hash Mismatch] ${vec.id}: expected "${vec.expected_hash}", got "${v2Hash}"`
     );
+
+    const legacyHash = computeLegacyDedupeHash(vec.input.company, vec.input.title, vec.input.country, vec.input.location);
+    assert.strictEqual(legacyHash, vec.expected_legacy_hash, `[TS Legacy Hash Mismatch] ${vec.id}`);
   }
   console.log(`  ✓ All ${fixture.vectors.length} vectors match byte-for-byte in TypeScript.`);
 
@@ -114,7 +119,7 @@ export async function runCanonicalDedupeHashSuite(): Promise<void> {
   console.log("\n[2/5] Verifying Python Scraper Runtime...");
   const pythonScript = `
 import json, sys
-from scripts.scraper.enrichment import compute_dedupe_hash, build_similarity_payload_v2
+from scripts.scraper.enrichment import compute_dedupe_hash, build_similarity_payload_v2, compute_legacy_dedupe_hash
 
 fixture_path = sys.argv[1]
 with open(fixture_path, 'r', encoding='utf-8') as f:
@@ -130,6 +135,8 @@ for vec in data['vectors']:
         mismatches.append(f"Payload mismatch on {vec['id']}: expected {vec['expected_payload']} != {py_payload}")
     if py_hash != vec['expected_hash']:
         mismatches.append(f"Hash mismatch on {vec['id']}: expected {vec['expected_hash']} != {py_hash}")
+    if compute_legacy_dedupe_hash(c, t, co, loc) != vec['expected_legacy_hash']:
+        mismatches.append(f"Legacy hash mismatch on {vec['id']}")
 
 if mismatches:
     print("\\n".join(mismatches))
@@ -212,6 +219,11 @@ print(f"OK:{len(data['vectors'])}")
       vec.expected_hash,
       `[SQL Hash Mismatch] ${vec.id}: expected "${vec.expected_hash}", got "${sqlHash}"`
     );
+    const legacy = await db.query<{ hash: string }>(
+      `SELECT public.compute_legacy_job_dedupe_hash($1, $2, $3, $4) AS hash;`,
+      [vec.input.company, vec.input.title, vec.input.country, vec.input.location]
+    );
+    assert.strictEqual(legacy.rows[0].hash, vec.expected_legacy_hash, `[SQL Legacy Hash Mismatch] ${vec.id}`);
   }
   console.log(`  ✓ All ${fixture.vectors.length} vectors match byte-for-byte in PostgreSQL.`);
 

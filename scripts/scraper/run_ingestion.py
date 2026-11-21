@@ -18,8 +18,8 @@ import argparse
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
-import os
 from pathlib import Path
+import sys
 from typing import Any, Awaitable, Callable
 
 import httpx
@@ -27,10 +27,14 @@ import httpx
 from .engine import (
     DEFAULT_SEEDS_PATH,
     SupabaseSetDiffWriter,
+    WriteAuthorizationError,
+    add_write_mode_arguments,
+    dry_run_from_args,
     fetch_layer1_seed,
     load_company_seeds,
     load_dotenv_into_env,
     partition_set_diff,
+    resolve_write_credentials,
 )
 from .fetch_aggregators_and_india import (
     fetch_adzuna,
@@ -151,6 +155,7 @@ async def run_master_ingestion(
     safe set-diff upserts, and strict per-source expiration safety guards.
     """
     load_dotenv_into_env()
+    credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     raw_filters = sources or ["all"]
     source_filter = {s.strip().lower() for item in raw_filters for s in item.split(",") if s.strip()}
     if not source_filter:
@@ -322,11 +327,8 @@ async def run_master_ingestion(
             "persisted_ids": [],
         }
 
-        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
-        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
-
-        if not dry_run and supabase_url and service_key:
-            writer = SupabaseSetDiffWriter(supabase_url, service_key)
+        if credentials is not None:
+            writer = SupabaseSetDiffWriter(*credentials)
             company_map = await writer.sync_companies(client, all_jobs)
             sync_res = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
             db_stats.update(sync_res)
@@ -342,8 +344,8 @@ async def run_master_ingestion(
         expiry_vetoed = db_stats.get("persistence_failed", False)
         expiry_reports: list[dict[str, Any]] = []
 
-        if not dry_run and supabase_url and service_key and not expiry_vetoed:
-            writer = SupabaseSetDiffWriter(supabase_url, service_key)
+        if credentials is not None and not expiry_vetoed:
+            writer = SupabaseSetDiffWriter(*credentials)
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=expire_stale_hours)).isoformat()
             persisted_keys = set(tuple(k) for k in db_stats.get("persisted_source_keys") or [])
 
@@ -474,17 +476,21 @@ def main() -> None:
         default=None,
         help="Source filter: all, layer1, layer2, layer3, greenhouse, lever, ashby, smartrecruiters, workday, amazon, microsoft, jobspy, arbeitnow, adzuna, or slug",
     )
-    parser.add_argument("--dry-run", action="store_true", default=False, help="Run without writing to Supabase")
+    add_write_mode_arguments(parser)
     parser.add_argument("--baseline-count", type=int, default=0, help="Baseline active job count for 50%% drop guard")
     args = parser.parse_args()
 
-    report = asyncio.run(
-        run_master_ingestion(
-            sources=args.source,
-            dry_run=args.dry_run,
-            baseline_active_count=args.baseline_count,
+    try:
+        report = asyncio.run(
+            run_master_ingestion(
+                sources=args.source,
+                dry_run=dry_run_from_args(args),
+                baseline_active_count=args.baseline_count,
+            )
         )
-    )
+    except WriteAuthorizationError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
     print(json.dumps(report, indent=2))
 
 

@@ -15,7 +15,8 @@
         "location": "Mountain View, CA"
       },
       "expected_payload": "v2|c:6:google|t:23:staff software engineer|co:2:us|loc:13:mountain view",
-      "expected_hash": "14c69420611ec43c96858f7f83a496f656388c4b698b3bac6d19a8559996939a"
+      "expected_hash": "14c69420611ec43c96858f7f83a496f656388c4b698b3bac6d19a8559996939a",
+      "expected_legacy_hash": "28982a93b15ebb69494a913e0b69d25d6295db9e2ebb1d9b8a93f7f6b1181dd1"
     },
     {
       "id": "vec_02_apple_designer_empty_country_loc",
@@ -27,7 +28,8 @@
         "location": ""
       },
       "expected_payload": "v2|c:5:apple|t:8:designer|co:0:|loc:0:",
-      "expected_hash": "abdf5e012e30eb44a2e41911e58f0a119f82f105fe0a6cdac7682a269fb3722e"
+      "expected_hash": "abdf5e012e30eb44a2e41911e58f0a119f82f105fe0a6cdac7682a269fb3722e",
+      "expected_legacy_hash": "b92e477648ae731a4ff90ca18f9aab81df11c8a1f8cb751edd92a20f0c9df7e8"
     },
     {
       "id": "vec_03_stripe_backend_sf",
@@ -39,7 +41,8 @@
         "location": "San Francisco, CA"
       },
       "expected_payload": "v2|c:6:stripe|t:16:backend engineer|co:2:us|loc:13:san francisco",
-      "expected_hash": "bb3b5bb4103be484a932cc64884e09461958139fd3f511d68c48f39e92ae241c"
+      "expected_hash": "bb3b5bb4103be484a932cc64884e09461958139fd3f511d68c48f39e92ae241c",
+      "expected_legacy_hash": "dd3c8aaf361cc69f9a79506702e2b6426b360ba3805cefabab420cf51160eb9b"
     },
     {
       "id": "vec_04_stripe_plain_company_sf_variant",
@@ -51,7 +54,8 @@
         "location": "San Francisco, United States"
       },
       "expected_payload": "v2|c:6:stripe|t:16:backend engineer|co:2:us|loc:13:san francisco",
-      "expected_hash": "bb3b5bb4103be484a932cc64884e09461958139fd3f511d68c48f39e92ae241c"
+      "expected_hash": "bb3b5bb4103be484a932cc64884e09461958139fd3f511d68c48f39e92ae241c",
+      "expected_legacy_hash": "dd3c8aaf361cc69f9a79506702e2b6426b360ba3805cefabab420cf51160eb9b"
     },
     {
       "id": "vec_05_datadog_paris",
@@ -63,7 +67,8 @@
         "location": "Paris, France"
       },
       "expected_payload": "v2|c:7:datadog|t:17:security engineer|co:2:fr|loc:5:paris",
-      "expected_hash": "a9ea9fd2851daae22cd201382027033403ed21850398d9c2455256fc157d7994"
+      "expected_hash": "a9ea9fd2851daae22cd201382027033403ed21850398d9c2455256fc157d7994",
+      "expected_legacy_hash": "b376392233cfa2ecabb7f96a027470c7aec477694599f1b48ad42d9bf0c88cf6"
     },
     {
       "id": "vec_06_automattic_null_country_loc",
@@ -75,7 +80,8 @@
         "location": null
       },
       "expected_payload": "v2|c:10:automattic|t:16:technical writer|co:0:|loc:0:",
-      "expected_hash": "6bd75776b3e66a69be8c50e15f5c4b23349cd06452f042e25984fc1d6e5f73f8"
+      "expected_hash": "6bd75776b3e66a69be8c50e15f5c4b23349cd06452f042e25984fc1d6e5f73f8",
+      "expected_legacy_hash": "c216296adb78d522c7b99e3711519c7049873630f01a8d434d8532376bcbf4a2"
     },
     {
       "id": "vec_07_paypay_product_manager_japanese",
@@ -87,7 +93,8 @@
         "location": "東京都, 日本"
       },
       "expected_payload": "v2|c:6:paypay|t:33:プロダクトマネージャー|co:2:jp|loc:9:東京都",
-      "expected_hash": "47a1e880aad0f529ae7f12a56e1ffe02b2b4b3679bc4ee43fde06b126f3c0cfe"
+      "expected_hash": "47a1e880aad0f529ae7f12a56e1ffe02b2b4b3679bc4ee43fde06b126f3c0cfe",
+      "expected_legacy_hash": "9b851d6ba7583b6e16f48afcfd400f590d83b4fc6c416d6b7478fa4214766f15"
     },
     {
       "id": "vec_08_paypay_backend_engineer_japanese",
@@ -99,7 +106,8 @@
         "location": "東京都, 日本"
       },
       "expected_payload": "v2|c:6:paypay|t:33:バックエンドエンジニア|co:2:jp|loc:9:東京都",
-      "expected_hash": "378c114d9186654e22a7140e7202f81f01bd2c0e44ffc280c87d96c9a9c6de6b"
+      "expected_hash": "378c114d9186654e22a7140e7202f81f01bd2c0e44ffc280c87d96c9a9c6de6b",
+      "expected_legacy_hash": "9b851d6ba7583b6e16f48afcfd400f590d83b4fc6c416d6b7478fa4214766f15"
     },
     {
       "id": "vec_09_new_relic_tokyo",
@@ -111,7 +119,8 @@
         "location": "東京"
       },
       "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:東京",
-      "expected_hash": "f6e50cb0d5af0056f7e012ff5d6c053187fedf34e289ea7584e7a3e5a671416c"
+      "expected_hash": "f6e50cb0d5af0056f7e012ff5d6c053187fedf34e289ea7584e7a3e5a671416c",
+      "expected_legacy_hash": "8f9b09810e3f8bfd5a480ce4db61f3d874fff1da06fcc6c796ee117a1be969f7"
     },
     {
       "id": "vec_10_new_relic_osaka",
@@ -123,7 +132,8 @@
         "location": "大阪"
       },
       "expected_payload": "v2|c:9:new relic|t:28:enterprise account executive|co:2:jp|loc:6:大阪",
-      "expected_hash": "f2a0a09ac852c94c0ae1e96ef5482c859acf77d4db1b6d93e0db3193b3e43da3"
+      "expected_hash": "f2a0a09ac852c94c0ae1e96ef5482c859acf77d4db1b6d93e0db3193b3e43da3",
+      "expected_legacy_hash": "8f9b09810e3f8bfd5a480ce4db61f3d874fff1da06fcc6c796ee117a1be969f7"
     },
     {
       "id": "vec_11_trendyol_turkish_i",
@@ -135,7 +145,8 @@
         "location": "İstanbul, Turkey"
       },
       "expected_payload": "v2|c:8:trendyol|t:17:iskele mühendisi|co:2:tr|loc:8:istanbul",
-      "expected_hash": "728e5cb36c3bb0acd13a987689234b7a7bd3512e6fce57cc7ed5a8f9afd06056"
+      "expected_hash": "728e5cb36c3bb0acd13a987689234b7a7bd3512e6fce57cc7ed5a8f9afd06056",
+      "expected_legacy_hash": "328a32a73c4b78f5e274acb2c0fc29f8b48aab9b33e5d3594c034abc0aeefca0"
     },
     {
       "id": "vec_12_beat_greek_sigma",
@@ -147,7 +158,8 @@
         "location": "Αθήνα"
       },
       "expected_payload": "v2|c:4:beat|t:12:οδηγόσ|co:2:gr|loc:10:αθήνα",
-      "expected_hash": "5f5504715d65fbec414350d779b5f9118d61f973d8aff6f51f4da55867bcb60c"
+      "expected_hash": "5f5504715d65fbec414350d779b5f9118d61f973d8aff6f51f4da55867bcb60c",
+      "expected_legacy_hash": "0262e2f39e060d3841ef05d22875acda2d20d9a86d7e4dac3f8de95bb9d3d1ad"
     },
     {
       "id": "vec_13_delivery_hero_german_sharp_s",
@@ -159,7 +171,8 @@
         "location": "Berlin, Germany"
       },
       "expected_payload": "v2|c:16:delivery hero se|t:19:grosskundenbetreuer|co:2:de|loc:6:berlin",
-      "expected_hash": "c01c5b1d5432eea4c3d41be53103315484a0ca636d6717a77560c6beb9f47134"
+      "expected_hash": "c01c5b1d5432eea4c3d41be53103315484a0ca636d6717a77560c6beb9f47134",
+      "expected_legacy_hash": "08f6a152ef39f089f0be49a27e7f342ca7a0ca1b21d20b6cc118d942cfef591b"
     },
     {
       "id": "vec_14_wolt_obuda_accented",
@@ -171,7 +184,8 @@
         "location": "Óbuda, Budapest"
       },
       "expected_payload": "v2|c:4:wolt|t:6:futár|co:2:hu|loc:6:óbuda",
-      "expected_hash": "777024a00e4148fa79bddfa4308da9c3bfc86e014261f7adff9e707933f631f9"
+      "expected_hash": "777024a00e4148fa79bddfa4308da9c3bfc86e014261f7adff9e707933f631f9",
+      "expected_legacy_hash": "14c10d2c48d201c491b5a13b50309471f55c3ef8cfa9a204a20dbda94b6a432a"
     },
     {
       "id": "vec_15_uber_systems_punctuation",
@@ -183,7 +197,8 @@
         "location": "New York, NY"
       },
       "expected_payload": "v2|c:18:uber technologies,|t:22:systems engineer / c++|co:2:us|loc:8:new york",
-      "expected_hash": "5cb5a18a5ad4d2566d956ce9bd0b0890c0cb2bf8d8468f61882ec178a3b19517"
+      "expected_hash": "5cb5a18a5ad4d2566d956ce9bd0b0890c0cb2bf8d8468f61882ec178a3b19517",
+      "expected_legacy_hash": "e66d26c6e5d5d00cfc39d4cdd0c578dee0a84b0c7f3dd43b3522e6d9340f290d"
     },
     {
       "id": "vec_16_microsoft_whitespace_collapse",
@@ -195,7 +210,8 @@
         "location": "  Redmond,   WA  "
       },
       "expected_payload": "v2|c:9:microsoft|t:24:cloud solution architect|co:2:us|loc:7:redmond",
-      "expected_hash": "1478e067cff3257b9c9766e968b48313574aebff2c9a3cc4eaf51948a746bac4"
+      "expected_hash": "1478e067cff3257b9c9766e968b48313574aebff2c9a3cc4eaf51948a746bac4",
+      "expected_legacy_hash": "67440fef1b15810fc9f1e0abbfab33c98a63c665289af20ff77c471d97c22315"
     },
     {
       "id": "vec_17_amazon_nel_whitespace",
@@ -207,7 +223,8 @@
         "location": "SeattleWA"
       },
       "expected_payload": "v2|c:6:amazon|t:6:sde ii|co:2:us|loc:10:seattle wa",
-      "expected_hash": "127ade75a8f7a1251696256e81d54ffad9824ad05314ea710e82af937ade00cb"
+      "expected_hash": "127ade75a8f7a1251696256e81d54ffad9824ad05314ea710e82af937ade00cb",
+      "expected_legacy_hash": "5b4846399718bd06b000aeb62fd15931f5190eee24467fa6fce26acec0ec7546"
     },
     {
       "id": "vec_18_sony_fullwidth_nfkc",
@@ -219,7 +236,8 @@
         "location": "Ｔｏｋｙｏ"
       },
       "expected_payload": "v2|c:4:sony|t:17:software engineer|co:2:jp|loc:5:tokyo",
-      "expected_hash": "d291f31ea7eccb21a92c2aa2b02da807ea8a56b2737e9996a8d0c74397c38f68"
+      "expected_hash": "d291f31ea7eccb21a92c2aa2b02da807ea8a56b2737e9996a8d0c74397c38f68",
+      "expected_legacy_hash": "9961a7c9437146ff256c6c18649db26beca120e1dcb66420d5abc695d6ac8a18"
     },
     {
       "id": "vec_19_flipkart_hindi_devanagari",
@@ -231,7 +249,8 @@
         "location": "बेंगलुरु, कर्नाटक"
       },
       "expected_payload": "v2|c:8:flipkart|t:52:सॉफ्टवेयर इंजीनियर|co:2:in|loc:24:बेंगलुरु",
-      "expected_hash": "b9e637d2380c2c2b9fb2531527ef17b4d44e484f7c2cbbccc8db2e3b0a72feb7"
+      "expected_hash": "b9e637d2380c2c2b9fb2531527ef17b4d44e484f7c2cbbccc8db2e3b0a72feb7",
+      "expected_legacy_hash": "7d0718422c27d716043d2a35403e1f76dc1dedc2b9e3a1af93b989d5b9728ac1"
     },
     {
       "id": "vec_20_bytedance_chinese",
@@ -243,7 +262,8 @@
         "location": "北京, 中国"
       },
       "expected_payload": "v2|c:9:bytedance|t:21:高级后端工程师|co:2:cn|loc:6:北京",
-      "expected_hash": "bd310b8d6ee144b056309469ef5533e83de6cdf0029a46afb2e8086f6d066560"
+      "expected_hash": "bd310b8d6ee144b056309469ef5533e83de6cdf0029a46afb2e8086f6d066560",
+      "expected_legacy_hash": "21616b9288b24db5a1098155807837264494aeb0edaea4e9c5b1deb8c6fed4c0"
     },
     {
       "id": "vec_21_palantir_pipe_delimiter",
@@ -255,7 +275,8 @@
         "location": "Denver, CO"
       },
       "expected_payload": "v2|c:21:palantir technologies|t:32:forward deployed engineer | core|co:2:us|loc:6:denver",
-      "expected_hash": "68eff5f8574b18cc32b1ace47164942e9c2ff08011b07e9a4825ab52168048f9"
+      "expected_hash": "68eff5f8574b18cc32b1ace47164942e9c2ff08011b07e9a4825ab52168048f9",
+      "expected_legacy_hash": "bd28c6bee67d597c886f435a460bf4a408daad4240bb6cdfadc8655abe6f5419"
     },
     {
       "id": "vec_22_company_inc_kanji",
@@ -267,7 +288,8 @@
         "location": "Tokyo"
       },
       "expected_payload": "v2|c:17:company inc東京|t:14:lead developer|co:2:jp|loc:5:tokyo",
-      "expected_hash": "69f52f5b0f11423d23887c4865fc78e70a861600fd41a4082f4067a6bf7c726c"
+      "expected_hash": "69f52f5b0f11423d23887c4865fc78e70a861600fd41a4082f4067a6bf7c726c",
+      "expected_legacy_hash": "3915b28df6aa4a230c967e0c949867cfb50857b872d9e4fcc78e9b8e9eac1fdc"
     },
     {
       "id": "vec_23_meta_trailing_spaces_mixed_case",
@@ -279,7 +301,8 @@
         "location": "  Menlo Park, CA  "
       },
       "expected_payload": "v2|c:15:meta platforms,|t:18:research scientist|co:2:us|loc:10:menlo park",
-      "expected_hash": "9eeb4a2d8bbd43238cf198b3233e388b3055f4d30ad5aae40c936709d02de9ea"
+      "expected_hash": "9eeb4a2d8bbd43238cf198b3233e388b3055f4d30ad5aae40c936709d02de9ea",
+      "expected_legacy_hash": "43bb29589732502fe250db0b0a103986313b98e7eeb47595ea6666d243311024"
     },
     {
       "id": "vec_24_cloudflare_remote",
@@ -291,7 +314,8 @@
         "location": "Remote, United States"
       },
       "expected_payload": "v2|c:11:cloudflare,|t:28:systems reliability engineer|co:2:us|loc:6:remote",
-      "expected_hash": "85dcb50873d0d195ef6692def6784258b4e99e01f4e08eeeec567fd858f4cdff"
+      "expected_hash": "85dcb50873d0d195ef6692def6784258b4e99e01f4e08eeeec567fd858f4cdff",
+      "expected_legacy_hash": "01afd01787020f1e7a37b8246786bdf40eb4f7047a1a489a548ee6a477c24e65"
     },
     {
       "id": "vec_25_minimal_fields",
@@ -303,7 +327,8 @@
         "location": "NY"
       },
       "expected_payload": "v2|c:2:go|t:2:se|co:2:us|loc:2:ny",
-      "expected_hash": "6c505d0b4117042e6aaed2e4b3fe5bd168ed4f4922b60b37a1dd4d80e3693ba1"
+      "expected_hash": "6c505d0b4117042e6aaed2e4b3fe5bd168ed4f4922b60b37a1dd4d80e3693ba1",
+      "expected_legacy_hash": "e1a67ee0b8cb4c181a1c1a796e3e115f9ee6f113f6adf79af7c7e3367b800c13"
     }
   ]
 }

@@ -9,7 +9,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -57,6 +59,40 @@ def load_dotenv_into_env() -> None:
                     os.environ[k_clean] = v.strip().strip('"').strip("'")
         except Exception:
             pass
+
+
+WRITE_FLAG = "--write-to-database"
+
+
+class WriteAuthorizationError(RuntimeError):
+    """Write mode was requested without valid Supabase credentials. Never carries the credential values."""
+
+
+def resolve_write_credentials() -> tuple[str, str]:
+    """Fail-closed credential check for write mode, run before any network call."""
+    url = (os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL") or "").strip()
+    key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY") or "").strip()
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise WriteAuthorizationError("write mode refused: NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL must be set to an https URL")
+    if len(key) < 20 or any(ch.isspace() for ch in key):
+        raise WriteAuthorizationError("write mode refused: SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_KEY is missing or malformed")
+    return url, key
+
+
+def add_write_mode_arguments(parser: argparse.ArgumentParser) -> None:
+    """Dry-run is the default; writing needs the explicit flag; the two are mutually exclusive."""
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Fetch and normalize only; never writes (the default)")
+    mode.add_argument(WRITE_FLAG, dest="write_to_database", action="store_true",
+                      help="Explicitly authorize company/job writes and expiry (requires valid Supabase service credentials)")
+
+
+def dry_run_from_args(args: argparse.Namespace) -> bool:
+    if not args.write_to_database:
+        print(f"[mode] DRY-RUN: nothing will be written. Pass {WRITE_FLAG} to authorize writes.", file=sys.stderr)
+        return True
+    return False
 
 
 def load_company_seeds(path: str | Path = DEFAULT_SEEDS_PATH) -> dict[str, Any]:
@@ -501,6 +537,7 @@ async def run_ingestion(
 ) -> dict[str, Any]:
     """Runs Layer 1 (Public ATS) and Layer 2 (Workday CXS, Amazon, Microsoft) ingestion."""
     load_dotenv_into_env()
+    credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     config = load_company_seeds(seeds_path)
     rl_cfg = config.get("rate_limit") or {}
     limiter = PerHostRateLimiter(
@@ -554,13 +591,10 @@ async def run_ingestion(
             "persisted_source_keys": [],
         }
 
-        if not dry_run:
-            supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
-            service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
-            if supabase_url and service_key:
-                writer = SupabaseSetDiffWriter(supabase_url, service_key)
-                company_map = await writer.sync_companies(client, all_jobs)
-                db_stats = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
+        if credentials is not None:
+            writer = SupabaseSetDiffWriter(*credentials)
+            company_map = await writer.sync_companies(client, all_jobs)
+            db_stats = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
 
     return {
         "fetched": len(all_jobs),
@@ -573,11 +607,15 @@ async def run_ingestion(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Career-Hound Async High-Volume Ingestion Engine")
-    parser.add_argument("--dry-run", action="store_true", default=False, help="Fetch & normalize without DB writes")
+    add_write_mode_arguments(parser)
     parser.add_argument("--limit", type=int, default=None, help="Max seeds per layer")
     args = parser.parse_args()
 
-    summary = asyncio.run(run_ingestion(dry_run=args.dry_run, max_seeds_per_layer=args.limit))
+    try:
+        summary = asyncio.run(run_ingestion(dry_run=dry_run_from_args(args), max_seeds_per_layer=args.limit))
+    except WriteAuthorizationError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
     print(json.dumps(summary, indent=2))
 
 

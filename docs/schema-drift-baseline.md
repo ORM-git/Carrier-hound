@@ -27,6 +27,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `applications` | `20261008_phase1_candidate_and_tracker.sql` |
 | `blocked_users` | `20261011_admin_page_views_and_blocked_users.sql` |
 | `candidate_profiles` | `20261008_phase1_candidate_and_tracker.sql` |
+| `canonical_dedupe_hash_backfill_progress` | `20261121a_canonical_job_dedupe_hash.sql` |
 | `category_overrides` | `20261116b_ten_million_system_design_schema.sql` |
 | `companies` | `20261001_phase1_storage_optimization.sql` |
 | `company_aliases` | `20261116b_ten_million_system_design_schema.sql` |
@@ -80,7 +81,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 59
+baseline-count: 60
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -90,6 +91,7 @@ table: ai_usage_quotas | 20261011_ai_usage_quotas.sql
 table: applications | 20261008_phase1_candidate_and_tracker.sql
 table: blocked_users | 20261011_admin_page_views_and_blocked_users.sql
 table: candidate_profiles | 20261008_phase1_candidate_and_tracker.sql
+table: canonical_dedupe_hash_backfill_progress | 20261121a_canonical_job_dedupe_hash.sql
 table: category_overrides | 20261116b_ten_million_system_design_schema.sql
 table: companies | 20261001_phase1_storage_optimization.sql
 table: company_aliases | 20261116b_ten_million_system_design_schema.sql
