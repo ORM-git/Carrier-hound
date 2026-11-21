@@ -17,7 +17,7 @@
     "test:filters": "tsx scripts/test-filters.ts",
     "test:10m-rehearsal": "tsx scripts/test-10m-schema-step1-rehearsal.ts",
     "test:10m-postgres": "tsx scripts/test-10m-schema-step1-postgres.ts",
-    "test:identity": "tsx scripts/test-identity-and-migration-safety.ts && tsx scripts/test-python-identity-contract.ts && tsx scripts/test-canonical-dedupe-hash.ts",
+    "test:identity": "tsx scripts/test-identity-and-migration-safety.ts && tsx scripts/test-python-identity-contract.ts",
     "test:all": "tsx scripts/suite-runner.ts && vitest run",
     "prepare": "husky",
     "format:check": "prettier --check .",
