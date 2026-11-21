@@ -7,10 +7,7 @@ Symptom: Actions run log ends with `Reason: missing_env`.
 1. Open the failing script's env list in its workflow file
    (`.github/workflows/*cron*.yml`) - every `secrets.X` referenced must
    exist under repo Settings > Secrets and variables > Actions.
-2. Note that **dry-run skips mail-config validation** in
-   `early-access-digest-cron.ts`, so a green dry-run does not prove env
-   is complete (being fixed - see postmortem 2026-11-06).
-3. Add the missing secret, re-run with `workflow_dispatch`
+2. Add the missing secret, re-run with `workflow_dispatch`
    (dry_run=false), and confirm `Status: SUCCESS` with a real send.
 
 ## 2. Groq quota / key failures in AI routes or matching cron
