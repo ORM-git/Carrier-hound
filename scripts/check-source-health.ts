@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { evaluateSourceHealth } from "../src/lib/observability/sourceHealth";
 
 const MAX_FAILURES_IN_WINDOW = 1;
-const STALE_AFTER_HOURS = Number(process.env.SOURCE_HEALTH_STALE_HOURS) || 8; // 8-hour alert threshold allows 1 missed/delayed cron interval on 4-hour cadence.
+const STALE_AFTER_HOURS = Number(process.env.SOURCE_HEALTH_STALE_HOURS) || 12; // GitHub delivers only 2-3 of the 6 daily 4h ingest slots; healthy gaps reached 11.3h (week of 2026-11-15), so 8h false-alarmed.
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
