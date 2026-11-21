@@ -1157,6 +1157,8 @@ export {
   detectRoleCategory,
   extractTopKeywords,
   computeDedupeHash,
+  computeLegacyDedupeHash,
+  computeSimilarityHashV2,
   getSourcePriority,
 } from '../../src/lib/jobs/highVolumeEnrichment';
 export type { CompanyCategory, RoleCategory } from '../../src/lib/jobs/highVolumeEnrichment';

@@ -52,6 +52,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `admin_audit_log` | Admin mutations and `pii_read` access records (pseudonymous: salted IP hash, redacted metadata). Append-only, service-role only, 365-day retention. |
 | `cron_run_logs` | Scheduled job outcomes. 90-day retention. |
 | `ingest_runs` | Job-ingestion run state. |
+| `canonical_dedupe_hash_backfill_progress` | Dedupe-hash backfill cursor and counters (no user data). Service-role read only (20261121a, NOT APPLIED). |
 | `failed_events` | Webhook/event replay queue. Replayed/dead rows purged after 90 days. |
 | `webhook_events` | Provider webhook receipts (event ids, no payload PII). 90-day retention. |
 | `rate_limits` | Rate-limit buckets keyed by route/ip hash. |

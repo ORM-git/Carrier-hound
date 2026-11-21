@@ -195,8 +195,43 @@ def compute_dedupe_hash(
     country: str | None = None,
     location: str | None = None,
 ) -> str:
-    """Backward-compatible alias pointing to compute_similarity_hash_v2."""
+    """Canonical Job Dedupe Hash Contract (v2).
+
+    Produces byte-for-byte identical output across PostgreSQL, TypeScript, and Python:
+    `v2|c:{len}:{comp}|t:{len}:{title}|co:{len}:{co}|loc:{len}:{loc}` hashed with SHA-256.
+    """
     return compute_similarity_hash_v2(company, title, country, location)
+
+
+# Legacy rows were written by the TS ingest, whose /\b...\b/ boundary is ASCII-only ("Inc東京" strips "inc").
+_LEGACY_SUFFIX_RE = re.compile(r"\b(inc|llc|ltd|corp|corporation|limited|pvt|private|gmbh|plc|co)\b\.?", re.IGNORECASE | re.ASCII)
+
+
+def compute_legacy_dedupe_hash(
+    company: str | None,
+    title: str | None,
+    country: str | None = None,
+    location: str | None = None,
+) -> str:
+    """Legacy plain dedupe hash (pre-v2 plain format with [^a-z0-9]+ stripping).
+
+    Retained for backward-compatibility audits and backfill verification only.
+    """
+    raw_comp = (company or "").lower().strip()
+    norm_comp = _LEGACY_SUFFIX_RE.sub("", raw_comp)
+    norm_comp = re.sub(r"[^a-z0-9]+", " ", norm_comp).strip()
+
+    raw_title = (title or "").lower().strip()
+    norm_title = re.sub(r"[^a-z0-9]+", " ", raw_title).strip()
+
+    raw_co = (country or "").strip()
+    norm_co = re.sub(r"[^a-z0-9]+", " ", (raw_co or "any").lower()).strip() or "any"
+
+    first_city = (location or "").split(",")[0] if location else ""
+    norm_city = re.sub(r"[^a-z0-9]+", " ", first_city.lower()).strip() or "any"
+
+    payload = f"{norm_comp}|{norm_title}|{norm_co}|{norm_city}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 # ============================================================================
