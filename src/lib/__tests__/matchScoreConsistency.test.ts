@@ -3,6 +3,7 @@ import { LiveJob } from "@/lib/jobs/service";
 import {
   scoreJobRecommendation,
   rankJobsByRecommendation,
+  withFeedScore,
   OnboardingAnswers,
 } from "@/lib/jobs/recommendations";
 
@@ -99,5 +100,23 @@ describe("Match Score Consistency & Unified Label", () => {
     expect(typeof ranked[0].matchScore).toBe("number");
     expect(ranked[0].matchScore).toBeGreaterThan(0);
     expect(ranked[0]._matchScore).toBe(ranked[0].matchScore);
+  });
+});
+
+describe("card and detail read one stored score (withFeedScore)", () => {
+  // Mirrors the clamp both getJobMatchScore (card) and JobDetailView (detail) apply to job.matchScore.
+  const shown = (j: { matchScore?: number | null }) =>
+    typeof j.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(j.matchScore))) : null;
+
+  it("deep-linked detail (no score, or a recomputed resume score) shows the feed card's score", () => {
+    const feed = [{ id: "j1", title: "Frontend Engineer, Ads", matchScore: 83 }];
+    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: undefined }, feed))).toBe(shown(feed[0]));
+    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: 85 }, feed))).toBe(83);
+  });
+
+  it("keeps the job's own score when the feed doesn't have it, and returns the same object when unchanged", () => {
+    const detail = { id: "x", matchScore: 70 };
+    expect(withFeedScore(detail, [])).toBe(detail);
+    expect(withFeedScore(detail, [{ id: "x", matchScore: 70 }])).toBe(detail);
   });
 });

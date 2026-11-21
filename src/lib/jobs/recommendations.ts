@@ -429,6 +429,23 @@ export type JobScoringCandidate = {
  * Scores a single job against onboarding answers.
  * Returns score (0 - 100) and breakdown.
  */
+/** 0 = exclude (executive), 0.5 = strong down-weight (Staff/Principal), 1 = no change. Title is lowercased. */
+export function seniorityFactorForMid(title: string): number {
+  if (/\b(vp|svp|evp|vice president|director|head|chief)\b/.test(title)) return 0;
+  // shortcut: "staff accountant/auditor" are entry/mid finance titles; extend this list if other fields misfire.
+  if (/\bprincipal\b|\bstaff\b(?!\s+(accountant|auditor))/.test(title)) return 0.5;
+  return 1;
+}
+
+/** Card and detail show one stored score: the one the feed attached to this job, when the feed has it. */
+export function withFeedScore<T extends { id: string; matchScore?: number | null }>(
+  job: T,
+  feed: readonly { id: string; matchScore?: number | null }[]
+): T {
+  const listed = feed.find((j) => j.id === job.id)?.matchScore;
+  return typeof listed === "number" && listed !== job.matchScore ? { ...job, matchScore: listed } : job;
+}
+
 export function scoreJobRecommendation(
   job: JobScoringCandidate,
   answers: OnboardingAnswers
@@ -810,7 +827,12 @@ export function scoreJobRecommendation(
   const resume = scoreResumeMatch(job, answers.resumeProfile);
   reasons.push(...resume.reasons);
 
-  const totalScore = Math.min(100, roleScore + locationScore + experienceScore + jobTypeScore + recencyScore + resume.score);
+  // Seniority factor: the 100 cap swallows the small experience penalty, so titles far above a mid
+  // seeker are scaled after the cap (entry seekers are already hard-filtered above).
+  const seniorityFactor = userExp === "mid" ? seniorityFactorForMid(title) : 1;
+  if (seniorityFactor < 1) reasons.push("Seniority well above preferred level");
+  const totalScore =
+    Math.min(100, roleScore + locationScore + experienceScore + jobTypeScore + recencyScore + resume.score) * seniorityFactor;
 
   return {
     job,
