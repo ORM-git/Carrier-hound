@@ -33,6 +33,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `dunning_logs` | failed-payment retry state per subscription | Billing-adjacent. |
 | `early_access_emails` / `early_access_approved` | email addresses of pre-signup leads | PII before an account exists; covered by account-deletion email matching. |
 | `email_suppressions` | email + suppression reason | Kept to honor opt-outs; do not purge blindly. |
+| `error_events` | `user_id` (PII, nullable); internal fields: `id`, `occurred_at`, `route` (URL pathname only, no query string), `error_message` (truncated to 500 chars), `stack_hash`, `count` | Server request errors for `/admin/errors`, written best-effort by `reportRequestErrorToSentry`; service-role only; read by admins via `/api/admin/errors`, which never selects `user_id`; deleted user ids are nulled by the `auth.users` FK (`on delete set null`) (20261121a, NOT APPLIED). |
 | `gmail_send_log` | recipient email per send | Doubles as suppression evidence (180-day retention). |
 | `page_views` | user id (nullable), salted IP hash, user agent, paths | Behavioral; 90-day retention. |
 | `blocked_users` | email, user id, block reason | Moderation record. |
@@ -57,7 +58,6 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `ai_usage_quotas` / `plan_usage_events` / `ai_concurrency_leases` / `ai_global_budget_daily` | Per-user and global AI usage accounting. User-linked but not identifying beyond the id. |
 | `web_vitals` | Anonymous performance telemetry (no identifiers by design). |
 | `company_token_registry` | Scraper tokens for company boards. Secret-adjacent; service-role only. |
-| `error_events` | Server request errors for /admin/errors: route (pathname only, no query), error message (truncated to 500 chars), stack hash, nullable user id, count. Service-role only (20261121a). |
 | `matview_refresh_log` | Materialized-view refresh telemetry (when, duration). Service-role only (20261106d). |
 | `deleted_account_tombstones` | PII-free account-deletion audit anchor (user id, SHA-256 email hash, purge deadline). 30-day undo window, then hard-purged (20261106h). |
 | `supabase_migrations.schema_migrations` | Applied-migration ledger (Supabase-internal schema). |
