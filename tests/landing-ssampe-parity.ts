@@ -120,7 +120,10 @@ function check(x: Input) {
     .replace(/@keyframes ([\w-]+)/g, "@keyframes cml-$1")
     .replace(/(animation(?:-name)?:)([^;}]*)/g, (_, k, v) => k + prefix(v))
     .replace(/(^|[{}])body\{/g, "$1.landing-wrapper{");
-  const lowerGot = decls(x.lowerCss).replace(/^\.landing-wrapper a,\.landing-wrapper button\{transition:none\}/, "");
+  const lowerGot = decls(x.lowerCss)
+    .replace(/^\.landing-wrapper a,\.landing-wrapper button\{transition:none\}/, "")
+    // owner-approved: below 360px only, founder stats columns may shrink so 320px reflows
+    .replace(/@media \(max-width:359px\)\{\.landing-wrapper \.fd-stats\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}\.landing-wrapper \.fd-stats dt,\.landing-wrapper \.fd-stats dd\{overflow-wrap:anywhere\}\}$/, "");
   assert.equal(lowerGot, lowerWant, "lower CSS must equal 3386250 landing.css + site.css (keyframes cml-, body scoped) plus the documented host neutraliser");
 
   // --- 5. isolation: top and lower can't reach each other or other pages ---

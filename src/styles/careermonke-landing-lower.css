@@ -913,3 +913,7 @@
 /* feature rows: same gap as sections, no screen-height rows */
 .landing-wrapper .fx{gap:var(--sec)}
 .landing-wrapper .fxi{min-height:0}
+
+/* Below the approved 360px minimum only (owner-approved): the 3386250 founder stats row overflows
+   320px (WCAG 1.4.10 reflow) because its three label columns can't shrink below their text width. */
+@media (max-width:359px){.landing-wrapper .fd-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.landing-wrapper .fd-stats dt,.landing-wrapper .fd-stats dd{overflow-wrap:anywhere}}
