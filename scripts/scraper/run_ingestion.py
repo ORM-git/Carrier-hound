@@ -6,10 +6,8 @@ Features:
   `ashby`, `smartrecruiters`, `workday`, `amazon`, `microsoft`, `jobspy`,
   `arbeitnow`, `adzuna`, or a specific company slug).
 - Strict per-source error isolation (one failing board never crashes the batch).
-- Tracks per-source completeness: only sources that fetched with full coverage and zero errors can participate in expiry.
-- Workday, Amazon, Microsoft, and Arbeitnow (fetched with partial pages) are marked partial coverage and never expired.
-- Persistence failure on company or job writes vetos the expiry step.
-- 50% count-drop safety guard evaluated per-source before expiring unseen old jobs.
+- Tracks per-source completeness and failures in the run report.
+- Expiry is disabled for every run, including full-coverage and capped runs.
 """
 
 from __future__ import annotations
@@ -35,6 +33,9 @@ from .engine import (
     load_dotenv_into_env,
     partition_set_diff,
     resolve_write_credentials,
+    select_unique_jobs,
+    validate_row_cap,
+    ingestion_has_errors,
 )
 from .fetch_aggregators_and_india import (
     fetch_adzuna,
@@ -45,6 +46,7 @@ from .fetchers import (
     fetch_amazon_jobs,
     fetch_microsoft_jobs,
     fetch_workday_cxs,
+    enrich_greenhouse_pay_transparency,
 )
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
@@ -145,6 +147,8 @@ async def run_master_ingestion(
     sources: list[str] | None = None,
     seeds_path: str | Path = DEFAULT_SEEDS_PATH,
     dry_run: bool = True,
+    max_rows: int | None = None,
+    no_expire: bool = True,
     baseline_active_count: int = 0,
     expire_stale_hours: int = 72,
     transport: httpx.AsyncBaseTransport | None = None,
@@ -152,8 +156,9 @@ async def run_master_ingestion(
 ) -> dict[str, Any]:
     """
     Runs selected ingestion layers/sources with per-source error isolation,
-    safe set-diff upserts, and strict per-source expiration safety guards.
+    safe set-diff upserts; expiry remains disabled for every run.
     """
+    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     raw_filters = sources or ["all"]
@@ -312,10 +317,29 @@ async def run_master_ingestion(
                 "fetched_jobs": rep["jobs"],
             }
 
-        # Sort: Direct ATS (priority 1) before Aggregators (priority 2)
-        all_jobs.sort(key=lambda j: int(j.get("source_priority", 2)))
-
+        fetched_count = len(all_jobs)
+        unique_jobs = select_unique_jobs(all_jobs, None)
+        all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
+        for seed in layer1_seeds:
+            if (seed.get("ats") or "").lower() != "greenhouse":
+                continue
+            greenhouse_seed = {**seed, "token": seed.get("token") or seed.get("slug")}
+            board_source_id = f"greenhouse:{greenhouse_seed['token']}"
+            try:
+                await enrich_greenhouse_pay_transparency(
+                    client, limiter, greenhouse_seed,
+                    [job for job in all_jobs if job.get("source_id") == board_source_id],
+                )
+            except Exception as exc:
+                error = redact_sensitive_params(str(exc))
+                failed_sources.append({"source": board_source_id, "error": error})
+                for source_report in source_reports:
+                    if source_report["source_id"] == board_source_id:
+                        source_report.update({"status": "failed", "completed": False, "error": error})
+                if board_source_id in board_status_map:
+                    board_status_map[board_source_id].update({"completed": False, "error": error})
         to_insert, to_update, unchanged = partition_set_diff(all_jobs, [])
+        projected_counts = {"inserted": len(to_insert), "updated": len(to_update), "unchanged": len(unchanged)}
         db_stats: dict[str, Any] = {
             "inserted": len(to_insert),
             "updated": len(to_update),
@@ -327,11 +351,23 @@ async def run_master_ingestion(
             "persisted_ids": [],
         }
 
-        if credentials is not None:
+        if credentials is not None and failed_sources:
+            db_stats.update({"inserted": 0, "updated": 0, "skipped_unchanged": 0})
+        elif credentials is not None:
             writer = SupabaseSetDiffWriter(*credentials)
             company_map = await writer.sync_companies(client, all_jobs)
-            sync_res = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
-            db_stats.update(sync_res)
+            if writer.persistence_failed:
+                db_stats.update({
+                    "inserted": 0,
+                    "updated": 0,
+                    "skipped_unchanged": 0,
+                    "failed_writes": writer.failed_writes,
+                    "persistence_failed": True,
+                    "write_errors": list(writer.write_errors),
+                })
+            else:
+                sync_res = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
+                db_stats.update(sync_res)
 
         # Expiration safety checks:
         # 1. Any persistence failure vetos expiry completely.
@@ -344,7 +380,7 @@ async def run_master_ingestion(
         expiry_vetoed = db_stats.get("persistence_failed", False)
         expiry_reports: list[dict[str, Any]] = []
 
-        if credentials is not None and not expiry_vetoed:
+        if credentials is not None and not no_expire and not expiry_vetoed:
             writer = SupabaseSetDiffWriter(*credentials)
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=expire_stale_hours)).isoformat()
             persisted_keys = set(tuple(k) for k in db_stats.get("persisted_source_keys") or [])
@@ -456,15 +492,56 @@ async def run_master_ingestion(
             cat = str(j.get("company_category") or "OTHER_STARTUPS")
             category_counts[cat] = category_counts.get(cat, 0) + 1
 
+        greenhouse_jobs = [
+            job for report in task_reports if report["source_type"] == "greenhouse"
+            for job in report["jobs"]
+        ]
+        greenhouse_inspection = {
+            "fetched": len(greenhouse_jobs),
+            "salary_known": sum(job.get("salary_min") is not None or job.get("salary_max") is not None for job in greenhouse_jobs),
+            "salary_null": sum(job.get("salary_min") is None and job.get("salary_max") is None for job in greenhouse_jobs),
+            "country_known": sum(bool(job.get("country_code")) for job in greenhouse_jobs),
+            "country_unknown": sum(not job.get("country_code") for job in greenhouse_jobs),
+            "posted_at_known": sum(bool(job.get("posted_at")) for job in greenhouse_jobs),
+            "posted_at_unknown": sum(not job.get("posted_at") for job in greenhouse_jobs),
+            "descriptions_over_4000": sum(len(job.get("description") or "") > 4000 for job in greenhouse_jobs),
+            "description_tail_samples": [
+                {"source_job_id": job.get("source_job_id"), "characters": len(job.get("description") or ""),
+                 "tail": (job.get("description") or "")[-160:]}
+                for job in greenhouse_jobs if len(job.get("description") or "") > 4000
+            ][:3],
+            "date_samples": [
+                {"source_job_id": job.get("source_job_id"), "posted_at": job.get("posted_at"),
+                 "last_seen_at": job.get("last_seen_at")}
+                for job in greenhouse_jobs[:5]
+            ],
+            "identity_samples": [
+                {"source_id": job.get("source_id"), "source_job_id": job.get("source_job_id"),
+                 "dedupe_hash": job.get("dedupe_hash"), "apply_url": job.get("apply_url")}
+                for job in greenhouse_jobs[:5]
+            ],
+        }
+
         return {
+            "dry_run": dry_run,
+            "fetched": fetched_count,
+            "selected": len(all_jobs),
+            "skipped_by_cap": max(0, len(unique_jobs) - len(all_jobs)),
+            "projected_counts": projected_counts,
+            "persisted_counts": None if dry_run else {
+                "inserted": db_stats["inserted"],
+                "updated": db_stats["updated"],
+                "unchanged": db_stats["skipped_unchanged"],
+            },
             "sources_requested": sorted(source_filter),
-            "total_fetched": len(all_jobs),
+            "total_fetched": fetched_count,
             "category_breakdown": category_counts,
             "db": db_stats,
             "expiry_vetoed": expiry_vetoed,
             "expiry_reports": expiry_reports,
             "failed_sources": failed_sources,
             "sources": source_reports,
+            "greenhouse_inspection": greenhouse_inspection,
         }
 
 
@@ -481,10 +558,14 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        dry_run = dry_run_from_args(args)
+        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
         report = asyncio.run(
             run_master_ingestion(
                 sources=args.source,
-                dry_run=dry_run_from_args(args),
+                dry_run=dry_run,
+                max_rows=args.max_rows,
+                no_expire=args.no_expire,
                 baseline_active_count=args.baseline_count,
             )
         )
@@ -492,6 +573,9 @@ def main() -> None:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)
     print(json.dumps(report, indent=2))
+    if ingestion_has_errors(report):
+        print("ingestion failed: source or persistence errors were reported", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
