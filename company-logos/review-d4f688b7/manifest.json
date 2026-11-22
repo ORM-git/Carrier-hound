@@ -1535,19 +1535,6 @@
       }
     },
     {
-      "id": "44f03f3c-899b-488c-a589-cb20c4081cf7",
-      "name": "Glossier",
-      "current_logo_url": "https://www.glossier.com/cdn/shop/files/favicon-light_180x180.webp?v=1681821719",
-      "current_class": "external",
-      "plan": {
-        "action": "host",
-        "source": "homepage-icon",
-        "sha256": "186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca",
-        "key": "44f03f3c-899b-488c-a589-cb20c4081cf7/186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca.webp",
-        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/44f03f3c-899b-488c-a589-cb20c4081cf7/186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca.webp"
-      }
-    },
-    {
       "id": "4d685c04-ac11-446f-9a1e-ddef0a27b1bf",
       "name": "Ginkgo Bioworks",
       "current_logo_url": "https://cdn.prod.website-files.com/691b94a518664e13feebd656/692cd99bb36d17aec8b4f222_webclip.png",
@@ -2391,6 +2378,7 @@
     }
   ],
   "reviewNotes": [
-    "Removed Appen (c89af545-4a0d-463d-bcad-f15e796bdfe8): white mark invisible on the light tile; this backfill leaves it untouched."
+    "Removed Appen (c89af545-4a0d-463d-bcad-f15e796bdfe8): white mark invisible on the light tile; this backfill leaves it untouched.",
+    "Removed Glossier (44f03f3c-899b-488c-a589-cb20c4081cf7): faint white logo on a light tile; this backfill leaves it untouched."
   ]
 }

@@ -24,7 +24,6 @@ Cause: JPEG/WebP/GIF candidates now decode for real, so the resolver can accept 
 | Slice | host bc0b3196 | host 78e25885 (homepage-icon) |
 | Gamma | clear-external-to-initials | host bd9fcf0e (free-service:google) |
 | Oddball | host 3b666238 | host 2c82ed37 (homepage-icon) |
-| Glossier | host 2026bf9f | host 186020c4 (homepage-icon) |
 | Olo | host 2fc45374 | host c23d595a (homepage-icon) |
 | Cube | host 74542db1 | host 8a9fdb4a (homepage-icon) |
 | Karat | host a7dfbf92 | host 8a4372bd (homepage-icon) |

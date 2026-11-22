@@ -1297,16 +1297,6 @@
       "next_attempt_at": null
     },
     {
-      "id": "44f03f3c-899b-488c-a589-cb20c4081cf7",
-      "name": "Glossier",
-      "status": "repaired",
-      "reason": null,
-      "source": "homepage-icon",
-      "logo_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/44f03f3c-899b-488c-a589-cb20c4081cf7/186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca.webp",
-      "previous_logo_url": "https://www.glossier.com/cdn/shop/files/favicon-light_180x180.webp?v=1681821719",
-      "next_attempt_at": null
-    },
-    {
       "id": "4d685c04-ac11-446f-9a1e-ddef0a27b1bf",
       "name": "Ginkgo Bioworks",
       "status": "repaired",
@@ -2036,12 +2026,12 @@
   ],
   "alerts": [],
   "reviewedManifest": {
-    "companies": 199,
-    "host": 132,
+    "companies": 198,
+    "host": 131,
     "keep_initials": 51,
     "clear_external_to_initials": 16,
     "by_source": {
-      "homepage-icon": 73,
+      "homepage-icon": 72,
       "free-service:google": 48,
       "free-service:unavatar": 5,
       "ats-board": 6
@@ -2049,13 +2039,18 @@
     "no_host_reasons": {
       "no-source": 67
     },
-    "projected_eligible_hosted": 336,
+    "projected_eligible_hosted": 335,
     "companies_with_active_jobs": 439,
     "removed": [
       {
         "id": "c89af545-4a0d-463d-bcad-f15e796bdfe8",
         "name": "Appen",
         "reason": "white mark invisible on light tile"
+      },
+      {
+        "id": "44f03f3c-899b-488c-a589-cb20c4081cf7",
+        "name": "Glossier",
+        "reason": "faint white logo on light tile"
       }
     ]
   }
