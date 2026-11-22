@@ -1504,6 +1504,17 @@ function JobsPageInner() {
     }
   };
 
+  const handleLoadCompanyProfile = async () => {
+    if (!isPro || !selectedJob || selectedJob.companyProfile?.jobs.status === "ready" || selectedJob.companyProfile?.jobs.status === "error") return;
+    const jobId = selectedJob.id;
+    try {
+      const fullJob = await getLiveJobById(jobId, true);
+      if (fullJob && selectedJob?.id === jobId) setSelectedJob((current) => current?.id === jobId ? { ...current, ...fullJob } : current);
+    } catch (error) {
+      console.warn("Failed to load company profile", error);
+    }
+  };
+
   const handleSelectJob = async (job: LiveJob) => {
     pendingJobIdRef.current = null;
     if (typeof window !== "undefined") {
@@ -1854,10 +1865,11 @@ function JobsPageInner() {
                 isRetryingUnlock={isRetryingUnlock}
                 similarJobs={similarJobs}
                 onSelectJob={(job) => {
-                  setSelectedJob(job);
+                  void handleSelectJob(job);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 isExpired={detailStatus === "expired" || selectedJob.isExpired}
+                onLoadCompanyProfile={handleLoadCompanyProfile}
               />
             </div>
           ) : (

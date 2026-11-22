@@ -1,0 +1,14 @@
+{
+  "affirm": {
+    "pageUrl": "https://affirm.com/about/news",
+    "canonicalDomain": "affirm.com",
+    "companyName": "Affirm",
+    "html": "<!doctype html><html><head><meta name=\"description\" content=\"Affirm helps consumers pay over time\"></head><body><a href=\"https://www.linkedin.com/company/affirm\">LinkedIn</a><script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"Organization\",\"name\":\"Affirm\",\"url\":\"https://affirm.com\",\"description\":\"Affirm helps consumers pay over time\",\"foundingDate\":\"2012-01-01\",\"headquarters\":{\"addressLocality\":\"San Francisco\",\"addressRegion\":\"California\",\"addressCountry\":\"US\"}},{\"@type\":\"Person\",\"name\":\"Max Levchin\",\"jobTitle\":\"CEO\",\"roleAsOf\":\"2026-01-01\"},{\"@type\":\"NewsArticle\",\"headline\":\"Company update\",\"datePublished\":\"2026-10-01\",\"url\":\"https://affirm.com/news/update\",\"description\":\"An official update.\"}]}</script></body></html>"
+  },
+  "namesake": {
+    "pageUrl": "https://affirm.com/about",
+    "canonicalDomain": "affirm.com",
+    "companyName": "Affirm",
+    "html": "<script type=\"application/ld+json\">{\"@type\":\"Organization\",\"name\":\"Affirm Holdings Unrelated\"}</script>"
+  }
+}

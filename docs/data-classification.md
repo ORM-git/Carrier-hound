@@ -76,6 +76,9 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `outbox` | Generic work queue rows (20261107c, not applied). Payload is caller-defined and may contain personal data depending on the topic; keep payloads to ids. Service-role only; no client access. |
 | `jobs_archive` | Archived expired job listings (cold storage, 20261106l). Service-role only; no client access. |
 | `companies` / `company_boards` | Company directory and ATS board config. |
+| `company_profile_facts` | Non-PII facts from verified official company pages with field-level source and retrieval dates. Migration `20261122a` is not applied; raw-table access is service-role only and the `/api/jobs/pro` response is Pro-gated. |
+| `company_profile_leadership` | Public professional names and roles from official company sources, with source and as-of dates. No contact details; migration `20261122a` is not applied; service-role storage and Pro-gated API reads. |
+| `company_profile_news` | Dated official company-news headlines and short supplied excerpts with source links. Migration `20261122a` is not applied; service-role storage and Pro-gated API reads. |
 | `plans` / `addon_packs` | Product catalog (names, prices, quotas). |
 | `company-logos` storage bucket | Public logo assets. |
 
