@@ -1595,19 +1595,6 @@
       }
     },
     {
-      "id": "c89af545-4a0d-463d-bcad-f15e796bdfe8",
-      "name": "Appen",
-      "current_logo_url": "https://i0.wp.com/crowdgen.com/wp-content/uploads/2026/08/crowdgen-site-icon-512.png?fit=192%2C192&#038;ssl=1",
-      "current_class": "external",
-      "plan": {
-        "action": "host",
-        "source": "homepage-icon",
-        "sha256": "57677de07919ebf8437ed532471f09c1573fc872787665eb5cd97f4a4fefb821",
-        "key": "c89af545-4a0d-463d-bcad-f15e796bdfe8/57677de07919ebf8437ed532471f09c1573fc872787665eb5cd97f4a4fefb821.png",
-        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c89af545-4a0d-463d-bcad-f15e796bdfe8/57677de07919ebf8437ed532471f09c1573fc872787665eb5cd97f4a4fefb821.png"
-      }
-    },
-    {
       "id": "2812805c-73c0-43a4-bc83-8d486be5d055",
       "name": "Olo",
       "current_logo_url": "https://www.olo.com/hubfs/2024-Website/assets/logos/favicon-Olo.png",
@@ -2381,5 +2368,8 @@
         "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
       }
     }
+  ],
+  "reviewNotes": [
+    "Removed Appen (c89af545-4a0d-463d-bcad-f15e796bdfe8): white mark invisible on the light tile; left untouched by this backfill."
   ]
 }
