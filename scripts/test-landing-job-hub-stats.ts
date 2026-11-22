@@ -49,7 +49,7 @@ async function main() {
   // Composite page: the new top fold (kicker + View Jobs CTA) replaced the old hero and demo.
   const heroIdx = pageContent.indexOf('<p className="kicker">Skip LinkedIn competition</p>');
   const demoIdx = pageContent.indexOf('className="btn-cta"');
-  const stripIdx = pageContent.indexOf('<section className="ls"');
+  const stripIdx = pageContent.indexOf("<LandingJobsTickerStrip />");
   const statsIdx = pageContent.indexOf('aria-label="CareerMonke in numbers"');
   const featuresIdx = pageContent.indexOf('id="feat-h"');
 
