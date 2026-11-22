@@ -93,11 +93,12 @@ async function runParityTests() {
     pageSrc.includes('alt="Orissa Lee Patnaik, founder of CareerMonke"'),
     "Founder alt text must match 'Orissa Lee Patnaik, founder of CareerMonke'"
   );
-  assert.ok(pageSrc.includes('width="120" height="120"'), "Founder image markup must define width 120 height 120");
-  assert.ok(pageSrc.includes('className="fd-ph"'), "Founder image must use the .fd-ph photo class");
+  // Live careermonke.com founder card (owner request): 112x112 photo in a bordered card, socials below the bio.
+  assert.ok(pageSrc.includes('width="112" height="112"'), "Founder image markup must define width 112 height 112");
+  assert.ok(pageSrc.includes('<div className="founder">') && pageSrc.includes('<div className="founder-body">'), "Founder must use the live .founder card markup");
   assert.ok(pageSrc.includes("Orissa here!"), "Founder heading must be 'Orissa here!'");
   assert.ok(
-    pageSrc.includes('<p className="fd-role">Creator of CareerMonke</p>'),
+    pageSrc.includes('<p className="role">Creator of CareerMonke</p>'),
     "Founder role must be 'Creator of CareerMonke'"
   );
   assert.ok(
@@ -108,11 +109,20 @@ async function runParityTests() {
     pageSrc.includes("I built CareerMonke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric."),
     "Founder bio paragraph 2 must match"
   );
-  // ssampe@3386250 founder block has no social links; support mail lives in the footer.
   assert.ok(
-    pageSrc.includes('href="mailto:support@careermonke.com"'),
-    "Support email link must match"
+    pageSrc.includes('href="https://www.linkedin.com/in/orissa-patnaik-85071a1aa/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"'),
+    "Founder LinkedIn link must match"
   );
+  assert.ok(
+    pageSrc.includes('href="https://www.instagram.com/orissa.patnaik" target="_blank" rel="noopener noreferrer" aria-label="Instagram"'),
+    "Founder Instagram link must match"
+  );
+  assert.ok(
+    pageSrc.includes('href="mailto:support@careermonke.com" aria-label="Email"'),
+    "Founder Email link must match"
+  );
+  // Founder stat row removed (live has none) - no placeholder labels, no invented numbers.
+  assert.ok(!pageSrc.includes('className="fd-stats"') && !pageSrc.includes("[00K+]") && !pageSrc.includes("PLACEHOLDER"), "Founder stat row and placeholders must be gone");
   assert.ok(!/github\.com/i.test(pageSrc), "Footer GitHub link must not come back");
   assert.ok(pageSrc.includes("Free preview"), "Free preview CTA heading must exist");
   assert.ok(pageSrc.includes("View Jobs"), "Free preview CTA must include 'View Jobs'");
@@ -120,14 +130,15 @@ async function runParityTests() {
 
   // 3. Founder CSS Styling & Dimensions
   console.log("Test 3: Founder styling across viewports...");
-  // ssampe@3386250 founder block (.fd): photo beside name, 96px round photo on phones, 120px on desktop.
-  assert.ok(cssSrc.includes(".landing-wrapper .fd-top{display:flex;align-items:center;gap:20px}"), "Founder photo must sit beside the name");
+  // Live founder card: centered bordered card on phones (88px photo), photo-left 100px 1fr grid on desktop.
+  assert.ok(cssSrc.includes("grid-template-columns:1fr;justify-items:center;text-align:center"), "Founder mobile card must stack photo above text");
+  assert.ok(cssSrc.includes(".landing-wrapper .founder img{width:88px;height:88px"), "Founder mobile img size must be 88x88");
   assert.ok(
-    cssSrc.includes(".landing-wrapper .fd-ph{flex:none;width:96px;height:96px;border-radius:50%"),
-    "Founder mobile img size must be a 96x96 circle"
+    cssSrc.includes("grid-template-columns:100px 1fr;justify-items:start;text-align:left;gap:24px;padding:28px 32px;margin-left:auto;margin-right:auto"),
+    "Founder desktop card must be 100px 1fr with auto margins for centering"
   );
-  assert.ok(cssSrc.includes(".landing-wrapper .fd{max-width:760px}"), "Founder block must be capped at 760px");
-  assert.ok(cssSrc.includes(".landing-wrapper .fd-ph{width:120px;height:120px}"), "Founder desktop img size must be 120x120");
+  assert.ok(cssSrc.includes(".landing-wrapper .founder img{width:100px;height:100px}"), "Founder desktop img size must be 100x100");
+  assert.ok(!cssSrc.includes(".fd-stats"), "Founder-stat-only CSS must be removed with the stat row");
 
   // 3b. Desktop (>=768px) Centering Rules Verification
   // NOTE: Owner-approved deviation from the original HTML: on desktop (>=768px), sections below the hero

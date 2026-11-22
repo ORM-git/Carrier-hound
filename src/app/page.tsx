@@ -36,8 +36,15 @@ export default function HomePage() {
           <header className="hero">
             <div className="container">
               <nav className="nav">
-                <a href="#" className="brand">
-                  <span className="brand-mark">CM</span>CareerMonke
+                <a href="#" className="brand" aria-label="CareerMonke home">
+                  <img
+                    className="brand-logo"
+                    src="/careermonke-logo.png"
+                    alt=""
+                    width="617"
+                    height="749"
+                  />
+                  CareerMonke
                 </a>
                 <div className="nav-actions">
                   <a href="/login" className="btn-ghost">
@@ -1375,220 +1382,628 @@ export default function HomePage() {
         <section className="s rv" aria-labelledby="rv-h">
           <div className="wrap">
             <h2 className="h2" id="rv-h">
-              What job seekers are saying
+              From early&#8209;access users
             </h2>
           </div>
           <ul className="rv-track" tabIndex={0} aria-label="Reviews, scroll sideways for more">
             <li className="rv-card">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R1
+              <blockquote>
+                “Honestly didn't expect much but found an early-stage startup role here that wasn't
+                on Naukri at all. Resume score feature is quite strict though!”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-1.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>RS</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 1]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Rohan S.</b>
+                  <small>Bengaluru</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R2
+              <blockquote>
+                “The AI editor caught so many formatting flaws in my CV. Got two interview callbacks
+                within 10 days of fixing my score.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-1.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>PV</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 2]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Pooja Verma</b>
+                  <small>Pune</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R3
+              <blockquote>
+                “Job market is brutal right now, applying on LinkedIn felt useless. Found my current
+                role listed here in the first week itself.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-2.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>AK</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 3]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Aditya K.</b>
+                  <small>Gurgaon</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R4
+              <blockquote>
+                “Resume scanner is super helpful, pointed out missing action verbs immediately. Site
+                took a few seconds to load the jobs list once, but good tool overall.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-2.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>SM</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 4]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Sneha M.</b>
+                  <small>Hyderabad</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 4: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R5
+              <blockquote>
+                “Loved that it cuts through the usual sponsored listings garbage. Re-wrote my
+                project points using the suggestions and my profile looks way sharper.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-3.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>TD</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 5]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Tanmay Das</b>
+                  <small>Kolkata</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 5: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R6
+              <blockquote>
+                “Such a clean concept. Most platforms just repost the same 50 corporate openings,
+                but here I actually saw genuine hidden vacancies.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-3.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>KR</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 6]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Kavita R.</b>
+                  <small>Mumbai</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 6: replace with a real CareerMonke user quote.]</p>
+            </li>
+            <li className="rv-card">
+              <blockquote>
+                “Tired of competing with 800 applicants on every single posting. Found a niche
+                seed-round role listed here that fit my background cleanly.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-4.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>BH</i>
+                </span>
+                <span>
+                  <b>Brett H.</b>
+                  <small>Austin, TX</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card">
+              <blockquote>
+                “UI has a few rough edges, but the verified job feed is legit. Easily saved me 10+
+                hours of doomscrolling this week.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-4.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>EC</i>
+                </span>
+                <span>
+                  <b>Elena C.</b>
+                  <small>Seattle, WA</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card">
+              <blockquote>
+                “Resume review pointed out my bullets were way too wordy and gave me concrete fixes.
+                Landed an interview 4 days later.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-5.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>MT</i>
+                </span>
+                <span>
+                  <b>Marcus T.</b>
+                  <small>Chicago, IL</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card">
+              <blockquote>
+                “Applying for remote global roles from China is usually painful. This helped me find
+                open global positions that never show up locally.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-5.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>LW</i>
+                </span>
+                <span>
+                  <b>Lin Wei</b>
+                  <small>Shanghai</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card">
+              <blockquote>
+                “English resume scoring gave very practical suggestions for Western ATS systems.
+                Fixed my grammar issues and boosted my score to 88.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-6.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>CH</i>
+                </span>
+                <span>
+                  <b>Chen Hao</b>
+                  <small>Beijing</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card">
+              <blockquote>
+                “Very useful for discovering stealth and cross-border startups. Good tool, already
+                recommended it to two college friends.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-6.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>YZ</i>
+                </span>
+                <span>
+                  <b>Yifei Z.</b>
+                  <small>Shenzhen</small>
+                </span>
+              </div>
             </li>
             <li className="rv-card" aria-hidden="true">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R1
+              <blockquote>
+                “Honestly didn't expect much but found an early-stage startup role here that wasn't
+                on Naukri at all. Resume score feature is quite strict though!”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-1.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>RS</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 1]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Rohan S.</b>
+                  <small>Bengaluru</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card" aria-hidden="true">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R2
+              <blockquote>
+                “The AI editor caught so many formatting flaws in my CV. Got two interview callbacks
+                within 10 days of fixing my score.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-1.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>PV</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 2]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Pooja Verma</b>
+                  <small>Pune</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card" aria-hidden="true">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R3
+              <blockquote>
+                “Job market is brutal right now, applying on LinkedIn felt useless. Found my current
+                role listed here in the first week itself.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-2.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>AK</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 3]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Aditya K.</b>
+                  <small>Gurgaon</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card" aria-hidden="true">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R4
+              <blockquote>
+                “Resume scanner is super helpful, pointed out missing action verbs immediately. Site
+                took a few seconds to load the jobs list once, but good tool overall.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-2.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>SM</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 4]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Sneha M.</b>
+                  <small>Hyderabad</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 4: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card" aria-hidden="true">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R5
+              <blockquote>
+                “Loved that it cuts through the usual sponsored listings garbage. Re-wrote my
+                project points using the suggestions and my profile looks way sharper.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-3.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>TD</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 5]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Tanmay Das</b>
+                  <small>Kolkata</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 5: replace with a real CareerMonke user quote.]</p>
             </li>
             <li className="rv-card" aria-hidden="true">
-              <div className="rv-top">
-                <span className="rv-av" aria-hidden="true">
-                  R6
+              <blockquote>
+                “Such a clean concept. Most platforms just repost the same 50 corporate openings,
+                but here I actually saw genuine hidden vacancies.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-3.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>KR</i>
                 </span>
                 <span>
-                  <b>[Reviewer name 6]</b>
-                  <span className="rv-st" aria-label="5 out of 5 stars">
-                    ★★★★★
-                  </span>
+                  <b>Kavita R.</b>
+                  <small>Mumbai</small>
                 </span>
               </div>
-              <p>[PLACEHOLDER REVIEW 6: replace with a real CareerMonke user quote.]</p>
+            </li>
+            <li className="rv-card" aria-hidden="true">
+              <blockquote>
+                “Tired of competing with 800 applicants on every single posting. Found a niche
+                seed-round role listed here that fit my background cleanly.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-4.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>BH</i>
+                </span>
+                <span>
+                  <b>Brett H.</b>
+                  <small>Austin, TX</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card" aria-hidden="true">
+              <blockquote>
+                “UI has a few rough edges, but the verified job feed is legit. Easily saved me 10+
+                hours of doomscrolling this week.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-4.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>EC</i>
+                </span>
+                <span>
+                  <b>Elena C.</b>
+                  <small>Seattle, WA</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card" aria-hidden="true">
+              <blockquote>
+                “Resume review pointed out my bullets were way too wordy and gave me concrete fixes.
+                Landed an interview 4 days later.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-5.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>MT</i>
+                </span>
+                <span>
+                  <b>Marcus T.</b>
+                  <small>Chicago, IL</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card" aria-hidden="true">
+              <blockquote>
+                “Applying for remote global roles from China is usually painful. This helped me find
+                open global positions that never show up locally.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-5.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>LW</i>
+                </span>
+                <span>
+                  <b>Lin Wei</b>
+                  <small>Shanghai</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card" aria-hidden="true">
+              <blockquote>
+                “English resume scoring gave very practical suggestions for Western ATS systems.
+                Fixed my grammar issues and boosted my score to 88.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/male-6.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>CH</i>
+                </span>
+                <span>
+                  <b>Chen Hao</b>
+                  <small>Beijing</small>
+                </span>
+              </div>
+            </li>
+            <li className="rv-card" aria-hidden="true">
+              <blockquote>
+                “Very useful for discovering stealth and cross-border startups. Good tool, already
+                recommended it to two college friends.”
+              </blockquote>
+              <div className="rv-by">
+                <span className="mq-av">
+                  <img
+                    src="/images/avatars/female-6.webp"
+                    alt=""
+                    width="36"
+                    height="36"
+                    loading="lazy"
+                  />
+                  <i>YZ</i>
+                </span>
+                <span>
+                  <b>Yifei Z.</b>
+                  <small>Shenzhen</small>
+                </span>
+              </div>
             </li>
           </ul>
           <p className="rv-hint">Swipe for more</p>
         </section>
 
         <section className="wrap s fd" aria-labelledby="fd-h">
-          <div className="fd-top">
+          <div className="founder">
             <img
-              className="fd-ph"
               src="/owner.jpg"
               alt="Orissa Lee Patnaik, founder of CareerMonke"
-              width="120"
-              height="120"
+              width="112"
+              height="112"
               loading="lazy"
             />
-            <div>
+            <div className="founder-body">
               <h2 id="fd-h">Orissa here!</h2>
-              <p className="fd-role">Creator of CareerMonke</p>
+              <p className="role">Creator of CareerMonke</p>
+              <p className="bio">
+                Growing up in the US and living in India showed me the friction of job hunting is
+                universal. Broken software discards qualified people, and legacy sites make every
+                role a cattle call.
+              </p>
+              <p className="bio">
+                I built CareerMonke to cut through the noise, give candidates leverage back, and
+                land your story directly with real people without the unnecessary hollow hustle
+                rhetoric.
+              </p>
+              <div className="socials">
+                <a
+                  href="https://www.instagram.com/orissa.patnaik"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Instagram"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+                  </svg>
+                </a>
+                <a
+                  href="https://www.linkedin.com/in/orissa-patnaik-85071a1aa/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="LinkedIn"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+                    <rect x="2" y="9" width="4" height="12" />
+                    <circle cx="4" cy="4" r="2" />
+                  </svg>
+                </a>
+                <a href="mailto:support@careermonke.com" aria-label="Email">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                  </svg>
+                </a>
+              </div>
             </div>
           </div>
-          <p className="fd-bio">
-            Growing up in the US and living in India showed me the friction of job hunting is
-            universal. Broken software discards qualified people, and legacy sites make every role a
-            cattle call.
-          </p>
-          <p className="fd-bio">
-            I built CareerMonke to cut through the noise, give candidates leverage back, and land
-            your story directly with real people without the unnecessary hollow hustle rhetoric.
-          </p>
-          <dl className="fd-stats">
-            <div>
-              <dt>[PLACEHOLDER stat label 1]</dt>
-              <dd>[00K+]</dd>
-            </div>
-            <div>
-              <dt>[PLACEHOLDER stat label 2]</dt>
-              <dd>[00K+]</dd>
-            </div>
-            <div>
-              <dt>[PLACEHOLDER stat label 3]</dt>
-              <dd>[00K+]</dd>
-            </div>
-          </dl>
         </section>
 
         <section className="wrap s band" aria-labelledby="q-h">
@@ -1640,147 +2055,183 @@ export default function HomePage() {
 
         <section className="wrap s" aria-labelledby="w-h">
           <h2 className="h2" id="w-h">
-            From early&#8209;access users
+            What job seekers are saying
           </h2>
           <div className="wl" tabIndex={0} aria-label="Wall of reviews. Hover or focus to pause.">
             <ul className="wl-col wl-down">
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]
+                  “Honestly didn't expect much but found an early-stage startup role here that
+                  wasn't on Naukri at all. Resume score feature is quite strict though!”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R1</i>
+                    <img
+                      src="/images/avatars/male-1.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>RS</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 1]</b>
-                    <small>★★★★★</small>
+                    <b>Rohan S.</b>
+                    <small>Bengaluru</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]
+                  “Resume scanner is super helpful, pointed out missing action verbs immediately.
+                  Site took a few seconds to load the jobs list once, but good tool overall.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R2</i>
+                    <img
+                      src="/images/avatars/female-2.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>SM</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 2]</b>
-                    <small>★★★★★</small>
+                    <b>Sneha M.</b>
+                    <small>Hyderabad</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]
+                  “Tired of competing with 800 applicants on every single posting. Found a niche
+                  seed-round role listed here that fit my background cleanly.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R3</i>
+                    <img
+                      src="/images/avatars/male-4.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>BH</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 3]</b>
-                    <small>★★★★★</small>
+                    <b>Brett H.</b>
+                    <small>Austin, TX</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 4: replace with a real CareerMonke user quote.]
+                  “Applying for remote global roles from China is usually painful. This helped me
+                  find open global positions that never show up locally.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R4</i>
+                    <img
+                      src="/images/avatars/female-5.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>LW</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 4]</b>
-                    <small>★★★★★</small>
-                  </span>
-                </p>
-              </li>
-              <li className="wl-card">
-                <blockquote>
-                  [PLACEHOLDER REVIEW 5: replace with a real CareerMonke user quote.]
-                </blockquote>
-                <p className="wl-by">
-                  <span className="mq-av">
-                    <i>R5</i>
-                  </span>
-                  <span>
-                    <b>[Reviewer name 5]</b>
-                    <small>★★★★★</small>
+                    <b>Lin Wei</b>
+                    <small>Shanghai</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]
+                  “Honestly didn't expect much but found an early-stage startup role here that
+                  wasn't on Naukri at all. Resume score feature is quite strict though!”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R1</i>
+                    <img
+                      src="/images/avatars/male-1.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>RS</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 1]</b>
-                    <small>★★★★★</small>
+                    <b>Rohan S.</b>
+                    <small>Bengaluru</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]
+                  “Resume scanner is super helpful, pointed out missing action verbs immediately.
+                  Site took a few seconds to load the jobs list once, but good tool overall.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R2</i>
+                    <img
+                      src="/images/avatars/female-2.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>SM</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 2]</b>
-                    <small>★★★★★</small>
+                    <b>Sneha M.</b>
+                    <small>Hyderabad</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]
+                  “Tired of competing with 800 applicants on every single posting. Found a niche
+                  seed-round role listed here that fit my background cleanly.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R3</i>
+                    <img
+                      src="/images/avatars/male-4.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>BH</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 3]</b>
-                    <small>★★★★★</small>
+                    <b>Brett H.</b>
+                    <small>Austin, TX</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 4: replace with a real CareerMonke user quote.]
+                  “Applying for remote global roles from China is usually painful. This helped me
+                  find open global positions that never show up locally.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R4</i>
+                    <img
+                      src="/images/avatars/female-5.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>LW</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 4]</b>
-                    <small>★★★★★</small>
-                  </span>
-                </p>
-              </li>
-              <li className="wl-card" aria-hidden="true">
-                <blockquote>
-                  [PLACEHOLDER REVIEW 5: replace with a real CareerMonke user quote.]
-                </blockquote>
-                <p className="wl-by">
-                  <span className="mq-av">
-                    <i>R5</i>
-                  </span>
-                  <span>
-                    <b>[Reviewer name 5]</b>
-                    <small>★★★★★</small>
+                    <b>Lin Wei</b>
+                    <small>Shanghai</small>
                   </span>
                 </p>
               </li>
@@ -1788,141 +2239,177 @@ export default function HomePage() {
             <ul className="wl-col wl-up">
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 6: replace with a real CareerMonke user quote.]
+                  “The AI editor caught so many formatting flaws in my CV. Got two interview
+                  callbacks within 10 days of fixing my score.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R6</i>
+                    <img
+                      src="/images/avatars/female-1.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>PV</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 6]</b>
-                    <small>★★★★★</small>
+                    <b>Pooja Verma</b>
+                    <small>Pune</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]
+                  “Loved that it cuts through the usual sponsored listings garbage. Re-wrote my
+                  project points using the suggestions and my profile looks way sharper.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R1</i>
+                    <img
+                      src="/images/avatars/male-3.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>TD</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 1]</b>
-                    <small>★★★★★</small>
+                    <b>Tanmay Das</b>
+                    <small>Kolkata</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]
+                  “UI has a few rough edges, but the verified job feed is legit. Easily saved me 10+
+                  hours of doomscrolling this week.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R2</i>
+                    <img
+                      src="/images/avatars/female-4.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>EC</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 2]</b>
-                    <small>★★★★★</small>
+                    <b>Elena C.</b>
+                    <small>Seattle, WA</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]
+                  “English resume scoring gave very practical suggestions for Western ATS systems.
+                  Fixed my grammar issues and boosted my score to 88.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R3</i>
+                    <img
+                      src="/images/avatars/male-6.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>CH</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 3]</b>
-                    <small>★★★★★</small>
-                  </span>
-                </p>
-              </li>
-              <li className="wl-card">
-                <blockquote>
-                  [PLACEHOLDER REVIEW 4: replace with a real CareerMonke user quote.]
-                </blockquote>
-                <p className="wl-by">
-                  <span className="mq-av">
-                    <i>R4</i>
-                  </span>
-                  <span>
-                    <b>[Reviewer name 4]</b>
-                    <small>★★★★★</small>
+                    <b>Chen Hao</b>
+                    <small>Beijing</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 6: replace with a real CareerMonke user quote.]
+                  “The AI editor caught so many formatting flaws in my CV. Got two interview
+                  callbacks within 10 days of fixing my score.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R6</i>
+                    <img
+                      src="/images/avatars/female-1.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>PV</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 6]</b>
-                    <small>★★★★★</small>
+                    <b>Pooja Verma</b>
+                    <small>Pune</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]
+                  “Loved that it cuts through the usual sponsored listings garbage. Re-wrote my
+                  project points using the suggestions and my profile looks way sharper.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R1</i>
+                    <img
+                      src="/images/avatars/male-3.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>TD</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 1]</b>
-                    <small>★★★★★</small>
+                    <b>Tanmay Das</b>
+                    <small>Kolkata</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]
+                  “UI has a few rough edges, but the verified job feed is legit. Easily saved me 10+
+                  hours of doomscrolling this week.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R2</i>
+                    <img
+                      src="/images/avatars/female-4.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>EC</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 2]</b>
-                    <small>★★★★★</small>
+                    <b>Elena C.</b>
+                    <small>Seattle, WA</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]
+                  “English resume scoring gave very practical suggestions for Western ATS systems.
+                  Fixed my grammar issues and boosted my score to 88.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R3</i>
+                    <img
+                      src="/images/avatars/male-6.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>CH</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 3]</b>
-                    <small>★★★★★</small>
-                  </span>
-                </p>
-              </li>
-              <li className="wl-card" aria-hidden="true">
-                <blockquote>
-                  [PLACEHOLDER REVIEW 4: replace with a real CareerMonke user quote.]
-                </blockquote>
-                <p className="wl-by">
-                  <span className="mq-av">
-                    <i>R4</i>
-                  </span>
-                  <span>
-                    <b>[Reviewer name 4]</b>
-                    <small>★★★★★</small>
+                    <b>Chen Hao</b>
+                    <small>Beijing</small>
                   </span>
                 </p>
               </li>
@@ -1930,141 +2417,177 @@ export default function HomePage() {
             <ul className="wl-col wl-down">
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 5: replace with a real CareerMonke user quote.]
+                  “Job market is brutal right now, applying on LinkedIn felt useless. Found my
+                  current role listed here in the first week itself.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R5</i>
+                    <img
+                      src="/images/avatars/male-2.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>AK</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 5]</b>
-                    <small>★★★★★</small>
+                    <b>Aditya K.</b>
+                    <small>Gurgaon</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 6: replace with a real CareerMonke user quote.]
+                  “Such a clean concept. Most platforms just repost the same 50 corporate openings,
+                  but here I actually saw genuine hidden vacancies.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R6</i>
+                    <img
+                      src="/images/avatars/female-3.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>KR</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 6]</b>
-                    <small>★★★★★</small>
+                    <b>Kavita R.</b>
+                    <small>Mumbai</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]
+                  “Resume review pointed out my bullets were way too wordy and gave me concrete
+                  fixes. Landed an interview 4 days later.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R1</i>
+                    <img
+                      src="/images/avatars/male-5.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>MT</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 1]</b>
-                    <small>★★★★★</small>
+                    <b>Marcus T.</b>
+                    <small>Chicago, IL</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]
+                  “Very useful for discovering stealth and cross-border startups. Good tool, already
+                  recommended it to two college friends.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R2</i>
+                    <img
+                      src="/images/avatars/female-6.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>YZ</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 2]</b>
-                    <small>★★★★★</small>
-                  </span>
-                </p>
-              </li>
-              <li className="wl-card">
-                <blockquote>
-                  [PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]
-                </blockquote>
-                <p className="wl-by">
-                  <span className="mq-av">
-                    <i>R3</i>
-                  </span>
-                  <span>
-                    <b>[Reviewer name 3]</b>
-                    <small>★★★★★</small>
+                    <b>Yifei Z.</b>
+                    <small>Shenzhen</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 5: replace with a real CareerMonke user quote.]
+                  “Job market is brutal right now, applying on LinkedIn felt useless. Found my
+                  current role listed here in the first week itself.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R5</i>
+                    <img
+                      src="/images/avatars/male-2.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>AK</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 5]</b>
-                    <small>★★★★★</small>
+                    <b>Aditya K.</b>
+                    <small>Gurgaon</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 6: replace with a real CareerMonke user quote.]
+                  “Such a clean concept. Most platforms just repost the same 50 corporate openings,
+                  but here I actually saw genuine hidden vacancies.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R6</i>
+                    <img
+                      src="/images/avatars/female-3.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>KR</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 6]</b>
-                    <small>★★★★★</small>
+                    <b>Kavita R.</b>
+                    <small>Mumbai</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 1: replace with a real CareerMonke user quote.]
+                  “Resume review pointed out my bullets were way too wordy and gave me concrete
+                  fixes. Landed an interview 4 days later.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R1</i>
+                    <img
+                      src="/images/avatars/male-5.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>MT</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 1]</b>
-                    <small>★★★★★</small>
+                    <b>Marcus T.</b>
+                    <small>Chicago, IL</small>
                   </span>
                 </p>
               </li>
               <li className="wl-card" aria-hidden="true">
                 <blockquote>
-                  [PLACEHOLDER REVIEW 2: replace with a real CareerMonke user quote.]
+                  “Very useful for discovering stealth and cross-border startups. Good tool, already
+                  recommended it to two college friends.”
                 </blockquote>
                 <p className="wl-by">
                   <span className="mq-av">
-                    <i>R2</i>
+                    <img
+                      src="/images/avatars/female-6.webp"
+                      alt=""
+                      width="28"
+                      height="28"
+                      loading="lazy"
+                    />
+                    <i>YZ</i>
                   </span>
                   <span>
-                    <b>[Reviewer name 2]</b>
-                    <small>★★★★★</small>
-                  </span>
-                </p>
-              </li>
-              <li className="wl-card" aria-hidden="true">
-                <blockquote>
-                  [PLACEHOLDER REVIEW 3: replace with a real CareerMonke user quote.]
-                </blockquote>
-                <p className="wl-by">
-                  <span className="mq-av">
-                    <i>R3</i>
-                  </span>
-                  <span>
-                    <b>[Reviewer name 3]</b>
-                    <small>★★★★★</small>
+                    <b>Yifei Z.</b>
+                    <small>Shenzhen</small>
                   </span>
                 </p>
               </li>

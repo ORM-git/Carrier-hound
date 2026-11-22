@@ -835,10 +835,6 @@
 .landing-wrapper .fd-role{margin:4px 0 0;color:var(--muted);font-size:17px}
 .landing-wrapper .fd-bio{margin:20px 0 0;font-size:18px;line-height:1.6;color:var(--ink)}
 .landing-wrapper .fd-bio+.fd-bio{margin-top:12px}
-.landing-wrapper .fd-stats{display:grid;grid-template-columns:repeat(3,1fr);margin:24px 0 0;text-align:center}
-.landing-wrapper .fd-stats div{display:flex;flex-direction:column-reverse}
-.landing-wrapper .fd-stats dd{margin:0;font-size:24px;font-weight:800;color:var(--navy)}
-.landing-wrapper .fd-stats dt{margin-top:4px;color:var(--muted);font-size:15px}
 @media (min-width:768px){.landing-wrapper .fd-ph{width:120px;height:120px}.landing-wrapper .fd h2{font-size:30px}}
 
 /* 10. Free preview spacing (band itself styled in landing.css) */
@@ -914,6 +910,32 @@
 .landing-wrapper .fx{gap:var(--sec)}
 .landing-wrapper .fxi{min-height:0}
 
-/* Below the approved 360px minimum only (owner-approved): the 3386250 founder stats row overflows
-   320px (WCAG 1.4.10 reflow) because its three label columns can't shrink below their text width. */
-@media (max-width:359px){.landing-wrapper .fd-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.landing-wrapper .fd-stats dt,.landing-wrapper .fd-stats dd{overflow-wrap:anywhere}}
+/* ---- Live review cards + founder card (owner-requested, from careermonke.com / Carrier-hound main
+   careermonke-landing.css @ 10ce4615). Scoped to .landing-wrapper; placed last so they override the
+   3386250 card rules of equal weight. The founder-stat row was removed (live has none). ---- */
+/* moving row (.rv-track keeps the 3386250 native-scroller marquee): live .mq-card presentation */
+.landing-wrapper .rv-card{flex:0 0 280px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;min-height:0;padding:16px;box-shadow:0 1px 2px rgba(9,14,52,.04)}
+.landing-wrapper .rv-card blockquote{margin:0;font-size:14px;line-height:20px;color:var(--ink)}
+.landing-wrapper .rv-by{display:flex;align-items:center;gap:10px}
+.landing-wrapper .rv-by b{display:block;font-size:14px;color:var(--navy)}
+.landing-wrapper .rv-by small{display:block;font-size:12px;color:var(--muted)}
+@media (min-width:768px){.landing-wrapper .rv-card{flex-basis:340px;padding:16px}.landing-wrapper .rv-card blockquote{font-size:15px;line-height:22px}}
+/* founder card */
+.landing-wrapper .founder{max-width:680px;margin:0 auto;background:#fff;border:1px solid #E4E4E7;border-radius:14px;padding:22px 20px;box-shadow:0 1px 3px rgba(9,14,52,.05);display:grid;grid-template-columns:1fr;justify-items:center;text-align:center;gap:14px}
+.landing-wrapper .founder img{width:88px;height:88px;border-radius:50%;object-fit:cover;border:2px solid #2563EB;box-shadow:0 4px 12px rgba(37,99,235,.15);background:var(--blue-50)}
+.landing-wrapper .founder-body{min-width:0}
+.landing-wrapper .founder h2{font-size:22px;line-height:1.2;font-weight:800;color:#09090B;text-align:center}
+.landing-wrapper .founder .role{margin-top:2px;font-size:13px;font-weight:500;color:#6B7280}
+.landing-wrapper .founder p.bio{margin-top:10px;font-size:14px;line-height:1.6;color:#4B5563}
+.landing-wrapper .founder p.bio+p.bio{margin-top:8px}
+.landing-wrapper .founder .socials{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px}
+.landing-wrapper .founder .socials a{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;padding:0;border-radius:999px;color:#6B7280;text-decoration:none;transition:color .15s ease,background-color .15s ease}
+.landing-wrapper .founder .socials a:hover{color:#111827;background:#F4F4F5}
+@media (min-width:768px){
+  .landing-wrapper .founder{grid-template-columns:100px 1fr;justify-items:start;text-align:left;gap:24px;padding:28px 32px;margin-left:auto;margin-right:auto}
+  .landing-wrapper .founder img{width:100px;height:100px}
+  .landing-wrapper .founder h2{font-size:24px;text-align:left}
+  .landing-wrapper .founder .role{font-size:14px}
+  .landing-wrapper .founder p.bio{font-size:15px;line-height:1.6}
+  .landing-wrapper .founder .socials{justify-content:flex-start}
+}
