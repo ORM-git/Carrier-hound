@@ -245,7 +245,7 @@ async def fetch_jobspy_india(
     sites: tuple[str, ...] = JOBSPY_SITES,
     results_wanted: int = 25,
     hours_old: int = 24,
-    scrape_timeout_seconds: float = 30.0,
+    scrape_timeout_seconds: float = 60.0,
     scrape_fn: Any | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
@@ -336,7 +336,9 @@ async def fetch_jobspy_india(
                     )
                 )
 
-    error_summary = "; ".join(errors[:3]) if errors else None
+    # Only report fatal error if no jobs were fetched at all (e.g. JobSpy missing or total outage)
+    # If jobs were fetched successfully, transient query glitches do not fail the entire source
+    error_summary = "; ".join(errors[:3]) if (errors and not results) else None
     return results, error_summary
 
 
@@ -475,5 +477,7 @@ async def fetch_adzuna(
                     )
                 )
 
-    error_summary = "; ".join(errors[:3]) if errors else None
+    # Only report fatal error if no jobs were fetched at all (e.g. JobSpy missing or total outage)
+    # If jobs were fetched successfully, transient query glitches do not fail the entire source
+    error_summary = "; ".join(errors[:3]) if (errors and not results) else None
     return results, error_summary

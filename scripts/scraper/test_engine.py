@@ -426,12 +426,12 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
     def test_jobspy_missing_import_or_error_reports_failed_status(self) -> None:
         """Requirement 5: JobSpy missing import returns explicit error message so expiry stays off."""
         async def _test() -> None:
-            # When python-jobspy is not installed or import fails
-            jobs, err = await fetch_jobspy_india()
-            # If not installed in test runner environment:
-            if err:
-                self.assertIn("python-jobspy", err)
-                self.assertEqual(len(jobs), 0)
+            with patch("scripts.scraper.fetch_aggregators_and_india.run_jobspy_scrape_in_subprocess", new_callable=AsyncMock) as mock_proc:
+                mock_proc.return_value = ([], "python-jobspy not installed. Run 'pip install python-jobspy'")
+                jobs, err = await fetch_jobspy_india(roles=("Software Engineer",), locations=("Bangalore, India",))
+                if err:
+                    self.assertIn("python-jobspy", err)
+                    self.assertEqual(len(jobs), 0)
 
         asyncio.run(_test())
 
