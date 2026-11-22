@@ -1,0 +1,40 @@
+{
+  "desktop": {
+    "tickerInfo": {
+      "cards": 20,
+      "withLogo": 8,
+      "logoHosts": [
+        "szakevhxhwpeskidvtfs.supabase.co"
+      ],
+      "broken": 0
+    },
+    "cardInfo": {
+      "logoImgs": 0,
+      "hosts": [],
+      "broken": 0
+    },
+    "detailInfo": null,
+    "imageRequests": {
+      "szakevhxhwpeskidvtfs.supabase.co 200": 1
+    }
+  },
+  "mobile": {
+    "tickerInfo": {
+      "cards": 20,
+      "withLogo": 8,
+      "logoHosts": [
+        "szakevhxhwpeskidvtfs.supabase.co"
+      ],
+      "broken": 0
+    },
+    "cardInfo": {
+      "logoImgs": 0,
+      "hosts": [],
+      "broken": 0
+    },
+    "detailInfo": null,
+    "imageRequests": {
+      "szakevhxhwpeskidvtfs.supabase.co 200": 1
+    }
+  }
+}
