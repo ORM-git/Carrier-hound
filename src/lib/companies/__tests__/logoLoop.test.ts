@@ -6,6 +6,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eligibleLogoUrl } from "../logoEligibility";
 import { enqueueCompanyLogos } from "../logoQueue";
 import { repairCompanyLogo, type ClaimedCompany, type LogoRepairDeps } from "../logoRepair";
+import { makePng } from "./pngFixture";
 
 // End-to-end loop on real SQL (PGlite + the 20261122 migration): a NEW company arrives through the TS ingest
 // and through the Python ingest's RPC call, is enqueued, leased, hosted under a content-hashed key and
@@ -13,7 +14,7 @@ import { repairCompanyLogo, type ClaimedCompany, type LogoRepairDeps } from "../
 
 const SB = "https://proj.supabase.co";
 const MIGRATION = fs.readFileSync(path.resolve(__dirname, "../../../../supabase/migrations/20261122_company_logo_contract.sql"), "utf8");
-const BYTES = Buffer.from("real-company-mark");
+const BYTES = makePng(64, 64, "real-company-mark");
 const SHA = crypto.createHash("sha256").update(BYTES).digest("hex");
 const TS_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const PY_ID = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -26,6 +27,7 @@ beforeAll(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = SB;
 });
 beforeEach(async () => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = SB; // importing scripts/ingest loads .env.local, which repoints it
   store.clear();
   db = new PGlite();
   await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
@@ -38,7 +40,8 @@ beforeEach(async () => {
 const sbClient = () => ({
   rpc: async (fn: string, args: Record<string, unknown>) => {
     try {
-      if (fn === "enqueue_company_logos") return { data: (await one<{ n: number }>("SELECT enqueue_company_logos($1::uuid[]) AS n", [args.p_ids]))[0].n, error: null };
+      if (fn === "enqueue_company_logos") return { data: (await one<{ n: number }>("SELECT enqueue_company_logos($1::uuid[], $2) AS n", [args.p_ids, args.p_origin]))[0].n, error: null };
+      if (fn === "company_logo_coverage") return { data: (await one<{ c: unknown }>("SELECT company_logo_coverage($1) AS c", [args.p_origin]))[0].c, error: null };
       return { data: null, error: { code: "PGRST202", message: `Could not find the function ${fn}` } };
     } catch (e) {
       return { data: null, error: { message: String(e) } };
@@ -54,7 +57,6 @@ function deps(over: Partial<LogoRepairDeps> = {}): LogoRepairDeps {
     knownDefaultHashes: new Set(),
     companiesSharingHash: async (sha, id) => (await one<{ n: number }>("SELECT count(*)::int AS n FROM companies WHERE logo_hash = $1 AND id <> $2", [sha, id]))[0].n,
     upload: async (key, bytes) => (store.has(key) ? "exists" : (store.set(key, bytes), "created")),
-    remove: async (key) => void store.delete(key),
     commitHosted: async (a) => {
       const r = await db.query(
         `UPDATE companies SET logo_url = $1, logo_status = 'hosted', logo_hash = $2, logo_source = $3, logo_attempts = 0, logo_next_attempt_at = NULL,
@@ -79,7 +81,7 @@ function deps(over: Partial<LogoRepairDeps> = {}): LogoRepairDeps {
   };
 }
 
-const claim = async (limit = 10) => one<ClaimedCompany>("SELECT * FROM claim_company_logo_batch($1, 600)", [limit]);
+const claim = async (limit = 10, lease = 600) => one<ClaimedCompany>("SELECT * FROM claim_company_logo_batch($1, $2, $3)", [limit, SB, lease]);
 
 describe("new company arrival through BOTH ingest paths -> hosted logo", () => {
   it("TS ingest: getOrCreateCompany inserts WITHOUT a logo_url and queues the new company", async () => {
@@ -110,8 +112,8 @@ describe("new company arrival through BOTH ingest paths -> hosted logo", () => {
   it("both paths enqueue through the same SQL; the worker hosts the logo under a content-hashed key", async () => {
     await db.query("INSERT INTO companies (id, name, slug, ats_type) VALUES ($1,'Acme','acme','greenhouse'), ($2,'Pybrand','pybrand','lever')", [TS_ID, PY_ID]);
     // TS ingest path (logoQueue helper) and Python path (POST /rpc/enqueue_company_logos {p_ids}) - same function
-    expect(await enqueueCompanyLogos(sbClient() as any, [TS_ID])).toEqual({ status: "ok", enqueued: 1 });
-    expect((await sbClient().rpc("enqueue_company_logos", { p_ids: [PY_ID] })).data).toBe(1);
+    expect(await enqueueCompanyLogos(sbClient() as any, [TS_ID])).toMatchObject({ status: "ok", enqueued: 1, coverage: expect.objectContaining({ pending: expect.any(Number), orphan_links: 0 }) });
+    expect((await sbClient().rpc("enqueue_company_logos", { p_ids: [PY_ID], p_origin: SB })).data).toBe(1);
 
     const claimed = await claim();
     expect(claimed.map((c) => c.id).sort()).toEqual([TS_ID, PY_ID].sort());
@@ -119,7 +121,7 @@ describe("new company arrival through BOTH ingest paths -> hosted logo", () => {
     const d = deps();
     const outA = await repairCompanyLogo(claimed.find((c) => c.id === TS_ID)!, d);
     const outB = await repairCompanyLogo(claimed.find((c) => c.id === PY_ID)!, deps({
-      resolve: async () => ({ imageUrl: "https://pybrand.io/icon.png", source: "homepage-icon", domain: "pybrand.io", buffer: Buffer.from("pybrand-mark"), contentType: "image/png", ext: "png", width: 128, height: 128 }),
+      resolve: async () => ({ imageUrl: "https://pybrand.io/icon.png", source: "homepage-icon", domain: "pybrand.io", buffer: makePng(48, 48, "pybrand-mark"), contentType: "image/png", ext: "png", width: 128, height: 128 }),
     }));
     expect([outA.status, outB.status]).toEqual(["repaired", "repaired"]);
     const rows = await one<{ id: string; logo_url: string; logo_status: string; domain: string }>("SELECT id, logo_url, logo_status, domain FROM companies ORDER BY id");
@@ -131,7 +133,7 @@ describe("new company arrival through BOTH ingest paths -> hosted logo", () => {
     expect(store.size).toBe(2);
     // nothing left to claim; re-enqueueing a hosted company is a no-op
     expect(await claim()).toHaveLength(0);
-    expect(await enqueueCompanyLogos(sbClient() as any, [TS_ID, PY_ID])).toEqual({ status: "ok", enqueued: 0 });
+    expect(await enqueueCompanyLogos(sbClient() as any, [TS_ID, PY_ID])).toMatchObject({ status: "ok", enqueued: 0, coverage: expect.objectContaining({ eligible_hosted: 0 }) });
   });
 });
 
@@ -156,11 +158,27 @@ describe("retries, duplicates and concurrency on real SQL", () => {
     expect(row).toMatchObject({ logo_status: "hosted", logo_attempts: 0 });
   });
 
-  it("a failed DB update removes only the new object and the company retries later", async () => {
+  it("committed-but-response-lost: the live object is kept and the row stays hosted", async () => {
     const [c] = await claim();
-    const out = await repairCompanyLogo(c, deps({ commitHosted: async () => { throw new Error("connection reset"); } }));
+    const real = deps();
+    const out = await repairCompanyLogo(c, deps({ commitHosted: async (a) => { await real.commitHosted(a); throw new Error("socket hang up"); } }));
     expect(out.reason).toMatch(/^db-update-failed/);
-    expect(store.size).toBe(0);
+    const [row] = await one<any>("SELECT logo_url, logo_status FROM companies");
+    expect(row.logo_status).toBe("hosted");
+    expect(store.has(row.logo_url.split("/company-logos/")[1])).toBe(true); // the URL the row serves still exists
+  });
+
+  it("reclaimed lease: a stale worker cannot commit and does not delete the new holder's same-key object", async () => {
+    const [stale] = await claim(10, 30);
+    await db.query("UPDATE companies SET logo_claimed_until = now() - interval '1 second'"); // lease expired mid-work
+    const [fresh] = await claim();
+    expect(fresh.claim_token).not.toBe(stale.claim_token);
+    expect((await repairCompanyLogo(fresh, deps())).status).toBe("repaired");
+    const late = await repairCompanyLogo(stale, deps()); // same bytes -> same content-hashed key
+    expect(late).toMatchObject({ status: "failed", reason: expect.stringMatching(/^db-update-skipped/) });
+    const [row] = await one<any>("SELECT logo_url, logo_status FROM companies");
+    expect(row.logo_status).toBe("hosted");
+    expect(store.has(row.logo_url.split("/company-logos/")[1])).toBe(true);
   });
 
   it("two workers claiming at once: one lease wins, one upload, one commit", async () => {

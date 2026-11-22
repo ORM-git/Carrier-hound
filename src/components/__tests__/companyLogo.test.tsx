@@ -41,6 +41,7 @@ describe("CompanyLogo", () => {
       "https://s2-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/1/acme.png",
       `${SB}/storage/v1/object/public/avatars/00000000-0000-4000-8000-000000000001.png`,
       "https://evil.supabase.co/storage/v1/object/public/company-logos/00000000-0000-4000-8000-000000000001.png",
+      `${SB}/storage/v1/object/public/company-logos/%E0%A4%A.png`, // malformed escape: initials, no throw
     ]) {
       const { container, unmount } = render(<CompanyLogo company="Acme" logoUrl={bad} />);
       expect(container.querySelector("img")).toBeNull();

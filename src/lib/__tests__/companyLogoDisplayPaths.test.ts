@@ -106,6 +106,20 @@ describe("API routes: nested-only logos reach Pro cards and detail", () => {
     expect(detail.logo_url).toBeNull();
   });
 
+  it("a malformed hosted URL (bad %-escape) degrades to initials in list, detail and ticker instead of throwing", async () => {
+    const BAD = `${SB}/storage/v1/object/public/company-logos/%E0%A4%A.png`;
+    state.tables.jobs[0].companies.logo_url = BAD;
+    state.tables.jobs[0].logo_url = BAD;
+    const listRes = await search(req("http://localhost/api/jobs/search", "tok-pro"));
+    expect(listRes.status).toBe(200);
+    expect((await listRes.json()).jobs[0].logoUrl).toBeNull();
+    const detailRes = await proGET(req(`http://localhost/api/jobs/pro?id=${ID}`, "tok-pro"));
+    expect(detailRes.status).toBe(200);
+    expect((await detailRes.json()).job.logo_url).toBeNull();
+    const { eligibleLogoUrl } = await import("@/lib/companies/logoEligibility"); // the ticker sanitizer and tile use this
+    expect(eligibleLogoUrl(BAD, SB)).toBeNull();
+  });
+
   it("Free and guest listings stay masked: no company, no logo", async () => {
     for (const token of ["tok-free", undefined]) {
       const listed = (await (await search(req("http://localhost/api/jobs/search", token))).json()).jobs[0];

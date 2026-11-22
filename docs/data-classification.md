@@ -34,6 +34,7 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `early_access_emails` / `early_access_approved` | email addresses of pre-signup leads | PII before an account exists; covered by account-deletion email matching. |
 | `email_suppressions` | email + suppression reason | Kept to honor opt-outs; do not purge blindly. |
 | `error_events` | `user_id` (PII, nullable); internal fields: `id`, `occurred_at`, `route` (URL pathname only, no query string), `error_message` (truncated to 500 chars), `stack_hash`, `count` | Server request errors for `/admin/errors`, written best-effort by `reportRequestErrorToSentry`; service-role only; read by admins via `/api/admin/errors`, which never selects `user_id`; deleted user ids are nulled by the `auth.users` FK (`on delete set null`) (20261121a, NOT APPLIED). |
+| `company_logo_runs` | none (no PII); internal fields: `id`, `trigger`, `started_at`, `finished_at`, `ok`, `cap`, coverage/repair counts, `details` (affected company ids/names, failure reasons, alerts) | Per-run summary of the company-logo repair loop, written by `scripts/repair-company-logos.ts` with the service role; RLS on with no policies (service-role only); read only by the next run for stall/backlog alerts (20261122, NOT APPLIED). |
 | `gmail_send_log` | recipient email per send | Doubles as suppression evidence (180-day retention). |
 | `page_views` | user id (nullable), salted IP hash, user agent, paths | Behavioral; 90-day retention. |
 | `blocked_users` | email, user id, block reason | Moderation record. |

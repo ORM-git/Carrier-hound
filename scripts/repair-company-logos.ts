@@ -19,12 +19,11 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { COMPANY_LOGO_BUCKET, classifyLogoUrl, eligibleLogoUrl, logoObjectKey } from "../src/lib/companies/logoEligibility";
+import { COMPANY_LOGO_BUCKET, classifyLogoUrl, eligibleLogoUrl, logoObjectKey, logoProjectOrigin } from "../src/lib/companies/logoEligibility";
 import { fetchWithTimeout, resolveCompanyLogo, type JobUrlInfo, type ResolvedLogoResult } from "../src/lib/companies/logoResolver";
-import { KNOWN_VENDOR_DEFAULT_SHA256, repairCompanyLogo, sha256Hex, type ClaimedCompany, type LogoRepairDeps, type RepairOutcome } from "../src/lib/companies/logoRepair";
+import { decodesAsRaster, KNOWN_VENDOR_DEFAULT_SHA256, repairCompanyLogo, sha256Hex, verifyHostedLogo, type ClaimedCompany, type LogoRepairDeps, type RepairOutcome } from "../src/lib/companies/logoRepair";
 
 export type Trigger = "ingest-ts" | "ingest-python" | "sweep" | "backfill";
 export interface RepairArgs { write: boolean; limit: number; concurrency: number; verify: number; leaseSeconds: number; trigger: Trigger; manifest: string | null; outDir: string }
@@ -68,8 +67,8 @@ export function parseArgs(argv: string[]): RepairArgs {
 
 type Coverage = { companies_with_active_jobs: number; eligible_hosted: number; missing_or_ineligible: number; pending?: number; failed?: number; missing?: number; queued_retries?: number; orphan_links: number };
 
-async function hasMigration(sb: SupabaseClient): Promise<boolean> {
-  const { error } = await sb.rpc("company_logo_coverage");
+async function hasMigration(sb: SupabaseClient, origin: string): Promise<boolean> {
+  const { error } = await sb.rpc("company_logo_coverage", { p_origin: origin });
   if (!error) return true;
   if (/PGRST202|42883|Could not find the function|does not exist/i.test(`${error.code} ${error.message}`)) return false;
   throw new Error(`coverage probe failed: ${error.message}`);
@@ -105,7 +104,7 @@ async function knownDefaultHashes(): Promise<Set<string>> {
   for (const u of ["https://www.google.com/s2/favicons?domain=careermonke-default-probe.invalid&sz=128", "https://icons.duckduckgo.com/ip3/careermonke-default-probe.invalid.ico"]) {
     try {
       const r = await fetchWithTimeout(u);
-      if (r.ok) out.add(crypto.createHash("sha256").update(Buffer.from(await r.arrayBuffer())).digest("hex"));
+      if (r.ok) out.add(sha256Hex(Buffer.from(await r.arrayBuffer())));
     } catch { /* probe is best-effort; the shared-hash rule still applies */ }
   }
   return out;
@@ -151,9 +150,6 @@ function buildDeps(sb: SupabaseClient, supabaseUrl: string, defaults: Set<string
       if (!error) return "created";
       if (/exists|duplicate|409/i.test(`${(error as any).statusCode ?? ""} ${error.message}`)) return "exists";
       throw new Error(error.message);
-    },
-    async remove(key) {
-      if (write) await bucket.remove([key]);
     },
     async commitHosted(a) {
       if (!write) return true;
@@ -210,14 +206,17 @@ async function main() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   if (!supabaseUrl || !key) { console.error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required"); process.exit(2); }
   const sb = createClient(supabaseUrl, key, { auth: { persistSession: false } });
+  const origin = logoProjectOrigin(supabaseUrl)!;
   const startedAt = new Date();
-  const migrated = await hasMigration(sb);
+  const migrated = await hasMigration(sb, origin);
   if (args.write && !migrated) { console.error("::error::migration 20261122_company_logo_contract is not applied; --write refused"); process.exit(2); }
 
   const alerts: string[] = [];
   let runId: number | null = null;
+  let prevRuns: any[] = [];
   if (args.write) {
-    const { data: prev } = await sb.from("company_logo_runs").select("id,started_at,finished_at,missing_or_ineligible").order("started_at", { ascending: false }).limit(4);
+    const { data: prev } = await sb.from("company_logo_runs").select("id,started_at,finished_at,missing_or_ineligible,repaired,details").order("started_at", { ascending: false }).limit(4);
+    prevRuns = (prev || []).filter((r: any) => r.finished_at);
     const unfinished = (prev || []).find((r: any) => !r.finished_at && Date.now() - Date.parse(r.started_at) > 3600_000);
     if (unfinished) alerts.push(`stalled: run ${unfinished.id} started ${unfinished.started_at} never finished`);
     const backlog = (prev || []).filter((r: any) => r.finished_at).map((r: any) => r.missing_or_ineligible).slice(0, 3);
@@ -227,16 +226,17 @@ async function main() {
     runId = run.id;
   }
 
-  const before = migrated ? ((await sb.rpc("company_logo_coverage")).data as Coverage) : (await coverageReadOnly(sb, supabaseUrl)).coverage;
+  const before = migrated ? ((await sb.rpc("company_logo_coverage", { p_origin: origin })).data as Coverage) : (await coverageReadOnly(sb, supabaseUrl)).coverage;
   const defaults = await knownDefaultHashes();
   for (const h of KNOWN_VENDOR_DEFAULT_SHA256) defaults.add(h);
   const deps = buildDeps(sb, supabaseUrl, defaults, args.write, args.write ? null : path.join(args.outDir, "preview"));
 
   // Manifest (reviewed backfill): exact ids + the logo_url each was reviewed with.
-  let manifest: { id: string; expected_logo_url: string | null }[] | null = null;
+  // Each entry also carries the reviewed outcome: the exact image hash to host, or null (no logo / initials).
+  let manifest: { id: string; expected_logo_url: string | null; expected_sha256: string | null }[] | null = null;
   if (args.manifest) {
     const m = JSON.parse(fs.readFileSync(args.manifest, "utf8"));
-    manifest = (m.companies || []).map((c: any) => ({ id: c.id, expected_logo_url: c.current_logo_url ?? null }));
+    manifest = (m.companies || []).map((c: any) => ({ id: c.id, expected_logo_url: c.current_logo_url ?? null, expected_sha256: c.plan?.action === "host" ? c.plan.sha256 ?? null : null }));
     if (!manifest!.length) throw new Error("manifest has no companies");
     if (manifest!.length > args.limit) throw new Error(`manifest has ${manifest!.length} companies, above --limit ${args.limit}`);
   }
@@ -244,7 +244,7 @@ async function main() {
   // Candidates: leased (write) or read-only preview (dry run).
   let claimed: ClaimedCompany[] = [];
   if (args.write) {
-    const { data, error } = await sb.rpc("claim_company_logo_batch", { p_limit: args.limit, p_lease_seconds: args.leaseSeconds, p_ids: manifest ? manifest.map((m) => m.id) : null });
+    const { data, error } = await sb.rpc("claim_company_logo_batch", { p_limit: args.limit, p_origin: origin, p_lease_seconds: args.leaseSeconds, p_ids: manifest ? manifest.map((m) => m.id) : null });
     if (error) throw new Error(`claim failed: ${error.message}`);
     claimed = (data || []).map((r: any) => ({ ...r, logo_attempts: r.logo_attempts ?? 0 }));
     if (manifest) {
@@ -275,7 +275,7 @@ async function main() {
     await pool(todo, args.concurrency, async (c) => {
       try {
         const jobs = await deps.jobsFor(c.id);
-        const r = await resolveCompanyLogo({ ...c, logo_url: null }, jobs, { isRejected: (b) => defaults.has(sha256Hex(b)) });
+        const r = await resolveCompanyLogo({ ...c, logo_url: null }, jobs, { isRejected: (b) => defaults.has(sha256Hex(b)) || !decodesAsRaster(b) });
         pre.set(c.id, { r });
       } catch (e) {
         pre.set(c.id, { e });
@@ -293,6 +293,20 @@ async function main() {
     for (const [h] of dupes) { defaults.add(h); runDefaults.push(h); }
     const again = new Set(dupes.flatMap(([, v]) => v));
     todo = claimed.filter((c) => again.has(c.id));
+  }
+  // A reviewed write hosts exactly the reviewed image (or nothing): any different outcome is drift, skipped.
+  if (manifest) {
+    const want = new Map(manifest.map((m) => [m.id, m.expected_sha256]));
+    const drifted = claimed.filter((c) => {
+      const p = pre.get(c.id);
+      const got = p && "r" in p && p.r ? sha256Hex(p.r.buffer) : null;
+      return got !== (want.get(c.id) ?? null);
+    });
+    for (const c of drifted) {
+      alerts.push(`manifest drift: ${c.id} ${c.name} resolves to a different image than reviewed; skipped, needs re-review`);
+      if (args.write) await sb.from("companies").update({ logo_claimed_until: null, logo_claim_token: null }).eq("id", c.id).eq("logo_claim_token", c.claim_token);
+    }
+    claimed = claimed.filter((c) => !drifted.includes(c));
   }
   const batchDeps: LogoRepairDeps = {
     ...deps,
@@ -317,16 +331,15 @@ async function main() {
   // Verified-broken check: re-test the least recently verified hosted logos of live companies.
   const broken: { id: string; name: string; logo_url: string; status: string }[] = [];
   if (args.verify > 0) {
-    let q = sb.from("companies").select("id,name,logo_url").like("logo_url", "%/storage/v1/object/public/company-logos/%").limit(args.verify);
+    let q = sb.from("companies").select("id,name,logo_url").like("logo_url", `${origin}/storage/v1/object/public/${COMPANY_LOGO_BUCKET}/%`).limit(args.verify);
     if (migrated) q = q.order("logo_verified_at", { ascending: true, nullsFirst: true });
     const { data } = await q;
-    await pool((data || []) as any[], args.concurrency, async (c) => {
-      let status = "ok";
-      try {
-        const r = await fetch(c.logo_url, { method: "HEAD" });
-        const ct = r.headers.get("content-type") || "";
-        if (!r.ok || !/^image\/(png|jpeg|webp|gif)/.test(ct)) status = `HTTP ${r.status} ${ct}`;
-      } catch (e) { status = `fetch-error ${(e as Error).message}`; }
+    // Only this project's eligible URLs are fetched, through the resolver's safe fetcher (DNS/private-IP and
+    // redirect checks, timeout, size cap); a logo is broken only if it fails to download AND decode twice.
+    const candidates = ((data || []) as any[]).filter((c) => eligibleLogoUrl(c.logo_url, supabaseUrl));
+    await pool(candidates, args.concurrency, async (c) => {
+      let status = await verifyHostedLogo(c.logo_url, supabaseUrl);
+      if (status !== "ok") status = await verifyHostedLogo(c.logo_url, supabaseUrl); // one retry: transient blips are not "broken"
       if (status !== "ok") broken.push({ ...c, status });
       if (args.write && migrated) {
         await sb.from("companies").update(status === "ok" ? { logo_verified_at: new Date().toISOString() } : { logo_status: "pending", logo_failure_reason: `hosted-broken: ${status}`, logo_next_attempt_at: new Date().toISOString() }).eq("id", c.id).eq("logo_url", c.logo_url);
@@ -334,7 +347,7 @@ async function main() {
     });
   }
 
-  const after = migrated ? ((await sb.rpc("company_logo_coverage")).data as Coverage) : before;
+  const after = migrated ? ((await sb.rpc("company_logo_coverage", { p_origin: origin })).data as Coverage) : before;
   const count = (s: string) => outcomes.filter((o) => o.status === s).length;
   const summary = {
     trigger: args.trigger, mode: args.write ? "write" : "dry-run", migrationApplied: migrated, cap: args.limit, concurrency: args.concurrency,
@@ -391,15 +404,25 @@ async function main() {
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + "\n");
   console.log(JSON.stringify(summary.counts));
 
-  const runError = outcomes.some((o) => (o.reason || "").startsWith("worker-error"));
+  // Infrastructure failures alert (exit 1); a company whose logo is simply unavailable does not.
+  const infra = outcomes.filter((o) => /^(worker-error|upload-failed|db-update-failed|resolver-error)/.test(o.reason || ""));
+  let runError = infra.length > 0;
+  if (runError) alerts.push(`${infra.length} infrastructure failure(s): ${infra.slice(0, 5).map((o) => `${o.id} ${o.reason}`).join("; ")}`);
+  // No progress: due work exists but nothing was repaired in this run and the previous two.
+  const pendingNow = Number((after as Coverage).pending ?? 0);
+  const idle = (r: any) => Number(r?.details?.pending ?? 0) > 0 && Number(r?.repaired ?? 0) === 0;
+  if (pendingNow > 0 && count("repaired") === 0 && prevRuns.length >= 2 && prevRuns.slice(0, 2).every(idle)) {
+    alerts.push(`no progress: ${pendingNow} companies pending and nothing repaired in the last 3 runs`);
+  }
   if (args.write && runId != null) {
-    await sb.from("company_logo_runs").update({
+    const { error: logError } = await sb.from("company_logo_runs").update({
       finished_at: summary.finishedAt, ok: !runError, companies_with_active_jobs: summary.counts.companies_with_active_jobs,
       eligible_hosted: summary.counts.eligible_hosted, missing_or_ineligible: summary.counts.missing_or_ineligible,
       failed: summary.counts.failed_resolutions_or_uploads, repaired: summary.counts.repaired_this_run,
       queued_retries: summary.counts.queued_retries, orphan_links: summary.counts.orphan_company_links,
-      details: { affected: summary.affected.slice(0, 200), brokenHosted: broken, alerts },
+      details: { affected: summary.affected.slice(0, 200), brokenHosted: broken, alerts, pending: pendingNow },
     }).eq("id", runId);
+    if (logError) { runError = true; console.log(`::error title=Company logo repair::run log update failed: ${logError.message}`); }
   }
   for (const a of alerts) console.log(`::error title=Company logo repair alert::${a}`);
   process.exit(runError ? 1 : alerts.length ? 3 : 0);

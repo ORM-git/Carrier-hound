@@ -99,10 +99,9 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertIsNone(resolve_logo_url(None, "stripe.com"))
         self.assertIsNone(resolve_logo_url("https://s2-recruiting.cdn.greenhouse.io/x/logos/1/stripe.png", None))
         self.assertIsNone(resolve_logo_url(None, None))
+        # Even a hosted-looking URL is not passed through: eligibility is decided once, in SQL/TS, per project.
         hosted = "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0b3f6c2e-1a2b-4c3d-8e9f-0123456789ab.png"
-        self.assertEqual(resolve_logo_url(hosted, "stripe.com"), hosted)
-        self.assertIsNone(resolve_logo_url(hosted + "?v=1", None))
-        self.assertIsNone(resolve_logo_url(hosted.replace(".png", ".svg"), None))
+        self.assertIsNone(resolve_logo_url(hosted, "stripe.com"))
 
     def test_dedupe_hash_normalization(self) -> None:
         h1 = compute_dedupe_hash("Stripe", "Senior Software Engineer", "US", "San Francisco, CA")
@@ -1136,9 +1135,14 @@ class CompanyLogoContractTests(unittest.TestCase):
                 rows = body if isinstance(body, list) else [body]
                 for row in rows:
                     self.assertNotIn("logo_url", row, f"{method} {path} must never write logo_url")
+        # Every company seen is handed over with this project's origin; SQL keeps only ineligible ones.
         enqueue = [b for m, p, b in sent if p.endswith("/rpc/enqueue_company_logos")]
-        self.assertEqual(enqueue, [{"p_ids": ["id-favicon", "id-new"]}])
-        self.assertEqual(writer.logo_enqueue, {"requested": 2, "enqueued": 2, "status": "ok"})
+        self.assertEqual(enqueue, [{"p_ids": ["id-favicon", "id-hosted", "id-new"], "p_origin": "https://unit-test-project.supabase.co"}])
+        coverage = [b for m, p, b in sent if p.endswith("/rpc/company_logo_coverage")]
+        self.assertEqual(coverage, [{"p_origin": "https://unit-test-project.supabase.co"}])
+        self.assertEqual(writer.logo_enqueue["status"], "ok")
+        self.assertEqual(writer.logo_enqueue["enqueued"], 2)
+        self.assertEqual(writer.logo_enqueue["company_ids"], ["id-favicon", "id-hosted", "id-new"])
 
     def test_missing_migration_or_enqueue_error_never_fails_ingestion(self) -> None:
         for status, text, expected in ((404, '{"code":"PGRST202"}', "not-migrated"), (500, "boom", "error: HTTP 500")):

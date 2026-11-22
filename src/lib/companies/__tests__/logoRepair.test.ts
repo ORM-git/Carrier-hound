@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { classifyLogoUrl, eligibleLogoUrl, firstEligibleLogo, logoObjectKey } from "../logoEligibility";
-import { MAX_LOGO_ATTEMPTS, nextAttempt, repairCompanyLogo, type ClaimedCompany, type LogoRepairDeps } from "../logoRepair";
+import { decodesAsRaster, MAX_LOGO_ATTEMPTS, nextAttempt, repairCompanyLogo, type ClaimedCompany, type LogoRepairDeps } from "../logoRepair";
+import { makePng } from "./pngFixture";
 
 const SB = "https://proj.supabase.co";
 const ID = "11111111-1111-4111-8111-111111111111";
-const PNG = Buffer.from("fake-png-bytes-for-acme");
+const PNG = makePng(64, 64, "acme");
 const SHA = crypto.createHash("sha256").update(PNG).digest("hex");
 const HOSTED = `${SB}/storage/v1/object/public/company-logos/${ID}/${SHA}.png`;
 
@@ -25,7 +26,6 @@ function deps(over: Partial<LogoRepairDeps> = {}) {
     knownDefaultHashes: new Set<string>(),
     companiesSharingHash: vi.fn(async () => 0),
     upload: vi.fn(async (key: string, bytes: Buffer) => { if (store.has(key)) return "exists" as const; store.set(key, bytes); return "created" as const; }),
-    remove: vi.fn(async (key: string) => { store.delete(key); }),
     commitHosted: vi.fn(async (a) => { const r = rows.get(a.id)!; if (r.token !== a.token || r.logo_url !== a.expectedLogoUrl) return false; r.logo_url = a.logoUrl; return true; }),
     recordFailure: vi.fn(async (a) => { const r = rows.get(a.id)!; if (r.token !== a.token) return false; if (a.clearLogoUrl) r.logo_url = null; return true; }),
     markAlreadyEligible: vi.fn(async () => undefined),
@@ -54,6 +54,9 @@ describe("logo eligibility contract", () => {
     expect(classifyLogoUrl(null, SB)).toBe("null");
     expect(classifyLogoUrl("https://unavatar.io/a.com", SB)).toBe("external");
     expect(classifyLogoUrl(HOSTED, SB)).toBe("hosted");
+    // malformed %-escapes fall back to initials instead of throwing into a list/detail/ticker render
+    expect(eligibleLogoUrl(`${SB}/storage/v1/object/public/company-logos/bad%E0%A4%A.png`, SB)).toBeNull();
+    expect(() => firstEligibleLogo([`${SB}/storage/v1/object/public/company-logos/%zz.png`, HOSTED], SB)).not.toThrow();
     expect(firstEligibleLogo([null, "https://unavatar.io/a.com", HOSTED], SB)).toBe(HOSTED);
   });
 
@@ -128,18 +131,50 @@ describe("repairCompanyLogo", () => {
     expect(d.recordFailure).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", attempts: 1 }));
   });
 
-  it("a DB update failure removes only the object this attempt created", async () => {
-    const d = deps({ commitHosted: vi.fn(async () => { throw new Error("connection reset"); }) });
+  it("a commit whose response is lost keeps the (now live) object and reports a retryable failure", async () => {
+    const d = deps();
+    // the DB applies the update, then the response is lost
+    d.commitHosted = vi.fn(async (a) => { d.rows.get(a.id)!.logo_url = a.logoUrl; throw new Error("socket hang up"); });
     const out = await repairCompanyLogo(company(), d);
     expect(out).toMatchObject({ status: "failed", reason: expect.stringMatching(/^db-update-failed/) });
-    expect(d.remove).toHaveBeenCalledWith(`${ID}/${SHA}.png`);
-    expect(d.store.size).toBe(0);
+    expect(d.rows.get(ID)!.logo_url).toBe(HOSTED);
+    expect(d.store.has(`${ID}/${SHA}.png`)).toBe(true); // the referenced object was NOT deleted
+  });
 
-    const d2 = deps({ commitHosted: vi.fn(async () => false) });
-    d2.store.set(`${ID}/${SHA}.png`, PNG); // identical object already exists (maybe referenced)
-    await repairCompanyLogo(company(), d2);
-    expect(d2.remove).not.toHaveBeenCalled();
-    expect(d2.store.size).toBe(1);
+  it("a definite non-commit (row changed / lease lost) never deletes the object either", async () => {
+    const d = deps({ commitHosted: vi.fn(async () => false) });
+    const out = await repairCompanyLogo(company(), d);
+    expect(out.reason).toMatch(/^db-update-skipped/);
+    expect(d.store.size).toBe(1);
+  });
+
+  it("a pending (verified-broken) hosted logo is repaired for real, not re-blessed by URL shape", async () => {
+    const d = deps();
+    const broken = `${SB}/storage/v1/object/public/company-logos/${ID}.png`;
+    d.rows.get(ID)!.logo_url = broken;
+    const out = await repairCompanyLogo(company({ logo_url: broken, logo_status: "pending" }), d);
+    expect(d.resolve).toHaveBeenCalledTimes(1);
+    expect(d.markAlreadyEligible).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ status: "repaired", logoUrl: HOSTED });
+    expect(d.rows.get(ID)!.logo_url).toBe(HOSTED);
+
+    // and if nothing resolves, the broken URL is cleared so the UI shows initials
+    const d2 = deps({ resolve: vi.fn(async () => null) });
+    d2.rows.get(ID)!.logo_url = broken;
+    const out2 = await repairCompanyLogo(company({ logo_url: broken, logo_status: "pending" }), d2);
+    expect(out2.status).toBe("missing");
+    expect(d2.rows.get(ID)!.logo_url).toBeNull();
+  });
+
+  it("only bytes that decode are hosted: a bare PNG header is rejected as corrupt", async () => {
+    const headerOnly = PNG.subarray(0, 33); // signature + IHDR (claims 64x64), no IDAT payload
+    expect(decodesAsRaster(PNG)).toBe(true);
+    expect(decodesAsRaster(headerOnly)).toBe(false);
+    expect(decodesAsRaster(Buffer.from("GIF89a....."))).toBe(false);
+    const d = deps({ resolve: vi.fn(async () => ({ imageUrl: "https://acme.com/i.png", source: "homepage-icon" as const, domain: "acme.com", buffer: headerOnly, contentType: "image/png", ext: "png", width: 64, height: 64 })) });
+    const out = await repairCompanyLogo(company(), d);
+    expect(out).toMatchObject({ status: "missing", reason: expect.stringMatching(/^corrupt-image/) });
+    expect(d.upload).not.toHaveBeenCalled();
   });
 
   it("two workers racing on one company: only the claim holder commits", async () => {

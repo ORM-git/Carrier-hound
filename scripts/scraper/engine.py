@@ -25,7 +25,6 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
-from .enrichment import resolve_logo_url
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 DEFAULT_SEEDS_PATH = Path(__file__).resolve().parent / "company_seeds.json"
@@ -289,11 +288,6 @@ def partition_set_diff(
     return to_insert, to_update, unchanged_ids
 
 
-def _is_hosted_logo(url: Any) -> bool:
-    """Same eligibility rule as enrichment.resolve_logo_url / logoEligibility.ts."""
-    return isinstance(url, str) and resolve_logo_url(url, None) is not None
-
-
 class SupabaseSetDiffWriter:
     """PostgREST writer performing safe set-diff upserts in batches of 50."""
 
@@ -433,11 +427,9 @@ class SupabaseSetDiffWriter:
                 self.write_errors.append(f"Company insert exception: {redact_sensitive_params(str(exc))}")
 
         if not self.persistence_failed:
-            ineligible = [
-                company_id_map[slug] for slug in companies_by_slug
-                if slug in company_id_map and not _is_hosted_logo((existing_map.get(slug) or {}).get("logo_url"))
-            ]
-            await self.enqueue_company_logos(client, ineligible)
+            # Every company seen is handed over; SQL keeps only those without an eligible hosted logo.
+            seen = [company_id_map[slug] for slug in companies_by_slug if slug in company_id_map]
+            await self.enqueue_company_logos(client, seen)
 
         return company_id_map
 
@@ -445,13 +437,15 @@ class SupabaseSetDiffWriter:
         """Hand new / ineligible-logo companies to the shared logo repair loop. Fail-open: never
         marks persistence failed and never raises, so branding can't block job ingestion."""
         ids = sorted({i for i in company_ids if isinstance(i, str) and i})
-        self.logo_enqueue = {"requested": len(ids), "enqueued": 0, "status": "skipped" if not ids else "pending"}
+        origin = self.base_url[: -len("/rest/v1")] if self.base_url.endswith("/rest/v1") else self.base_url
+        self.logo_enqueue = {"requested": len(ids), "enqueued": 0, "status": "skipped" if not ids else "pending",
+                             "company_ids": ids[:200], "coverage": None}
         for start in range(0, len(ids), 500):
             try:
                 resp = await client.post(
                     f"{self.base_url}/rpc/enqueue_company_logos",
                     headers=self.headers,
-                    json={"p_ids": ids[start:start + 500]},
+                    json={"p_ids": ids[start:start + 500], "p_origin": origin},
                 )
             except Exception as exc:  # noqa: BLE001 - fail-open by design
                 self.logo_enqueue["status"] = f"error: {redact_sensitive_params(str(exc))}"
@@ -468,6 +462,13 @@ class SupabaseSetDiffWriter:
                 pass
         if ids:
             self.logo_enqueue["status"] = "ok"
+            # Same coverage / backlog / orphan counts as the TS ingest and the sweep summary.
+            try:
+                cov = await client.post(f"{self.base_url}/rpc/company_logo_coverage", headers=self.headers, json={"p_origin": origin})
+                if cov.status_code < 400:
+                    self.logo_enqueue["coverage"] = cov.json()
+            except Exception:  # noqa: BLE001 - reporting only, never fatal
+                pass
 
     async def sync_jobs_set_diff(
         self,

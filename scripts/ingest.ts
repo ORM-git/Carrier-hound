@@ -23,7 +23,6 @@ import {
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { assertCanonicalSourceIds, buildSourceId, RequisitionTracker } from '../src/lib/jobs/highVolumeEnrichment';
 import { findExistingJobs, probeJobsColumn } from './utils/canonicalJobWrite';
-import { eligibleLogoUrl } from '../src/lib/companies/logoEligibility';
 import { enqueueCompanyLogos } from '../src/lib/companies/logoQueue';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
@@ -312,7 +311,7 @@ export async function getOrCreateCompany(
     if (existing?.id) {
       companyCache.set(slug, existing.id);
 
-      if (!eligibleLogoUrl(existing.logo_url)) logoRepairQueue.add(existing.id);
+      logoRepairQueue.add(existing.id); // SQL enqueue keeps only companies without an eligible logo
 
       return existing.id;
     }
@@ -1114,7 +1113,14 @@ async function main() {
   // 20261122_company_logo_contract migration is applied; never fails ingestion).
   if (supabase && !isDryRun && logoRepairQueue.size > 0) {
     const q = await enqueueCompanyLogos(supabase, Array.from(logoRepairQueue));
-    console.log(`Logo repair queue: ${q.status === 'ok' ? `${q.enqueued} of ${logoRepairQueue.size} companies marked pending` : q.status === 'not-migrated' ? 'skipped (migration 20261122_company_logo_contract not applied yet)' : `enqueue failed (non-fatal): ${q.error}`}`);
+    summary.logos = {
+      companiesSeen: logoRepairQueue.size,
+      enqueued: q.status === 'ok' ? q.enqueued : null,
+      status: q.status === 'error' ? `error: ${q.error}` : q.status,
+      affectedIds: Array.from(logoRepairQueue).slice(0, 200),
+      coverage: q.status === 'ok' ? q.coverage : null,
+    };
+    console.log(`Logo repair summary: ${JSON.stringify(summary.logos)}`);
   }
 
   // Refresh planner statistics after the bulk load (Database row #73,

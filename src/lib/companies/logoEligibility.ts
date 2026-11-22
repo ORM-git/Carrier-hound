@@ -16,6 +16,11 @@ const KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:
 
 export type LogoUrlClass = "hosted" | "null" | "external" | "invalid";
 
+/** This project's origin (from NEXT_PUBLIC_SUPABASE_URL); SQL eligibility is checked against it too. */
+export function logoProjectOrigin(supabaseUrl?: string | null): string | null {
+  return supabaseOrigin(supabaseUrl);
+}
+
 function supabaseOrigin(supabaseUrl?: string | null): string | null {
   const raw = (supabaseUrl ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
   if (!raw) return null;
@@ -40,7 +45,12 @@ export function eligibleLogoUrl(url: unknown, supabaseUrl?: string | null): stri
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))) return null;
   if (parsed.origin !== origin || parsed.username || parsed.password || parsed.search || parsed.hash) return null;
   if (!parsed.pathname.startsWith(PUBLIC_PATH)) return null;
-  const key = decodeURIComponent(parsed.pathname.slice(PUBLIC_PATH.length));
+  let key: string;
+  try {
+    key = decodeURIComponent(parsed.pathname.slice(PUBLIC_PATH.length));
+  } catch {
+    return null; // malformed %-escape: never throw into a list/detail/ticker render
+  }
   if (!KEY_RE.test(key)) return null;
   return `${origin}${PUBLIC_PATH}${key}`;
 }

@@ -355,7 +355,8 @@ export function deriveCompanyDomain(
     } catch {}
   }
 
-  // 5. From extracted domain or ATS board HTML (Schema.org Organization URL or anchor tags)
+  // 5. From extracted domain or ATS board HTML (Schema.org Organization URL only: arbitrary page links
+  //    such as a vendor privacy link are not evidence of the employer's domain)
   if (boardHtmlOrExtractedDomain) {
     if (boardHtmlOrExtractedDomain.includes("<")) {
       const jsonLdMatch =
@@ -366,14 +367,6 @@ export function deriveCompanyDomain(
         if (d) return d;
       }
 
-      const aMatches = Array.from(
-        boardHtmlOrExtractedDomain.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/gi)
-      ).map((m) => m[1]);
-      for (const h of aMatches) {
-        if (!h.startsWith("http") && !h.startsWith("mailto:")) continue;
-        const d = cleanDomain(h);
-        if (d) return d;
-      }
     } else {
       const d = cleanDomain(boardHtmlOrExtractedDomain);
       if (d) return d;
