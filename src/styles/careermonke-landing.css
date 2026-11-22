@@ -287,3 +287,26 @@
   .cm-top .job { grid-template-columns: minmax(0, 1fr); }
   .cm-top .meta { grid-template-columns: auto; }
 }
+
+/* ---- Approved hero text (owner screenshot): typography of the ORM-git/ssampe@3386250 hero
+   (index.html + src/landing.css "ascending maxx"), kept inside this fold's layout and spacing.
+   Text block only; placed last so it overrides the f21504b hero type of equal weight. ---- */
+.cm-top .pill, .cm-top .kicker, .cm-top h1, .cm-top .subhead { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+.cm-top .pill { gap: 8px; padding: 4px 12px; border: 1px solid #DCE6FF; color: #1D4ED8; font-size: 13px; font-weight: 600; }
+.cm-top .pill-dot { width: 8px; height: 8px; background: #2563EB; }
+.cm-top .kicker { font-size: 20px; font-weight: 400; line-height: 1.15; letter-spacing: .04em; color: #090E34; }
+.cm-top h1 { font-size: clamp(27px, 8.6vw, 48px); font-weight: 700; line-height: .95; letter-spacing: -.03em; color: #090E34; text-wrap: balance; }
+.cm-top h1 .nw { white-space: nowrap; }
+.cm-top h1 .mx { display: inline-block; line-height: 0; padding-right: .03em; }
+.cm-top h1 .mx span { display: inline-block; line-height: .5; transform-origin: 50% 100%; }
+.cm-top h1 .m1 { font-size: 1.08em; }
+.cm-top h1 .m2 { font-size: 1.32em; }
+.cm-top h1 .m3 { font-size: 1.62em; }
+.cm-top h1 .m4 { font-size: 2em; }
+.cm-top .subhead { max-width: 36ch; font-size: 13px; line-height: 16px; color: #0B1026; text-wrap: wrap; }
+@media (max-width: 359px) { .cm-top .kicker { font-size: 17px; } }
+@media (min-width: 768px) {
+  .cm-top .kicker { font-size: 28px; }
+  .cm-top h1 { font-size: 72px; }
+  .cm-top .subhead { max-width: 46ch; font-size: 16px; line-height: 20px; }
+}

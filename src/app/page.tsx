@@ -61,8 +61,27 @@ export default function HomePage() {
                   <span className="pill-dot"></span>1,240 new jobs found today
                 </span>
                 <p className="kicker">Skip LinkedIn competition</p>
-                <h1>
-                  Start jobma<span className="xx">XX</span>ing with AI
+                <h1 aria-label="Start jobmaxxing with AI">
+                  Start{" "}
+                  <span className="nw">
+                    job
+                    <span className="mx">
+                      <span className="m1" aria-hidden="true">
+                        m
+                      </span>
+                      <span className="m2" aria-hidden="true">
+                        a
+                      </span>
+                      <span className="m3" aria-hidden="true">
+                        x
+                      </span>
+                      <span className="m4" aria-hidden="true">
+                        x
+                      </span>
+                    </span>
+                    ing
+                  </span>{" "}
+                  with&nbsp;AI
                 </h1>
                 <p className="subhead">
                   Find verified employer jobs and tailor your resume to clear their ATS in seconds.

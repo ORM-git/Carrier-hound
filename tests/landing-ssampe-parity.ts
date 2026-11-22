@@ -3,6 +3,7 @@
  *   - top fold  = ORM-git/ssampe index.html @ f21504b30e3466952208cbbcc426877268a11baf  (scoped .cm-top)
  *   - lower page = ORM-git/ssampe @ 3386250e9aef17b68666bc471e5c8293e8f02bc9, stats row .. footer + sticky bar
  *                  (index.html + src/landing.css + src/site.css, scoped .landing-wrapper)
+ *   - owner-requested hero text: ssampe@3386250 ascending m/a/x/x typography inside the f21504b fold layout
  *   - owner-requested live content (careermonke.com snapshot in landing-ssampe-parity.live-content.json):
  *     moving reviews, review wall, founder card + socials (stat row removed), and the header logo
  * Sources are vendored next to this file and pinned by git blob hash.
@@ -131,10 +132,23 @@ function check(x: Input) {
   const topSrc = read("tests/landing-ssampe-parity.source.html");
   const CM_BADGE = '<a href="#" class="brand"><span class="brand-mark">CM</span>CareerMonke</a>';
   assert.ok(topSrc.includes(CM_BADGE), "fixture must still hold the original CM badge");
-  // Single owner-requested exception: the CM badge becomes the real CareerMonke monkey logo.
+  const SRC_H1 = '<h1>Start jobma<span class="xx">XX</span>ing with AI</h1>';
+  assert.ok(topSrc.includes(SRC_H1), "fixture must still hold the original f21504b headline");
+  // Owner-requested exceptions: the CM badge becomes the real CareerMonke monkey logo, and the headline
+  // uses the approved ssampe@3386250 ascending m/a/x/x treatment (same words, accessible name on the h1).
   const topBody = topSrc
     .match(/<body>([\s\S]*?)<script>/)![1]
-    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="CareerMonke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="617" height="749">CareerMonke</a>');
+    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="CareerMonke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="617" height="749">CareerMonke</a>')
+    .replace(
+      SRC_H1,
+      '<h1 aria-label="Start jobmaxxing with AI">Start <span class="nw">job<span class="mx"><span class="m1" aria-hidden="true">m</span><span class="m2" aria-hidden="true">a</span><span class="m3" aria-hidden="true">x</span><span class="m4" aria-hidden="true">x</span></span>ing</span> with&nbsp;AI</h1>'
+    );
+  assert.match(
+    squash(top.replace(/\{" "\}/g, " ")),
+    /<h1 aria-label="Start jobmaxxing with AI"> Start <span className="nw"> job <span className="mx"> (<span className="m([1-4])" aria-hidden="true"> [max] <\/span> ){4}<\/span> ing <\/span> with&nbsp;AI <\/h1>/,
+    "headline must be 'Start jobmaxxing with AI' with ascending m/a/x/x spans inside a no-wrap word and 'with AI' kept together"
+  );
+  assert.ok(!top.includes('className="xx"'), "flat gradient XX must be gone");
   assert.deepEqual(words(top), words(topBody), "top fold text must match f21504b word for word");
   assert.deepEqual(attrs(top, "className"), attrs(topBody, "class"), "top fold classes must match f21504b");
   assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", "/jobs"], "top fold links: Sign in /login, Sign up free /signup, View Jobs /jobs");
@@ -222,7 +236,10 @@ function check(x: Input) {
   const topWant = decls(topSrc.match(/<style>([\s\S]*?)<\/style>/)![1])
     .replace(/"Plus Jakarta Sans",system-ui/, 'var(--font-cm-jakarta),"Plus Jakarta Sans",system-ui')
     .replace(/\bpulse\b/g, "cm-landing-pulse");
-  const topGot = decls(x.topCss)
+  const HERO_MARK = "/* ---- Approved hero text";
+  const heroAt = x.topCss.indexOf(HERO_MARK);
+  assert.ok(heroAt > 0, "top CSS must keep the approved hero text block last");
+  const topGot = decls(x.topCss.slice(0, heroAt))
     .replace(/\.cm-top a,\.cm-top button\{transition:none\}\.cm-top \.ring\{box-shadow:none\}@media \(max-width:359px\)\{\.cm-top \.job\{grid-template-columns:minmax\(0,1fr\)\}\.cm-top \.meta\{grid-template-columns:auto\}\}$/, "")
     .replace(/\.cm-top,\.cm-top \*\{/, "*{")
     .replace(/(^|\})\.cm-top\{--navy/, "$1:root{--navy")
@@ -233,6 +250,23 @@ function check(x: Input) {
   const BADGE_RULE = ".brand-mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(145deg,#a0522d,#6b3519);display:grid;place-items:center;color:#fde7cf;font-size:12px;font-weight:800}";
   assert.ok(topGot.includes(LOGO_RULE), "top CSS must size the header logo to 32px without distortion");
   assert.equal(topGot.replace(LOGO_RULE, BADGE_RULE), topWant, "top CSS must equal the f21504b CSS (scoped) plus the documented host neutralisers and the header-logo rule");
+  // The appended hero block may only restyle the hero text (badge, kicker, headline, maxx letters, subtext).
+  const heroBlock = x.topCss.slice(heroAt);
+  const HERO_SELECTORS = new Set(
+    [".pill", ".pill-dot", ".kicker", "h1", "h1 .nw", "h1 .mx", "h1 .mx span", "h1 .m1", "h1 .m2", "h1 .m3", "h1 .m4", ".subhead"].map((s) => `.cm-top ${s}`)
+  );
+  for (const s of selectors(heroBlock)) assert.ok(HERO_SELECTORS.has(s), `hero text CSS may not style anything else: ${s}`);
+  assert.doesNotMatch(heroBlock, /@keyframes|animation|margin|display:\s*none|position:\s*(absolute|fixed)/, "hero text CSS must not change layout, spacing or animation");
+  const heroFlat = decls(heroBlock);
+  for (const d of [
+    ".cm-top h1 .m1{font-size:1.08em}", ".cm-top h1 .m2{font-size:1.32em}", ".cm-top h1 .m3{font-size:1.62em}", ".cm-top h1 .m4{font-size:2em}",
+    ".cm-top h1 .nw{white-space:nowrap}", ".cm-top h1 .mx span{display:inline-block;line-height:.5;transform-origin:50% 100%}",
+    'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
+    "color:#090E34", ".cm-top h1{font-size:72px}", ".cm-top .kicker{font-size:28px}", ".cm-top .subhead{max-width:46ch;font-size:16px;line-height:20px}",
+  ]) {
+    assert.ok(heroFlat.includes(d), `hero text CSS must keep the approved 3386250 treatment: ${d}`);
+  }
+  assert.doesNotMatch(heroFlat, /background-clip|gradient|Jakarta/, "hero headline must be solid navy in the system font, not the flat gradient XX / Jakarta look");
 
   const srcLowerCss = read("tests/landing-ssampe-parity.lower.landing.css") + "\n" + read("tests/landing-ssampe-parity.lower.site.css");
   const names = keyframes(srcLowerCss);
@@ -365,6 +399,14 @@ const controls: [string, Input][] = [ // each must fail for its own reason (see 
   ["live CSS styles something else", mut("lowerCss", /$/, "\n.landing-wrapper .faq{max-width:100%}\n")],
   ["avatar file swapped", { ...real, asset: (p) => (p === "/images/avatars/male-1.webp" ? real.asset("/images/avatars/female-1.webp") : real.asset(p)) }],
   ["favicon changed", { ...real, asset: (p) => (p === "/favicon.ico" ? Buffer.from("not the favicon") : real.asset(p)) }],
+  // approved hero text (ssampe@3386250 ascending maxx)
+  ["maxx letters flattened", mut("page", 'className="m4"', 'className="m3"')],
+  ["with AI split", mut("page", "with&nbsp;AI", "with AI")],
+  ["jobmaxxing may wrap", mut("topCss", ".cm-top h1 .nw { white-space: nowrap; }", "")],
+  ["gradient XX back", mut("topCss", ".cm-top h1 .m4 { font-size: 2em; }", ".cm-top h1 .m4 { font-size: 2em; }\n.cm-top h1 .mx { background: linear-gradient(90deg, #2563eb, #6d28d9); background-clip: text; }")],
+  ["hero font reverted to Jakarta", mut("topCss", '.cm-top .pill, .cm-top .kicker, .cm-top h1, .cm-top .subhead { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }', ".cm-top .pill, .cm-top .kicker, .cm-top h1, .cm-top .subhead { font-family: var(--font-cm-jakarta); }")],
+  ["hero CSS changes spacing", mut("topCss", ".cm-top .kicker { font-size: 20px;", ".cm-top .kicker { margin-top: 40px; font-size: 20px;")],
+  ["hero CSS styles the cards", mut("topCss", /$/, "\n.cm-top .card { font-family: serif; }\n")],
 ];
 const WHY: Record<string, RegExp> = {
   "hero copy changed": /top fold text/,
@@ -378,8 +420,8 @@ const WHY: Record<string, RegExp> = {
   "AI-resume panel back": /lower page classes|removed block|lower page copy/,
   "footer GitHub link back": /lower page links/,
   "top CSS value changed": /top CSS must equal/,
-  "top CSS unscoped rule": /top CSS must equal/,
-  "top CSS reaches lower": /top CSS must equal/,
+  "top CSS unscoped rule": /top CSS must equal|hero text CSS may not style anything else/,
+  "top CSS reaches lower": /top CSS must equal|hero text CSS may not style anything else/,
   "lower CSS value changed": /lower CSS must equal/,
   "lower CSS global body": /lower CSS must equal|may not style anything else/,
   "keyframes collide": /lower CSS must equal/,
@@ -401,6 +443,13 @@ const WHY: Record<string, RegExp> = {
   "live CSS styles something else": /may not style anything else/,
   "avatar file swapped": /avatar \/images\/avatars\/male-1\.webp for Rohan S\. must be the live file/,
   "favicon changed": /favicon must be unchanged/,
+  "maxx letters flattened": /top fold classes|headline must be/,
+  "with AI split": /top fold text|headline must be/,
+  "jobmaxxing may wrap": /approved 3386250 treatment: \.cm-top h1 \.nw/,
+  "gradient XX back": /solid navy in the system font/,
+  "hero font reverted to Jakarta": /approved 3386250 treatment: font-family/,
+  "hero CSS changes spacing": /must not change layout, spacing or animation/,
+  "hero CSS styles the cards": /hero text CSS may not style anything else: \.cm-top \.card/,
 };
 for (const [name, input] of controls) {
   assert.throws(() => check(input), (e: Error) => WHY[name].test(e.message), `negative control "${name}" must fail with /${WHY[name]?.source}/`);

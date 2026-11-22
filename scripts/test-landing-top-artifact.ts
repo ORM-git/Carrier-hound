@@ -52,8 +52,10 @@ async function main() {
 
   // 1. Exact 1:1 Headline and Hero Copy (new top fold, ssampe@f21504b)
   assert.ok(
-    pageSrc.includes('<p className="kicker">Skip LinkedIn competition</p>') && pageSrc.includes('Start jobma<span className="xx">XX</span>ing with AI'),
-    "page.tsx must contain exact kicker 'Skip LinkedIn competition' and headline 'Start jobmaXXing with AI'"
+    pageSrc.includes('<p className="kicker">Skip LinkedIn competition</p>') &&
+      // approved hero: ssampe@3386250 ascending m/a/x/x inside a no-wrap "jobmaxxing", "with AI" kept together
+      /<h1 aria-label="Start jobmaxxing with AI"> Start <span className="nw"> job <span className="mx"> <span className="m1" aria-hidden="true"> m <\/span> <span className="m2" aria-hidden="true"> a <\/span> <span className="m3" aria-hidden="true"> x <\/span> <span className="m4" aria-hidden="true"> x <\/span> <\/span> ing <\/span> with&nbsp;AI <\/h1>/.test(flatSrc),
+    "page.tsx must contain exact kicker 'Skip LinkedIn competition' and headline 'Start jobmaxxing with AI' with the ascending maxx letters"
   );
   assert.ok(
     pageSrc.includes("1,240 new jobs found today"),
