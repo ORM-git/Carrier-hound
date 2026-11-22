@@ -81,7 +81,7 @@ def test_greenhouse_canary_normalizes_recorded_payload_without_inference_or_trun
 
     assert "content=true" in requested[0]
     assert "pay_transparency=true" in requested[0]
-    assert len(jobs) == 9
+    assert len(jobs) == 17
 
     hourly = by_id["stripe-8172510"]
     assert hourly["source_id"] == "greenhouse:stripe"
@@ -141,4 +141,34 @@ def test_greenhouse_canary_normalizes_recorded_payload_without_inference_or_trun
     assert conflicting_metadata["country_code"] is None
     assert conflicting_metadata["location"] == "Remote US"
     assert conflicting_metadata["remote_eligibility"] == "country_restricted"
+
+    germany_or_france = by_id["stripe-8172519"]
+    assert germany_or_france["country_code"] is None
+    assert germany_or_france["location"] == "Remote Germany / France"
+    assert germany_or_france["remote_eligibility"] == "country_restricted"
+
+    conflicting_europe_metadata = by_id["stripe-8172520"]
+    assert conflicting_europe_metadata["country_code"] is None
+    assert conflicting_europe_metadata["remote_eligibility"] == "country_restricted"
+
+    chicago = by_id["stripe-8172521"]
+    assert chicago["country_code"] is None
+    assert chicago["location"] == "Chicago, IL"
+
+    chicago_us = by_id["stripe-8172522"]
+    assert chicago_us["country_code"] == "US"
+
+    wilmington = by_id["stripe-8172523"]
+    assert wilmington["country_code"] is None
+    assert wilmington["location"] == "Wilmington, DE"
+
+    wilmington_us = by_id["stripe-8172524"]
+    assert wilmington_us["country_code"] == "US"
+
+    germany_code_metadata = by_id["stripe-8172525"]
+    assert germany_code_metadata["country_code"] == "DE"
+
+    us_canada_metadata = by_id["stripe-8172526"]
+    assert us_canada_metadata["country_code"] is None
+    assert us_canada_metadata["remote_eligibility"] == "country_restricted"
 

@@ -115,10 +115,123 @@
       "id": 8172518,
       "title": "Remote Operations Specialist",
       "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172518",
-      "location": { "name": "Remote US" },
-      "metadata": [{ "name": "Country", "value": "Canada" }],
+      "location": {
+        "name": "Remote US"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "Canada"
+        }
+      ],
       "first_published": "2026-11-02T09:00:00Z",
       "content": "<p>Conflicting source country metadata and location.</p>"
+    },
+    {
+      "id": 8172519,
+      "title": "Remote German or French Analyst",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172519",
+      "location": {
+        "name": "Remote Germany / France"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Remote role restricted to Germany or France.</p>"
+    },
+    {
+      "id": 8172520,
+      "title": "Remote European Support Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172520",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "Germany"
+        },
+        {
+          "name": "Country",
+          "value": "France"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Conflicting country metadata.</p>"
+    },
+    {
+      "id": 8172521,
+      "title": "Chicago Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172521",
+      "location": {
+        "name": "Chicago, IL"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Chicago office role.</p>"
+    },
+    {
+      "id": 8172522,
+      "title": "Chicago Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172522",
+      "location": {
+        "name": "Chicago, IL, US"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Role restricted to the United States.</p>"
+    },
+    {
+      "id": 8172523,
+      "title": "Wilmington Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172523",
+      "location": {
+        "name": "Wilmington, DE"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Wilmington office role.</p>"
+    },
+    {
+      "id": 8172524,
+      "title": "Wilmington Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172524",
+      "location": {
+        "name": "Wilmington, DE, United States"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Role restricted to the United States.</p>"
+    },
+    {
+      "id": 8172525,
+      "title": "Remote Germany Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172525",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "DE"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Explicit country code metadata.</p>"
+    },
+    {
+      "id": 8172526,
+      "title": "Remote US Canada Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172526",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "United States"
+        },
+        {
+          "name": "Country",
+          "value": "Canada"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Multiple explicit country metadata values.</p>"
     }
   ]
 }

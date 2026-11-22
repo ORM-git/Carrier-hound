@@ -78,7 +78,7 @@ def _greenhouse_country_code(item: dict[str, Any], location: str) -> str | None:
 
 
 def _greenhouse_country_evidence(item: dict[str, Any], location: str) -> set[str]:
-    countries = _explicit_country_codes(location)
+    countries = _greenhouse_location_country_evidence(location)
     metadata = item.get("metadata")
     if isinstance(metadata, list):
         for entry in metadata:
@@ -87,6 +87,24 @@ def _greenhouse_country_evidence(item: dict[str, Any], location: str) -> set[str
             value = entry.get("value")
             if isinstance(value, str):
                 countries.update(_explicit_country_codes(value, allow_ambiguous_region_code=True))
+    return countries
+
+
+def _greenhouse_location_country_evidence(location: str) -> set[str]:
+    segments = [segment.strip() for segment in location.split(",")]
+    countries: set[str] = set()
+    for index, segment in enumerate(segments[1:], start=1):
+        region = segment.lower()
+        if region in {"il", "de"}:
+            preceding = ", ".join(segments[:index])
+            preceding_countries = _explicit_country_codes(preceding)
+            if not preceding_countries and not re.search(r"\b(remote|anywhere|worldwide|global)\b", preceding, re.I):
+                # In a city, region format these are ambiguous US state abbreviations.
+                # Keep the location intact; a separate explicit country suffix can still resolve it.
+                continue
+        countries.update(_explicit_country_codes(segment))
+    if segments:
+        countries.update(_explicit_country_codes(segments[0]))
     return countries
 
 
