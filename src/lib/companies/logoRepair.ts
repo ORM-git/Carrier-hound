@@ -1,0 +1,156 @@
+/**
+ * src/lib/companies/logoRepair.ts
+ *
+ * Repairs ONE claimed company against the shared logo contract (see logoEligibility.ts):
+ *   resolve (verified ATS image -> verified homepage icon -> free resolver on the verified domain,
+ *   all via logoResolver.ts with its SSRF/redirect/raster/size/dimension checks)
+ *   -> reject vendor/default branding (known default fingerprints, image shared by other companies)
+ *   -> upload validated bytes to company-logos/<company_id>/<sha256>.<ext> (content-hashed,
+ *      versioned, idempotent: identical bytes reuse the existing object)
+ *   -> commit hosted URL + verified domain with a conditional update (claim token + expected old
+ *      logo_url), else remove only the object we just created and nothing else.
+ * If every source fails the company keeps logo_url null (an ineligible external URL is cleared),
+ * gets a reason and a bounded backoff, and the UI shows initials. Never throws for branding issues.
+ */
+import crypto from "node:crypto";
+import { eligibleLogoUrl, hostedLogoPublicUrl, logoObjectKey } from "./logoEligibility";
+import type { CompanyRecord, JobUrlInfo, ResolveLogoOptions, ResolvedLogoResult } from "./logoResolver";
+
+/**
+ * Vendor/default marks observed in production that must never become a company logo. The worker also
+ * probes favicon services for their "unknown domain" image and rejects any image that resolves for two
+ * or more companies in one run, so new vendor defaults are caught without being listed here.
+ */
+export const KNOWN_VENDOR_DEFAULT_SHA256: readonly string[] = [
+  "d3b538025d8270a6514e8243278afe7f8ad1e1e19faa3d094ff2b76c2ccd2f54", // Ashby job-board default mark (19 Ashby boards, 2026-11-22)
+];
+
+export const sha256Hex = (buf: Buffer) => crypto.createHash("sha256").update(buf).digest("hex");
+
+export interface ClaimedCompany {
+  id: string;
+  name: string;
+  slug: string | null;
+  domain: string | null;
+  careers_url: string | null;
+  ats_type: string | null;
+  logo_url: string | null;
+  logo_attempts: number;
+  claim_token: string;
+}
+
+export type RepairStatus = "repaired" | "already-eligible" | "missing" | "failed";
+export interface RepairOutcome {
+  id: string;
+  name: string;
+  status: RepairStatus;
+  reason: string | null;
+  source: string | null;
+  logoUrl: string | null;
+  previousLogoUrl: string | null;
+  sha256: string | null;
+  attempts: number;
+  nextAttemptAt: string | null;
+}
+
+export interface LogoRepairDeps {
+  supabaseUrl: string;
+  resolve(company: CompanyRecord, jobs: JobUrlInfo[], options: ResolveLogoOptions): Promise<ResolvedLogoResult | null>;
+  jobsFor(companyId: string): Promise<JobUrlInfo[]>;
+  /** sha256 hex digests of vendor/default images (e.g. favicon-service "unknown domain" globes). */
+  knownDefaultHashes: ReadonlySet<string>;
+  /** Number of OTHER companies whose committed logo has this content hash. */
+  companiesSharingHash(sha256: string, excludeId: string): Promise<number>;
+  /** Uploads with no overwrite; "exists" when the content-hashed key is already present. */
+  upload(key: string, bytes: Buffer, contentType: string): Promise<"created" | "exists">;
+  remove(key: string): Promise<void>;
+  /** Conditional commit: only if the row still holds our claim token and the logo we read. */
+  commitHosted(args: { id: string; token: string; expectedLogoUrl: string | null; logoUrl: string; domain: string | null; sha256: string; source: string; at: Date }): Promise<boolean>;
+  recordFailure(args: { id: string; token: string; expectedLogoUrl: string | null; clearLogoUrl: boolean; status: "missing" | "failed"; reason: string; attempts: number; nextAttemptAt: Date | null; at: Date }): Promise<boolean>;
+  markAlreadyEligible(args: { id: string; token: string; at: Date }): Promise<void>;
+  now(): Date;
+}
+
+/** shortcut: fixed backoff ladder (1h, 6h, 24h, 72h, 7d); then "missing" rechecked every 30 days. */
+const BACKOFF_HOURS = [1, 6, 24, 72, 168];
+export const MAX_LOGO_ATTEMPTS = BACKOFF_HOURS.length;
+const MISSING_RECHECK_HOURS = 24 * 30;
+/** Company marks/icons are small; larger images are banners or photos, not logos. */
+export const MAX_LOGO_SIDE_PX = 1024;
+/** A real company mark is never byte-identical across this many other companies. */
+const SHARED_HASH_LIMIT = 1;
+
+export function nextAttempt(attempts: number, now: Date, transient: boolean): { status: "missing" | "failed"; at: Date } {
+  const h = attempts <= MAX_LOGO_ATTEMPTS ? BACKOFF_HOURS[Math.max(0, attempts - 1)] : MISSING_RECHECK_HOURS;
+  return { status: transient && attempts < MAX_LOGO_ATTEMPTS ? "failed" : "missing", at: new Date(now.getTime() + h * 3600_000) };
+}
+
+export async function repairCompanyLogo(company: ClaimedCompany, deps: LogoRepairDeps): Promise<RepairOutcome> {
+  const at = deps.now();
+  const base = { id: company.id, name: company.name, previousLogoUrl: company.logo_url, sha256: null, source: null, logoUrl: null, attempts: company.logo_attempts, nextAttemptAt: null };
+
+  if (eligibleLogoUrl(company.logo_url, deps.supabaseUrl)) {
+    await deps.markAlreadyEligible({ id: company.id, token: company.claim_token, at });
+    return { ...base, status: "already-eligible", reason: null, logoUrl: company.logo_url };
+  }
+
+  const attempts = company.logo_attempts + 1;
+  const fail = async (reason: string, transient: boolean): Promise<RepairOutcome> => {
+    const nx = nextAttempt(attempts, at, transient);
+    // Ineligible external URLs are never kept: the company falls back to initials until a hosted logo exists.
+    await deps.recordFailure({ id: company.id, token: company.claim_token, expectedLogoUrl: company.logo_url, clearLogoUrl: company.logo_url != null, status: nx.status, reason, attempts, nextAttemptAt: nx.at, at });
+    return { ...base, status: transient ? "failed" : "missing", reason, attempts, nextAttemptAt: nx.at.toISOString() };
+  };
+
+  let resolved: ResolvedLogoResult | null;
+  try {
+    const jobs = await deps.jobsFor(company.id);
+    // logo_url is withheld so the resolver never short-circuits on a stored (possibly broken) value.
+    resolved = await deps.resolve(
+      { id: company.id, name: company.name, slug: company.slug, domain: company.domain, careers_url: company.careers_url, ats_type: company.ats_type, logo_url: null },
+      jobs,
+      // Default/vendor images are skipped inside the chain, so the next tier (homepage, free resolver) still runs.
+      { isRejected: (buf) => deps.knownDefaultHashes.has(sha256Hex(buf)) }
+    );
+  } catch (e) {
+    return fail(`resolver-error: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
+  }
+  if (!resolved) return fail("no-source: no verified ATS image, homepage icon or resolver logo for a verified domain", false);
+
+  if (resolved.width > MAX_LOGO_SIDE_PX || resolved.height > MAX_LOGO_SIDE_PX) {
+    return fail(`not-a-logo: ${resolved.width}x${resolved.height} image from ${resolved.source} is a banner/photo, not an icon`, false);
+  }
+  const sha256 = sha256Hex(resolved.buffer);
+  if (deps.knownDefaultHashes.has(sha256)) return fail(`default-branding: ${resolved.serviceName || resolved.source} returned its default image`, false);
+  if ((await deps.companiesSharingHash(sha256, company.id)) >= SHARED_HASH_LIMIT) return fail("shared-image: identical bytes already used by another company (vendor/default mark)", false);
+
+  let key: string;
+  try {
+    key = logoObjectKey(company.id, sha256, resolved.ext);
+  } catch (e) {
+    return fail(`invalid-image: ${String((e as Error).message).slice(0, 120)}`, false);
+  }
+
+  let uploaded: "created" | "exists";
+  try {
+    uploaded = await deps.upload(key, resolved.buffer, resolved.contentType);
+  } catch (e) {
+    return fail(`upload-failed: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
+  }
+
+  const logoUrl = hostedLogoPublicUrl(key, deps.supabaseUrl);
+  const source = resolved.serviceName ? `${resolved.source}:${resolved.serviceName}` : resolved.source;
+  let committed = false;
+  let commitError: string | null = null;
+  try {
+    committed = await deps.commitHosted({ id: company.id, token: company.claim_token, expectedLogoUrl: company.logo_url, logoUrl, domain: resolved.domain || company.domain || null, sha256, source, at });
+  } catch (e) {
+    commitError = String((e as Error)?.message || e).slice(0, 160);
+  }
+  if (!committed) {
+    // Only an object this attempt created is removed; an existing identical object may be referenced elsewhere.
+    if (uploaded === "created") await deps.remove(key).catch(() => undefined);
+    return { ...base, status: "failed", reason: commitError ? `db-update-failed: ${commitError}` : "db-update-skipped: row changed or claim expired", sha256, source, attempts };
+  }
+  return { ...base, status: "repaired", reason: null, source, logoUrl, sha256, attempts };
+}

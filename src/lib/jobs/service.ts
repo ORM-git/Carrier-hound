@@ -6,6 +6,7 @@ import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 import { getCountryFilterClause } from "@/lib/countries";
 import { singleFlight } from "@/lib/cache/singleFlight";
+import { firstEligibleLogo } from "@/lib/companies/logoEligibility";
 import {
   detectRoleCategory,
   extractTopKeywords,
@@ -865,7 +866,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
         const resolvedLogo = (isPro && row.company && row.company !== "Verified Employer")
-          ? (row.logo_url || row.logoUrl || row.companies?.logo_url || null)
+          ? firstEligibleLogo([row.logo_url, row.logoUrl, row.companies?.logo_url])
           : null;
         const resolvedKeywords = Array.isArray(row.top_keywords) && row.top_keywords.length > 0
           ? row.top_keywords.slice(0, 8)
@@ -949,10 +950,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                         job.top_keywords = extractTopKeywords(job.title, u.description, u.skills, 8);
                       }
                       if (u.role_category) job.role_category = u.role_category;
-                      if (u.logo_url || u.logoUrl) {
-                        job.logoUrl = u.logo_url || u.logoUrl;
-                        job.logo_url = u.logo_url || u.logoUrl;
+                      // Nested companies.logo_url/domain from /api/jobs/pro reach cards via the flat fields.
+                      const unlockedLogo = firstEligibleLogo([u.logo_url, u.logoUrl, u.companies?.logo_url]);
+                      if (unlockedLogo) {
+                        job.logoUrl = unlockedLogo;
+                        job.logo_url = unlockedLogo;
                       }
+                      const unlockedDomain = u.company_domain || u.companies?.canonical_domain || u.companies?.domain;
+                      if (unlockedDomain) job.companyDomain = unlockedDomain;
                     }
                   });
                 }
@@ -1065,8 +1070,9 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
-                logoUrl: job.logo_url || job.logoUrl || null,
-                logo_url: job.logo_url || job.logoUrl || null,
+                logoUrl: firstEligibleLogo([job.logo_url, job.logoUrl, job.companies?.logo_url]),
+                logo_url: firstEligibleLogo([job.logo_url, job.logoUrl, job.companies?.logo_url]),
+                companyDomain: job.company_domain || job.companies?.canonical_domain || job.companies?.domain || null,
                 matchScore: typeof job.matchScore === "number" ? job.matchScore : null,
               };
             }

@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
+import { eligibleLogoUrl } from "@/lib/companies/logoEligibility";
 
 export interface CompanyLogoProps {
   company: string;
   applyUrl?: string;
   sourceUrl?: string;
+  /** Rendered only when it is an eligible hosted company-logos URL (see logoEligibility.ts). */
   logoUrl?: string | null;
-  /** Company website domain from companies.domain */
+  /** Verified company domain (kept for callers; never used to fetch third-party images). */
   domain?: string | null;
   className?: string;
 }
@@ -60,35 +62,24 @@ const failedLogoSrcs = new Set<string>();
 
 export default function CompanyLogo({
   company,
-  applyUrl,
-  sourceUrl,
   logoUrl,
-  domain: companyDomain,
   className = "w-10 h-10",
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
 
-  // Domain: stored companies.domain first, then a non-ATS apply/source URL
-  // ZERO name-slug guessing
-  const domain =
-    (companyDomain ? extractDomainFromUrl(`https://${companyDomain.trim()}`) : "") ||
-    extractDomainFromUrl(applyUrl) ||
-    extractDomainFromUrl(sourceUrl);
-  const unavatarUrl = domain ? `https://unavatar.io/${domain}?fallback=false` : null;
-
-  // Order: stored logo_url -> domain logo (unavatar) -> letter tile. The first candidate that has not
-  // failed is shown; no reset effect, so a failure can never be raced back to a broken image.
-  const candidates = [logoUrl, unavatarUrl].filter((u): u is string => Boolean(u));
+  // Company-logo contract: only an eligible hosted logo is ever rendered; otherwise the stable initials
+  // tile. No client-side favicon/unavatar/ATS fallbacks, so a card can never show a broken or vendor image.
+  const hosted = eligibleLogoUrl(logoUrl);
   const [, bumpFailures] = useState(0);
-  const src = candidates.find((u) => !failedLogoSrcs.has(u)) ?? null;
+  const src = hosted && !failedLogoSrcs.has(hosted) ? hosted : null;
   // Always re-render this instance: another instance may already have recorded the same URL as failed.
   const markFailed = useCallback((u: string) => {
     failedLogoSrcs.add(u);
     bumpFailures((n) => n + 1);
   }, []);
   // Catches failures that happened before React attached onError (CSP block, cached failure).
-  // shortcut: an SVG without intrinsic size also reports naturalWidth 0; resolver stores raster only.
+  // shortcut: an SVG without intrinsic size also reports naturalWidth 0; the contract stores raster only.
   const checkImage = useCallback(
     (img: HTMLImageElement | null) => {
       if (img && img.complete && img.naturalWidth === 0 && src) markFailed(src);
@@ -119,7 +110,7 @@ export default function CompanyLogo({
 
   return (
     <div
-      className={`rounded-xl overflow-hidden bg-white border border-slate-200/90 p-1 flex items-center justify-center shrink-0 shadow-2xs ${className}`}
+      className={`rounded-xl overflow-hidden bg-slate-50 border border-slate-200/90 p-1 flex items-center justify-center shrink-0 shadow-2xs ${className}`}
     >
       <img
         key={src}

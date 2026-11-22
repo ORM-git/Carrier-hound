@@ -6,6 +6,13 @@ import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { getCountryFilterClause } from "@/lib/countries";
 import { sanitizeSearchQuery } from "@/lib/api/jobs";
 import { detectCompanyCategory, detectRoleCategory, extractTopKeywords } from "@/lib/jobs/highVolumeEnrichment";
+import { firstEligibleLogo } from "@/lib/companies/logoEligibility";
+
+/** Nested companies.logo_url/domain -> the flat fields cards and detail read. Only eligible hosted logos. */
+function companyBranding(row: { logo_url?: string | null; companies?: { logo_url?: string | null; canonical_domain?: string | null; domain?: string | null } | null }) {
+  const logo = firstEligibleLogo([row.logo_url, row.companies?.logo_url]);
+  return { logo_url: logo, logoUrl: logo, company_domain: row.companies?.canonical_domain || row.companies?.domain || null };
+}
 
 import { checkRequiredEnv } from "@/lib/api/envCheck";
 
@@ -194,6 +201,7 @@ export async function GET(req: Request) {
               : extractTopKeywords(j.title, resolvedDesc, j.skills, 8),
             is_remote: Boolean(j.is_remote ?? j.remote),
             company_category: j.companies?.category || detectCompanyCategory(j.company, null, null, j.country_code),
+            ...companyBranding(j),
             country: j.country_code || j.country || "",
             salary_text: displaySalary || originalSalary || "",
             salary_display: displaySalary,
@@ -235,6 +243,7 @@ export async function GET(req: Request) {
         : extractTopKeywords(job.title, resolvedSingleDesc, job.skills, 8),
       is_remote: Boolean(job.is_remote ?? job.remote),
       company_category: job.companies?.category || detectCompanyCategory(job.company, null, null, job.country_code),
+      ...companyBranding(job),
       country: job.country_code || job.country || "",
       salary_text: displaySalary || originalSalary || "",
       salary_display: displaySalary,
@@ -330,6 +339,7 @@ export async function POST(req: Request) {
           : extractTopKeywords(j.title, resolvedDesc, j.skills, 8),
         is_remote: Boolean(j.is_remote ?? j.remote),
         company_category: j.companies?.category || detectCompanyCategory(j.company, null, null, j.country_code),
+        ...companyBranding(j),
         country: j.country_code || j.country || "",
         salary_text: displaySalary || originalSalary || "",
         salary_display: displaySalary,

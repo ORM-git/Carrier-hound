@@ -93,15 +93,16 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertEqual(assign_role_category("Full Stack Software Engineer", None, kws), "SDE")
 
     def test_logo_resolution_and_avatar_fallback(self) -> None:
-        self.assertEqual(
-            resolve_logo_url("https://cdn.example.com/logo.png", "stripe.com"),
-            "https://cdn.example.com/logo.png",
-        )
-        self.assertEqual(
-            resolve_logo_url(None, "stripe.com"),
-            "https://www.google.com/s2/favicons?domain=stripe.com&sz=128",
-        )
+        # Company-logo contract: ingestion never stores ATS/vendor/favicon-service URLs; the frontend
+        # renders initials until the TS repair worker hosts a verified logo.
+        self.assertIsNone(resolve_logo_url("https://cdn.example.com/logo.png", "stripe.com"))
+        self.assertIsNone(resolve_logo_url(None, "stripe.com"))
+        self.assertIsNone(resolve_logo_url("https://s2-recruiting.cdn.greenhouse.io/x/logos/1/stripe.png", None))
         self.assertIsNone(resolve_logo_url(None, None))
+        hosted = "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0b3f6c2e-1a2b-4c3d-8e9f-0123456789ab.png"
+        self.assertEqual(resolve_logo_url(hosted, "stripe.com"), hosted)
+        self.assertIsNone(resolve_logo_url(hosted + "?v=1", None))
+        self.assertIsNone(resolve_logo_url(hosted.replace(".png", ".svg"), None))
 
     def test_dedupe_hash_normalization(self) -> None:
         h1 = compute_dedupe_hash("Stripe", "Senior Software Engineer", "US", "San Francisco, CA")
@@ -677,7 +678,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             if request.method == "GET":
                 return httpx.Response(200, json=[{
                     "id": "company-existing", "slug": "existing", "name": "Existing",
-                    "logo_url": None, "domain": "old.example", "canonical_domain": "old.example",
+                    "logo_url": None, "domain": None, "canonical_domain": None,
                     "category": "MNC_BIGTECH", "ats_type": "greenhouse",
                 }])
             if request.method == "PATCH":
@@ -1082,3 +1083,87 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompanyLogoContractTests(unittest.TestCase):
+    """Python ingest follows the shared logo contract: it never writes logo_url and enqueues companies
+    without an eligible hosted logo for the TypeScript repair worker (fail-open)."""
+
+    HOSTED = "https://unit-test-project.supabase.co/storage/v1/object/public/company-logos/0b3f6c2e-1a2b-4c3d-8e9f-0123456789ab.png"
+
+    def _run(self, handler, jobs):
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                company_map = await writer.sync_companies(client, jobs)
+            return writer, company_map
+        return asyncio.run(run())
+
+    def _jobs(self):
+        return [
+            {"company": "Hosted Co", "company_slug": "hosted-co", "canonical_domain": "hosted.example", "company_category": "MNC_BIGTECH",
+             "logo_url": "https://s3-recruiting.cdn.greenhouse.io/logos/hosted.png", "source": "greenhouse", "source_priority": 1},
+            {"company": "Favicon Co", "company_slug": "favicon-co", "canonical_domain": "favicon.example", "company_category": "MNC_BIGTECH",
+             "logo_url": "https://www.google.com/s2/favicons?domain=favicon.example&sz=128", "source": "greenhouse", "source_priority": 1},
+            {"company": "Brand New", "company_slug": "brand-new", "canonical_domain": "new.example", "company_category": "MNC_BIGTECH",
+             "logo_url": "https://cdn.example.com/new.png", "source": "lever", "source_priority": 1},
+        ]
+
+    def test_new_and_existing_companies_never_receive_a_logo_url_and_are_enqueued(self) -> None:
+        sent: list[tuple[str, str, object]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content.decode("utf-8")) if request.content else None
+            sent.append((request.method, request.url.path, body))
+            if request.method == "GET":
+                return httpx.Response(200, json=[
+                    {"id": "id-hosted", "slug": "hosted-co", "name": "Hosted Co", "logo_url": self.HOSTED, "domain": "hosted.example",
+                     "canonical_domain": "hosted.example", "category": "MNC_BIGTECH", "ats_type": "lever"},
+                    {"id": "id-favicon", "slug": "favicon-co", "name": "Favicon Co", "logo_url": "https://unavatar.io/favicon.example",
+                     "domain": "favicon.example", "canonical_domain": "favicon.example", "category": "MNC_BIGTECH", "ats_type": "lever"},
+                ])
+            if request.method == "POST" and request.url.path.endswith("/companies"):
+                return httpx.Response(201, json=[{"id": "id-new", "slug": "brand-new"}])
+            if request.url.path.endswith("/rpc/enqueue_company_logos"):
+                return httpx.Response(200, json=2)
+            return httpx.Response(200, json=[])
+
+        writer, company_map = self._run(handler, self._jobs())
+        self.assertFalse(writer.persistence_failed)
+        self.assertEqual(company_map, {"hosted-co": "id-hosted", "favicon-co": "id-favicon", "brand-new": "id-new"})
+        for method, path, body in sent:
+            if path.endswith("/companies") and method in ("POST", "PATCH"):
+                rows = body if isinstance(body, list) else [body]
+                for row in rows:
+                    self.assertNotIn("logo_url", row, f"{method} {path} must never write logo_url")
+        enqueue = [b for m, p, b in sent if p.endswith("/rpc/enqueue_company_logos")]
+        self.assertEqual(enqueue, [{"p_ids": ["id-favicon", "id-new"]}])
+        self.assertEqual(writer.logo_enqueue, {"requested": 2, "enqueued": 2, "status": "ok"})
+
+    def test_missing_migration_or_enqueue_error_never_fails_ingestion(self) -> None:
+        for status, text, expected in ((404, '{"code":"PGRST202"}', "not-migrated"), (500, "boom", "error: HTTP 500")):
+            def handler(request: httpx.Request, status=status, text=text) -> httpx.Response:
+                if request.method == "GET":
+                    return httpx.Response(200, json=[])
+                if request.url.path.endswith("/rpc/enqueue_company_logos"):
+                    return httpx.Response(status, text=text)
+                return httpx.Response(201, json=[{"id": "id-new", "slug": "brand-new"}])
+
+            writer, company_map = self._run(handler, [self._jobs()[2]])
+            self.assertFalse(writer.persistence_failed)
+            self.assertEqual(company_map, {"brand-new": "id-new"})
+            self.assertEqual(writer.logo_enqueue["status"], expected)
+
+    def test_enqueue_is_skipped_when_company_persistence_failed(self) -> None:
+        paths: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            paths.append(request.url.path)
+            if request.method == "GET":
+                return httpx.Response(200, json=[])
+            return httpx.Response(500, text="insert failed")
+
+        writer, _ = self._run(handler, [self._jobs()[2]])
+        self.assertTrue(writer.persistence_failed)
+        self.assertFalse(any(p.endswith("/rpc/enqueue_company_logos") for p in paths))
+

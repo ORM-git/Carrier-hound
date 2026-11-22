@@ -594,16 +594,25 @@ def assign_legacy_category(title: str | None, role_category: str) -> str:
     return "engineering"
 
 
+_HOSTED_LOGO_RE = re.compile(
+    r"^https://[a-z0-9-]+\.supabase\.co/storage/v1/object/public/company-logos/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"(?:\.(?:png|jpe?g|webp|gif)|/[0-9a-f]{64}\.(?:png|jpe?g|webp|gif))$",
+    re.IGNORECASE,
+)
+
+
 def resolve_logo_url(ats_logo_url: str | None, canonical_domain: str | None) -> str | None:
-    """Resolves logo from ATS metadata or domain icon, or None for frontend initial-avatar fallback."""
-    if ats_logo_url and isinstance(ats_logo_url, str):
-        trimmed = ats_logo_url.strip()
-        if trimmed.startswith("https://") or trimmed.startswith("http://"):
-            return trimmed
-    if canonical_domain and isinstance(canonical_domain, str):
-        dom = canonical_domain.strip().lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").split("/")[0]
-        if "." in dom:
-            return f"https://www.google.com/s2/favicons?domain={dom}&sz=128"
+    """Company-logo contract (shared with src/lib/companies/logoEligibility.ts).
+
+    Ingestion never stores ATS, vendor, favicon-service or homepage image URLs. Only an already hosted
+    `company-logos` object is passed through; everything else returns None and the company is enqueued
+    for the TypeScript logo repair worker, which resolves, validates, hosts and records the logo.
+    `canonical_domain` is accepted for call compatibility and intentionally unused.
+    """
+    del canonical_domain
+    if isinstance(ats_logo_url, str) and _HOSTED_LOGO_RE.match(ats_logo_url.strip()):
+        return ats_logo_url.strip()
     return None
 
 

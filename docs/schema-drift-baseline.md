@@ -31,6 +31,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `category_overrides` | `20261116b_ten_million_system_design_schema.sql` |
 | `companies` | `20261001_phase1_storage_optimization.sql` |
 | `company_aliases` | `20261116b_ten_million_system_design_schema.sql` |
+| `company_logo_runs` | `20261122_company_logo_contract.sql` |
 | `company_boards` | `20261001_phase1_storage_optimization.sql` |
 | `company_token_registry` | `20261028_ats_board_ingestion.sql` |
 | `consent_logs` | `20261116b_ten_million_system_design_schema.sql` |
@@ -95,6 +96,7 @@ table: canonical_dedupe_hash_backfill_progress | 20261121a_canonical_job_dedupe_
 table: category_overrides | 20261116b_ten_million_system_design_schema.sql
 table: companies | 20261001_phase1_storage_optimization.sql
 table: company_aliases | 20261116b_ten_million_system_design_schema.sql
+table: company_logo_runs | 20261122_company_logo_contract.sql
 table: company_boards | 20261001_phase1_storage_optimization.sql
 table: company_token_registry | 20261028_ats_board_ingestion.sql
 table: consent_logs | 20261116b_ten_million_system_design_schema.sql

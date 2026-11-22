@@ -11,6 +11,7 @@ import {
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { eligibleLogoUrl } from "@/lib/companies/logoEligibility";
 
 export const runtime = "edge";
 
@@ -53,33 +54,8 @@ export interface TickerJobItem {
  * Rejects external logos, javascript: schemes, or other buckets.
  */
 function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: string): string | null {
-  if (!rawLogoUrl || typeof rawLogoUrl !== "string") return null;
-  try {
-    const parsed = new URL(rawLogoUrl);
-    if (supabaseUrl) {
-      try {
-        const expectedHost = new URL(supabaseUrl).host;
-        if (parsed.host !== expectedHost && !parsed.host.endsWith(".supabase.co")) {
-          return null;
-        }
-      } catch {
-        if (!parsed.host.endsWith(".supabase.co")) {
-          return null;
-        }
-      }
-    } else {
-      if (!parsed.host.endsWith(".supabase.co")) {
-        return null;
-      }
-    }
-
-    if (!parsed.pathname.includes("/company-logos/")) {
-      return null;
-    }
-    return rawLogoUrl;
-  } catch {
-    return null;
-  }
+  // Shared company-logo contract: only this project's company-logos objects (see logoEligibility.ts).
+  return eligibleLogoUrl(rawLogoUrl, supabaseUrl);
 }
 
 /**

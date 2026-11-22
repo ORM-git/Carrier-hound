@@ -817,7 +817,9 @@ export function parsePageImages(
  */
 export async function inspectCompanyHomepage(
   domain: string,
-  minSize: number = 32
+  minSize: number = 32,
+  isRejected: (buf: Buffer) => boolean = () => false,
+  includeOgImage: boolean = true
 ): Promise<ResolvedLogoResult | null> {
   const homeUrls = [`https://${domain}`, `https://www.${domain}`];
   let html = "";
@@ -850,7 +852,7 @@ export async function inspectCompanyHomepage(
   // 1. Try icons in order of declared size
   for (const icon of iconUrls) {
     const imgData = await downloadAndValidateImage(icon.url, minSize);
-    if (imgData) {
+    if (imgData && !isRejected(imgData.buffer)) {
       return {
         imageUrl: icon.url,
         source: "homepage-icon",
@@ -864,10 +866,10 @@ export async function inspectCompanyHomepage(
     }
   }
 
-  // 2. Try og:image fallback
-  if (ogImageUrl) {
+  // 2. Try og:image fallback (not used by the logo contract: social banners are not company icons)
+  if (ogImageUrl && includeOgImage) {
     const imgData = await downloadAndValidateImage(ogImageUrl, minSize);
-    if (imgData) {
+    if (imgData && !isRejected(imgData.buffer)) {
       return {
         imageUrl: ogImageUrl,
         source: "homepage-icon",
@@ -891,13 +893,14 @@ export async function inspectCompanyHomepage(
 export async function fetchFreeLogoService(
   domain: string,
   minSize: number = 32,
-  fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout
+  fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout,
+  isRejected: (buf: Buffer) => boolean = () => false
 ): Promise<ResolvedLogoResult | null> {
   // Service 1: Unavatar (returns HTTP 200 image or 404 when fallback=false)
   try {
     const unavUrl = `https://unavatar.io/${domain}?fallback=false`;
     const unavData = await downloadAndValidateImage(unavUrl, minSize, fetcher);
-    if (unavData) {
+    if (unavData && !isRejected(unavData.buffer)) {
       return {
         imageUrl: unavUrl,
         source: "free-service",
@@ -916,7 +919,7 @@ export async function fetchFreeLogoService(
   try {
     const gglUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
     const gglData = await downloadAndValidateImage(gglUrl, minSize, fetcher);
-    if (gglData) {
+    if (gglData && !isRejected(gglData.buffer)) {
       return {
         imageUrl: gglUrl,
         source: "free-service",
@@ -935,7 +938,7 @@ export async function fetchFreeLogoService(
   try {
     const ddgUrl = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
     const ddgData = await downloadAndValidateImage(ddgUrl, minSize, fetcher);
-    if (ddgData) {
+    if (ddgData && !isRejected(ddgData.buffer)) {
       return {
         imageUrl: ddgUrl,
         source: "free-service",
@@ -956,10 +959,17 @@ export async function fetchFreeLogoService(
 /**
  * Unified company logo resolver combining all tiers.
  */
+export interface ResolveLogoOptions {
+  /** Vendor/default images (e.g. an ATS board's own mark) are skipped and the next tier is tried. */
+  isRejected?: (buf: Buffer) => boolean;
+}
+
 export async function resolveCompanyLogo(
   company: CompanyRecord,
-  jobsForCompany: JobUrlInfo[] = []
+  jobsForCompany: JobUrlInfo[] = [],
+  options: ResolveLogoOptions = {}
 ): Promise<ResolvedLogoResult | null> {
+  const isRejected = options.isRejected ?? (() => false);
   // If company already has a self-hosted storage URL, keep it
   if (company.logo_url && company.logo_url.includes("company-logos")) {
     return null;
@@ -1008,7 +1018,7 @@ export async function resolveCompanyLogo(
       // Check board icon >= 128px
       for (const icon of iconUrls) {
         const imgData = await downloadAndValidateImage(icon.url, 128);
-        if (imgData) {
+        if (imgData && !isRejected(imgData.buffer)) {
           return {
             imageUrl: icon.url,
             source: "ats-board",
@@ -1024,7 +1034,7 @@ export async function resolveCompanyLogo(
       // Check board og:image
       if (ogImageUrl) {
         const imgData = await downloadAndValidateImage(ogImageUrl, 128);
-        if (imgData) {
+        if (imgData && !isRejected(imgData.buffer)) {
           return {
             imageUrl: ogImageUrl,
             source: "ats-board",
@@ -1046,13 +1056,13 @@ export async function resolveCompanyLogo(
   }
 
   // Tier 2: Company website homepage favicon / apple-touch-icon
-  const homepageLogo = await inspectCompanyHomepage(domain, 32);
+  const homepageLogo = await inspectCompanyHomepage(domain, 32, isRejected, false);
   if (homepageLogo) {
     return homepageLogo;
   }
 
   // Tier 3: Free logo service fallback
-  const freeServiceLogo = await fetchFreeLogoService(domain, 32);
+  const freeServiceLogo = await fetchFreeLogoService(domain, 32, fetchWithTimeout, isRejected);
   if (freeServiceLogo) {
     return freeServiceLogo;
   }

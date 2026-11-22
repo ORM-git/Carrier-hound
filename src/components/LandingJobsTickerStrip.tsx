@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { parseTickerResponse } from "@/lib/api/clientSchemas";
+import { eligibleLogoUrl } from "@/lib/companies/logoEligibility";
 
 export interface TickerJobItem {
   company: string;
@@ -64,6 +65,8 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
   const relativeTime = formatRelativeTime(job.posted_at);
 
   const [imgError, setImgError] = useState(false);
+  const logo = eligibleLogoUrl(job.logo_url);
+  const showLogo = Boolean(logo) && !imgError;
 
   useEffect(() => {
     setImgError(false);
@@ -77,10 +80,11 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
       className="ticker-card flex items-center shrink-0 h-9 md:h-12 gap-4 md:gap-3 mr-12 md:mr-16 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg select-none"
     >
       {/* Logo square or neutral letter tile */}
-      <div className="w-9 h-9 md:w-12 md:h-12 min-w-[36px] min-h-[36px] md:min-w-[48px] md:min-h-[48px] rounded-[7px] md:rounded-[10px] overflow-hidden bg-[#1F1F1F] border border-white/10 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
-        {job.logo_url && !imgError ? (
+      {/* Same tile size either way; a logo sits on a neutral light backing so dark transparent marks stay visible. */}
+      <div className={`w-9 h-9 md:w-12 md:h-12 min-w-[36px] min-h-[36px] md:min-w-[48px] md:min-h-[48px] rounded-[7px] md:rounded-[10px] overflow-hidden ${showLogo ? "bg-[#F4F4F5]" : "bg-[#1F1F1F]"} border border-white/10 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
+        {showLogo && logo ? (
           <img
-            src={job.logo_url}
+            src={logo}
             alt={`${job.company} logo`}
             referrerPolicy="no-referrer"
             className="w-full h-full object-contain p-1 rounded-[6px] md:rounded-[9px]"

@@ -723,12 +723,11 @@ async function runSuite() {
     console.log(`  [PASS] 5e. Direct company URL resolved to valid domain: '${directDomain}'`);
   }
 
-  // 5f. Uses self-hosted logo first
-  // Candidate order: stored logo_url first, then the domain logo (behaviour covered by companyLogo.test.tsx)
-  if (!logoCode.includes("[logoUrl, unavatarUrl]")) {
-    failures.push("CompanyLogo must prioritize self-hosted logoUrl first");
+  // 5f. Uses only the self-hosted logo (shared company-logo contract; behaviour covered by companyLogo.test.tsx)
+  if (!logoCode.includes("const hosted = eligibleLogoUrl(logoUrl);") || /unavatar/i.test(logoCode.replace(/\/\/.*$/gm, ""))) {
+    failures.push("CompanyLogo must render only the eligible self-hosted logoUrl (no client-side unavatar fallback)");
   } else {
-    console.log("  [PASS] 5f. CompanyLogo prioritizes self-hosted logoUrl first");
+    console.log("  [PASS] 5f. CompanyLogo renders only the eligible self-hosted logoUrl");
   }
 
   // 5g. Letter tile rendered if both fail or if no non-ATS domain exists

@@ -15,6 +15,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
+import { firstEligibleLogo } from "@/lib/companies/logoEligibility";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/top10" } });
 
@@ -208,7 +209,7 @@ export async function POST(req: Request) {
     let query = supabaseAdmin
       .from("jobs")
       .select(
-        "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
+        "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, logo_url, companies(logo_url, canonical_domain, domain)"
       )
       .eq("is_active", true)
       .eq("status", "active");
@@ -241,7 +242,7 @@ export async function POST(req: Request) {
       const { data: fallbackPool } = await supabaseAdmin
         .from("jobs")
         .select(
-          "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
+          "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, logo_url, companies(logo_url, canonical_domain, domain)"
         )
         .eq("is_active", true)
         .eq("status", "active")
@@ -306,6 +307,12 @@ export async function POST(req: Request) {
         description: row.description || "",
         skills: Array.isArray(row.skills) ? row.skills : [],
         postedAt: row.posted_at || row.first_seen_at,
+        // Many-to-one embed: an object at runtime; typed as an array by the generated client.
+        ...(() => {
+          const co = (Array.isArray(row.companies) ? row.companies[0] : row.companies) as { logo_url?: string | null; canonical_domain?: string | null; domain?: string | null } | null | undefined;
+          const logo = firstEligibleLogo([row.logo_url, co?.logo_url]);
+          return { logoUrl: logo, logo_url: logo, companyDomain: co?.canonical_domain || co?.domain || null };
+        })(),
       };
 
       return [{ job: liveJob, diagnostics }];

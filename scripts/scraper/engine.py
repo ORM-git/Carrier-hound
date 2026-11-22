@@ -25,6 +25,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
+from .enrichment import resolve_logo_url
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 DEFAULT_SEEDS_PATH = Path(__file__).resolve().parent / "company_seeds.json"
@@ -288,6 +289,11 @@ def partition_set_diff(
     return to_insert, to_update, unchanged_ids
 
 
+def _is_hosted_logo(url: Any) -> bool:
+    """Same eligibility rule as enrichment.resolve_logo_url / logoEligibility.ts."""
+    return isinstance(url, str) and resolve_logo_url(url, None) is not None
+
+
 class SupabaseSetDiffWriter:
     """PostgREST writer performing safe set-diff upserts in batches of 50."""
 
@@ -302,6 +308,7 @@ class SupabaseSetDiffWriter:
         self.write_errors: list[str] = []
         self.failed_writes: int = 0
         self.persistence_failed: bool = False
+        self.logo_enqueue: dict[str, Any] = {"requested": 0, "enqueued": 0, "status": "skipped"}
 
     async def sync_companies(
         self,
@@ -323,7 +330,6 @@ class SupabaseSetDiffWriter:
                 "canonical_domain": j.get("canonical_domain"),
                 "domain": j.get("canonical_domain"),
                 "category": j.get("company_category"),
-                "logo_url": j.get("logo_url"),
                 "ats_type": j.get("source"),
                 "source_priority": int(j.get("source_priority") or 2),
                 "enabled": True,
@@ -366,11 +372,7 @@ class SupabaseSetDiffWriter:
                 inc_prio = inc.get("source_priority", 2)
                 updates: dict[str, Any] = {}
 
-                # Never overwrite a known better logo with null or lower-quality aggregator value
-                if not ex.get("logo_url") and inc.get("logo_url"):
-                    updates["logo_url"] = inc["logo_url"]
-                elif inc_prio == 1 and ex_prio > 1 and inc.get("logo_url"):
-                    updates["logo_url"] = inc["logo_url"]
+                # Logos are never written here (company-logo contract): the TS repair worker owns logo_url.
 
                 # Never overwrite canonical domain with null
                 if not ex.get("canonical_domain") and inc.get("canonical_domain"):
@@ -430,7 +432,42 @@ class SupabaseSetDiffWriter:
                 self.persistence_failed = True
                 self.write_errors.append(f"Company insert exception: {redact_sensitive_params(str(exc))}")
 
+        if not self.persistence_failed:
+            ineligible = [
+                company_id_map[slug] for slug in companies_by_slug
+                if slug in company_id_map and not _is_hosted_logo((existing_map.get(slug) or {}).get("logo_url"))
+            ]
+            await self.enqueue_company_logos(client, ineligible)
+
         return company_id_map
+
+    async def enqueue_company_logos(self, client: httpx.AsyncClient, company_ids: list[str]) -> None:
+        """Hand new / ineligible-logo companies to the shared logo repair loop. Fail-open: never
+        marks persistence failed and never raises, so branding can't block job ingestion."""
+        ids = sorted({i for i in company_ids if isinstance(i, str) and i})
+        self.logo_enqueue = {"requested": len(ids), "enqueued": 0, "status": "skipped" if not ids else "pending"}
+        for start in range(0, len(ids), 500):
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/rpc/enqueue_company_logos",
+                    headers=self.headers,
+                    json={"p_ids": ids[start:start + 500]},
+                )
+            except Exception as exc:  # noqa: BLE001 - fail-open by design
+                self.logo_enqueue["status"] = f"error: {redact_sensitive_params(str(exc))}"
+                return
+            if resp.status_code == 404 or "PGRST202" in resp.text:
+                self.logo_enqueue["status"] = "not-migrated"
+                return
+            if resp.status_code >= 400:
+                self.logo_enqueue["status"] = f"error: HTTP {resp.status_code}"
+                return
+            try:
+                self.logo_enqueue["enqueued"] += int(resp.json())
+            except (ValueError, TypeError):
+                pass
+        if ids:
+            self.logo_enqueue["status"] = "ok"
 
     async def sync_jobs_set_diff(
         self,

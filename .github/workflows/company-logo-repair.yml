@@ -1,0 +1,88 @@
+name: Company Logo Repair (gated)
+
+# Permanent, bounded company-logo repair loop (scripts/repair-company-logos.ts).
+# - Scheduled sweeps do NOTHING until the repository variable LOGO_REPAIR_ENABLED is 'true'
+#   (set it only after migration 20261122_company_logo_contract is applied and the backfill is approved).
+# - Picks up companies enqueued by BOTH ingest paths (TS scripts/ingest.ts and the Python ingest) plus
+#   null / external / verified-broken logos, via claim_company_logo_batch leases (no TS/Python/sweep races).
+# - Cap is explicit and bounded (1..200, default 40); never empty or unlimited.
+# - The job fails (GitHub alerts) on a run error, a stalled previous run or a rising backlog (exit 1/3);
+#   companies whose logo is simply unavailable keep initials and do not alert.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Companies per run (1-200)'
+        required: true
+        default: '40'
+        type: string
+      mode:
+        description: 'dry-run writes a manifest only; write needs the migration'
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - write
+
+permissions:
+  contents: read
+
+concurrency:
+  group: company-logo-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Repair company logos
+    if: github.event_name == 'workflow_dispatch' || vars.LOGO_REPAIR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Validate cap and mode
+        env:
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+          VAR_LIMIT: ${{ vars.LOGO_REPAIR_LIMIT }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          limit="${INPUT_LIMIT:-${VAR_LIMIT:-40}}"
+          if ! [[ "$limit" =~ ^[0-9]+$ ]] || (( limit < 1 || limit > 200 )); then
+            echo "::error::Logo repair cap must be an integer 1..200 (got '$limit'); refusing an empty or unlimited run."
+            exit 2
+          fi
+          if [[ "$EVENT" == "schedule" ]]; then mode=write; else mode="${INPUT_MODE:-dry-run}"; fi
+          echo "LIMIT=$limit" >> "$GITHUB_ENV"
+          echo "MODE=$mode" >> "$GITHUB_ENV"
+
+      - name: Run logo repair
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          args=(--limit "$LIMIT" --concurrency 4 --verify 25 --trigger sweep)
+          if [[ "$MODE" == "write" ]]; then args+=(--write); fi
+          npx tsx scripts/repair-company-logos.ts "${args[@]}"
+
+      - name: Upload run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: company-logo-repair-${{ github.run_id }}
+          path: reports/logo-repair/
+          if-no-files-found: ignore
+          retention-days: 30
