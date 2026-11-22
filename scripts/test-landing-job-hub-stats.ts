@@ -46,19 +46,22 @@ async function main() {
     "src/app/page.tsx must contain stats section with aria-label='CareerMonke in numbers'"
   );
 
-  const heroIdx = pageContent.indexOf('id="hero-h"');
-  const demoIdx = pageContent.indexOf('id="demo"');
+  // Composite page: the new top fold (kicker + View Jobs CTA) replaced the old hero and demo.
+  const heroIdx = pageContent.indexOf('<p className="kicker">Skip LinkedIn competition</p>');
+  const demoIdx = pageContent.indexOf('className="btn-cta"');
+  const stripIdx = pageContent.indexOf('<section className="ls"');
   const statsIdx = pageContent.indexOf('aria-label="CareerMonke in numbers"');
   const featuresIdx = pageContent.indexOf('id="feat-h"');
 
   assert(heroIdx !== -1, "Hero must be present in src/app/page.tsx");
-  assert(demoIdx !== -1, "Demo must be present in src/app/page.tsx");
+  assert(demoIdx !== -1, "Top-fold View Jobs CTA must be present in src/app/page.tsx");
+  assert(!pageContent.includes('id="demo"'), "Old demo must not come back");
   assert(statsIdx !== -1, "Stats must be present in src/app/page.tsx");
   assert(featuresIdx !== -1, "Features must be present in src/app/page.tsx");
 
-  assert(demoIdx < statsIdx, "Stats section must be placed below demo");
-  assert(statsIdx < featuresIdx, "Stats section must be placed above features");
-  console.log("  [PASS-LOCAL] Stats section is positioned directly below demo and above features");
+  assert(heroIdx < demoIdx && demoIdx < statsIdx, "Stats section must be placed below the top fold");
+  assert(statsIdx < stripIdx && stripIdx < featuresIdx, "Stats section must be placed above the logo strip and features");
+  console.log("  [PASS-LOCAL] Stats section is positioned directly below the top fold and above the logo strip");
 
   // Test 2: Laurels and Metric Values
   console.log("\nTEST 2: Laurels Symbols, Metric Values and Copy...");

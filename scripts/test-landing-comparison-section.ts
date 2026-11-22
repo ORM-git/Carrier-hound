@@ -54,18 +54,37 @@ async function runTests() {
 
   // 2. All 5 Comparison Rows
   console.log("\nTest 2: Verifying 5 comparison criteria rows...");
+  // Usual Grind column unchanged; only the five CareerMonke Way cells were rewritten (owner request).
   const expectedRows = [
-    ["800+ applicants per listing", "Under 20 applicants, direct"],
-    ["Hours tailoring every bullet", "1-tap ATS-matched resume"],
-    ["Resumes lost in black holes", "Instant keyword match score"],
-    ["Ghost and expired reposts", "From verified employers"],
-    ["Auto-rejected in 10 minutes", "Seen by recruiters early"],
+    ["800+ applicants per listing", "Jobs matched to your resume"],
+    ["Hours tailoring every bullet", "See your percentage match score"],
+    ["Resumes lost in black holes", "Verified employer job listings"],
+    ["Ghost and expired reposts", "Filter jobs by role, location and work mode"],
+    ["Auto-rejected in 10 minutes", "Apply on the employer's careers page"],
   ];
 
   for (const [usual, monke] of expectedRows) {
     assert.ok(pageSrc.includes(usual), `Must include usual criterion "${usual}"`);
     assert.ok(pageSrc.includes(monke), `Must include monke criterion "${monke}"`);
   }
+  // Row pairing and order: cells read left-to-right, top-to-bottom, exactly these ten.
+  const cells = Array.from(pageSrc.matchAll(/<span className="vx">\s*([^<]*?)\s*<\/span>/g), (m) => m[1]);
+  assert.deepStrictEqual(cells, expectedRows.flat(), "Comparison cells must be exactly the five rows above, in order");
+  for (const old of ["Under 20 applicants, direct", "1-tap ATS-matched resume", "Instant keyword match score", "From verified employers", "Seen by recruiters early"]) {
+    assert.ok(!pageSrc.includes(old), `Replaced CareerMonke cell must be gone: "${old}"`);
+  }
+  for (const monke of expectedRows.map((r) => r[1])) {
+    assert.ok(
+      !/\bAI\b|ATS|interview|guarantee|applicants?\b|\d+\s*minutes?|instant|faster|early/i.test(monke),
+      `CareerMonke cell must not make AI-resume, interview, guarantee, applicant-count or speed claims: "${monke}"`
+    );
+  }
+  // Same five-row layout and icons: 10 cells, 10 icons, 5 ✕ and 5 ✓ badges.
+  const vsTable = pageSrc.slice(pageSrc.indexOf('id="vs"'), pageSrc.indexOf("</table>"));
+  assert.strictEqual((vsTable.match(/<tr>/g) || []).length, 6, "Comparison must keep 1 header row + 5 body rows");
+  assert.strictEqual((vsTable.match(/className="vi"/g) || []).length, 10, "Comparison must keep all 10 icons");
+  assert.strictEqual((vsTable.match(/className="vb no"/g) || []).length, 5, "Usual column keeps 5 ✕ badges");
+  assert.strictEqual((vsTable.match(/className="vb ok"/g) || []).length, 5, "CareerMonke column keeps 5 ✓ badges");
   console.log("  -> [PASS-LOCAL] All 5 comparison criteria rows verified with 100% fidelity.");
 
   // 3. No Heavy GIF in page.tsx (Performance Rule)
