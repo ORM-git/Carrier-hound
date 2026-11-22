@@ -7,7 +7,8 @@ Features:
   `arbeitnow`, `adzuna`, or a specific company slug).
 - Strict per-source error isolation (one failing board never crashes the batch).
 - Tracks per-source completeness and failures in the run report.
-- Expiry is disabled for every run, including full-coverage and capped runs.
+- Expiry is disabled by default. Explicit --expire enables it for uncapped write runs;
+  partial-coverage, incomplete, or failed boards remain vetoed.
 """
 
 from __future__ import annotations
@@ -149,6 +150,8 @@ async def run_master_ingestion(
     dry_run: bool = True,
     max_rows: int | None = None,
     no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
     baseline_active_count: int = 0,
     expire_stale_hours: int = 72,
     transport: httpx.AsyncBaseTransport | None = None,
@@ -156,9 +159,12 @@ async def run_master_ingestion(
 ) -> dict[str, Any]:
     """
     Runs selected ingestion layers/sources with per-source error isolation,
-    safe set-diff upserts; expiry remains disabled for every run.
+    safe set-diff upserts; expiry requires an explicit opt-in on an uncapped write.
     """
-    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
+    validate_row_cap(
+        dry_run=dry_run, max_rows=max_rows, no_expire=no_expire,
+        allow_uncapped=allow_uncapped, allow_expire=allow_expire,
+    )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     raw_filters = sources or ["all"]
@@ -411,7 +417,13 @@ async def run_master_ingestion(
                 # Query baseline count for this exact board (source_id)
                 try:
                     cnt_resp = await client.get(
-                        f"{writer.base_url}/jobs?select=id&is_active=eq.true&source_id=eq.{bsid}&limit=1",
+                        f"{writer.base_url}/jobs",
+                        params={
+                            "select": "id",
+                            "is_active": "eq.true",
+                            "source_id": f"eq.{bsid}",
+                            "limit": "1",
+                        },
                         headers={**writer.headers, "Prefer": "count=exact"},
                     )
                     content_range = cnt_resp.headers.get("content-range") or ""
@@ -457,27 +469,28 @@ async def run_master_ingestion(
                 # Run safe per-board stale job expiration
                 try:
                     exp_resp = await client.patch(
-                        f"{writer.base_url}/jobs?is_active=eq.true&source_id=eq.{bsid}&last_seen_at=lt.{cutoff}",
+                        f"{writer.base_url}/jobs",
+                        params={
+                            "is_active": "eq.true",
+                            "source_id": f"eq.{bsid}",
+                            "last_seen_at": f"lt.{cutoff}",
+                        },
                         headers={**writer.headers, "Prefer": "return=representation"},
                         json={"is_active": False, "status": "expired"},
                     )
-                    if exp_resp.status_code < 300 and isinstance(exp_resp.json(), list):
-                        exp_count = len(exp_resp.json())
-                        db_stats["expired"] += exp_count
-                        expiry_reports.append({
-                            "source_id": bsid,
-                            "source_type": st,
-                            "expired": exp_count,
-                            "status": "completed",
-                        })
-                    else:
-                        expiry_reports.append({
-                            "source_id": bsid,
-                            "source_type": st,
-                            "expired": 0,
-                            "status": "failed",
-                            "error": f"HTTP {exp_resp.status_code}: {exp_resp.text}",
-                        })
+                    if exp_resp.status_code >= 300:
+                        raise RuntimeError(f"HTTP {exp_resp.status_code}: {exp_resp.text}")
+                    response_rows = exp_resp.json()
+                    if not isinstance(response_rows, list) or any(not isinstance(row, dict) for row in response_rows):
+                        raise ValueError("invalid expiry response: expected a JSON array of job rows")
+                    exp_count = len(response_rows)
+                    db_stats["expired"] += exp_count
+                    expiry_reports.append({
+                        "source_id": bsid,
+                        "source_type": st,
+                        "expired": exp_count,
+                        "status": "completed",
+                    })
                 except Exception as exc:
                     expiry_reports.append({
                         "source_id": bsid,
@@ -559,13 +572,18 @@ def main() -> None:
 
     try:
         dry_run = dry_run_from_args(args)
-        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
+        validate_row_cap(
+            dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
+        )
         report = asyncio.run(
             run_master_ingestion(
                 sources=args.source,
                 dry_run=dry_run,
                 max_rows=args.max_rows,
                 no_expire=args.no_expire,
+                allow_uncapped=args.production,
+                allow_expire=not args.no_expire,
                 baseline_active_count=args.baseline_count,
             )
         )
@@ -574,7 +592,7 @@ def main() -> None:
         raise SystemExit(2)
     print(json.dumps(report, indent=2))
     if ingestion_has_errors(report):
-        print("ingestion failed: source or persistence errors were reported", file=sys.stderr)
+        print("ingestion failed: source, persistence, or expiry errors were reported", file=sys.stderr)
         raise SystemExit(1)
 
 
