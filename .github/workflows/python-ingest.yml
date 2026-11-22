@@ -2,7 +2,7 @@ name: Python Job Ingestion (every 4 hours)
 
 # Runs the Python master ingestion (scripts/scraper/run_ingestion.py) on a schedule with exactly the manual
 # production command. The TypeScript pipeline (ingest.yml, :17 every 4h) is a separate ingester; this one is
-# offset by 2.5h so the two never contend for the database.
+# offset by 2.5h and shares its concurrency group (ingest-pipeline), so the two never run at the same time.
 #
 # Safety: the runner's own guard is untouched. If any source fails, run_master_ingestion withholds every
 # database write and all expiry, and the CLI exits 1 -> this run is marked failed with a summary.
@@ -13,7 +13,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: python-ingest
+  # Shared with ingest.yml (TypeScript ingester): both write and expire jobs in the same DB, so at most one
+  # of them runs at a time. In-progress runs are never cancelled.
+  group: ingest-pipeline
   cancel-in-progress: false
 
 permissions:
