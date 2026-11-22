@@ -68,7 +68,9 @@
       "id": 8172514,
       "title": "US Remote Engineer",
       "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172514",
-      "location": { "name": "US-Remote" },
+      "location": {
+        "name": "US-Remote"
+      },
       "first_published": "2026-11-01T12:00:00Z",
       "content": "&lt;p&gt;Role available to US candidates.&lt;/p&gt;"
     },
@@ -76,8 +78,15 @@
       "id": 8172515,
       "title": "Remote Canada Engineer",
       "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172515",
-      "location": { "name": "Remote" },
-      "metadata": [{ "name": "Country", "value": "Canada" }],
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "Canada"
+        }
+      ],
       "first_published": "2026-11-02T12:00:00Z",
       "content": "&lt;p&gt;Role for Canada-based candidates.&lt;/p&gt;"
     },
@@ -85,9 +94,31 @@
       "id": 8172516,
       "title": "Office Engineer",
       "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172516",
-      "location": { "name": "Seattle, WA" },
+      "location": {
+        "name": "Seattle, WA"
+      },
       "first_published": "2026-11-03T12:00:00Z",
       "content": "&lt;p&gt;On-site role.&lt;/p&gt;"
+    },
+    {
+      "id": 8172517,
+      "title": "Remote Product Analyst",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172517",
+      "location": {
+        "name": "Remote US / Canada"
+      },
+      "first_published": "2026-11-01T09:00:00Z",
+      "content": "<p>Remote role with country restrictions for the United States or Canada.</p>",
+      "pay_input_ranges": []
+    },
+    {
+      "id": 8172518,
+      "title": "Remote Operations Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172518",
+      "location": { "name": "Remote US" },
+      "metadata": [{ "name": "Country", "value": "Canada" }],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Conflicting source country metadata and location.</p>"
     }
   ]
 }

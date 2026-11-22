@@ -626,6 +626,87 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertEqual(updates[0][0], "row-original-date")
         self.assertEqual(updates[0][1]["posted_at"], existing["posted_at"])
 
+    def test_real_writer_preserves_unknown_date_and_persists_date_only_correction(self) -> None:
+        preserved_date = "2026-10-01T00:00:00+00:00"
+        corrected_date = "2026-11-02T00:00:00+00:00"
+        base = {
+            "source_type": "greenhouse", "source_id": "greenhouse:stripe", "source_priority": 1,
+            "company": "Stripe", "company_slug": "stripe", "title": "Engineer", "location": "Remote US",
+            "country": "United States", "country_code": "US", "remote": True, "is_remote": True,
+            "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time",
+            "category": "engineering", "role_category": "engineering", "status": "active", "is_active": True,
+            "verified": False, "description": "Role description", "apply_url": "https://example.test/apply",
+            "salary_text": None, "salary_min": None, "salary_max": None, "salary_period": None, "currency": None,
+            "source": "greenhouse", "dedupe_hash": "hash", "source_url": "https://example.test/job",
+            "logo_url": None, "canonical_domain": "stripe.com", "top_keywords": [], "skills": [],
+        }
+        incoming_unknown = {**base, "source_job_id": "stripe-preserve", "description": "Updated description", "posted_at": None}
+        incoming_correction = {**base, "source_job_id": "stripe-correct", "posted_at": corrected_date}
+        existing_rows = [
+            {**incoming_unknown, "id": "row-preserve", "description": "Original description", "posted_at": preserved_date},
+            {**incoming_correction, "id": "row-correct", "posted_at": preserved_date},
+        ]
+        patches: dict[str, dict[str, Any]] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "GET" and "/jobs" in request.url.path:
+                self.assertIn("posted_at", request.url.params.get("select", "").split(","))
+                return httpx.Response(200, json=existing_rows)
+            if request.method == "PATCH" and "/jobs" in request.url.path:
+                row_id = request.url.params.get("id", "").removeprefix("eq.")
+                patches[row_id] = json.loads(request.content)
+                return httpx.Response(200, json=[{"id": row_id}])
+            raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await writer.sync_jobs_set_diff(client, [incoming_unknown, incoming_correction], {})
+
+        result = asyncio.run(run())
+        self.assertEqual(result["updated"], 2)
+        self.assertFalse(result["persistence_failed"])
+        self.assertEqual(patches["row-preserve"]["posted_at"], preserved_date)
+        self.assertEqual(patches["row-correct"]["posted_at"], corrected_date)
+
+    def test_company_patch_failure_stops_before_next_company_insert(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, request.url.path))
+            if request.method == "GET":
+                return httpx.Response(200, json=[{
+                    "id": "company-existing", "slug": "existing", "name": "Existing",
+                    "logo_url": None, "domain": "old.example", "canonical_domain": "old.example",
+                    "category": "MNC_BIGTECH", "ats_type": "greenhouse",
+                }])
+            if request.method == "PATCH":
+                return httpx.Response(503, json={"error": "temporarily unavailable"})
+            if request.method == "POST":
+                return httpx.Response(201, json=[{"id": "company-new", "slug": "new-company"}])
+            raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+        jobs = [
+            {"company": "Existing", "company_slug": "existing", "canonical_domain": "existing.example",
+             "company_category": "MNC_BIGTECH", "logo_url": "https://existing.example/logo.png",
+             "source": "greenhouse", "source_priority": 1},
+            {"company": "New Company", "company_slug": "new-company", "source": "greenhouse", "source_priority": 1},
+        ]
+
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                company_map = await writer.sync_companies(client, jobs)
+            return writer, company_map
+
+        writer, company_map = asyncio.run(run())
+        self.assertTrue(writer.persistence_failed)
+        self.assertEqual(company_map, {"existing": "company-existing"})
+        self.assertEqual(calls, [
+            ("GET", "/rest/v1/companies"),
+            ("PATCH", "/rest/v1/companies"),
+        ])
+
     def test_job_lookups_for_all_batches_finish_before_any_job_write(self) -> None:
         calls: list[tuple[str, str]] = []
 

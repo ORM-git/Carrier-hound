@@ -72,8 +72,13 @@ def _normalize_iso_date(raw: Any, *, missing_as_now: bool = True) -> str | None:
 
 
 def _greenhouse_country_code(item: dict[str, Any], location: str) -> str | None:
-    """Use explicit Greenhouse country metadata or unambiguous country tokens only."""
-    metadata_code = None
+    """Return a country only when every explicit source/location clue agrees."""
+    countries = _greenhouse_country_evidence(item, location)
+    return next(iter(countries)) if len(countries) == 1 else None
+
+
+def _greenhouse_country_evidence(item: dict[str, Any], location: str) -> set[str]:
+    countries = _explicit_country_codes(location)
     metadata = item.get("metadata")
     if isinstance(metadata, list):
         for entry in metadata:
@@ -81,17 +86,16 @@ def _greenhouse_country_code(item: dict[str, Any], location: str) -> str | None:
                 continue
             value = entry.get("value")
             if isinstance(value, str):
-                code = _explicit_country_code(value, allow_ambiguous_region_code=True)
-                if code:
-                    metadata_code = code
-                    break
-    location_code = _explicit_country_code(location)
-    if metadata_code and location_code and metadata_code != location_code:
-        return None
-    return metadata_code or location_code
+                countries.update(_explicit_country_codes(value, allow_ambiguous_region_code=True))
+    return countries
 
 
 def _explicit_country_code(value: str, *, allow_ambiguous_region_code: bool = False) -> str | None:
+    countries = _explicit_country_codes(value, allow_ambiguous_region_code=allow_ambiguous_region_code)
+    return next(iter(countries)) if len(countries) == 1 else None
+
+
+def _explicit_country_codes(value: str, *, allow_ambiguous_region_code: bool = False) -> set[str]:
     text = value.strip().lower()
     codes = {
         "us": "US", "usa": "US", "u.s.": "US", "u.s.a.": "US", "united states": "US",
@@ -104,25 +108,29 @@ def _explicit_country_code(value: str, *, allow_ambiguous_region_code: bool = Fa
     }
     if text in codes:
         if text in {"ca", "in"} and not allow_ambiguous_region_code:
-            return None
-        return codes[text]
+            return set()
+        return {codes[text]}
+    countries: set[str] = set()
     if re.search(r"\bmexico city\b", text):
-        return "MX"
+        countries.add("MX")
     for token, code in codes.items():
         if len(token) > 2 and re.search(rf"\b{re.escape(token)}\b", text):
-            return code
+            countries.add(code)
     # CA and IN are also common region/preposition tokens, so only accept them as exact
     # metadata values above; never infer Canada from "San Francisco, CA" or India from "in US".
-    match = re.search(r"\b(us|usa|mx|gb|uk|de|fr|ie|es|br|au|jp|nl|sg|pl|il)\b", text)
-    return codes[match.group(1)] if match else None
+    for token, code in codes.items():
+        if len(token) <= 2 and token not in {"ca", "in"} and re.search(rf"\b{re.escape(token)}\b", text):
+            countries.add(code)
+    return countries
 
 
-def _greenhouse_remote_eligibility(location: str, is_remote: bool, country_code: str | None) -> str:
+def _greenhouse_remote_eligibility(location: str, is_remote: bool, country_evidence: set[str]) -> str:
     if not is_remote:
         return "unknown"
-    if re.search(r"\b(anywhere|worldwide|global|all regions|work from anywhere)\b", location, re.I):
+    has_worldwide_scope = re.search(r"\b(anywhere|worldwide|global|all regions|work from anywhere)\b", location, re.I)
+    if has_worldwide_scope and not country_evidence:
         return "worldwide"
-    return "country_restricted" if country_code else "unknown"
+    return "country_restricted" if country_evidence else "unknown"
 
 
 def _positive_number(raw: Any) -> float | None:
@@ -309,7 +317,8 @@ async def fetch_greenhouse(
         depts = item.get("departments") or []
         dept_name = depts[0].get("name") if depts and isinstance(depts[0], dict) else None
         salary = _greenhouse_salary(item)
-        country_code = _greenhouse_country_code(item, loc)
+        country_evidence = _greenhouse_country_evidence(item, loc)
+        country_code = next(iter(country_evidence)) if len(country_evidence) == 1 else None
         is_remote = _detect_remote(title, loc)
         results.append(
             build_normalized_job(
@@ -336,7 +345,7 @@ async def fetch_greenhouse(
                 posted_at_missing_as_now=False,
                 description_limit=None,
                 description_fallback=False,
-                remote_eligibility=_greenhouse_remote_eligibility(loc, is_remote, country_code),
+                remote_eligibility=_greenhouse_remote_eligibility(loc, is_remote, country_evidence),
                 source_layer="layer1",
                 source_priority=1,
             )

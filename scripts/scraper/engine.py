@@ -150,6 +150,7 @@ def compute_content_fingerprint(row: dict[str, Any]) -> str:
         str(row.get("company") or "").strip(),
         str(row.get("company_id") or "").strip(),
         str(row.get("title") or "").strip(),
+        str(row.get("posted_at") or "").strip(),
         str(row.get("description") or "").strip(),
         str(row.get("location") or "").strip(),
         str(row.get("country") or "").strip(),
@@ -376,12 +377,14 @@ class SupabaseSetDiffWriter:
                             self.failed_writes += 1
                             self.persistence_failed = True
                             self.write_errors.append(f"Company update error {upd_resp.status_code} for {slug}")
+                            break
                     except Exception as exc:
                         self.failed_writes += 1
                         self.persistence_failed = True
                         self.write_errors.append(f"Company update exception for {slug}: {redact_sensitive_params(str(exc))}")
+                        break
 
-        if to_insert:
+        if to_insert and not self.persistence_failed:
             try:
                 ins_resp = await client.post(
                     f"{self.base_url}/companies",
@@ -454,7 +457,7 @@ class SupabaseSetDiffWriter:
             quoted_sids = ",".join(f'"{sid}"' for sid in sids)
             q_url = (
                 f"{self.base_url}/jobs"
-                f"?select=id,company,company_id,title,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
+                f"?select=id,company,company_id,title,posted_at,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
                 f"&or=(source_job_id.in.({quoted_sids}))"
             )
             try:
