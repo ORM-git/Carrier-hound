@@ -1,0 +1,22 @@
+{
+  "desktop": {
+    "stripIsPrevSibling": true,
+    "cmpPaddingTop": "52px",
+    "docWidth": 1440,
+    "viewport": 1440,
+    "logoHosts": [
+      "szakevhxhwpeskidvtfs.supabase.co"
+    ],
+    "loadedBroken": 0
+  },
+  "mobile": {
+    "stripIsPrevSibling": true,
+    "cmpPaddingTop": "38px",
+    "docWidth": 390,
+    "viewport": 390,
+    "logoHosts": [
+      "szakevhxhwpeskidvtfs.supabase.co"
+    ],
+    "loadedBroken": 0
+  }
+}

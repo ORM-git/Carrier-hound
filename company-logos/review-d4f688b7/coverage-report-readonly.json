@@ -1,0 +1,137 @@
+{
+  "generatedAt": "2026-11-22T09:29:45.560Z",
+  "readOnly": true,
+  "totals": {
+    "companies": 509,
+    "activeJobs": 27606,
+    "companiesWithActiveJobs": 439
+  },
+  "liveCompanyLogoClasses": {
+    "hosted": 204,
+    "null": 57,
+    "external:other": 93,
+    "external:google-favicon": 21,
+    "external:unavatar": 21,
+    "external:ats-or-vendor": 43
+  },
+  "liveHostedVerified": {
+    "checked": 204,
+    "broken": 0
+  },
+  "liveEligibleHosted": 204,
+  "liveMissingOrIneligible": 235,
+  "allCompanyLogoClasses": {
+    "hosted": 207,
+    "null": 124,
+    "external:other": 93,
+    "external:ats-or-vendor": 43,
+    "external:unavatar": 21,
+    "external:google-favicon": 21
+  },
+  "activeJobRowLogoClasses": {
+    "null": 27596,
+    "external:google-favicon": 10
+  },
+  "orphanLinks": {
+    "nullCompanyId": 1316,
+    "nullCompanyIdNameMatch": 780,
+    "danglingCompanyId": 0,
+    "examples": [
+      {
+        "job": "00649351-d454-4fed-a2d4-51463097bb4e",
+        "company": "617MediaGroup",
+        "company_id": null,
+        "reason": "company_id null (no company row)"
+      },
+      {
+        "job": "007107be-4a4c-4c61-86c5-0976d5017436",
+        "company": "ElevenLabs",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "009ba8b4-e782-4be3-87b2-2e081d410302",
+        "company": "sertis",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "00e3799f-5a70-4cf1-bee2-04926a2c5904",
+        "company": "ElevenLabs",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "00e9991d-9d55-4e30-a22d-8e877434b43a",
+        "company": "Abacus Insights",
+        "company_id": null,
+        "reason": "company_id null (no company row)"
+      },
+      {
+        "job": "0112a54a-2bb5-468c-b317-c0d09986e21f",
+        "company": "ElevenLabs",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "011f5a87-dd28-4422-8e74-12c93c118f30",
+        "company": "Modal",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "01239e32-3077-4af6-b4f7-dd131c06f1a6",
+        "company": "Baseten",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "012b3142-aefe-474a-8b38-d4af8a797ed9",
+        "company": "OpenAI",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "0199ad8e-8aa7-4bd0-99a3-4e0e213bbbdd",
+        "company": "Modal",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "01dbc4a1-a7f8-425e-ae61-3378f7c3c424",
+        "company": "OpenAI",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "01ea3a6c-5d1e-4c96-a1c2-568b7744eddc",
+        "company": "ElevenLabs",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "02254e07-ba8e-4112-b2fb-feb6da5937c4",
+        "company": "Cursor",
+        "company_id": null,
+        "reason": "company_id null (name matches a company row)"
+      },
+      {
+        "job": "02282a74-a560-491e-8591-e7fb7047dfa9",
+        "company": "Wise Worksite Field Sales",
+        "company_id": null,
+        "reason": "company_id null (no company row)"
+      },
+      {
+        "job": "028e2163-4893-40a2-afc4-afb57a92b2b8",
+        "company": "12twenty",
+        "company_id": null,
+        "reason": "company_id null (no company row)"
+      }
+    ]
+  },
+  "companiesCreatedLast3Days": {
+    "count": 0,
+    "logoClasses": {}
+  },
+  "ms": 9724
+}
