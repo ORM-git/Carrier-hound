@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>CareerMonke — Start jobmaXXing with AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --navy: #0b1035;
+    --navy-2: #1a2050;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e5e9f2;
+    --bg-hero: #eef3fd;
+    --blue: #2563eb;
+    --blue-soft: #eaf1ff;
+    --blue-border: #c9d9fb;
+    --teal: #2dd4bf;
+
+    /* vertical rhythm scales with viewport height so everything fits above the fold */
+    --s1: clamp(4px, 1vh, 12px);
+    --s2: clamp(8px, 1.8vh, 20px);
+    --s3: clamp(12px, 2.6vh, 32px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; cursor: pointer; border: 0; background: none; }
+
+  .container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- First screen: everything up to the CTA ---------- */
+  .fold {
+    min-height: 100vh;
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- Hero (blue band) — absorbs any spare height ---------- */
+  .hero { background: var(--bg-hero); flex: 1 0 auto; display: flex; flex-direction: column; }
+  .hero > .container { flex: 1; display: flex; flex-direction: column; }
+
+  .nav {
+    height: clamp(52px, 8vh, 72px);
+    display: flex; align-items: center; justify-content: space-between;
+    flex: none;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 9px;
+    background: linear-gradient(145deg, #a0522d, #6b3519);
+    display: grid; place-items: center;
+    color: #fde7cf; font-size: 12px; font-weight: 800;
+  }
+  .nav-actions { display: flex; align-items: center; gap: 6px; }
+  .btn-ghost { padding: 8px 14px; border-radius: 999px; font-weight: 600; font-size: 15px; }
+  .btn-ghost:hover { background: rgba(15,23,42,.05); }
+  .btn-dark {
+    padding: 9px 18px; border-radius: 999px;
+    background: var(--navy); color: #fff; font-weight: 600; font-size: 15px;
+  }
+  .btn-dark:hover { background: var(--navy-2); }
+
+  .hero-inner {
+    flex: 1;
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: var(--s1) 0 var(--s3);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 12px;
+    background: #fff; border: 1px solid var(--blue-border); border-radius: 999px;
+    color: var(--blue); font-size: 13px; font-weight: 600;
+  }
+  .pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(37,99,235,.35); } 50% { box-shadow: 0 0 0 5px rgba(37,99,235,0); } }
+
+  .kicker {
+    margin-top: var(--s2);
+    font-size: clamp(12px, 1.6vh, 14px); font-weight: 600;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    margin-top: var(--s1);
+    font-size: clamp(32px, min(6.2vw, 7.4vh), 72px);
+    font-weight: 800; line-height: 1.05; letter-spacing: -.035em;
+    color: var(--navy);
+  }
+  .pill + h1 { margin-top: var(--s2); }
+  h1 .xx {
+    background: linear-gradient(90deg, var(--blue), #6d28d9);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .subhead {
+    margin-top: var(--s2);
+    max-width: 500px;
+    font-size: clamp(15px, 2vh, 18px); line-height: 1.5; color: #475569;
+    text-wrap: balance;
+  }
+
+  /* ---------- Listings ---------- */
+  .stage { position: relative; flex: none; }
+  .stage::before {          /* continues the blue band behind the top of the first card */
+    content: ""; position: absolute; inset: 0 0 auto 0;
+    height: clamp(36px, 6vh, 64px);
+    background: var(--bg-hero);
+  }
+  .stage .container { position: relative; }
+
+  .listings { max-width: 960px; margin: 0 auto; }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 10px;
+    box-shadow: 0 20px 50px -28px rgba(15,23,42,.25);
+  }
+  .card + .card { margin-top: 12px; }
+
+  /* second listing: shows its top half, then fades out */
+  .peek {
+    position: relative;
+    margin-top: 12px;
+    height: var(--peek-h, 120px);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 25%, transparent 100%);
+    pointer-events: none;
+    user-select: none;
+  }
+  .peek .card { box-shadow: none; }
+
+  .job { display: grid; grid-template-columns: 1fr 190px; gap: 10px; }
+  .job-main {
+    display: flex; flex-direction: column; justify-content: space-between;
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: clamp(12px, 2.1vh, 20px) 20px;
+  }
+  .job-head { display: flex; gap: 14px; align-items: flex-start; }
+  .logo {
+    flex: none; width: 50px; height: 50px; border-radius: 13px;
+    display: grid; place-items: center; font-weight: 800; font-size: 21px; color: #fff;
+  }
+  .logo.indigo { background: linear-gradient(145deg, #6366f1, #4338ca); }
+  .logo.green  { background: linear-gradient(145deg, #34d399, #059669); }
+  .job-title-block { flex: 1; min-width: 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1.6;
+    white-space: nowrap;
+  }
+  .tag-blue { background: var(--blue-soft); color: var(--blue); }
+  .tag-gray { background: #f1f5f9; color: #475569; }
+  .tag-green { background: #ecfdf5; color: #047857; }
+  .tag-amber { background: #fffbeb; color: #b45309; }
+  .job-title { margin-top: 5px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.3; }
+  .company { margin-top: 2px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+  .more { color: #94a3b8; padding: 2px 6px; border-radius: 8px; font-size: 16px; line-height: 1; }
+
+  .match-mini { display: none; }
+
+  .job-bottom {
+    margin-top: clamp(10px, 1.6vh, 16px);
+    padding-top: clamp(10px, 1.6vh, 16px);
+    border-top: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .meta { display: grid; grid-template-columns: repeat(3, auto); gap: 6px 24px; font-size: 14px; color: #334155; }
+  .meta-item { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .meta-item svg { flex: none; color: #94a3b8; }
+
+  .job-actions { display: flex; gap: 8px; flex: none; }
+  .icon-btn {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: grid; place-items: center; background: #f1f5f9; color: #475569;
+  }
+  .icon-btn:hover { background: #e2e8f0; color: var(--ink); }
+  .btn-apply {
+    height: 42px; padding: 0 22px; border-radius: 999px;
+    background: var(--blue); color: #fff; font-weight: 600; font-size: 15px;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-apply:hover { background: #1d4ed8; }
+
+  .match {
+    border-radius: 14px;
+    background: radial-gradient(120% 90% at 50% 0%, #10302e 0%, #0b1a1f 60%, #08131a 100%);
+    color: #fff;
+    padding: 16px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .ring { position: relative; width: 78px; height: 78px; flex: none; }
+  .ring svg { transform: rotate(-90deg); display: block; width: 100%; height: 100%; }
+  .ring-label { position: absolute; inset: 0; display: grid; place-items: center; font-size: 20px; font-weight: 800; }
+  .match-title { margin-top: 10px; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #cbd5e1; }
+  .match-list {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.1);
+    width: 100%; list-style: none; display: grid; gap: 3px; font-size: 13px; color: #cbd5e1; text-align: left;
+  }
+  .match-list li { display: flex; align-items: center; gap: 8px; }
+  .match-list li::before { content: "✓"; color: var(--teal); font-weight: 700; }
+
+  /* ---------- CTA ---------- */
+  .cta {
+    flex: none;
+    position: relative;
+    margin-top: -28px;            /* tucks into the fade of the half listing */
+    padding: 0 16px max(var(--s2), env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .btn-cta {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; max-width: 400px;
+    height: clamp(48px, 7vh, 58px); border-radius: 999px;
+    background: var(--navy); color: #fff; font-size: 17px; font-weight: 700;
+    box-shadow: 0 12px 28px -12px rgba(11,16,53,.55);
+    transition: transform .15s, background .15s;
+  }
+  .btn-cta:hover { background: var(--navy-2); transform: translateY(-1px); }
+  .cta-note { font-size: 13px; color: var(--muted); }
+
+  /* ---------- Tablet ---------- */
+  @media (max-width: 900px) {
+    .job-bottom { flex-direction: column; align-items: stretch; }
+    .job-actions .btn-apply { flex: 1; justify-content: center; }
+  }
+
+  /* ---------- Phone ---------- */
+  @media (max-width: 640px) {
+    .container { padding: 0 16px; }
+    .btn-ghost { display: none; }
+    .btn-dark { padding: 8px 14px; font-size: 14px; }
+    h1 { font-size: clamp(30px, 8.6vw, 38px); }
+    .subhead { max-width: 340px; font-size: 15px; }
+
+    .card { padding: 6px; border-radius: 16px; }
+    .job { grid-template-columns: 1fr; }
+    .match, .more { display: none; }       /* big panel → small badge in the header */
+    .job-main { padding: 14px; border-radius: 12px; }
+    .logo { width: 42px; height: 42px; font-size: 18px; border-radius: 11px; }
+    .job-head { gap: 12px; }
+    .tags { flex-wrap: nowrap; overflow: hidden; }
+    .tags .tag:nth-child(3) { display: none; }
+    .tag { font-size: 11px; padding: 1px 7px; }
+    .job-title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .company { font-size: 13px; }
+
+    .match-mini {
+      display: grid; place-items: center; position: relative;
+      flex: none; width: 46px; height: 46px; border-radius: 50%;
+      background: #0b1a1f; color: #fff; font-size: 12px; font-weight: 800;
+    }
+    .match-mini svg { position: absolute; inset: 3px; width: 40px; height: 40px; transform: rotate(-90deg); }
+
+    .meta { grid-template-columns: auto auto; gap: 4px 16px; font-size: 13px; }
+    .meta .hide-sm { display: none; }
+    .job-bottom { gap: 10px; }
+    .icon-btn, .btn-apply { height: 40px; }
+    .icon-btn { width: 40px; }
+    .peek, .card + .card { margin-top: 8px; }
+  }
+  @media (max-width: 640px) and (max-height: 660px) {
+    .pill { display: none; }
+    h1 { margin-top: 0; }
+  }
+
+  /* ---------- Short desktop screens ---------- */
+  @media (max-height: 820px) and (min-width: 641px) {
+    .kicker { display: none; }
+  }
+  @media (max-height: 680px) and (min-width: 641px) {
+    .pill { display: none; }
+    .meta .hide-sm { display: none; }
+    .meta { grid-template-columns: repeat(3, auto); }
+  }
+</style>
+</head>
+<body>
+
+<main class="fold">
+
+  <header class="hero">
+    <div class="container">
+      <nav class="nav">
+        <a href="#" class="brand"><span class="brand-mark">CM</span>CareerMonke</a>
+        <div class="nav-actions">
+          <a href="#" class="btn-ghost">Sign in</a>
+          <a href="#" class="btn-dark">Sign up free</a>
+        </div>
+      </nav>
+
+      <div class="hero-inner">
+        <span class="pill"><span class="pill-dot"></span>1,240 new jobs found today</span>
+        <p class="kicker">Skip LinkedIn competition</p>
+        <h1>Start jobma<span class="xx">XX</span>ing with AI</h1>
+        <p class="subhead">Find verified employer jobs and tailor your resume to clear their ATS in seconds.</p>
+      </div>
+    </div>
+  </header>
+
+  <section class="stage">
+    <div class="container">
+      <div class="listings">
+
+        <!-- Listing 1 (full) -->
+        <article class="card" id="first-card">
+          <div class="job">
+            <div class="job-main">
+              <div class="job-head">
+                <div class="logo indigo">N</div>
+                <div class="job-title-block">
+                  <div class="tags">
+                    <span class="tag tag-blue">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                      12 hours ago
+                    </span>
+                    <span class="tag tag-blue">Early applicant</span>
+                    <span class="tag tag-gray">Remote eligible</span>
+                  </div>
+                  <h3 class="job-title">Senior Backend Engineer</h3>
+                  <div class="company">Northwind Pay <span class="tag tag-green">Fintech</span></div>
+                </div>
+                <div class="match-mini" aria-label="85% experience match">
+                  <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3.5"/><circle cx="20" cy="20" r="17" fill="none" stroke="#2dd4bf" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="106.8" stroke-dashoffset="16"/></svg>
+                  85%
+                </div>
+                <button class="more" aria-label="More options">•••</button>
+              </div>
+
+              <div class="job-bottom">
+                <div class="meta">
+                  <div class="meta-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                    Remote, Worldwide
+                  </div>
+                  <div class="meta-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                    Full-time
+                  </div>
+                  <div class="meta-item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    $120k – $165k
+                  </div>
+                  <div class="meta-item hide-sm">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
+                    Remote
+                  </div>
+                  <div class="meta-item hide-sm">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>
+                    Senior level
+                  </div>
+                </div>
+
+                <div class="job-actions">
+                  <button class="icon-btn" aria-label="Not interested">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+                  </button>
+                  <button class="icon-btn" aria-label="Save">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>
+                  </button>
+                  <button class="btn-apply">Apply
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <aside class="match">
+              <div class="ring">
+                <svg viewBox="0 0 96 96">
+                  <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="8"/>
+                  <circle cx="48" cy="48" r="40" fill="none" stroke="#2dd4bf" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.3" stroke-dashoffset="37.7"/>
+                </svg>
+                <span class="ring-label">85%</span>
+              </div>
+              <div>
+                <p class="match-title">Experience match</p>
+                <ul class="match-list"><li>Remote eligible</li><li>Direct feed</li></ul>
+              </div>
+            </aside>
+          </div>
+        </article>
+
+        <!-- Listing 2 (top half visible) -->
+        <div class="peek" aria-hidden="true">
+          <article class="card">
+            <div class="job">
+              <div class="job-main">
+                <div class="job-head">
+                  <div class="logo green">L</div>
+                  <div class="job-title-block">
+                    <div class="tags">
+                      <span class="tag tag-blue">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                        5 hours ago
+                      </span>
+                      <span class="tag tag-blue">Early applicant</span>
+                      <span class="tag tag-gray">Remote eligible</span>
+                    </div>
+                    <h3 class="job-title">Data Analyst</h3>
+                    <div class="company">Lumen Audio <span class="tag tag-amber">Music streaming</span></div>
+                  </div>
+                  <div class="match-mini">
+                    <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3.5"/><circle cx="20" cy="20" r="17" fill="none" stroke="#2dd4bf" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="106.8" stroke-dashoffset="23.5"/></svg>
+                    78%
+                  </div>
+                  <button class="more">•••</button>
+                </div>
+                <div class="job-bottom">
+                  <div class="meta">
+                    <div class="meta-item">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                      New York, NY
+                    </div>
+                    <div class="meta-item">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                      Full-time
+                    </div>
+                    <div class="meta-item">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                      $95k – $130k
+                    </div>
+                  </div>
+                  <div class="job-actions">
+                    <span class="icon-btn"></span><span class="icon-btn"></span>
+                    <span class="btn-apply">Apply</span>
+                  </div>
+                </div>
+              </div>
+              <aside class="match">
+                <div class="ring">
+                  <svg viewBox="0 0 96 96">
+                    <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="8"/>
+                    <circle cx="48" cy="48" r="40" fill="none" stroke="#2dd4bf" stroke-width="8" stroke-linecap="round" stroke-dasharray="251.3" stroke-dashoffset="55.3"/>
+                  </svg>
+                  <span class="ring-label">78%</span>
+                </div>
+                <div>
+                  <p class="match-title">Experience match</p>
+                  <ul class="match-list"><li>Hybrid</li><li>Direct feed</li></ul>
+                </div>
+              </aside>
+            </div>
+          </article>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <a href="#" class="btn-cta">View Jobs <span aria-hidden="true">→</span></a>
+    <span class="cta-note">Free preview</span>
+  </section>
+
+</main>
+
+<script>
+  // Show exactly half of the second listing (it matches the first card's height).
+  (function () {
+    const first = document.getElementById('first-card');
+    const peek = document.querySelector('.peek');
+    const set = () => peek.style.setProperty('--peek-h', Math.round(first.offsetHeight * 0.5 + 28) + 'px'); // +28 = area hidden under the CTA overlap
+    set();
+    new ResizeObserver(set).observe(first);
+  })();
+</script>
+
+</body>
+</html>
