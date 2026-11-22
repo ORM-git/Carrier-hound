@@ -91,21 +91,16 @@ def _greenhouse_country_evidence(item: dict[str, Any], location: str) -> set[str
 
 
 def _greenhouse_location_country_evidence(location: str) -> set[str]:
-    segments = [segment.strip() for segment in location.split(",")]
-    countries: set[str] = set()
-    for index, segment in enumerate(segments[1:], start=1):
-        region = segment.lower()
-        if region in {"il", "de"}:
-            preceding = ", ".join(segments[:index])
-            preceding_countries = _explicit_country_codes(preceding)
-            if not preceding_countries and not re.search(r"\b(remote|anywhere|worldwide|global)\b", preceding, re.I):
-                # In a city, region format these are ambiguous US state abbreviations.
-                # Keep the location intact; a separate explicit country suffix can still resolve it.
-                continue
-        countries.update(_explicit_country_codes(segment))
-    if segments:
-        countries.update(_explicit_country_codes(segments[0]))
-    return countries
+    # IL and DE are both country codes and US state abbreviations. When either is
+    # the terminal city-region token, including common remote/hybrid qualifiers,
+    # treat it as ambiguous. This covers comma and whitespace separators while
+    # leaving explicit country names/codes elsewhere in the location intact.
+    country_text = re.sub(
+        r"(?i)(?:,|\s+)(?:IL|DE)(?:\s*\((?:remote|hybrid)\))?(?=\s*(?:,|$))",
+        "",
+        location,
+    )
+    return _explicit_country_codes(country_text)
 
 
 def _explicit_country_code(value: str, *, allow_ambiguous_region_code: bool = False) -> str | None:

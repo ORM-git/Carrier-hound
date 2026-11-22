@@ -81,7 +81,7 @@ def test_greenhouse_canary_normalizes_recorded_payload_without_inference_or_trun
 
     assert "content=true" in requested[0]
     assert "pay_transparency=true" in requested[0]
-    assert len(jobs) == 17
+    assert len(jobs) == 22
 
     hourly = by_id["stripe-8172510"]
     assert hourly["source_id"] == "greenhouse:stripe"
@@ -171,4 +171,15 @@ def test_greenhouse_canary_normalizes_recorded_payload_without_inference_or_trun
     us_canada_metadata = by_id["stripe-8172526"]
     assert us_canada_metadata["country_code"] is None
     assert us_canada_metadata["remote_eligibility"] == "country_restricted"
+
+    for source_job_id, expected_location in {
+        "stripe-8172527": "Remote - Chicago, IL",
+        "stripe-8172528": "Chicago, IL (Hybrid)",
+        "stripe-8172529": "Wilmington, DE (Remote)",
+        "stripe-8172530": "Chicago IL",
+        "stripe-8172531": "Wilmington DE",
+    }.items():
+        job = by_id[source_job_id]
+        assert job["country_code"] is None
+        assert job["location"] == expected_location
 

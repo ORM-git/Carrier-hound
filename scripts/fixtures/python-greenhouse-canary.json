@@ -232,6 +232,46 @@
       ],
       "first_published": "2026-11-02T09:00:00Z",
       "content": "<p>Multiple explicit country metadata values.</p>"
+    },
+    {
+      "id": 8172527,
+      "title": "Remote Chicago Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172527",
+      "location": {"name": "Remote - Chicago, IL"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Remote Chicago role.</p>"
+    },
+    {
+      "id": 8172528,
+      "title": "Chicago Hybrid Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172528",
+      "location": {"name": "Chicago, IL (Hybrid)"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Hybrid Chicago role.</p>"
+    },
+    {
+      "id": 8172529,
+      "title": "Wilmington Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172529",
+      "location": {"name": "Wilmington, DE (Remote)"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Remote Wilmington role.</p>"
+    },
+    {
+      "id": 8172530,
+      "title": "Chicago Office Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172530",
+      "location": {"name": "Chicago IL"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Chicago office role.</p>"
+    },
+    {
+      "id": 8172531,
+      "title": "Wilmington Office Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172531",
+      "location": {"name": "Wilmington DE"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Wilmington office role.</p>"
     }
   ]
 }
