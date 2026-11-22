@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "generated": "2026-11-19",
+  "generated": "2026-11-22",
   "files": {
     "netlify.toml": "aef5e1ef0f9a13cdb8b7355bb5ee81d528c35b3dd43bcb3c8695faa92ce5331a",
     "next.config.mjs": "58594e645a0160175f696a26ab3103cf7a682a3ea98f5d3341fad267a216f5f0",
     "package.json": "22e83b9eebb45dd47a091da1f3ff4141733aedbc92d76087fa8e2fbf11cb86b6",
     ".github/workflows/board-ingest.yml": "bcf686171a7390e3fdeb115b44364fab05f6bbed7a70b0f00411d3bce38b1976",
     ".github/workflows/capacity-report-cron.yml": "79592676f1e0611debba80ab3e5b641ffab96a85ed7b1d7ba77b6c81bca9bdbf",
-    ".github/workflows/ci.yml": "256f002cf60dca2f5db0cc00e998f176dc63671ce574225696d6de51b62f7033",
+    ".github/workflows/ci.yml": "2990a7d7d4fd60b7785034c61dfbf1fb1d805e585f9b8bc8c6dcc8087a8d39cd",
     ".github/workflows/daily-digest-cron.yml": "3bc0da18fe530e53d51cc05923a126307e94fd1387fb40a4a5148f34ddfd1cb4",
     ".github/workflows/ingest.yml": "6d4243354bdf4add0c36699ceb6694376ce585368ca6ae8d33d24f4fa8893c2f",
     ".github/workflows/plan-regression.yml": "60e1cde0e388fc46a871fca81138d5c963a730f3fa9e8f08c8e08718ea2b7b69",

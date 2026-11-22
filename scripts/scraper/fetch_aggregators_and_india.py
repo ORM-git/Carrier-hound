@@ -245,7 +245,7 @@ async def fetch_jobspy_india(
     sites: tuple[str, ...] = JOBSPY_SITES,
     results_wanted: int = 25,
     hours_old: int = 24,
-    scrape_timeout_seconds: float = 30.0,
+    scrape_timeout_seconds: float = 60.0,
     scrape_fn: Any | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
@@ -336,6 +336,8 @@ async def fetch_jobspy_india(
                     )
                 )
 
+    # Any failed/timed-out query makes this source incomplete: report it so the run-level guard withholds
+    # all writes (rows are still returned for the report). Partial writes would be a separate policy decision.
     error_summary = "; ".join(errors[:3]) if errors else None
     return results, error_summary
 
@@ -475,5 +477,7 @@ async def fetch_adzuna(
                     )
                 )
 
+    # Any failed/timed-out query makes this source incomplete: report it so the run-level guard withholds
+    # all writes (rows are still returned for the report). Partial writes would be a separate policy decision.
     error_summary = "; ".join(errors[:3]) if errors else None
     return results, error_summary

@@ -5,4 +5,5 @@ httpx==0.28.1
 python-dotenv==1.0.1
 
 # Aggregator batch dependencies (Layer 3 JobSpy Indian tech hubs)
-python-jobspy==1.1.84
+# 1.1.84 was never published on PyPI; 1.4.1 (2026-10-23) is the newest release at least two weeks old.
+python-jobspy==1.4.1

@@ -151,14 +151,6 @@
       "category": "HIGH_PRODUCT_YC"
     },
     {
-      "slug": "retool",
-      "name": "Retool",
-      "ats": "greenhouse",
-      "token": "retool",
-      "canonical_domain": "retool.com",
-      "category": "HIGH_PRODUCT_YC"
-    },
-    {
       "slug": "gusto",
       "name": "Gusto",
       "ats": "greenhouse",
@@ -169,8 +161,8 @@
     {
       "slug": "mistral",
       "name": "Mistral AI",
-      "ats": "lever",
-      "token": "mistral",
+      "ats": "ashby",
+      "token": "mistral.ai",
       "canonical_domain": "mistral.ai",
       "category": "HIGH_PRODUCT_YC"
     },
@@ -185,7 +177,7 @@
     {
       "slug": "plaid",
       "name": "Plaid",
-      "ats": "lever",
+      "ats": "ashby",
       "token": "plaid",
       "canonical_domain": "plaid.com",
       "category": "HIGH_PRODUCT_YC"
@@ -193,7 +185,7 @@
     {
       "slug": "anyscale",
       "name": "Anyscale",
-      "ats": "lever",
+      "ats": "ashby",
       "token": "anyscale",
       "canonical_domain": "anyscale.com",
       "category": "OTHER_STARTUPS"
@@ -201,7 +193,7 @@
     {
       "slug": "weaviate",
       "name": "Weaviate",
-      "ats": "lever",
+      "ats": "ashby",
       "token": "weaviate",
       "canonical_domain": "weaviate.io",
       "category": "OTHER_STARTUPS"
@@ -262,7 +254,7 @@
         "slug": "walmart",
         "name": "Walmart",
         "tenant": "walmart",
-        "wd_cluster": "wd5",
+        "wd_cluster": "wd504",
         "site": "WalmartExternal",
         "canonical_domain": "walmart.com",
         "category": "MNC_BIGTECH"
@@ -288,9 +280,9 @@
       {
         "slug": "deloitte",
         "name": "Deloitte",
-        "tenant": "deloitte",
-        "wd_cluster": "wd1",
-        "site": "DeloitteCareers",
+        "tenant": "deloitteie",
+        "wd_cluster": "wd3",
+        "site": "Experienced_Professionals",
         "canonical_domain": "deloitte.com",
         "category": "INDIAN_IT_AND_OTHER"
       },
@@ -324,7 +316,7 @@
     "microsoft": {
       "slug": "microsoft",
       "name": "Microsoft",
-      "url": "https://gcsservices.careers.microsoft.com/search/api/v1/search",
+      "url": "https://apply.careers.microsoft.com/api/pcsx/search",
       "canonical_domain": "microsoft.com",
       "category": "MNC_BIGTECH",
       "page_size": 20
