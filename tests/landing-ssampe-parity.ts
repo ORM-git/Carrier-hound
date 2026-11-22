@@ -281,7 +281,9 @@ function check(x: Input) {
     .replace(/(animation(?:-name)?:)([^;}]*)/g, (_, k, v) => k + prefix(v))
     .replace(/(^|[{}])body\{/g, "$1.landing-wrapper{")
     // owner-requested: the founder stat row is removed, so its stat-only rules go too
-    .replace(/(?<=^|[{}])\.landing-wrapper \.fd-stats[^{]*\{[^}]*\}/g, "");
+    .replace(/(?<=^|[{}])\.landing-wrapper \.fd-stats[^{]*\{[^}]*\}/g, "")
+    // owner-requested (#698): the real ticker replaces the sample strip and keeps its spacing hook (52px / 38px)
+    .replace(".landing-wrapper .ls+section.s{", ".landing-wrapper .ls+section.s,.landing-wrapper .jobs-ticker-strip+section.s{");
   const LIVE_MARK = "/* ---- Live review cards + founder card";
   const liveAt = x.lowerCss.indexOf(LIVE_MARK);
   assert.ok(liveAt > 0, "lower CSS must keep the live review/founder block last");
