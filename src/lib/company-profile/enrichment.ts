@@ -9,6 +9,96 @@ export interface OfficialPageExtraction {
 }
 
 export interface EnrichmentOptions { write: boolean; cap: number; afterId?: string }
+export interface CompanyAtsEvidence { ats_type?: string | null; slug?: string | null; careers_url?: string | null }
+
+export interface CompanyProfileFreshnessInput {
+  now: string;
+  state?: { status?: string | null; last_succeeded_at?: string | null; next_refresh_at?: string | null; last_error?: string | null } | null;
+  facts: Partial<Record<CompanyFactKey, Pick<CompanyFact, "retrievedAt" | "status">>>;
+  leadership: Array<{ retrievedAt: string }>;
+  news?: Array<{ publishedAt: string; retrievedAt?: string }>;
+}
+
+export function evaluateCompanyProfileFreshness(input: CompanyProfileFreshnessInput): { status: "fresh" | "stale" | "conflict"; shouldRefresh: boolean } {
+  const now = Date.parse(input.now);
+  const state = input.state;
+  const daysOld = (date: string | null | undefined) => {
+    const timestamp = date ? Date.parse(date) : NaN;
+    return Number.isFinite(timestamp) ? (now - timestamp) / 86_400_000 : Infinity;
+  };
+  const conflicts = state?.status === "conflict" || Object.values(input.facts).some((fact) => fact?.status === "conflict");
+  const staleFacts = Object.values(input.facts).some((fact) => !fact || daysOld(fact.retrievedAt) > 180);
+  const staleLeadership = !input.leadership.length || input.leadership.some((leader) => daysOld(leader.retrievedAt) > 30);
+  const staleNews = input.news !== undefined && input.news.some((item) => daysOld(item.retrievedAt || item.publishedAt) > 90);
+  const refreshDue = daysOld(state?.next_refresh_at) >= 0;
+  const stale = staleFacts || staleLeadership || staleNews || !state?.last_succeeded_at || refreshDue;
+  const retryCoolingDown = state?.status === "stale" && !refreshDue;
+  return { status: conflicts ? "conflict" : stale ? "stale" : "fresh", shouldRefresh: conflicts ? refreshDue : stale && !retryCoolingDown };
+}
+
+export async function processCompanyBatch<T extends { id: string }>(
+  companies: T[],
+  afterId: string | null,
+  processCompany: (company: T) => Promise<void>,
+): Promise<{ nextAfterId: string | null; attempted: number; error: { companyId: string; message: string } | null }> {
+  let nextAfterId = afterId;
+  let attempted = 0;
+  for (const company of companies) {
+    attempted++;
+    try {
+      await processCompany(company);
+      nextAfterId = company.id;
+    } catch (error) {
+      return {
+        nextAfterId,
+        attempted,
+        error: { companyId: company.id, message: error instanceof Error ? error.message : String(error) },
+      };
+    }
+  }
+  return { nextAfterId, attempted, error: null };
+}
+
+interface RobotsGroup { userAgents: string[]; rules: Array<{ allow: boolean; path: string }> }
+
+/** Applies RFC-style robots groups, wildcard paths, and the longest matching rule. */
+export function robotsAllows(robots: string, path: string, productToken = "careermonke"): boolean {
+  const groups: RobotsGroup[] = [];
+  let group: RobotsGroup | null = null;
+  const finishGroup = () => {
+    if (group?.userAgents.length) groups.push(group);
+    group = null;
+  };
+  for (const rawLine of robots.split(/\r?\n/)) {
+    const line = rawLine.split("#", 1)[0].trim();
+    if (!line) {
+      if (group?.rules.length) finishGroup();
+      continue;
+    }
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    const key = line.slice(0, separator).trim().toLowerCase();
+    const value = line.slice(separator + 1).trim();
+    if (key === "user-agent") {
+      if (group?.rules.length) finishGroup();
+      if (!group) group = { userAgents: [], rules: [] };
+      group.userAgents.push(value.toLowerCase());
+    } else if ((key === "allow" || key === "disallow") && value && group) {
+      group.rules.push({ allow: key === "allow", path: value });
+    }
+  }
+  finishGroup();
+  const specific = groups.filter((candidate) => candidate.userAgents.some((agent) => agent !== "*" && productToken.toLowerCase().includes(agent)));
+  const applicable = specific.length ? specific : groups.filter((candidate) => candidate.userAgents.includes("*"));
+  const matching = applicable.flatMap((candidate) => candidate.rules).filter((rule) => {
+    const terminal = rule.path.endsWith("$");
+    const pattern = rule.path.replace(/\$$/, "").replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    try { return new RegExp(`^${pattern}${terminal ? "$" : ""}`).test(path); } catch { return false; }
+  });
+  if (!matching.length) return true;
+  const specificity = Math.max(...matching.map((rule) => rule.path.replace(/[\*$]/g, "").length));
+  return !matching.some((rule) => !rule.allow && rule.path.replace(/[\*$]/g, "").length === specificity);
+}
 
 export function parseEnrichmentOptions(argv: string[]): EnrichmentOptions {
   const hasWrite = argv.includes("--write");
@@ -25,8 +115,14 @@ export function isAllowedCompanyProfileWriteTarget(supabaseUrl: string, environm
   if ((environment !== "local" && environment !== "staging") || !expectedProjectRef) return false;
   try {
     const parsed = new URL(supabaseUrl);
-    const ref = parsed.hostname.endsWith(".supabase.co") ? parsed.hostname.split(".")[0] : "local";
-    return (parsed.protocol === "https:" || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") && ref === expectedProjectRef && ref !== "szakevhxhwpeskidvtfs";
+    const host = parsed.hostname.toLowerCase().replace(/\.+$/, "");
+    const expectedRef = expectedProjectRef.trim().toLowerCase();
+    const productionRef = "szakevhxhwpeskidvtfs";
+    if (expectedRef === productionRef) return false;
+    if (environment === "local") {
+      return parsed.protocol === "http:" && expectedRef === "local" && ["localhost", "127.0.0.1", "::1"].includes(host.replace(/^\[|\]$/g, ""));
+    }
+    return parsed.protocol === "https:" && expectedRef !== "local" && host === `${expectedRef}.supabase.co`;
   } catch { return false; }
 }
 
@@ -51,20 +147,108 @@ function normalizedHost(value: string): string | null {
   return host;
 }
 
+function normalizedLink(value: string, baseUrl: string): string | null {
+  try {
+    const safe = safeCompanySourceUrl(new URL(value, baseUrl).href);
+    if (!safe) return null;
+    const url = new URL(safe);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "").replace(/\.+$/, "");
+    return `${host}${url.pathname.replace(/\/+$/, "") || "/"}`;
+  } catch { return null; }
+}
+
+function expectedAtsBoardLinks(board: CompanyAtsEvidence): string[] {
+  const links: string[] = [];
+  if (board.careers_url) links.push(board.careers_url);
+  const slug = String(board.slug || "").trim();
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(slug)) return links;
+  const urls: Record<string, string[]> = {
+    greenhouse: [`https://boards.greenhouse.io/${slug}`, `https://job-boards.greenhouse.io/${slug}`],
+    lever: [`https://jobs.lever.co/${slug}`],
+    ashby: [`https://jobs.ashbyhq.com/${slug}`],
+    smartrecruiters: [`https://careers.smartrecruiters.com/${slug}`],
+    recruitee: [`https://${slug}.recruitee.com`],
+    workable: [`https://apply.workable.com/${slug}`, `https://${slug}.workable.com`],
+  };
+  links.push(...(urls[String(board.ats_type || "").toLowerCase()] || []));
+  return links;
+}
+
+/** A first-party domain is trusted only when an enabled ATS board is linked from it (or its careers URL is that domain). */
+export function isAtsEvidenceLinked(canonicalDomain: string, homeHtml: string, homeUrl: string, boards: CompanyAtsEvidence[]): boolean {
+  const expectedHost = normalizedHost(`https://${canonicalDomain}`);
+  if (!expectedHost || !Array.isArray(boards) || !boards.length) return false;
+  const linked = new Set<string>();
+  for (const match of Array.from(homeHtml.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>/gi))) {
+    const link = normalizedLink(match[1].replace(/&amp;/g, "&"), homeUrl);
+    if (link) linked.add(link);
+  }
+  for (const board of boards) {
+    for (const candidate of expectedAtsBoardLinks(board)) {
+      const link = normalizedLink(candidate, homeUrl);
+      if (!link) continue;
+      if (link.split("/")[0] === expectedHost || linked.has(link)) return true;
+    }
+  }
+  return false;
+}
+
+function organizationNameKey(value: unknown): string {
+  return clean(value, 120).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function personAffiliatedWithOrganization(person: Record<string, any>, organization: Record<string, any>, expectedName: string, expectedHost: string): boolean {
+  const relationships = Array.isArray(person.worksFor) ? person.worksFor : [person.worksFor];
+  const organizationId = typeof organization["@id"] === "string" ? organization["@id"] : null;
+  return relationships.some((relationship) => {
+    if (typeof relationship === "string") return organizationNameKey(relationship) === expectedName;
+    if (!relationship || typeof relationship !== "object") return false;
+    const nameMatches = organizationNameKey(relationship.name) === expectedName;
+    const idMatches = organizationId && relationship["@id"] === organizationId;
+    const url = typeof relationship.url === "string" ? normalizedHost(relationship.url) : null;
+    const idHost = typeof relationship["@id"] === "string" ? normalizedHost(relationship["@id"]) : null;
+    const domainMatches = url === expectedHost || idHost === expectedHost;
+    const hasConflictingName = Boolean(relationship.name) && !nameMatches;
+    const hasConflictingDomain = Boolean(url || idHost) && !domainMatches;
+    return !hasConflictingName && !hasConflictingDomain && (nameMatches || idMatches || domainMatches);
+  });
+}
+
+function verifiedSocialLinks(organization: Record<string, any>, expectedName: string): Partial<Record<"linkedin_url" | "twitter_url", string>> {
+  const sameAs = Array.isArray(organization.sameAs) ? organization.sameAs : [organization.sameAs];
+  const result: Partial<Record<"linkedin_url" | "twitter_url", string>> = {};
+  for (const value of sameAs) {
+    if (typeof value !== "string") continue;
+    const safe = safeCompanySourceUrl(value);
+    if (!safe) continue;
+    const url = new URL(safe);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const segments = url.pathname.split("/").filter(Boolean);
+    if ((host === "linkedin.com" || host === "www.linkedin.com") && segments.length === 2 && ["company", "showcase"].includes(segments[0].toLowerCase()) && !result.linkedin_url) {
+      result.linkedin_url = safe;
+    }
+    if (["twitter.com", "x.com"].includes(host) && segments.length === 1 && organizationNameKey(segments[0]) === expectedName && !result.twitter_url) {
+      result.twitter_url = safe;
+    }
+  }
+  return result;
+}
+
 /** Extracts only first-party structured facts from an employer page; no title/copyright guesses. */
 export function extractOfficialCompanyPage(input: {
-  html: string; pageUrl: string; canonicalDomain: string; companyName: string; retrievedAt?: string;
+  html: string; pageUrl: string; canonicalDomain: string; companyName: string; retrievedAt?: string; atsBoards?: CompanyAtsEvidence[];
 }): OfficialPageExtraction {
   const pageUrl = safeCompanySourceUrl(input.pageUrl);
   const expectedHost = normalizedHost(`https://${input.canonicalDomain}`);
   const fetchedHost = pageUrl ? normalizedHost(pageUrl) : null;
   if (!pageUrl || !expectedHost || fetchedHost !== expectedHost) return { verified: false, facts: {}, leadership: [], news: [] };
+  if (!isAtsEvidenceLinked(input.canonicalDomain, input.html, pageUrl, input.atsBoards || [])) return { verified: false, facts: {}, leadership: [], news: [] };
   const retrievedAt = iso(input.retrievedAt || new Date().toISOString())!;
   const parsed = Array.from(input.html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)).flatMap((match) => {
     try { return objects(JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"))); } catch { return []; }
   });
   const pagePath = new URL(pageUrl).pathname.toLowerCase();
-  const expectedName = clean(input.companyName, 120).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const expectedName = organizationNameKey(input.companyName);
   const organization = parsed.find((o) => isOrg(o) && clean(o.name, 120).toLowerCase().replace(/[^a-z0-9]/g, "") === expectedName);
   if (!organization) return { verified: false, facts: {}, leadership: [], news: [] };
   const facts: OfficialPageExtraction["facts"] = {};
@@ -85,18 +269,12 @@ export function extractOfficialCompanyPage(input: {
   const employees = organization.numberOfEmployees;
   if (typeof employees === "string") add("employee_count_range", employees);
   else if (employees && typeof employees === "object" && typeof employees.value === "number" && employees.value > 0) add("employee_count_range", `${employees.value}`);
-  for (const link of Array.from(input.html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>/gi))) {
-    let linked = "";
-    try { linked = new URL(link[1].replace(/&amp;/g, "&"), pageUrl).href; } catch {}
-    const url = safeCompanySourceUrl(linked);
-    if (!url) continue;
-    const host = normalizedHost(url);
-    if (host === "linkedin.com" || host === "www.linkedin.com") add("linkedin_url", url);
-    if (host === "twitter.com" || host === "x.com") add("twitter_url", url);
-  }
+  const socialLinks = verifiedSocialLinks(organization, expectedName);
+  if (socialLinks.linkedin_url) add("linkedin_url", socialLinks.linkedin_url);
+  if (socialLinks.twitter_url) add("twitter_url", socialLinks.twitter_url);
   const leadership: CompanyLeader[] = (/(?:about|leadership|team|management)/i.test(pagePath) ? parsed : []).filter((o) => {
     const types = Array.isArray(o["@type"]) ? o["@type"] : [o["@type"]];
-    return types.includes("Person") && clean(o.name) && (o.jobTitle || o.hasOccupation);
+    return types.includes("Person") && clean(o.name) && (o.jobTitle || o.hasOccupation) && personAffiliatedWithOrganization(o, organization, expectedName, expectedHost);
   }).slice(0, 12).flatMap((o, index) => {
     const name = clean(o.name, 100), role = clean(o.jobTitle || o.hasOccupation?.name, 120);
     return name && role && /\b(chief|ceo|cfo|cto|coo|cmo|cpo|president|founder|co-founder|executive|board|chair|vice president|vp)\b/i.test(role) ? [{ id: `${index}:${name}`, name, role, roleAsOf: iso(o.roleAsOf), sourceUrl: pageUrl, retrievedAt }] : [];
@@ -119,7 +297,18 @@ export function reconcileCompanyFacts<T extends string>(existing: Partial<Record
   for (const [key, candidate] of Object.entries(observed) as [CompanyFactKey, CompanyFact<T>][]) {
     if (!candidate?.value || !candidate.sourceUrl || !candidate.retrievedAt) continue;
     const current = next[key];
-    if (!current || current.value === candidate.value && Date.parse(candidate.retrievedAt) >= Date.parse(current.retrievedAt)) next[key] = candidate;
+    if (!current) { next[key] = { ...candidate, status: "fresh", conflict: null }; continue; }
+    if (current.value === candidate.value) {
+      if (Date.parse(candidate.retrievedAt) >= Date.parse(current.retrievedAt)) next[key] = { ...candidate, status: "fresh", conflict: null };
+      continue;
+    }
+    const oldObservation = current.observedAt ? Date.parse(current.observedAt) : NaN;
+    const newObservation = candidate.observedAt ? Date.parse(candidate.observedAt) : NaN;
+    if (Number.isFinite(newObservation) && (!Number.isFinite(oldObservation) || newObservation > oldObservation)) {
+      next[key] = { ...candidate, status: "fresh", conflict: null };
+    } else if (!Number.isFinite(newObservation) || !Number.isFinite(oldObservation) || newObservation === oldObservation) {
+      next[key] = { ...current, status: "conflict", conflict: { value: candidate.value, sourceUrl: candidate.sourceUrl, sourceKind: candidate.sourceKind, retrievedAt: candidate.retrievedAt, observedAt: candidate.observedAt || null } };
+    }
   }
   return next;
 }

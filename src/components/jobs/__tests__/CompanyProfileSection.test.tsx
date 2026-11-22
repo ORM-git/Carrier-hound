@@ -19,6 +19,7 @@ const baseJob = (): LiveJob => ({
     leadership: [{ id: "leader-1", name: "Alex Example", role: "CEO", roleAsOf: null, sourceUrl: "https://acme.example/team", retrievedAt: "2026-11-22T00:00:00Z" }],
     news: [{ id: "news-1", headline: "Acme announces a product", publishedAt: "2026-11-20T00:00:00Z", sourceUrl: "https://acme.example/news", excerpt: null }],
     jobs: { status: "ready", jobs: [{ id: "job-other", title: "Design Engineer", company: "Acme Corp", location: "Boston, US", postedAt: null }] },
+    freshness: "fresh",
   },
 });
 
@@ -50,6 +51,20 @@ describe("Company section", () => {
     cleanup();
     renderDetail({ ...baseJob(), companyProfile: { ...baseJob().companyProfile!, jobs: { status: "error", jobs: [] } } });
     expect(screen.getByText("Company jobs could not be loaded.")).toBeTruthy();
+  });
+
+  it("shows stale and conflicting profile freshness without replacing the verified value", () => {
+    const job = baseJob();
+    job.companyProfile!.freshness = "conflict";
+    job.companyProfile!.facts.headquarters!.status = "conflict";
+    job.companyProfile!.facts.headquarters!.conflict = { value: "Toronto, Canada", sourceUrl: "https://acme.example/locations", sourceKind: "official_site", retrievedAt: "2026-11-22T00:00:00Z" };
+    renderDetail(job);
+    expect(screen.getByText(/conflicting sources/)).toBeTruthy();
+    expect(screen.getAllByText("Boston, US")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: /Conflicting report/ })).toBeTruthy();
+    cleanup();
+    renderDetail({ ...baseJob(), companyProfile: { ...baseJob().companyProfile!, freshness: "stale" } });
+    expect(screen.getByText(/may be out of date/)).toBeTruthy();
   });
 
   it("scrolls the Company heading below the measured sticky header", async () => {

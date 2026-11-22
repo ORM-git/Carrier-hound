@@ -102,6 +102,7 @@ table: company_boards | 20261001_phase1_storage_optimization.sql
 table: company_profile_facts | 20261122a_company_profile_data.sql
 table: company_profile_leadership | 20261122a_company_profile_data.sql
 table: company_profile_news | 20261122a_company_profile_data.sql
+table: company_profile_refresh_state | 20261122a_company_profile_data.sql
 table: company_token_registry | 20261028_ats_board_ingestion.sql
 table: consent_logs | 20261116b_ten_million_system_design_schema.sql
 table: cron_run_logs | 20261008_phase2_daily_digest_cron.sql

@@ -21,15 +21,29 @@ async function main() {
     await db.exec(`INSERT INTO public.company_profile_facts(company_id,fact_key,fact_value,source_url,source_kind,retrieved_at)
       VALUES ('00000000-0000-0000-0000-000000000001','overview','Acme','https://acme.example/about','official_site',now())
       ON CONFLICT(company_id,fact_key) DO UPDATE SET fact_value=excluded.fact_value;`);
+    const leaderObservation = `INSERT INTO public.company_profile_leadership(company_id,name,role,role_as_of,source_url,retrieved_at)
+      VALUES ('00000000-0000-0000-0000-000000000001','Ada Example','CEO',NULL,'https://acme.example/team',now())
+      ON CONFLICT (company_id,name,role,role_as_of) DO NOTHING;`;
+    await db.exec(leaderObservation);
+    await db.exec(leaderObservation);
+    await db.exec(`INSERT INTO public.company_profile_refresh_state(company_id,status,last_attempted_at,last_succeeded_at,next_refresh_at)
+      VALUES ('00000000-0000-0000-0000-000000000001','conflict',now(),now(),now() + interval '30 days')
+      ON CONFLICT(company_id) DO UPDATE SET status=excluded.status;`);
+    await db.exec(`INSERT INTO public.company_profile_leadership(company_id,name,role,role_as_of,source_url,retrieved_at)
+      VALUES ('00000000-0000-0000-0000-000000000001','Ada Example','Executive Chair',NULL,'https://acme.example/team',now())
+      ON CONFLICT (company_id,name,role,role_as_of) DO NOTHING;`);
     const profiles = await db.query<{ count: string }>("SELECT count(*)::text count FROM public.company_profile_facts");
+    const leaders = await db.query<{ name: string; role: string }>("SELECT name,role FROM public.company_profile_leadership ORDER BY role");
+    const freshness = await db.query<{ status: string; fact_status: string }>(`SELECT s.status, f.fact_status FROM public.company_profile_refresh_state s JOIN public.company_profile_facts f USING(company_id)`);
     const matchingJobs = await db.query<{ id: string }>(`SELECT id FROM public.jobs WHERE company_id='00000000-0000-0000-0000-000000000001' AND id<>'10000000-0000-0000-0000-000000000001' AND status='active' AND is_active=true`);
-    const access = await db.query<{ anon_select: boolean; service_write: boolean; rls: boolean }>(`SELECT has_table_privilege('anon','public.company_profile_facts','SELECT') anon_select,
+    const access = await db.query<{ anon_select: boolean; service_write: boolean; rls: boolean; refresh_rls: boolean }>(`SELECT has_table_privilege('anon','public.company_profile_facts','SELECT') anon_select,
       has_table_privilege('service_role','public.company_profile_facts','INSERT') service_write,
-      (SELECT relrowsecurity FROM pg_class WHERE oid='public.company_profile_facts'::regclass) rls`);
-    if (profiles.rows[0].count !== "1" || matchingJobs.rows.length !== 1 || access.rows[0].anon_select || !access.rows[0].service_write || !access.rows[0].rls) {
-      throw new Error(`Schema rehearsal failed: ${JSON.stringify({ profiles: profiles.rows, matchingJobs: matchingJobs.rows, access: access.rows })}`);
+      (SELECT relrowsecurity FROM pg_class WHERE oid='public.company_profile_facts'::regclass) rls,
+      (SELECT relrowsecurity FROM pg_class WHERE oid='public.company_profile_refresh_state'::regclass) refresh_rls`);
+    if (profiles.rows[0].count !== "1" || leaders.rows.length !== 2 || freshness.rows[0]?.status !== "conflict" || freshness.rows[0]?.fact_status !== "fresh" || matchingJobs.rows.length !== 1 || access.rows[0].anon_select || !access.rows[0].service_write || !access.rows[0].rls || !access.rows[0].refresh_rls) {
+      throw new Error(`Schema rehearsal failed: ${JSON.stringify({ profiles: profiles.rows, leaders: leaders.rows, freshness: freshness.rows, matchingJobs: matchingJobs.rows, access: access.rows })}`);
     }
-    console.log("Company profile schema rehearsal passed (migration reapply, idempotent fact upsert, canonical active-job scope, RLS/grants). No network database used.");
+    console.log("Company profile schema rehearsal passed (migration reapply, idempotent fact/undated leader upserts, changed role retained, freshness/conflict state, canonical active-job scope, RLS/grants). No network database used.");
   } finally { await db.close(); }
 }
 

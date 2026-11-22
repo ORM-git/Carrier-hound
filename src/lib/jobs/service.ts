@@ -70,6 +70,24 @@ export function mapCompanyProfilePayload(value: unknown, companyId?: string | nu
   return sanitizeCompanyProfile(value, companyId || undefined);
 }
 
+/** Prevents an older detail lookup from replacing a newer in-place selection. */
+export class LatestJobSelectionGate {
+  private requestVersion = 0;
+
+  begin(): number {
+    this.requestVersion += 1;
+    return this.requestVersion;
+  }
+
+  isCurrent(token: number): boolean {
+    return token === this.requestVersion;
+  }
+
+  cancel(): void {
+    this.requestVersion += 1;
+  }
+}
+
 export interface ProUnlockError {
   status?: number;
   message?: string;

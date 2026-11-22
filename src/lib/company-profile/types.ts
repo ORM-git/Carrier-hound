@@ -8,6 +8,8 @@ export interface CompanyFact<T = string> {
   sourceKind: "official_site" | "official_report" | "official_announcement";
   retrievedAt: string;
   observedAt?: string | null;
+  status?: "fresh" | "stale" | "conflict";
+  conflict?: { value: string; sourceUrl: string; sourceKind: CompanyFact["sourceKind"]; retrievedAt: string; observedAt?: string | null } | null;
 }
 
 export interface CompanyLeader {
@@ -47,6 +49,7 @@ export interface CompanyProfile {
   leadership: CompanyLeader[];
   news: CompanyNewsItem[];
   jobs: CompanyJobsResult;
+  freshness?: "fresh" | "stale" | "conflict";
 }
 
 const factKeys = new Set<CompanyFactKey>([
@@ -89,6 +92,12 @@ export function sanitizeCompanyProfile(value: unknown, companyId?: string): Comp
       sourceKind: fact.sourceKind,
       retrievedAt,
       observedAt: typeof fact.observedAt === "string" && Number.isFinite(Date.parse(fact.observedAt)) ? fact.observedAt : null,
+      status: ["fresh", "stale", "conflict"].includes(String(fact.status)) ? fact.status : "fresh",
+      conflict: fact.conflict && typeof fact.conflict.value === "string" && safeCompanySourceUrl(fact.conflict.sourceUrl) && Number.isFinite(Date.parse(fact.conflict.retrievedAt)) ? {
+        value: stripHtmlAndExecutableMarkup(fact.conflict.value).trim().slice(0, key === "overview" ? 700 : 180),
+        sourceUrl: safeCompanySourceUrl(fact.conflict.sourceUrl)!, sourceKind: fact.conflict.sourceKind,
+        retrievedAt: fact.conflict.retrievedAt, observedAt: fact.conflict.observedAt || null,
+      } : null,
     };
   }
   const leadership = Array.isArray(raw.leadership) ? raw.leadership.slice(0, 12).flatMap((row) => {
@@ -106,5 +115,5 @@ export function sanitizeCompanyProfile(value: unknown, companyId?: string): Comp
     status: jobs.status,
     jobs: jobs.status === "ready" && Array.isArray(jobs.jobs) ? jobs.jobs.slice(0, 5).filter((job) => job && typeof job.id === "string").map((job) => ({ ...job, title: stripHtmlAndExecutableMarkup(job.title).slice(0, 180), company: stripHtmlAndExecutableMarkup(job.company).slice(0, 100), location: stripHtmlAndExecutableMarkup(job.location).slice(0, 120), logoUrl: job.logoUrl ? safeCompanySourceUrl(job.logoUrl) : null })) : [],
   } : { status: "unknown", jobs: [] };
-  return { companyId: id, facts, leadership, news, jobs: safeJobs };
+  return { companyId: id, facts, leadership, news, jobs: safeJobs, freshness: ["fresh", "stale", "conflict"].includes(String(raw.freshness)) ? raw.freshness : "stale" };
 }
