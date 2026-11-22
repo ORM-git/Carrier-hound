@@ -1,0 +1,2406 @@
+{
+  "reviewedAt": null,
+  "generatedAt": "2026-11-22T10:12:20.631Z",
+  "cap": 200,
+  "companies": [
+    {
+      "id": "d8d3c61f-e992-4d3f-b09a-f94fd9c6721c",
+      "name": "Cloudflare",
+      "current_logo_url": "https://www.cloudflare.com/favicon.ico",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "5414bc6e4b3f6e10f99b5d37abf4420da4dcaece66f8f2c08e090e87267adbc5",
+        "key": "d8d3c61f-e992-4d3f-b09a-f94fd9c6721c/5414bc6e4b3f6e10f99b5d37abf4420da4dcaece66f8f2c08e090e87267adbc5.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/d8d3c61f-e992-4d3f-b09a-f94fd9c6721c/5414bc6e4b3f6e10f99b5d37abf4420da4dcaece66f8f2c08e090e87267adbc5.png"
+      }
+    },
+    {
+      "id": "20e0b5eb-b15a-4729-b931-2cc785492280",
+      "name": "MongoDB",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=mongodb.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "8476bc88b13f4161da7aea5e538cbff0d793ad55c02af6f941fcd1f263dfdb6d",
+        "key": "20e0b5eb-b15a-4729-b931-2cc785492280/8476bc88b13f4161da7aea5e538cbff0d793ad55c02af6f941fcd1f263dfdb6d.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/20e0b5eb-b15a-4729-b931-2cc785492280/8476bc88b13f4161da7aea5e538cbff0d793ad55c02af6f941fcd1f263dfdb6d.png"
+      }
+    },
+    {
+      "id": "108366c5-22ef-4890-aa02-a3e407d63fc4",
+      "name": "DoorDash",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "313cffdb-945f-404e-96ce-7042e19059d7",
+      "name": "Zscaler",
+      "current_logo_url": "https://www.zscaler.com/favicons/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "34fc97285684f2cd3de4def284af40ef57c1b747b96ea9897c9e2d4788f3f572",
+        "key": "313cffdb-945f-404e-96ce-7042e19059d7/34fc97285684f2cd3de4def284af40ef57c1b747b96ea9897c9e2d4788f3f572.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/313cffdb-945f-404e-96ce-7042e19059d7/34fc97285684f2cd3de4def284af40ef57c1b747b96ea9897c9e2d4788f3f572.webp"
+      }
+    },
+    {
+      "id": "1d73ee1c-838f-4f34-9e1c-cd40c998224c",
+      "name": "Datadog",
+      "current_logo_url": "https://unavatar.io/datadoghq.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "10d1c58d2fd63806d013242cde0a6b536437bd715377410808d9ef853bcbf68d",
+        "key": "1d73ee1c-838f-4f34-9e1c-cd40c998224c/10d1c58d2fd63806d013242cde0a6b536437bd715377410808d9ef853bcbf68d.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1d73ee1c-838f-4f34-9e1c-cd40c998224c/10d1c58d2fd63806d013242cde0a6b536437bd715377410808d9ef853bcbf68d.png"
+      }
+    },
+    {
+      "id": "1d12455d-d1c8-484d-8a46-dc9f70ebec52",
+      "name": "HelloFresh",
+      "current_logo_url": "https://hf-website-live.s3.eu-west-1.amazonaws.com/us/EarnedMedia/OpenGraphImages/HelloFresh_OpenGraph.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "93533db804924a9235055119b2cfa843dcd133c17fcbbf890b836b3094f096d1",
+        "key": "1d12455d-d1c8-484d-8a46-dc9f70ebec52/93533db804924a9235055119b2cfa843dcd133c17fcbbf890b836b3094f096d1.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1d12455d-d1c8-484d-8a46-dc9f70ebec52/93533db804924a9235055119b2cfa843dcd133c17fcbbf890b836b3094f096d1.png"
+      }
+    },
+    {
+      "id": "a6242fef-babf-4ef1-8809-fe4904aec642",
+      "name": "Okta",
+      "current_logo_url": "https://www.okta.com/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "b04904bfe0b15e1a6c865e006a892daa59dba9bc3e4dad08234720ae5817509c",
+        "key": "a6242fef-babf-4ef1-8809-fe4904aec642/b04904bfe0b15e1a6c865e006a892daa59dba9bc3e4dad08234720ae5817509c.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a6242fef-babf-4ef1-8809-fe4904aec642/b04904bfe0b15e1a6c865e006a892daa59dba9bc3e4dad08234720ae5817509c.png"
+      }
+    },
+    {
+      "id": "1721d4e1-804e-40f4-a934-a7a4ebb7ec96",
+      "name": "Toast",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "2270f3ef-9fe2-47db-a90f-18698d0a817b",
+      "name": "Canonical",
+      "current_logo_url": "https://assets.ubuntu.com/v1/f38b9c7e-COF%20apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "2570d464cfa61f1b893ff8a5e91073be58cd34d88986adb7bc2ddfc4a2611f52",
+        "key": "2270f3ef-9fe2-47db-a90f-18698d0a817b/2570d464cfa61f1b893ff8a5e91073be58cd34d88986adb7bc2ddfc4a2611f52.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/2270f3ef-9fe2-47db-a90f-18698d0a817b/2570d464cfa61f1b893ff8a5e91073be58cd34d88986adb7bc2ddfc4a2611f52.png"
+      }
+    },
+    {
+      "id": "760e6994-1530-4d79-86df-e623ea9b3c61",
+      "name": "SumUp",
+      "current_logo_url": "https://static.sumup.com/favicons/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "f1ede8203d0a0378e64de3e5ff2d04d5d91b2577eb7594bff23de445b736d9d5",
+        "key": "760e6994-1530-4d79-86df-e623ea9b3c61/f1ede8203d0a0378e64de3e5ff2d04d5d91b2577eb7594bff23de445b736d9d5.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/760e6994-1530-4d79-86df-e623ea9b3c61/f1ede8203d0a0378e64de3e5ff2d04d5d91b2577eb7594bff23de445b736d9d5.png"
+      }
+    },
+    {
+      "id": "d71e70bc-70cc-430d-8dc4-352f5336cfe4",
+      "name": "Palantir",
+      "current_logo_url": "https://www.palantir.com/assets/xrfr7uokpv1b/5MGQnj3IDJpURPzBDnXklZ/b7eed64a4f71a959250e19ec76bdf5de/Palantir_Chevron.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "4635852d01b7e2ad0d2b6f5a6cce543a61ee8efe3acb9151b443bf451b9ec766",
+        "key": "d71e70bc-70cc-430d-8dc4-352f5336cfe4/4635852d01b7e2ad0d2b6f5a6cce543a61ee8efe3acb9151b443bf451b9ec766.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/d71e70bc-70cc-430d-8dc4-352f5336cfe4/4635852d01b7e2ad0d2b6f5a6cce543a61ee8efe3acb9151b443bf451b9ec766.png"
+      }
+    },
+    {
+      "id": "4d618ff5-c18a-4c77-8f85-fd98e97af65d",
+      "name": "Celonis",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=celonis.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "171d9a37db3b3b99bb699615a42d9ef738ff024c3c1ce92e2f3ae8b65ac47c8b",
+        "key": "4d618ff5-c18a-4c77-8f85-fd98e97af65d/171d9a37db3b3b99bb699615a42d9ef738ff024c3c1ce92e2f3ae8b65ac47c8b.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/4d618ff5-c18a-4c77-8f85-fd98e97af65d/171d9a37db3b3b99bb699615a42d9ef738ff024c3c1ce92e2f3ae8b65ac47c8b.png"
+      }
+    },
+    {
+      "id": "b9c30343-4c73-43de-a30d-855797713d07",
+      "name": "Coinbase",
+      "current_logo_url": "https://unavatar.io/coinbase.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "5584cfbbb445f600acdf174a8afa8b937d839b1844b8a76f3f6ffd2453a38897",
+        "key": "b9c30343-4c73-43de-a30d-855797713d07/5584cfbbb445f600acdf174a8afa8b937d839b1844b8a76f3f6ffd2453a38897.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b9c30343-4c73-43de-a30d-855797713d07/5584cfbbb445f600acdf174a8afa8b937d839b1844b8a76f3f6ffd2453a38897.png"
+      }
+    },
+    {
+      "id": "06a6fc57-47d9-423f-9b84-8754fc1702eb",
+      "name": "Adyen",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "0eb63c12-af01-4873-aa5a-8f5a26dd5702",
+      "name": "Pennylane",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "30b822ccc7003774a3c9080245a9bed9327d66fe5a120cff13bba1fbe331aa89",
+        "key": "0eb63c12-af01-4873-aa5a-8f5a26dd5702/30b822ccc7003774a3c9080245a9bed9327d66fe5a120cff13bba1fbe331aa89.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0eb63c12-af01-4873-aa5a-8f5a26dd5702/30b822ccc7003774a3c9080245a9bed9327d66fe5a120cff13bba1fbe331aa89.png"
+      }
+    },
+    {
+      "id": "d0dbe4cb-a83e-4ad4-8124-4a8be1e877eb",
+      "name": "Riot Games",
+      "current_logo_url": "https://www.riotgames.com/assets/img/meta/87021767499a895b42bbe1e6a9edaf27/apple-touch-icon-precomposed-180x180.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "d73d3f2bf44bf643f67f35ca2a725817816aa7023e7507046258608f9960b3b8",
+        "key": "d0dbe4cb-a83e-4ad4-8124-4a8be1e877eb/d73d3f2bf44bf643f67f35ca2a725817816aa7023e7507046258608f9960b3b8.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/d0dbe4cb-a83e-4ad4-8124-4a8be1e877eb/d73d3f2bf44bf643f67f35ca2a725817816aa7023e7507046258608f9960b3b8.png"
+      }
+    },
+    {
+      "id": "1588465f-da41-4cb7-88cc-0419774ae0fe",
+      "name": "Paytm",
+      "current_logo_url": "https://paytm.com/favicon.ico",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "f5be5f761c1132d6fab1710abb204823d3cac2687a5c05effba5e79d90f02c4b",
+        "key": "1588465f-da41-4cb7-88cc-0419774ae0fe/f5be5f761c1132d6fab1710abb204823d3cac2687a5c05effba5e79d90f02c4b.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1588465f-da41-4cb7-88cc-0419774ae0fe/f5be5f761c1132d6fab1710abb204823d3cac2687a5c05effba5e79d90f02c4b.png"
+      }
+    },
+    {
+      "id": "5bff5bec-7c78-4c2e-aebd-fc97e21510a1",
+      "name": "Wolt",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "1feb2b97-c84b-4a64-8d85-831b76ae0b20",
+      "name": "Pinterest",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=pinterestcareers.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "f12446421b8f8a240b9e576b30f6ef43f9bc0bcd2f139c6d7b6aea8bb32c5ffb",
+        "key": "1feb2b97-c84b-4a64-8d85-831b76ae0b20/f12446421b8f8a240b9e576b30f6ef43f9bc0bcd2f139c6d7b6aea8bb32c5ffb.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1feb2b97-c84b-4a64-8d85-831b76ae0b20/f12446421b8f8a240b9e576b30f6ef43f9bc0bcd2f139c6d7b6aea8bb32c5ffb.png"
+      }
+    },
+    {
+      "id": "f793a8f1-5942-4a15-9668-ab4aec2dc049",
+      "name": "Scopely",
+      "current_logo_url": "https://unavatar.io/scopely.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "7d2ce4793e0defb6684e7fac6940d53adf46f471c3ed81ccfb44a6cee0db0230",
+        "key": "f793a8f1-5942-4a15-9668-ab4aec2dc049/7d2ce4793e0defb6684e7fac6940d53adf46f471c3ed81ccfb44a6cee0db0230.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/f793a8f1-5942-4a15-9668-ab4aec2dc049/7d2ce4793e0defb6684e7fac6940d53adf46f471c3ed81ccfb44a6cee0db0230.png"
+      }
+    },
+    {
+      "id": "7b671ff8-2789-4629-94c6-2ac3cdc2d94a",
+      "name": "Scale AI",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "2308b965-7bdd-4c97-9225-5c7e122c3933",
+      "name": "Ebury",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "92fe9dc1-32d5-433c-8169-61fe605cc4cd",
+      "name": "Robinhood",
+      "current_logo_url": "https://v.fastcdn.co/u/62ba1c13/65631118-0-RH-Favicon---Neon.jpg",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "ats-board",
+        "sha256": "8af55a6b59790df86df92868cf5a0eb844e0bd414ef7c5901788d93985bdee57",
+        "key": "92fe9dc1-32d5-433c-8169-61fe605cc4cd/8af55a6b59790df86df92868cf5a0eb844e0bd414ef7c5901788d93985bdee57.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/92fe9dc1-32d5-433c-8169-61fe605cc4cd/8af55a6b59790df86df92868cf5a0eb844e0bd414ef7c5901788d93985bdee57.webp"
+      }
+    },
+    {
+      "id": "8ba20556-7f58-4c1a-b293-22aab74eaf61",
+      "name": "Reddit",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "9b0b04b7-1183-4e29-ae50-c942f00ac90a",
+      "name": "Lyft",
+      "current_logo_url": "https://unavatar.io/free-now.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "bb816d3cdfa1e01d2445911f8bb79bbcd47900a4e2cc76d6044f7e29a1cf0b20",
+        "key": "9b0b04b7-1183-4e29-ae50-c942f00ac90a/bb816d3cdfa1e01d2445911f8bb79bbcd47900a4e2cc76d6044f7e29a1cf0b20.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/9b0b04b7-1183-4e29-ae50-c942f00ac90a/bb816d3cdfa1e01d2445911f8bb79bbcd47900a4e2cc76d6044f7e29a1cf0b20.png"
+      }
+    },
+    {
+      "id": "a1146120-5da3-4cc3-8156-906f02c9482f",
+      "name": "Tenstorrent",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "c46958b8-9859-482b-8fd0-a4173ba55c6a",
+      "name": "Grafana Labs",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "dd3f19c4-87d0-4669-8bde-ad3fad48b1f3",
+      "name": "Epic Games",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=epicgames.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "f1545be3-de49-46a4-b022-abc8d1d7bd82",
+      "name": "Mozilla",
+      "current_logo_url": "https://www.mozilla.org/media/img/favicons/mozilla/favicon-196x196.e143075360ea.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "bd67680f7da3564bace91b2be87feab16d5e9e6266355b8f082e21f8159874b3",
+        "key": "f1545be3-de49-46a4-b022-abc8d1d7bd82/bd67680f7da3564bace91b2be87feab16d5e9e6266355b8f082e21f8159874b3.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/f1545be3-de49-46a4-b022-abc8d1d7bd82/bd67680f7da3564bace91b2be87feab16d5e9e6266355b8f082e21f8159874b3.png"
+      }
+    },
+    {
+      "id": "83eb5fb0-967f-4823-b5b6-96f774c0da28",
+      "name": "Netskope",
+      "current_logo_url": "https://www.netskope.com/wp-content/uploads/2019/04/cropped-favicon-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "ats-board",
+        "sha256": "3b435436c6fe203b27c25193dc598675df128e0f70d2690990a4136e37e7010b",
+        "key": "83eb5fb0-967f-4823-b5b6-96f774c0da28/3b435436c6fe203b27c25193dc598675df128e0f70d2690990a4136e37e7010b.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/83eb5fb0-967f-4823-b5b6-96f774c0da28/3b435436c6fe203b27c25193dc598675df128e0f70d2690990a4136e37e7010b.webp"
+      }
+    },
+    {
+      "id": "feccde1c-ced8-4cef-992c-e93641a41fc1",
+      "name": "Cato Networks",
+      "current_logo_url": "https://www.catonetworks.com/wp-content/uploads/2026/02/cropped-ring-ico-1-2-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "0d393643c2ed26f55255f95f228b5caae31a02341ba9b1e3429388a5d3039524",
+        "key": "feccde1c-ced8-4cef-992c-e93641a41fc1/0d393643c2ed26f55255f95f228b5caae31a02341ba9b1e3429388a5d3039524.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/feccde1c-ced8-4cef-992c-e93641a41fc1/0d393643c2ed26f55255f95f228b5caae31a02341ba9b1e3429388a5d3039524.png"
+      }
+    },
+    {
+      "id": "6562c081-50ae-44d4-b346-3587651cca80",
+      "name": "Asana",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=asana.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "5c497974a90abb1cd3eaf92812a635043a2a26b9d2d36a8fc508673b98cea519",
+        "key": "6562c081-50ae-44d4-b346-3587651cca80/5c497974a90abb1cd3eaf92812a635043a2a26b9d2d36a8fc508673b98cea519.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/6562c081-50ae-44d4-b346-3587651cca80/5c497974a90abb1cd3eaf92812a635043a2a26b9d2d36a8fc508673b98cea519.png"
+      }
+    },
+    {
+      "id": "c903a87c-bc17-4441-8737-575ea3faaf9d",
+      "name": "Twilio",
+      "current_logo_url": "https://www.twilio.com/content/dam/twilio-com/core-assets/social/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "7581560d34436634899041fdc9ae63c75d6950a9b1c4965912ad22b6bddb488f",
+        "key": "c903a87c-bc17-4441-8737-575ea3faaf9d/7581560d34436634899041fdc9ae63c75d6950a9b1c4965912ad22b6bddb488f.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c903a87c-bc17-4441-8737-575ea3faaf9d/7581560d34436634899041fdc9ae63c75d6950a9b1c4965912ad22b6bddb488f.png"
+      }
+    },
+    {
+      "id": "46e4650f-c493-4be0-94d2-4bba2491790a",
+      "name": "BetterHelp",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "611c09c7-a5f0-468d-9030-22c5a3268840",
+      "name": "Spotify",
+      "current_logo_url": "https://www.lifeatspotify.com/icons/icon-512x512.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "36c0638d0da2ed8e8f40e5ba7a29b17d13b7661fdd75da739590c8eddcfc01c0",
+        "key": "611c09c7-a5f0-468d-9030-22c5a3268840/36c0638d0da2ed8e8f40e5ba7a29b17d13b7661fdd75da739590c8eddcfc01c0.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/611c09c7-a5f0-468d-9030-22c5a3268840/36c0638d0da2ed8e8f40e5ba7a29b17d13b7661fdd75da739590c8eddcfc01c0.png"
+      }
+    },
+    {
+      "id": "c80e7ee1-b875-49fc-9a03-0fdde772f3f6",
+      "name": "Tailscale",
+      "current_logo_url": "https://s5-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/350/900/original/images.jpeg?1704484717",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "ats-board",
+        "sha256": "b375a45a33935df102a6799b438f899d75bafda820bc245f8b93b706f805b2c1",
+        "key": "c80e7ee1-b875-49fc-9a03-0fdde772f3f6/b375a45a33935df102a6799b438f899d75bafda820bc245f8b93b706f805b2c1.jpg",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c80e7ee1-b875-49fc-9a03-0fdde772f3f6/b375a45a33935df102a6799b438f899d75bafda820bc245f8b93b706f805b2c1.jpg"
+      }
+    },
+    {
+      "id": "f95e45ff-d112-49cd-996e-1e3b1ffc12c8",
+      "name": "Cursor",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "2649a423-27e9-4751-bd6c-53f5b6eb724a",
+      "name": "Paypay",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "b096d7a6-acff-4ad7-ad6c-614c37695fa7",
+      "name": "Vercel",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "b849a715-3c8b-449c-9402-e498832ece49",
+      "name": "Abnormal Security",
+      "current_logo_url": "https://abnormal.ai/favicon-196x196.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "2ec60ee58efc14297ef4ea5a4197838714016053462242aadaceb8bd1e00f680",
+        "key": "b849a715-3c8b-449c-9402-e498832ece49/2ec60ee58efc14297ef4ea5a4197838714016053462242aadaceb8bd1e00f680.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b849a715-3c8b-449c-9402-e498832ece49/2ec60ee58efc14297ef4ea5a4197838714016053462242aadaceb8bd1e00f680.png"
+      }
+    },
+    {
+      "id": "6e3e7fcd-4c6e-4027-b09b-acf7092858f8",
+      "name": "Tide",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "c08f0578-f969-4f46-b1d4-c73fa0110255",
+      "name": "Gusto",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=gusto.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "aec8ad86edd8859e1fc40b8a8f09612463281b4328a58cf9b8fde2fcf605b245",
+        "key": "c08f0578-f969-4f46-b1d4-c73fa0110255/aec8ad86edd8859e1fc40b8a8f09612463281b4328a58cf9b8fde2fcf605b245.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c08f0578-f969-4f46-b1d4-c73fa0110255/aec8ad86edd8859e1fc40b8a8f09612463281b4328a58cf9b8fde2fcf605b245.png"
+      }
+    },
+    {
+      "id": "39c95d8f-afc2-4c1b-8f35-4f997c25ca18",
+      "name": "1Password",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/c2693b0acff7658eb55417509c137f477b112299/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "ebd1e9ba8ca6fc9eaa430968f46df615c59696ded99dae824cd932d55c5cb8af",
+        "key": "39c95d8f-afc2-4c1b-8f35-4f997c25ca18/ebd1e9ba8ca6fc9eaa430968f46df615c59696ded99dae824cd932d55c5cb8af.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/39c95d8f-afc2-4c1b-8f35-4f997c25ca18/ebd1e9ba8ca6fc9eaa430968f46df615c59696ded99dae824cd932d55c5cb8af.png"
+      }
+    },
+    {
+      "id": "733b4d94-bab1-4946-bccc-c87e38918a4a",
+      "name": "Carta",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=carta.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "de7d032f3c9cc786616fda520aeb28e02716145a0f064b90e921c784b4d10f80",
+        "key": "733b4d94-bab1-4946-bccc-c87e38918a4a/de7d032f3c9cc786616fda520aeb28e02716145a0f064b90e921c784b4d10f80.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/733b4d94-bab1-4946-bccc-c87e38918a4a/de7d032f3c9cc786616fda520aeb28e02716145a0f064b90e921c784b4d10f80.png"
+      }
+    },
+    {
+      "id": "d28860cb-7b0c-499e-a696-c58eb2d9fe8a",
+      "name": "Chime",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "bb2b06c3-4894-4773-80df-7ca21f1569c8",
+      "name": "InMobi",
+      "current_logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/001/321/original/li_logo.png?1606111857",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "ats-board",
+        "sha256": "a880f92324df39f26b8f07c4c8ec8fd1d82c434fef5298080f65d2b758061470",
+        "key": "bb2b06c3-4894-4773-80df-7ca21f1569c8/a880f92324df39f26b8f07c4c8ec8fd1d82c434fef5298080f65d2b758061470.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/bb2b06c3-4894-4773-80df-7ca21f1569c8/a880f92324df39f26b8f07c4c8ec8fd1d82c434fef5298080f65d2b758061470.png"
+      }
+    },
+    {
+      "id": "c598707a-051e-4476-8ff8-8183b477f9a9",
+      "name": "Faire",
+      "current_logo_url": "https://www.faire.com/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "7877ee54fca5fc8de54530c9ef8b83e4af1b394c4ce71279bef207520808ea64",
+        "key": "c598707a-051e-4476-8ff8-8183b477f9a9/7877ee54fca5fc8de54530c9ef8b83e4af1b394c4ce71279bef207520808ea64.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c598707a-051e-4476-8ff8-8183b477f9a9/7877ee54fca5fc8de54530c9ef8b83e4af1b394c4ce71279bef207520808ea64.png"
+      }
+    },
+    {
+      "id": "89656732-b632-4f37-b417-2143d8358dad",
+      "name": "Sweetgreen",
+      "current_logo_url": "https://www.sweetgreen.com/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "680000450011cf47e308429962514c19cac49c91b1b439ba7a0d43b06342449d",
+        "key": "89656732-b632-4f37-b417-2143d8358dad/680000450011cf47e308429962514c19cac49c91b1b439ba7a0d43b06342449d.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/89656732-b632-4f37-b417-2143d8358dad/680000450011cf47e308429962514c19cac49c91b1b439ba7a0d43b06342449d.png"
+      }
+    },
+    {
+      "id": "eae4b697-df1a-49b3-8660-04af2ce3533c",
+      "name": "Match Group",
+      "current_logo_url": "https://mtch.com/wp-content/uploads/2026/06/cropped-Match-Group-Favicon-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "3a66796f9e6d18968351ee112f2c48ea84737b7a746d42237791262bf0e41ac8",
+        "key": "eae4b697-df1a-49b3-8660-04af2ce3533c/3a66796f9e6d18968351ee112f2c48ea84737b7a746d42237791262bf0e41ac8.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/eae4b697-df1a-49b3-8660-04af2ce3533c/3a66796f9e6d18968351ee112f2c48ea84737b7a746d42237791262bf0e41ac8.webp"
+      }
+    },
+    {
+      "id": "df2d1be0-a69f-4c9c-b59e-a86cea93c5e5",
+      "name": "Smartly.io",
+      "current_logo_url": "https://cdn.prod.website-files.com/6ad772a5f22aca7ce9ac227f/6ad772a5f22aca7ce9ac246c_63f49282d1798911f80d368e_smartly-webclip.webp",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "eeed5af63dc7dd5ed43c2a5657e6697859cee8ae975d2ce4ddddfb4ea6b9465b",
+        "key": "df2d1be0-a69f-4c9c-b59e-a86cea93c5e5/eeed5af63dc7dd5ed43c2a5657e6697859cee8ae975d2ce4ddddfb4ea6b9465b.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/df2d1be0-a69f-4c9c-b59e-a86cea93c5e5/eeed5af63dc7dd5ed43c2a5657e6697859cee8ae975d2ce4ddddfb4ea6b9465b.webp"
+      }
+    },
+    {
+      "id": "581d321f-203e-42e4-85fe-0c054d6d516e",
+      "name": "Alpaca",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "fefe9d08-058c-45a9-9beb-dfaadb3d318d",
+      "name": "AlphaSights",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=alphasights.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "65ddcbcbc88aad0beda045bc583f3d282d69a2b5185160beea920f06c7b52686",
+        "key": "fefe9d08-058c-45a9-9beb-dfaadb3d318d/65ddcbcbc88aad0beda045bc583f3d282d69a2b5185160beea920f06c7b52686.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/fefe9d08-058c-45a9-9beb-dfaadb3d318d/65ddcbcbc88aad0beda045bc583f3d282d69a2b5185160beea920f06c7b52686.png"
+      }
+    },
+    {
+      "id": "25e6c24d-2187-4409-a527-74d740160d6b",
+      "name": "Neo4j",
+      "current_logo_url": "https://graphacademy.neo4j.com/favicon-194x194.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "69a9b9586c4c3d2470ab859e2890e523feb3cb5cb6d012edb9aebdd9a95b4751",
+        "key": "25e6c24d-2187-4409-a527-74d740160d6b/69a9b9586c4c3d2470ab859e2890e523feb3cb5cb6d012edb9aebdd9a95b4751.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/25e6c24d-2187-4409-a527-74d740160d6b/69a9b9586c4c3d2470ab859e2890e523feb3cb5cb6d012edb9aebdd9a95b4751.png"
+      }
+    },
+    {
+      "id": "b574d78c-137d-4f45-81b2-56aa66be0d4f",
+      "name": "Truelogic",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "7cf35e1c83cf8d89bebebe7b723acd5b64649ca7b2eef50164a54c9ac92947f8",
+        "key": "b574d78c-137d-4f45-81b2-56aa66be0d4f/7cf35e1c83cf8d89bebebe7b723acd5b64649ca7b2eef50164a54c9ac92947f8.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b574d78c-137d-4f45-81b2-56aa66be0d4f/7cf35e1c83cf8d89bebebe7b723acd5b64649ca7b2eef50164a54c9ac92947f8.png"
+      }
+    },
+    {
+      "id": "72d9fda8-ffb6-4546-94a8-19bd0c895fa8",
+      "name": "Monzo",
+      "current_logo_url": "https://static-assets.monzo.com/monzo-com/a6c1301943401578f80993387fd6ed94e9731b25/_next/static/media/favicon.87a9df8c.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "04f79b78d15b86ddde6856f9b0cae524ae4b8d871ac8ee8d7afc7d3780a20492",
+        "key": "72d9fda8-ffb6-4546-94a8-19bd0c895fa8/04f79b78d15b86ddde6856f9b0cae524ae4b8d871ac8ee8d7afc7d3780a20492.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/72d9fda8-ffb6-4546-94a8-19bd0c895fa8/04f79b78d15b86ddde6856f9b0cae524ae4b8d871ac8ee8d7afc7d3780a20492.png"
+      }
+    },
+    {
+      "id": "36c862a8-bcbe-40e8-9e2a-5b3fa9162b04",
+      "name": "SoFi",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=sofi.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "267689301829b46120e433b5e5be724776d43d9e901247115fd1c5fc9c4b4892",
+        "key": "36c862a8-bcbe-40e8-9e2a-5b3fa9162b04/267689301829b46120e433b5e5be724776d43d9e901247115fd1c5fc9c4b4892.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/36c862a8-bcbe-40e8-9e2a-5b3fa9162b04/267689301829b46120e433b5e5be724776d43d9e901247115fd1c5fc9c4b4892.png"
+      }
+    },
+    {
+      "id": "a4f2bd09-7a0c-4119-ace1-b44f3d25db42",
+      "name": "Workato",
+      "current_logo_url": "https://www.workato.com/favicon.ico",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "ebe68d20bc557e775f82fd8e7264940a0bc90ff1d5d45bc0a7a6d059c50be65a",
+        "key": "a4f2bd09-7a0c-4119-ace1-b44f3d25db42/ebe68d20bc557e775f82fd8e7264940a0bc90ff1d5d45bc0a7a6d059c50be65a.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a4f2bd09-7a0c-4119-ace1-b44f3d25db42/ebe68d20bc557e775f82fd8e7264940a0bc90ff1d5d45bc0a7a6d059c50be65a.png"
+      }
+    },
+    {
+      "id": "7db1bb40-88c2-40a1-ab4a-80dd91043ca0",
+      "name": "Contentful",
+      "current_logo_url": "https://unavatar.io/contentful.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "68796293e2b9e61ba465447a5bded4c19e8568b1383e69224be683067d2371e6",
+        "key": "7db1bb40-88c2-40a1-ab4a-80dd91043ca0/68796293e2b9e61ba465447a5bded4c19e8568b1383e69224be683067d2371e6.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/7db1bb40-88c2-40a1-ab4a-80dd91043ca0/68796293e2b9e61ba465447a5bded4c19e8568b1383e69224be683067d2371e6.png"
+      }
+    },
+    {
+      "id": "e284058a-55e0-451a-9747-9afb289405bc",
+      "name": "Twitch",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "10c2b8d6-c662-46ab-8994-c9190f93bf31",
+      "name": "Meesho",
+      "current_logo_url": "https://unavatar.io/meesho.io?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "f52bc397a626e06de6aaa2a8724b146931d5734fa971293fbecca611b8db3900",
+        "key": "10c2b8d6-c662-46ab-8994-c9190f93bf31/f52bc397a626e06de6aaa2a8724b146931d5734fa971293fbecca611b8db3900.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/10c2b8d6-c662-46ab-8994-c9190f93bf31/f52bc397a626e06de6aaa2a8724b146931d5734fa971293fbecca611b8db3900.png"
+      }
+    },
+    {
+      "id": "3433e1bf-7baa-4c6b-927e-bf61602343bd",
+      "name": "PagerDuty",
+      "current_logo_url": "https://www.pagerduty.com/favicon/prod/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "7f9800630bd77c631817f618ea149100dc394680abb2e64b64b32053ab9a0413",
+        "key": "3433e1bf-7baa-4c6b-927e-bf61602343bd/7f9800630bd77c631817f618ea149100dc394680abb2e64b64b32053ab9a0413.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/3433e1bf-7baa-4c6b-927e-bf61602343bd/7f9800630bd77c631817f618ea149100dc394680abb2e64b64b32053ab9a0413.webp"
+      }
+    },
+    {
+      "id": "c74e928b-d50f-427e-9fbb-b9fa1d522fdf",
+      "name": "Fastly",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=fastly.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "5fcf79ca8b66fe2c66ddf46939c0d3b9d34423bc18d5a86263af3192113bc1e2",
+        "key": "c74e928b-d50f-427e-9fbb-b9fa1d522fdf/5fcf79ca8b66fe2c66ddf46939c0d3b9d34423bc18d5a86263af3192113bc1e2.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c74e928b-d50f-427e-9fbb-b9fa1d522fdf/5fcf79ca8b66fe2c66ddf46939c0d3b9d34423bc18d5a86263af3192113bc1e2.png"
+      }
+    },
+    {
+      "id": "0b6a95f7-18cc-43e6-99b9-8ed4487a55e6",
+      "name": "Cloudbeds",
+      "current_logo_url": "https://www.cloudbeds.com/wp-content/themes/cloudbeds-rebrand/assets/images/android-chrome-512x512.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "e409ced27441ff6fec2c0124ca428608eb3edd5618ecbedf754846d94f6f0845",
+        "key": "0b6a95f7-18cc-43e6-99b9-8ed4487a55e6/e409ced27441ff6fec2c0124ca428608eb3edd5618ecbedf754846d94f6f0845.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0b6a95f7-18cc-43e6-99b9-8ed4487a55e6/e409ced27441ff6fec2c0124ca428608eb3edd5618ecbedf754846d94f6f0845.png"
+      }
+    },
+    {
+      "id": "3dec62c9-aa45-4f94-ba1b-cabae0945c83",
+      "name": "Huntress",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "adbe6df9-cacd-4141-94fe-aa703dc401b2",
+      "name": "Dropbox",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=dropbox.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "ad716eb686f02bcfab436066fd3c8a5b44a7d09b56c588be9d8953425958c5df",
+        "key": "adbe6df9-cacd-4141-94fe-aa703dc401b2/ad716eb686f02bcfab436066fd3c8a5b44a7d09b56c588be9d8953425958c5df.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/adbe6df9-cacd-4141-94fe-aa703dc401b2/ad716eb686f02bcfab436066fd3c8a5b44a7d09b56c588be9d8953425958c5df.png"
+      }
+    },
+    {
+      "id": "3cffc65f-4816-47eb-8d08-b682274bbda2",
+      "name": "Hudl",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "160878bf-e4c8-4927-b6ea-0a3d50377b00",
+      "name": "Cabify",
+      "current_logo_url": "https://unavatar.io/cabify.careers?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "be63549637e306eee1f153938faa9c052bc633538909e39d58dea7f028aab328",
+        "key": "160878bf-e4c8-4927-b6ea-0a3d50377b00/be63549637e306eee1f153938faa9c052bc633538909e39d58dea7f028aab328.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/160878bf-e4c8-4927-b6ea-0a3d50377b00/be63549637e306eee1f153938faa9c052bc633538909e39d58dea7f028aab328.png"
+      }
+    },
+    {
+      "id": "9eb15a7f-6d95-4ceb-a278-317f0ee3a54e",
+      "name": "Snorkel AI",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "df0ed2d6-21c5-4194-862e-2eb96123cde5",
+      "name": "Sentry",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "34860979d391b4091ac1ae4d01b26f89861a0d64be28e9980343673b621fac5b",
+        "key": "df0ed2d6-21c5-4194-862e-2eb96123cde5/34860979d391b4091ac1ae4d01b26f89861a0d64be28e9980343673b621fac5b.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/df0ed2d6-21c5-4194-862e-2eb96123cde5/34860979d391b4091ac1ae4d01b26f89861a0d64be28e9980343673b621fac5b.png"
+      }
+    },
+    {
+      "id": "e8af4267-e0cb-4b02-b9f5-354f969d4d61",
+      "name": "Bitpanda",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "fb8ec1e7-2616-48c6-86c3-3159beef85e9",
+      "name": "Peloton",
+      "current_logo_url": "https://www.onepeloton.com/images/apple-touch-icon-192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "4e3cd5fd127a603e99cec9f715938acb086329cc8404c7c2a6eb1eebff4c48dd",
+        "key": "fb8ec1e7-2616-48c6-86c3-3159beef85e9/4e3cd5fd127a603e99cec9f715938acb086329cc8404c7c2a6eb1eebff4c48dd.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/fb8ec1e7-2616-48c6-86c3-3159beef85e9/4e3cd5fd127a603e99cec9f715938acb086329cc8404c7c2a6eb1eebff4c48dd.png"
+      }
+    },
+    {
+      "id": "7a111687-f88a-4fba-a6f9-61d6f4b8c051",
+      "name": "Wheely",
+      "current_logo_url": "https://x.com/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "a83542eb0563242949d7dbde720014fb7ab48ae14ed59f43eec34907cb90c477",
+        "key": "7a111687-f88a-4fba-a6f9-61d6f4b8c051/a83542eb0563242949d7dbde720014fb7ab48ae14ed59f43eec34907cb90c477.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/7a111687-f88a-4fba-a6f9-61d6f4b8c051/a83542eb0563242949d7dbde720014fb7ab48ae14ed59f43eec34907cb90c477.png"
+      }
+    },
+    {
+      "id": "8e96bfe8-4ea2-4d7a-a0ee-5c89feec951f",
+      "name": "Mixpanel",
+      "current_logo_url": "https://framerusercontent.com/images/j6EPdIw4BKPE9dPx3zrTjkkAM14.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "b9d968326cde493468f6bb0240362fb94e8030bc9e322dc973392d36b61e468e",
+        "key": "8e96bfe8-4ea2-4d7a-a0ee-5c89feec951f/b9d968326cde493468f6bb0240362fb94e8030bc9e322dc973392d36b61e468e.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/8e96bfe8-4ea2-4d7a-a0ee-5c89feec951f/b9d968326cde493468f6bb0240362fb94e8030bc9e322dc973392d36b61e468e.webp"
+      }
+    },
+    {
+      "id": "1e4e0a38-e9f3-411d-85fe-8d79f9f1d74a",
+      "name": "Checkr",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "9683fa2d-84d7-4ea6-bd06-8e980a8e6a00",
+      "name": "Datacamp",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "ef370796-25c9-4a33-8efa-b65ccbeef895",
+      "name": "Render",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "0bf3d810-59fb-4649-adf5-e06e72499257",
+      "name": "Starburst Data",
+      "current_logo_url": "https://s8-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/366/500/original/Starburst_Burst-Black.png?1733770630",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "ats-board",
+        "sha256": "3a68ae18b8343d5712e1e43b45a82703130429501032ffcf9825f8a042a43305",
+        "key": "0bf3d810-59fb-4649-adf5-e06e72499257/3a68ae18b8343d5712e1e43b45a82703130429501032ffcf9825f8a042a43305.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0bf3d810-59fb-4649-adf5-e06e72499257/3a68ae18b8343d5712e1e43b45a82703130429501032ffcf9825f8a042a43305.png"
+      }
+    },
+    {
+      "id": "2b7638e4-1a7d-4f46-8ef9-64003afc0a1b",
+      "name": "Verve",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "a62d4bfb-cc8c-4c02-b0d5-e5e75d4c221b",
+      "name": "SeatGeek",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=seatgeek.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "1cb565e287113a61a1ca7475f2102499846a74551b3ac60a68cc22459d52b460",
+        "key": "a62d4bfb-cc8c-4c02-b0d5-e5e75d4c221b/1cb565e287113a61a1ca7475f2102499846a74551b3ac60a68cc22459d52b460.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a62d4bfb-cc8c-4c02-b0d5-e5e75d4c221b/1cb565e287113a61a1ca7475f2102499846a74551b3ac60a68cc22459d52b460.png"
+      }
+    },
+    {
+      "id": "19c7b3ce-c6ec-4142-897f-29ea4797e341",
+      "name": "Trustpilot",
+      "current_logo_url": "https://unavatar.io/corporate.trustpilot.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "77ff09404287ec7566cb7306c665d18ab9818dfb607dff6f57e0776255ae186f",
+        "key": "19c7b3ce-c6ec-4142-897f-29ea4797e341/77ff09404287ec7566cb7306c665d18ab9818dfb607dff6f57e0776255ae186f.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/19c7b3ce-c6ec-4142-897f-29ea4797e341/77ff09404287ec7566cb7306c665d18ab9818dfb607dff6f57e0776255ae186f.png"
+      }
+    },
+    {
+      "id": "be4b4e26-b445-4a98-96ac-cbb07ee1adcb",
+      "name": "Sysdig",
+      "current_logo_url": "https://cdn.prod.website-files.com/681a1c8e5b6ebfc0f8529533/6949b653bba4e2246dc01ebb_webclip.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "19cb2c14e105041083a994f3bf819d11e2420650e51db6f0ae95eb04cef569e9",
+        "key": "be4b4e26-b445-4a98-96ac-cbb07ee1adcb/19cb2c14e105041083a994f3bf819d11e2420650e51db6f0ae95eb04cef569e9.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/be4b4e26-b445-4a98-96ac-cbb07ee1adcb/19cb2c14e105041083a994f3bf819d11e2420650e51db6f0ae95eb04cef569e9.png"
+      }
+    },
+    {
+      "id": "06df26de-7a20-4d1a-970f-a276976c1bdc",
+      "name": "Coursera",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "bc8e1fd2-72a2-46e0-bc0a-22644b272498",
+      "name": "Maven Clinic",
+      "current_logo_url": "https://cdn.prod.website-files.com/5fb2b678e994739660d95086/5fb2b678e9947320e3d950dc_web-clip.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "263b6acbed1d7108affea40275751186fccff8a220c798f3368ec436a19bbb8a",
+        "key": "bc8e1fd2-72a2-46e0-bc0a-22644b272498/263b6acbed1d7108affea40275751186fccff8a220c798f3368ec436a19bbb8a.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/bc8e1fd2-72a2-46e0-bc0a-22644b272498/263b6acbed1d7108affea40275751186fccff8a220c798f3368ec436a19bbb8a.png"
+      }
+    },
+    {
+      "id": "c1009f27-7a24-474c-b6c7-c195439f2347",
+      "name": "Raft",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "f0c6b2ce-5d12-42af-acb4-8529d3a28a75",
+      "name": "Bounteous",
+      "current_logo_url": "https://www.bounteous.com/public/static/favicon-0d412dcf90815a41a1bb68bdf1960bf5.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "29de69fba1021b904ea46745dab8dd4bcc1484898f44c338c2b35281a012350b",
+        "key": "f0c6b2ce-5d12-42af-acb4-8529d3a28a75/29de69fba1021b904ea46745dab8dd4bcc1484898f44c338c2b35281a012350b.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/f0c6b2ce-5d12-42af-acb4-8529d3a28a75/29de69fba1021b904ea46745dab8dd4bcc1484898f44c338c2b35281a012350b.png"
+      }
+    },
+    {
+      "id": "2177f0b5-cf7d-42c4-8f46-4e24b11b46c1",
+      "name": "Alloy",
+      "current_logo_url": "https://www.alloy.com/icons/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "225b8f8ee29b06d61d9920c80f5bb69c8222e12dec7fee0858b672d5445ca14e",
+        "key": "2177f0b5-cf7d-42c4-8f46-4e24b11b46c1/225b8f8ee29b06d61d9920c80f5bb69c8222e12dec7fee0858b672d5445ca14e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/2177f0b5-cf7d-42c4-8f46-4e24b11b46c1/225b8f8ee29b06d61d9920c80f5bb69c8222e12dec7fee0858b672d5445ca14e.png"
+      }
+    },
+    {
+      "id": "64f42422-6950-4e7e-adb0-6a6193abf023",
+      "name": "LaunchDarkly",
+      "current_logo_url": "https://launchdarkly.com/icon.png?8354b0c15ee5b065",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "11a101685d046ec80ee2ca377a7baff276896def8eb9fdaa847bb2721f6117ba",
+        "key": "64f42422-6950-4e7e-adb0-6a6193abf023/11a101685d046ec80ee2ca377a7baff276896def8eb9fdaa847bb2721f6117ba.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/64f42422-6950-4e7e-adb0-6a6193abf023/11a101685d046ec80ee2ca377a7baff276896def8eb9fdaa847bb2721f6117ba.png"
+      }
+    },
+    {
+      "id": "c6517995-1ca2-4bce-b83b-0b6205e1c9d9",
+      "name": "Pleo",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "ea11fbdd6f585570df199b0e805873dd09e65b47e666e9229d086f6f918b724e",
+        "key": "c6517995-1ca2-4bce-b83b-0b6205e1c9d9/ea11fbdd6f585570df199b0e805873dd09e65b47e666e9229d086f6f918b724e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c6517995-1ca2-4bce-b83b-0b6205e1c9d9/ea11fbdd6f585570df199b0e805873dd09e65b47e666e9229d086f6f918b724e.png"
+      }
+    },
+    {
+      "id": "967dd9c4-ddeb-4918-9a07-417f4ddb72b0",
+      "name": "Wizeline",
+      "current_logo_url": "https://www.wizeline.ai/wp-content/uploads/2025/01/favicon-300x300.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "ats-board",
+        "sha256": "80fa32eecb0684db0c745f1f778e71bac3242cb8cbc27b79f46112a64ccfdb39",
+        "key": "967dd9c4-ddeb-4918-9a07-417f4ddb72b0/80fa32eecb0684db0c745f1f778e71bac3242cb8cbc27b79f46112a64ccfdb39.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/967dd9c4-ddeb-4918-9a07-417f4ddb72b0/80fa32eecb0684db0c745f1f778e71bac3242cb8cbc27b79f46112a64ccfdb39.webp"
+      }
+    },
+    {
+      "id": "40087e6e-e862-4b61-a3b7-1f03b71856d1",
+      "name": "VTEX",
+      "current_logo_url": "https://unavatar.io/mkt.vtex.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "715101a0506a3ecbc2b6fddc53770d829e9a673ecc72ec8cd492eef0c6fcfa3e",
+        "key": "40087e6e-e862-4b61-a3b7-1f03b71856d1/715101a0506a3ecbc2b6fddc53770d829e9a673ecc72ec8cd492eef0c6fcfa3e.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/40087e6e-e862-4b61-a3b7-1f03b71856d1/715101a0506a3ecbc2b6fddc53770d829e9a673ecc72ec8cd492eef0c6fcfa3e.webp"
+      }
+    },
+    {
+      "id": "79e4723f-1050-4e47-8627-a8e7f5401bdf",
+      "name": "Turing",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=turing.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "215618bd7fd59e0fbe8da770b4c7cc082615826de83fed87e838e5d72e84aa47",
+        "key": "79e4723f-1050-4e47-8627-a8e7f5401bdf/215618bd7fd59e0fbe8da770b4c7cc082615826de83fed87e838e5d72e84aa47.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/79e4723f-1050-4e47-8627-a8e7f5401bdf/215618bd7fd59e0fbe8da770b4c7cc082615826de83fed87e838e5d72e84aa47.png"
+      }
+    },
+    {
+      "id": "889e6c56-3016-49aa-8064-8f66c9668daa",
+      "name": "AutoScout24",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "b45c80ec-0181-4ae1-a447-4ec8a8e7950d",
+      "name": "HackerRank",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "c275948b-85ea-40a5-b4d0-eebebaae0e8a",
+      "name": "ThoughtWorks",
+      "current_logo_url": "https://www.thoughtworks.com/etc.clientlibs/thoughtworks/clientlibs/clientlib-site/resources/images/android-chrome-512x512.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "e7ec3d5f4a47dc253a7ff02e35c8726f71d0b216cd576595530b28d5544ae638",
+        "key": "c275948b-85ea-40a5-b4d0-eebebaae0e8a/e7ec3d5f4a47dc253a7ff02e35c8726f71d0b216cd576595530b28d5544ae638.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c275948b-85ea-40a5-b4d0-eebebaae0e8a/e7ec3d5f4a47dc253a7ff02e35c8726f71d0b216cd576595530b28d5544ae638.png"
+      }
+    },
+    {
+      "id": "9a84ee82-d339-4426-b695-d692b7897dd8",
+      "name": "Culture Amp",
+      "current_logo_url": "https://image-service.usw2.wp-prod-us.cultureamp-cdn.com/T5JfgVukEEO_aNOa1KROQRhiHfo=/96x96/cultureampcom/production/4ea/815/07a/4ea81507a9374c4607bbb6a6/enso-favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "9ebbd649ed608586bf100edf7bb6dbd134bd66d85406064d07978a25564ddbc9",
+        "key": "9a84ee82-d339-4426-b695-d692b7897dd8/9ebbd649ed608586bf100edf7bb6dbd134bd66d85406064d07978a25564ddbc9.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/9a84ee82-d339-4426-b695-d692b7897dd8/9ebbd649ed608586bf100edf7bb6dbd134bd66d85406064d07978a25564ddbc9.webp"
+      }
+    },
+    {
+      "id": "24c758ca-2522-49fd-ae60-55242144ad7d",
+      "name": "StockX",
+      "current_logo_url": "https://s2-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/651/600/original/BR-share.png?1618588074",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "not-a-logo: 1400x1000 image from ats-board is a banner/photo, not an icon"
+      }
+    },
+    {
+      "id": "55e31797-1f5e-44f3-a4cd-6f4026d15633",
+      "name": "Hopper",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "b23389789ada6db8cf69e86152a4ba244e28d40865cf233daf7a6b8a0b97cbfd",
+        "key": "55e31797-1f5e-44f3-a4cd-6f4026d15633/b23389789ada6db8cf69e86152a4ba244e28d40865cf233daf7a6b8a0b97cbfd.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/55e31797-1f5e-44f3-a4cd-6f4026d15633/b23389789ada6db8cf69e86152a4ba244e28d40865cf233daf7a6b8a0b97cbfd.png"
+      }
+    },
+    {
+      "id": "85226d9e-b22d-43ed-adc8-57f9b9463d6b",
+      "name": "Druva",
+      "current_logo_url": "https://www.druva.com/etc.clientlibs/druvaincprogram/clientlibs/clientlib-site/resources/images/cropped-site-icon-180x180.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "f0fbb4c71eaaa992960d09655b9f1b59176dd83d8fa7db823532f24a6a1c1a92",
+        "key": "85226d9e-b22d-43ed-adc8-57f9b9463d6b/f0fbb4c71eaaa992960d09655b9f1b59176dd83d8fa7db823532f24a6a1c1a92.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/85226d9e-b22d-43ed-adc8-57f9b9463d6b/f0fbb4c71eaaa992960d09655b9f1b59176dd83d8fa7db823532f24a6a1c1a92.png"
+      }
+    },
+    {
+      "id": "aa076c12-3722-4aa1-b92f-5145dce687b9",
+      "name": "Axios",
+      "current_logo_url": "https://unavatar.io/axios.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "91fd407eee4c68aaabcb29fddec375d89f3111a50aa58cda631793569817cc58",
+        "key": "aa076c12-3722-4aa1-b92f-5145dce687b9/91fd407eee4c68aaabcb29fddec375d89f3111a50aa58cda631793569817cc58.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/aa076c12-3722-4aa1-b92f-5145dce687b9/91fd407eee4c68aaabcb29fddec375d89f3111a50aa58cda631793569817cc58.png"
+      }
+    },
+    {
+      "id": "8e74f1f7-288e-493f-bcfa-3e34e9339c75",
+      "name": "Algolia",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "09b2bbbb-2f7e-4650-9713-4327ded68868",
+      "name": "Supercell",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "395292f7-e037-4618-ac59-4e9f83f047ab",
+      "name": "DriveWealth",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "400a9476-dcd1-4c7e-acef-34c23914b35c",
+      "name": "Sumo Logic",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "ae681269-c075-4919-b348-65d98ed05ba5",
+      "name": "Gemini",
+      "current_logo_url": "https://exchange.gemini.com/assets/images/apple-touch-icon-precomposed.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "b1c3935c7f14222a7af5e101fc2f1532f11a753c961ab18b1ae82782232e944c",
+        "key": "ae681269-c075-4919-b348-65d98ed05ba5/b1c3935c7f14222a7af5e101fc2f1532f11a753c961ab18b1ae82782232e944c.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/ae681269-c075-4919-b348-65d98ed05ba5/b1c3935c7f14222a7af5e101fc2f1532f11a753c961ab18b1ae82782232e944c.png"
+      }
+    },
+    {
+      "id": "546505d5-938d-492f-90f4-fed0202fb4a6",
+      "name": "Porter",
+      "current_logo_url": "https://porter.works/wp-content/uploads/2021/11/p-512-300x300.png",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "8af12389-54b1-45e6-a57d-575d008efc32",
+      "name": "ContentSquare",
+      "current_logo_url": "https://contentsquare.com/favicons/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "0feaca95c00193dd1a2a760222b0d1b5fc0f6c03ff9bc4cfae9cf28d4711af7f",
+        "key": "8af12389-54b1-45e6-a57d-575d008efc32/0feaca95c00193dd1a2a760222b0d1b5fc0f6c03ff9bc4cfae9cf28d4711af7f.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/8af12389-54b1-45e6-a57d-575d008efc32/0feaca95c00193dd1a2a760222b0d1b5fc0f6c03ff9bc4cfae9cf28d4711af7f.png"
+      }
+    },
+    {
+      "id": "2c812f89-0be9-47da-8b7e-5d94f4a91ce1",
+      "name": "Ifit",
+      "current_logo_url": "https://unavatar.io/ifit.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "12fa18fe2b0f7fae18612e37d6f89277a510a3426ab936b5f7b6f9bc4fbdcb0e",
+        "key": "2c812f89-0be9-47da-8b7e-5d94f4a91ce1/12fa18fe2b0f7fae18612e37d6f89277a510a3426ab936b5f7b6f9bc4fbdcb0e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/2c812f89-0be9-47da-8b7e-5d94f4a91ce1/12fa18fe2b0f7fae18612e37d6f89277a510a3426ab936b5f7b6f9bc4fbdcb0e.png"
+      }
+    },
+    {
+      "id": "480f5928-4efa-4222-9a56-827ebc371864",
+      "name": "Drata",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "8241847e7f583e984ac8c8960e12cf66199803636fd7a4ca2ebe55f9711a318d",
+        "key": "480f5928-4efa-4222-9a56-827ebc371864/8241847e7f583e984ac8c8960e12cf66199803636fd7a4ca2ebe55f9711a318d.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/480f5928-4efa-4222-9a56-827ebc371864/8241847e7f583e984ac8c8960e12cf66199803636fd7a4ca2ebe55f9711a318d.png"
+      }
+    },
+    {
+      "id": "7a22e67e-d5e0-433b-a1f0-6ced96bc99f8",
+      "name": "Column",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "a9e7fe463825e73c3ced9384a2743f124b8c6ab62bc4171e738e1535b3d05d96",
+        "key": "7a22e67e-d5e0-433b-a1f0-6ced96bc99f8/a9e7fe463825e73c3ced9384a2743f124b8c6ab62bc4171e738e1535b3d05d96.jpg",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/7a22e67e-d5e0-433b-a1f0-6ced96bc99f8/a9e7fe463825e73c3ced9384a2743f124b8c6ab62bc4171e738e1535b3d05d96.jpg"
+      }
+    },
+    {
+      "id": "94425904-dc6f-47d5-9198-d61053854b9b",
+      "name": "Salesloft",
+      "current_logo_url": "https://www.salesloft.com/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "4e971e8a6bbe2f84cb9d9a674e56228e33512b8298148b33142ca8661c9a08d6",
+        "key": "94425904-dc6f-47d5-9198-d61053854b9b/4e971e8a6bbe2f84cb9d9a674e56228e33512b8298148b33142ca8661c9a08d6.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/94425904-dc6f-47d5-9198-d61053854b9b/4e971e8a6bbe2f84cb9d9a674e56228e33512b8298148b33142ca8661c9a08d6.png"
+      }
+    },
+    {
+      "id": "12ca8668-3e18-4bf9-85cb-422f13ec3f76",
+      "name": "N26",
+      "current_logo_url": "https://n26.com/_build/logo-256x256.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "125239618e02e84f5d3e575c3b68a112dacb66e46f8ea6a65fe97c612bef82e8",
+        "key": "12ca8668-3e18-4bf9-85cb-422f13ec3f76/125239618e02e84f5d3e575c3b68a112dacb66e46f8ea6a65fe97c612bef82e8.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/12ca8668-3e18-4bf9-85cb-422f13ec3f76/125239618e02e84f5d3e575c3b68a112dacb66e46f8ea6a65fe97c612bef82e8.png"
+      }
+    },
+    {
+      "id": "8884780e-d235-4b92-8244-776a471fb8ef",
+      "name": "Udacity",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "ec727c12-1627-437c-9122-9527f9d17425",
+      "name": "Slice",
+      "current_logo_url": "https://images.squarespace-cdn.com/content/v1/63480a950e8d02595e60c8d9/1f7478a1-c2e1-408f-a422-223b34ffa19f/favicon.ico",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "78e258856eb391c4db3183b2e597a535d03db2d81154382824aa07f2abe23988",
+        "key": "ec727c12-1627-437c-9122-9527f9d17425/78e258856eb391c4db3183b2e597a535d03db2d81154382824aa07f2abe23988.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/ec727c12-1627-437c-9122-9527f9d17425/78e258856eb391c4db3183b2e597a535d03db2d81154382824aa07f2abe23988.webp"
+      }
+    },
+    {
+      "id": "b1dc6675-70d3-409b-95a9-530f5589ae99",
+      "name": "Metabase",
+      "current_logo_url": "https://cdn.metabase.com/images/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "18b9ef0619cf648bd624fcd3a210d8c947d7d381568bafe690c0e1d3efc81576",
+        "key": "b1dc6675-70d3-409b-95a9-530f5589ae99/18b9ef0619cf648bd624fcd3a210d8c947d7d381568bafe690c0e1d3efc81576.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b1dc6675-70d3-409b-95a9-530f5589ae99/18b9ef0619cf648bd624fcd3a210d8c947d7d381568bafe690c0e1d3efc81576.png"
+      }
+    },
+    {
+      "id": "f9af4515-2f7b-4923-9941-57fb6cc07f0b",
+      "name": "Vox Media",
+      "current_logo_url": "https://www.voxmedia.com/wp-content/uploads/2025/07/vm_favicon_grayscale.png?w=192",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "1a4d88a1-ea05-4e84-a980-5af3eaccc7b2",
+      "name": "Axonius",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=axonius.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "c3abee652788829b2220165d6eddcb2d875ca8f40989ba3a154f76a382780cc1",
+        "key": "1a4d88a1-ea05-4e84-a980-5af3eaccc7b2/c3abee652788829b2220165d6eddcb2d875ca8f40989ba3a154f76a382780cc1.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1a4d88a1-ea05-4e84-a980-5af3eaccc7b2/c3abee652788829b2220165d6eddcb2d875ca8f40989ba3a154f76a382780cc1.png"
+      }
+    },
+    {
+      "id": "40bde7c9-1e25-4aae-9fbd-68d3a7dfb71e",
+      "name": "Ataccama",
+      "current_logo_url": "https://cdn.ataccama.com/assets/2024/12/cropped-favicon-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "71adbcad34661c409b8b1abd62df5c18c8c8206927c957c90b0dab848d5d9985",
+        "key": "40bde7c9-1e25-4aae-9fbd-68d3a7dfb71e/71adbcad34661c409b8b1abd62df5c18c8c8206927c957c90b0dab848d5d9985.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/40bde7c9-1e25-4aae-9fbd-68d3a7dfb71e/71adbcad34661c409b8b1abd62df5c18c8c8206927c957c90b0dab848d5d9985.png"
+      }
+    },
+    {
+      "id": "43bac28b-4c16-48a5-a247-a030c76e0d6c",
+      "name": "Gamma",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "bd9fcf0e7192a3acfd5fd3183f74248d06b7855f416f1cc023bf425e0a5b95e2",
+        "key": "43bac28b-4c16-48a5-a247-a030c76e0d6c/bd9fcf0e7192a3acfd5fd3183f74248d06b7855f416f1cc023bf425e0a5b95e2.jpg",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/43bac28b-4c16-48a5-a247-a030c76e0d6c/bd9fcf0e7192a3acfd5fd3183f74248d06b7855f416f1cc023bf425e0a5b95e2.jpg"
+      }
+    },
+    {
+      "id": "5a59b839-77f4-4e9b-ab70-cf70689787e3",
+      "name": "Wealthfront",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=wealthfront.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "00f17be996aea9f35c07f49a3412f2a08a7eddcfa48a24f066b5ef629c2e4e92",
+        "key": "5a59b839-77f4-4e9b-ab70-cf70689787e3/00f17be996aea9f35c07f49a3412f2a08a7eddcfa48a24f066b5ef629c2e4e92.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/5a59b839-77f4-4e9b-ab70-cf70689787e3/00f17be996aea9f35c07f49a3412f2a08a7eddcfa48a24f066b5ef629c2e4e92.png"
+      }
+    },
+    {
+      "id": "b2154a92-ba62-427b-89cc-a2a4dd9ffd9f",
+      "name": "Oddball",
+      "current_logo_url": "https://oddball.io/wp-content/uploads/2020/12/cropped-icon-48x48-1-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "2c82ed372d24f9095cbca4707481820edc67bb583dd49b94f9d04ab7ec098491",
+        "key": "b2154a92-ba62-427b-89cc-a2a4dd9ffd9f/2c82ed372d24f9095cbca4707481820edc67bb583dd49b94f9d04ab7ec098491.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b2154a92-ba62-427b-89cc-a2a4dd9ffd9f/2c82ed372d24f9095cbca4707481820edc67bb583dd49b94f9d04ab7ec098491.webp"
+      }
+    },
+    {
+      "id": "b558bd06-dc5a-4272-a0b3-42d2bb51a388",
+      "name": "Fingerprint",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=fingerprint.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "5edee45c0da29c35e6e49e9243634d4def5f00f08cb38c549984072a58bf200a",
+        "key": "b558bd06-dc5a-4272-a0b3-42d2bb51a388/5edee45c0da29c35e6e49e9243634d4def5f00f08cb38c549984072a58bf200a.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b558bd06-dc5a-4272-a0b3-42d2bb51a388/5edee45c0da29c35e6e49e9243634d4def5f00f08cb38c549984072a58bf200a.png"
+      }
+    },
+    {
+      "id": "e291af78-b500-4f4a-bc12-5d5154f66bc2",
+      "name": "Trivago",
+      "current_logo_url": "https://unavatar.io/trivago.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "adf360134b352238a710262e5e95be010878ee122c5b84521aff91c6917e6c7f",
+        "key": "e291af78-b500-4f4a-bc12-5d5154f66bc2/adf360134b352238a710262e5e95be010878ee122c5b84521aff91c6917e6c7f.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/e291af78-b500-4f4a-bc12-5d5154f66bc2/adf360134b352238a710262e5e95be010878ee122c5b84521aff91c6917e6c7f.png"
+      }
+    },
+    {
+      "id": "0b170939-f9fd-4ba0-94bc-3babd4e97bab",
+      "name": "Webflow",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "1f5bd3fa-e197-4d73-aadb-a8b70ab9d09f",
+      "name": "Godaddy",
+      "current_logo_url": "https://d25wby5c7p9100.cloudfront.net/public/uploads/2e600d4953b2ff0367325c9cbb39eee9/companies/favicons/2e600d4953b2ff0367325c9cbb39eee9/basic/godaddy-favicon-96x96.png?1687461063",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "f87594be3aba85b4c165cba2934a209f348722ad6dcd050659a66fc7d60b39c9",
+        "key": "1f5bd3fa-e197-4d73-aadb-a8b70ab9d09f/f87594be3aba85b4c165cba2934a209f348722ad6dcd050659a66fc7d60b39c9.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1f5bd3fa-e197-4d73-aadb-a8b70ab9d09f/f87594be3aba85b4c165cba2934a209f348722ad6dcd050659a66fc7d60b39c9.png"
+      }
+    },
+    {
+      "id": "2cecf4cd-7f71-4c5b-b18b-fe339d884b29",
+      "name": "Honeycomb",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "54062e9d-749e-4307-9165-58a7bade16ed",
+      "name": "Talkspace",
+      "current_logo_url": "https://cdn.prod.website-files.com/5f1b10a955e49d279bdc2192/663251151e1d86ae8193dc3b_webclip.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "434ea952e81b72f760b0d948c5d2bd3d5576eaf5ff6c956f2a5c26bef848ffcc",
+        "key": "54062e9d-749e-4307-9165-58a7bade16ed/434ea952e81b72f760b0d948c5d2bd3d5576eaf5ff6c956f2a5c26bef848ffcc.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/54062e9d-749e-4307-9165-58a7bade16ed/434ea952e81b72f760b0d948c5d2bd3d5576eaf5ff6c956f2a5c26bef848ffcc.png"
+      }
+    },
+    {
+      "id": "9c10ebfe-6047-4dbe-b5de-736a352a2276",
+      "name": "Waymark",
+      "current_logo_url": "https://cdn.prod.website-files.com/64a3c873c4968010f637b2dc/64c2f1947a6615fd5c783979_Waymark-Webclip.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "d5e3535712e535e9b029981923896aac51940a34d1f74cdd10ae23ff2c58dab4",
+        "key": "9c10ebfe-6047-4dbe-b5de-736a352a2276/d5e3535712e535e9b029981923896aac51940a34d1f74cdd10ae23ff2c58dab4.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/9c10ebfe-6047-4dbe-b5de-736a352a2276/d5e3535712e535e9b029981923896aac51940a34d1f74cdd10ae23ff2c58dab4.png"
+      }
+    },
+    {
+      "id": "44f03f3c-899b-488c-a589-cb20c4081cf7",
+      "name": "Glossier",
+      "current_logo_url": "https://www.glossier.com/cdn/shop/files/favicon-light_180x180.webp?v=1681821719",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca",
+        "key": "44f03f3c-899b-488c-a589-cb20c4081cf7/186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/44f03f3c-899b-488c-a589-cb20c4081cf7/186020c47f9bb6aa6cbd8b18ee7824d1644342a8366fe84456bc147aa76c6cca.webp"
+      }
+    },
+    {
+      "id": "4d685c04-ac11-446f-9a1e-ddef0a27b1bf",
+      "name": "Ginkgo Bioworks",
+      "current_logo_url": "https://cdn.prod.website-files.com/691b94a518664e13feebd656/692cd99bb36d17aec8b4f222_webclip.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "b4ef92e5dd606dbc12304a8d2dc8d97367bcc0c73cd58fd7262e38fc77480a3e",
+        "key": "4d685c04-ac11-446f-9a1e-ddef0a27b1bf/b4ef92e5dd606dbc12304a8d2dc8d97367bcc0c73cd58fd7262e38fc77480a3e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/4d685c04-ac11-446f-9a1e-ddef0a27b1bf/b4ef92e5dd606dbc12304a8d2dc8d97367bcc0c73cd58fd7262e38fc77480a3e.png"
+      }
+    },
+    {
+      "id": "cb757020-6bce-4203-933e-ddf50beb3388",
+      "name": "Fleetio",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=fleetio.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "a4c8f8d7a5502a6b2fdbceac72af9cf5b0fb713715992a9ebc0a768528d9c3f2",
+        "key": "cb757020-6bce-4203-933e-ddf50beb3388/a4c8f8d7a5502a6b2fdbceac72af9cf5b0fb713715992a9ebc0a768528d9c3f2.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/cb757020-6bce-4203-933e-ddf50beb3388/a4c8f8d7a5502a6b2fdbceac72af9cf5b0fb713715992a9ebc0a768528d9c3f2.png"
+      }
+    },
+    {
+      "id": "1bc516ce-e340-4ca2-80d6-b3e0b34f6b38",
+      "name": "Midjourney",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "8a25cc9c3f32ebe9d673ca50bad8b22ba3186e856aff658c0122cb06da47971e",
+        "key": "1bc516ce-e340-4ca2-80d6-b3e0b34f6b38/8a25cc9c3f32ebe9d673ca50bad8b22ba3186e856aff658c0122cb06da47971e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/1bc516ce-e340-4ca2-80d6-b3e0b34f6b38/8a25cc9c3f32ebe9d673ca50bad8b22ba3186e856aff658c0122cb06da47971e.png"
+      }
+    },
+    {
+      "id": "74ad233c-09c8-42bd-b617-0cf8ffb8c098",
+      "name": "ImmobilienScout24",
+      "current_logo_url": "https://www.scout24.com/_assets/0fc4c476ba417208cc581328d051a35d/Favicons/Scout24/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "1eced076266e55883240674e9408fb4f9a680045ee61eebeecd0b54dc5027a63",
+        "key": "74ad233c-09c8-42bd-b617-0cf8ffb8c098/1eced076266e55883240674e9408fb4f9a680045ee61eebeecd0b54dc5027a63.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/74ad233c-09c8-42bd-b617-0cf8ffb8c098/1eced076266e55883240674e9408fb4f9a680045ee61eebeecd0b54dc5027a63.png"
+      }
+    },
+    {
+      "id": "ba16eadc-90c2-4050-ad96-769ae21bd01e",
+      "name": "HeyGen",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=heygen.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "302a898bfe92c5392007ebb3c4542eb8d72a58bbbdb3d9d7cba29e68259f73e2",
+        "key": "ba16eadc-90c2-4050-ad96-769ae21bd01e/302a898bfe92c5392007ebb3c4542eb8d72a58bbbdb3d9d7cba29e68259f73e2.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/ba16eadc-90c2-4050-ad96-769ae21bd01e/302a898bfe92c5392007ebb3c4542eb8d72a58bbbdb3d9d7cba29e68259f73e2.png"
+      }
+    },
+    {
+      "id": "c89af545-4a0d-463d-bcad-f15e796bdfe8",
+      "name": "Appen",
+      "current_logo_url": "https://i0.wp.com/crowdgen.com/wp-content/uploads/2026/08/crowdgen-site-icon-512.png?fit=192%2C192&#038;ssl=1",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "ba67df84349b334431cdca5d779f836c76b286866e22033bba21355b3689dcb0",
+        "key": "c89af545-4a0d-463d-bcad-f15e796bdfe8/ba67df84349b334431cdca5d779f836c76b286866e22033bba21355b3689dcb0.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c89af545-4a0d-463d-bcad-f15e796bdfe8/ba67df84349b334431cdca5d779f836c76b286866e22033bba21355b3689dcb0.webp"
+      }
+    },
+    {
+      "id": "2812805c-73c0-43a4-bc83-8d486be5d055",
+      "name": "Olo",
+      "current_logo_url": "https://www.olo.com/hubfs/2024-Website/assets/logos/favicon-Olo.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "c23d595a76ea546495dfba5060e61d536b74c1f16f80ffb5c07c8af0900d9ec5",
+        "key": "2812805c-73c0-43a4-bc83-8d486be5d055/c23d595a76ea546495dfba5060e61d536b74c1f16f80ffb5c07c8af0900d9ec5.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/2812805c-73c0-43a4-bc83-8d486be5d055/c23d595a76ea546495dfba5060e61d536b74c1f16f80ffb5c07c8af0900d9ec5.webp"
+      }
+    },
+    {
+      "id": "3e4bd34d-b2bf-46f1-be28-4b136700624b",
+      "name": "Flip",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "8a7d1ffd-fa7c-4196-8354-7ea7b74481e6",
+      "name": "Superside",
+      "current_logo_url": "https://unavatar.io/superside.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "e7bff7b2e5b504b60d851aff63ced17ae4aa1e1a4f84d8b1b40c36bf5c5d9905",
+        "key": "8a7d1ffd-fa7c-4196-8354-7ea7b74481e6/e7bff7b2e5b504b60d851aff63ced17ae4aa1e1a4f84d8b1b40c36bf5c5d9905.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/8a7d1ffd-fa7c-4196-8354-7ea7b74481e6/e7bff7b2e5b504b60d851aff63ced17ae4aa1e1a4f84d8b1b40c36bf5c5d9905.png"
+      }
+    },
+    {
+      "id": "be1c7c2f-aaa8-4595-a679-6071687f8884",
+      "name": "Weploy",
+      "current_logo_url": "https://s2-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/012/200/original/795f400adfd01b5137dea7421ba93144.webp?1724289336",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "8e77dd51-a150-4b83-8ad1-81ab316e9107",
+      "name": "SaasGroup",
+      "current_logo_url": "https://s101-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/080/510/original/saas-group-greenhouse.png?1712921635",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "0949f356-d1e8-4f03-b457-db6f94dea743",
+      "name": "Cube",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "8a9fdb4a7c25115a227792c0c829f23c827ada3d712b5754bb3d8d359ca13c4d",
+        "key": "0949f356-d1e8-4f03-b457-db6f94dea743/8a9fdb4a7c25115a227792c0c829f23c827ada3d712b5754bb3d8d359ca13c4d.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0949f356-d1e8-4f03-b457-db6f94dea743/8a9fdb4a7c25115a227792c0c829f23c827ada3d712b5754bb3d8d359ca13c4d.webp"
+      }
+    },
+    {
+      "id": "0bbf6d8a-6724-49d3-8135-ce13d243b618",
+      "name": "Sonatype",
+      "current_logo_url": "https://unavatar.io/sonatype.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "8ba04d9a465ec44f762a3e48becb40959ccd2e5f973c3cea68edb24c714f3c5d",
+        "key": "0bbf6d8a-6724-49d3-8135-ce13d243b618/8ba04d9a465ec44f762a3e48becb40959ccd2e5f973c3cea68edb24c714f3c5d.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0bbf6d8a-6724-49d3-8135-ce13d243b618/8ba04d9a465ec44f762a3e48becb40959ccd2e5f973c3cea68edb24c714f3c5d.png"
+      }
+    },
+    {
+      "id": "3a2e2b54-993d-4691-8992-d59d374fe5d7",
+      "name": "Dashlane",
+      "current_logo_url": "https://www.dashlane.com/dashlane-favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "cb17175521eedae3e26121adb0ad3fc72fa85f385b026b8038815e27b239b9d5",
+        "key": "3a2e2b54-993d-4691-8992-d59d374fe5d7/cb17175521eedae3e26121adb0ad3fc72fa85f385b026b8038815e27b239b9d5.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/3a2e2b54-993d-4691-8992-d59d374fe5d7/cb17175521eedae3e26121adb0ad3fc72fa85f385b026b8038815e27b239b9d5.png"
+      }
+    },
+    {
+      "id": "46e76fdf-10d4-4f5e-9f4f-0d2a07b0d689",
+      "name": "Labelbox",
+      "current_logo_url": "https://s7-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/195/400/original/On_light_background_(1).png?1691093207",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "a28bb8be-bbd3-4f7d-84f0-9c9b78616334",
+      "name": "Character.ai",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "e54c8c92edfb0876e82ade5ff1f886e21c5bb683205e29b05098d177ca1dd6c7",
+        "key": "a28bb8be-bbd3-4f7d-84f0-9c9b78616334/e54c8c92edfb0876e82ade5ff1f886e21c5bb683205e29b05098d177ca1dd6c7.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a28bb8be-bbd3-4f7d-84f0-9c9b78616334/e54c8c92edfb0876e82ade5ff1f886e21c5bb683205e29b05098d177ca1dd6c7.png"
+      }
+    },
+    {
+      "id": "fac40682-c72e-473f-9c6a-635ced41291b",
+      "name": "Extend",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "50b7be95-e72f-420f-8937-38d51237cf95",
+      "name": "Doximity",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "748d3232-5928-4b24-911c-bc248105b24a",
+      "name": "Wikimedia",
+      "current_logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/000/342/original/200px-Wikimedia_Foundation_logo_-_vertical.svg.png?1654716141",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "94e839a0-96e1-4ec0-b967-66ec5b390f64",
+      "name": "Persona",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "a2428ffa3fe51d970e7e1e50353932cf89dc38da7cf135f68379334e6cd983e2",
+        "key": "94e839a0-96e1-4ec0-b967-66ec5b390f64/a2428ffa3fe51d970e7e1e50353932cf89dc38da7cf135f68379334e6cd983e2.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/94e839a0-96e1-4ec0-b967-66ec5b390f64/a2428ffa3fe51d970e7e1e50353932cf89dc38da7cf135f68379334e6cd983e2.png"
+      }
+    },
+    {
+      "id": "a4c2e3d5-4bb7-4e0f-b76e-a4ec6a87cf3e",
+      "name": "Knix",
+      "current_logo_url": "https://lever-client-logos.s3.us-west-2.amazonaws.com/ac8357dc-add3-42d2-9524-65a6e5a92bbf-1630074286879.png",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "not-a-logo: 6251x4096 image from ats-board is a banner/photo, not an icon"
+      }
+    },
+    {
+      "id": "a85def0d-416f-4afa-9810-1df648c38712",
+      "name": "Cockroach Labs",
+      "current_logo_url": "https://www.cockroachlabs.com/icon1.png?38190d312b196e2c",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "460533c2f77b729649ce96afeac643f0dbeb36709f4e29d6fb591fd069e8e727",
+        "key": "a85def0d-416f-4afa-9810-1df648c38712/460533c2f77b729649ce96afeac643f0dbeb36709f4e29d6fb591fd069e8e727.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a85def0d-416f-4afa-9810-1df648c38712/460533c2f77b729649ce96afeac643f0dbeb36709f4e29d6fb591fd069e8e727.png"
+      }
+    },
+    {
+      "id": "a9c298d8-f072-48c8-96c2-caafb5222f47",
+      "name": "BigID",
+      "current_logo_url": "https://unavatar.io/bigid.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "33a4b7a46ccfa1d078479a12383e688c2082592e44948a486786da24b442bd28",
+        "key": "a9c298d8-f072-48c8-96c2-caafb5222f47/33a4b7a46ccfa1d078479a12383e688c2082592e44948a486786da24b442bd28.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a9c298d8-f072-48c8-96c2-caafb5222f47/33a4b7a46ccfa1d078479a12383e688c2082592e44948a486786da24b442bd28.png"
+      }
+    },
+    {
+      "id": "d2d698c5-968d-40c4-8135-2d423317a2d0",
+      "name": "Buildkite",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "e0fab701-c558-4382-b523-193cc007d7fa",
+      "name": "Luma AI",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "9f2ac3811f85910eed72a674f9af889143803ba2b4c6c2a98af2d288a26f65d8",
+        "key": "e0fab701-c558-4382-b523-193cc007d7fa/9f2ac3811f85910eed72a674f9af889143803ba2b4c6c2a98af2d288a26f65d8.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/e0fab701-c558-4382-b523-193cc007d7fa/9f2ac3811f85910eed72a674f9af889143803ba2b4c6c2a98af2d288a26f65d8.png"
+      }
+    },
+    {
+      "id": "57068339-2c62-4f92-b309-f3a936e9dc12",
+      "name": "Scandit",
+      "current_logo_url": "https://www.scandit.com/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "a38ab23c6c6822c3f0309b4a9dba5b2c2c627bda0aa5546c8545ae85a730ea85",
+        "key": "57068339-2c62-4f92-b309-f3a936e9dc12/a38ab23c6c6822c3f0309b4a9dba5b2c2c627bda0aa5546c8545ae85a730ea85.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/57068339-2c62-4f92-b309-f3a936e9dc12/a38ab23c6c6822c3f0309b4a9dba5b2c2c627bda0aa5546c8545ae85a730ea85.png"
+      }
+    },
+    {
+      "id": "74837463-7129-4d6c-aaa7-83bfba8d4a4f",
+      "name": "Mindful",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=getmindfulhealth.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "ea196ec0b2675e6244445bb0e097cac3dcbb70568d8734c67fb0e732e8dafef3",
+        "key": "74837463-7129-4d6c-aaa7-83bfba8d4a4f/ea196ec0b2675e6244445bb0e097cac3dcbb70568d8734c67fb0e732e8dafef3.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/74837463-7129-4d6c-aaa7-83bfba8d4a4f/ea196ec0b2675e6244445bb0e097cac3dcbb70568d8734c67fb0e732e8dafef3.png"
+      }
+    },
+    {
+      "id": "c2af1425-cc42-4604-9e16-a0b2a876e644",
+      "name": "Karat",
+      "current_logo_url": "https://karat.com/wp-content/themes/karat/assets/img/png/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "8a4372bd347cf1f64f14e6f331812d2a43f331439314575a3118e6fc81269021",
+        "key": "c2af1425-cc42-4604-9e16-a0b2a876e644/8a4372bd347cf1f64f14e6f331812d2a43f331439314575a3118e6fc81269021.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/c2af1425-cc42-4604-9e16-a0b2a876e644/8a4372bd347cf1f64f14e6f331812d2a43f331439314575a3118e6fc81269021.webp"
+      }
+    },
+    {
+      "id": "caffdb5b-b3af-4a41-9732-c7081d26f274",
+      "name": "ArmorCode",
+      "current_logo_url": "https://unavatar.io/armorcode.com?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "158639c9fc56807e81e7bd7296138657c3097c4d47247c8715f9f7ee8290598e",
+        "key": "caffdb5b-b3af-4a41-9732-c7081d26f274/158639c9fc56807e81e7bd7296138657c3097c4d47247c8715f9f7ee8290598e.jpg",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/caffdb5b-b3af-4a41-9732-c7081d26f274/158639c9fc56807e81e7bd7296138657c3097c4d47247c8715f9f7ee8290598e.jpg"
+      }
+    },
+    {
+      "id": "f925b67e-2764-4aaf-a669-9ff11855fa23",
+      "name": "Secureframe",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "2a1641eacfd3a3a576d10df483dd1d820b51b6e0872dd93123b33d28f1a5d9df",
+        "key": "f925b67e-2764-4aaf-a669-9ff11855fa23/2a1641eacfd3a3a576d10df483dd1d820b51b6e0872dd93123b33d28f1a5d9df.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/f925b67e-2764-4aaf-a669-9ff11855fa23/2a1641eacfd3a3a576d10df483dd1d820b51b6e0872dd93123b33d28f1a5d9df.png"
+      }
+    },
+    {
+      "id": "08a0cebd-3128-4677-af27-5d567f4e3a0b",
+      "name": "Pocket FM",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "90341112-a975-4a6f-a02a-af7b29e7058e",
+      "name": "Mattermost",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "f44021d8-9af7-4a09-a904-61fe536bd84b",
+      "name": "Lightspeed",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "16f033b27ac75d5a492b09f3b6bb37829bfbb8ff947e3d1e4c4afec9fa750e7a",
+        "key": "f44021d8-9af7-4a09-a904-61fe536bd84b/16f033b27ac75d5a492b09f3b6bb37829bfbb8ff947e3d1e4c4afec9fa750e7a.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/f44021d8-9af7-4a09-a904-61fe536bd84b/16f033b27ac75d5a492b09f3b6bb37829bfbb8ff947e3d1e4c4afec9fa750e7a.png"
+      }
+    },
+    {
+      "id": "f5bc1d6f-7f00-4481-a48b-da2959ad58bd",
+      "name": "Securityscorecard",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "08851559-5fb1-4913-b1c4-334d6e7ac2ad",
+      "name": "Zapier",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "23ae37879fbb05bed51e55221e8d9e3cec501c63571c3631ef1f8d01137787c6",
+        "key": "08851559-5fb1-4913-b1c4-334d6e7ac2ad/23ae37879fbb05bed51e55221e8d9e3cec501c63571c3631ef1f8d01137787c6.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/08851559-5fb1-4913-b1c4-334d6e7ac2ad/23ae37879fbb05bed51e55221e8d9e3cec501c63571c3631ef1f8d01137787c6.png"
+      }
+    },
+    {
+      "id": "456c2f6b-8415-45f5-9c97-7ec3e8f7d977",
+      "name": "Brave",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "58a1826e-d3cc-45ff-a746-ffa4e6904c2e",
+      "name": "Britecore",
+      "current_logo_url": "https://cdn.prod.website-files.com/5daf81e2fcdc1986561e6add/5e8613aa94f87cd4176eaf7c_webclip.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "776a6940f7c6e4c7d9221f7ad76f8345eee48b4619a9c6ab7645ad34d04ece6e",
+        "key": "58a1826e-d3cc-45ff-a746-ffa4e6904c2e/776a6940f7c6e4c7d9221f7ad76f8345eee48b4619a9c6ab7645ad34d04ece6e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/58a1826e-d3cc-45ff-a746-ffa4e6904c2e/776a6940f7c6e4c7d9221f7ad76f8345eee48b4619a9c6ab7645ad34d04ece6e.png"
+      }
+    },
+    {
+      "id": "5bfe6d9d-5790-4c94-97a9-6ba07c3e393a",
+      "name": "Veriff",
+      "current_logo_url": "https://www.veriff.com/wp-content/uploads/2025/09/cropped-veriff-favicon_logo-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "91c5c71d8ee649e64d7eee748d52a42116f5aeeeee51f0766839766094b9f838",
+        "key": "5bfe6d9d-5790-4c94-97a9-6ba07c3e393a/91c5c71d8ee649e64d7eee748d52a42116f5aeeeee51f0766839766094b9f838.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/5bfe6d9d-5790-4c94-97a9-6ba07c3e393a/91c5c71d8ee649e64d7eee748d52a42116f5aeeeee51f0766839766094b9f838.png"
+      }
+    },
+    {
+      "id": "806fd35a-81c9-41c7-9642-c387d59bf5ec",
+      "name": "Tigera",
+      "current_logo_url": "https://www.tigera.io/app/uploads/2026/01/Tigera-logo-2026-badge-orange-450x450-1-300x300.png?v=2",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "aa93c89c-365f-4d7b-8004-3e217f27d34d",
+      "name": "PostHog",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/3895ef7c0afd5f599008a6fa2519dedd43c775b4/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "02d85769-94eb-4969-b48c-c024580f77f8",
+      "name": "Platform.sh",
+      "current_logo_url": "https://upsun.com/icons/icon-512x512.png?v=cdd6ef938d75e3c80c7f4330f35ea20d",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "de256b69ccc0b2a71cac66fde82e14b14c93215b7be10d28737f8acdb213994b",
+        "key": "02d85769-94eb-4969-b48c-c024580f77f8/de256b69ccc0b2a71cac66fde82e14b14c93215b7be10d28737f8acdb213994b.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/02d85769-94eb-4969-b48c-c024580f77f8/de256b69ccc0b2a71cac66fde82e14b14c93215b7be10d28737f8acdb213994b.png"
+      }
+    },
+    {
+      "id": "16cca0d3-9937-45bb-8d0f-310adc51295e",
+      "name": "Sertis",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "5536a39b-98e4-4b72-9714-e9672f7b4bac",
+      "name": "Able",
+      "current_logo_url": "https://able.co/icons/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "f9b6d0bd131bc44cc033b5cb89d003cc9757e5434ac987470329d13884edeac0",
+        "key": "5536a39b-98e4-4b72-9714-e9672f7b4bac/f9b6d0bd131bc44cc033b5cb89d003cc9757e5434ac987470329d13884edeac0.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/5536a39b-98e4-4b72-9714-e9672f7b4bac/f9b6d0bd131bc44cc033b5cb89d003cc9757e5434ac987470329d13884edeac0.png"
+      }
+    },
+    {
+      "id": "5a747ef2-70fa-454d-9d2e-1ba93fd0b0da",
+      "name": "Logrocket",
+      "current_logo_url": "https://logrocket.com/favicon/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "a3a9efff1d7183cbc588c3415c4c9365e4c51b3d58e53ecb1673d1580275142f",
+        "key": "5a747ef2-70fa-454d-9d2e-1ba93fd0b0da/a3a9efff1d7183cbc588c3415c4c9365e4c51b3d58e53ecb1673d1580275142f.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/5a747ef2-70fa-454d-9d2e-1ba93fd0b0da/a3a9efff1d7183cbc588c3415c4c9365e4c51b3d58e53ecb1673d1580275142f.png"
+      }
+    },
+    {
+      "id": "6dfea0e9-cfd2-4578-94bf-80ea09c7071a",
+      "name": "Gymshark",
+      "current_logo_url": "https://s101-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/019/210/original/Gymshark_Symbol_Logo_Black-01.jpg?1630003405",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "6e7a5283-02fa-47f4-8b88-8b4c388bbe6f",
+      "name": "Activecampaign",
+      "current_logo_url": "https://www.activecampaign.com/dist/favicon-192x192.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "1ef13007b4e90e56082666e22afe8fc33fe6174041e6e7897adadc7416926ff1",
+        "key": "6e7a5283-02fa-47f4-8b88-8b4c388bbe6f/1ef13007b4e90e56082666e22afe8fc33fe6174041e6e7897adadc7416926ff1.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/6e7a5283-02fa-47f4-8b88-8b4c388bbe6f/1ef13007b4e90e56082666e22afe8fc33fe6174041e6e7897adadc7416926ff1.webp"
+      }
+    },
+    {
+      "id": "85b805b4-b94a-4137-a63f-8c66b3b40ff4",
+      "name": "Groww",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "a5acc33d-1115-4c70-afff-bd9985623182",
+      "name": "IDEO",
+      "current_logo_url": "https://cdn.prod.website-files.com/67cb2dd62d5110e2973d39d7/69375a9ab7d2ba7920eeeb01_ideo_favicon_large.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "d843350c09131525a2d87cac356008b8866f45ec89ba632be18e54116193dbf3",
+        "key": "a5acc33d-1115-4c70-afff-bd9985623182/d843350c09131525a2d87cac356008b8866f45ec89ba632be18e54116193dbf3.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/a5acc33d-1115-4c70-afff-bd9985623182/d843350c09131525a2d87cac356008b8866f45ec89ba632be18e54116193dbf3.png"
+      }
+    },
+    {
+      "id": "bbc2958e-a12a-45a3-9acd-e3b49f373fee",
+      "name": "Appinio",
+      "current_logo_url": "https://www.appinio.com/hubfs/B2B%20Redesign%2024/Favicon/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "0a4037c557d3ae5b5da8a4d4363596ea09d20c2692c5f80c6e68cc64a109f672",
+        "key": "bbc2958e-a12a-45a3-9acd-e3b49f373fee/0a4037c557d3ae5b5da8a4d4363596ea09d20c2692c5f80c6e68cc64a109f672.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/bbc2958e-a12a-45a3-9acd-e3b49f373fee/0a4037c557d3ae5b5da8a4d4363596ea09d20c2692c5f80c6e68cc64a109f672.webp"
+      }
+    },
+    {
+      "id": "083ff3c4-5f2a-44a6-984d-504a99ba9873",
+      "name": "Teamsnap",
+      "current_logo_url": "https://cdn.prod.website-files.com/6a82d14b9117f57d1fb06f4c/6a980c6fa3777e1695117ba8_Favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "0911a680d59e5caccbbaeec66d5b6194e974989c2b45ebc1e19a8401ed976ec8",
+        "key": "083ff3c4-5f2a-44a6-984d-504a99ba9873/0911a680d59e5caccbbaeec66d5b6194e974989c2b45ebc1e19a8401ed976ec8.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/083ff3c4-5f2a-44a6-984d-504a99ba9873/0911a680d59e5caccbbaeec66d5b6194e974989c2b45ebc1e19a8401ed976ec8.png"
+      }
+    },
+    {
+      "id": "11e06480-77b7-4982-82ad-1cf5e882dbdb",
+      "name": "Atlan",
+      "current_logo_url": "https://cdn.ashbyprd.com/cdn_assets/c2693b0acff7658eb55417509c137f477b112299/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "ebfc61e76ae8f7aa1f1aa9956883cdb052e42415e1742c69b94f0c693db48fe7",
+        "key": "11e06480-77b7-4982-82ad-1cf5e882dbdb/ebfc61e76ae8f7aa1f1aa9956883cdb052e42415e1742c69b94f0c693db48fe7.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/11e06480-77b7-4982-82ad-1cf5e882dbdb/ebfc61e76ae8f7aa1f1aa9956883cdb052e42415e1742c69b94f0c693db48fe7.png"
+      }
+    },
+    {
+      "id": "42062b3f-8c19-433d-8077-978a32d5b1e5",
+      "name": "IDnow",
+      "current_logo_url": "https://idnow.io/wp-content/uploads/favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "d83db55b9839186eb20c35eee4c74a697019cb539098b65e14b2aaf15341bfc7",
+        "key": "42062b3f-8c19-433d-8077-978a32d5b1e5/d83db55b9839186eb20c35eee4c74a697019cb539098b65e14b2aaf15341bfc7.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/42062b3f-8c19-433d-8077-978a32d5b1e5/d83db55b9839186eb20c35eee4c74a697019cb539098b65e14b2aaf15341bfc7.png"
+      }
+    },
+    {
+      "id": "571c6209-8151-4202-8280-95e92e86a5a6",
+      "name": "MyHeritage",
+      "current_logo_url": "https://cf.mhcache.com/FP/Assets/Images/Social/mh_logo_350x350.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "17d8a5e7a9031a0e14e609b7ee97ae55c60461d027fe7fbea20ed01b942558cd",
+        "key": "571c6209-8151-4202-8280-95e92e86a5a6/17d8a5e7a9031a0e14e609b7ee97ae55c60461d027fe7fbea20ed01b942558cd.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/571c6209-8151-4202-8280-95e92e86a5a6/17d8a5e7a9031a0e14e609b7ee97ae55c60461d027fe7fbea20ed01b942558cd.png"
+      }
+    },
+    {
+      "id": "7bd14c89-1f20-40e2-8eeb-57278680ce54",
+      "name": "Aestudio",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "92143b4b-ecad-48c3-b423-09d4b27e990d",
+      "name": "Anomali",
+      "current_logo_url": "https://cdn.prod.website-files.com/68228a4fdbfec3b02c9c5186/68228a4fdbfec3b02c9c5804_Anomali-webclip-256x256-2024.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "796c4a0149d97d236308d15461d7b64f4b760b028d0e28b032fbad9cc20002a0",
+        "key": "92143b4b-ecad-48c3-b423-09d4b27e990d/796c4a0149d97d236308d15461d7b64f4b760b028d0e28b032fbad9cc20002a0.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/92143b4b-ecad-48c3-b423-09d4b27e990d/796c4a0149d97d236308d15461d7b64f4b760b028d0e28b032fbad9cc20002a0.png"
+      }
+    },
+    {
+      "id": "9f0e2a23-e3ac-4617-b860-09926a44ed6b",
+      "name": "Findem",
+      "current_logo_url": "https://www.findem.ai/_ploy_static/favicon-ea1f814f42da2b67d36e3e27c481879535ea4a15a4f4be26be3cdfa7c3894e4d.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "ea1f814f42da2b67d36e3e27c481879535ea4a15a4f4be26be3cdfa7c3894e4d",
+        "key": "9f0e2a23-e3ac-4617-b860-09926a44ed6b/ea1f814f42da2b67d36e3e27c481879535ea4a15a4f4be26be3cdfa7c3894e4d.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/9f0e2a23-e3ac-4617-b860-09926a44ed6b/ea1f814f42da2b67d36e3e27c481879535ea4a15a4f4be26be3cdfa7c3894e4d.png"
+      }
+    },
+    {
+      "id": "d0deaf17-e2f1-44c7-89a8-55216a87a7e8",
+      "name": "Upbound",
+      "current_logo_url": "https://framerusercontent.com/images/CFHcLUQFDzrxU9pG8x6mBVDQ5E.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "dc3f397d93ea8544f528c6c979fe1d45060edda6b1cb91f6741af85b75faec92",
+        "key": "d0deaf17-e2f1-44c7-89a8-55216a87a7e8/dc3f397d93ea8544f528c6c979fe1d45060edda6b1cb91f6741af85b75faec92.webp",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/d0deaf17-e2f1-44c7-89a8-55216a87a7e8/dc3f397d93ea8544f528c6c979fe1d45060edda6b1cb91f6741af85b75faec92.webp"
+      }
+    },
+    {
+      "id": "0ead309f-1da7-4d9b-8749-168a02c04605",
+      "name": "Form3",
+      "current_logo_url": "https://unavatar.io/form3.tech?fallback=false",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "6ad9cdf12aa7b6e3dcb701ab52e55c16676725e7561c87062949ffede44257b4",
+        "key": "0ead309f-1da7-4d9b-8749-168a02c04605/6ad9cdf12aa7b6e3dcb701ab52e55c16676725e7561c87062949ffede44257b4.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/0ead309f-1da7-4d9b-8749-168a02c04605/6ad9cdf12aa7b6e3dcb701ab52e55c16676725e7561c87062949ffede44257b4.png"
+      }
+    },
+    {
+      "id": "899ade40-622b-48c1-87ec-04f6e6e7c691",
+      "name": "Udemy",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "8a6c0dca-b98c-424d-95d5-85420933e8d2",
+      "name": "Zensurance",
+      "current_logo_url": "https://cdn-ileijpa.nitrocdn.com/jvyQSbsjELWVIKgkoqglyDHuITLJxzFe/assets/images/optimized/rev-192b997/www.zensurance.com/wp-content/uploads/2019/09/Favicon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "c0ecf83eb2627a5fdaf88ba992ec6324c962df0f4308afa833076d2dc4d81892",
+        "key": "8a6c0dca-b98c-424d-95d5-85420933e8d2/c0ecf83eb2627a5fdaf88ba992ec6324c962df0f4308afa833076d2dc4d81892.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/8a6c0dca-b98c-424d-95d5-85420933e8d2/c0ecf83eb2627a5fdaf88ba992ec6324c962df0f4308afa833076d2dc4d81892.png"
+      }
+    },
+    {
+      "id": "923c818b-a7d4-437c-b06d-1222f151f838",
+      "name": "Acquia",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "b4227f40-5c9f-4329-9ef9-d81d2d6dcf20",
+      "name": "Openzeppelin",
+      "current_logo_url": "https://www.openzeppelin.com/icon.png?icon.0n__x8e_phqgx.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "8c3a8290eba6f49b382263517e759d22691da66be3de26fc956fc38ee1c2d090",
+        "key": "b4227f40-5c9f-4329-9ef9-d81d2d6dcf20/8c3a8290eba6f49b382263517e759d22691da66be3de26fc956fc38ee1c2d090.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/b4227f40-5c9f-4329-9ef9-d81d2d6dcf20/8c3a8290eba6f49b382263517e759d22691da66be3de26fc956fc38ee1c2d090.png"
+      }
+    },
+    {
+      "id": "be93b7df-d1ee-4435-a13c-26890d0b4c38",
+      "name": "Netlify",
+      "current_logo_url": "https://www.netlify.com/favicon/apple-touch-icon.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "b0bf3c9e0eeb02a267847f97fdee49b980048e71214f61cc3ce7d96febef72ba",
+        "key": "be93b7df-d1ee-4435-a13c-26890d0b4c38/b0bf3c9e0eeb02a267847f97fdee49b980048e71214f61cc3ce7d96febef72ba.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/be93b7df-d1ee-4435-a13c-26890d0b4c38/b0bf3c9e0eeb02a267847f97fdee49b980048e71214f61cc3ce7d96febef72ba.png"
+      }
+    },
+    {
+      "id": "f100ca7e-454b-45f7-b863-0d26e2cf615b",
+      "name": "JustWatch",
+      "current_logo_url": "https://www.google.com/s2/favicons?domain=justwatch.com&sz=128",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "free-service:google",
+        "sha256": "53ba5bc3c9171f94e56ebc82208be355e114f07d976ef2c97efdffd7c45077f0",
+        "key": "f100ca7e-454b-45f7-b863-0d26e2cf615b/53ba5bc3c9171f94e56ebc82208be355e114f07d976ef2c97efdffd7c45077f0.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/f100ca7e-454b-45f7-b863-0d26e2cf615b/53ba5bc3c9171f94e56ebc82208be355e114f07d976ef2c97efdffd7c45077f0.png"
+      }
+    },
+    {
+      "id": "112c0fdf-f7cd-4748-9163-9c617c814a96",
+      "name": "Udio",
+      "current_logo_url": "https://s8-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/228/800/original/avatar-raspberry-on-black.png?1763058735",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "19956c22-75a1-4b86-a56f-e939a2d3f42f",
+      "name": "YLD",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "30b72480-b92e-4713-8d80-77f723de971c",
+      "name": "Ghost",
+      "current_logo_url": "https://framerusercontent.com/images/roaH3dMQWHQp7TJNcHClOlhwx8.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "61e53dca227d7cad39b28e287cd51452a4bf8b87ca0bbd10dbf0619507018c1e",
+        "key": "30b72480-b92e-4713-8d80-77f723de971c/61e53dca227d7cad39b28e287cd51452a4bf8b87ca0bbd10dbf0619507018c1e.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/30b72480-b92e-4713-8d80-77f723de971c/61e53dca227d7cad39b28e287cd51452a4bf8b87ca0bbd10dbf0619507018c1e.png"
+      }
+    },
+    {
+      "id": "658d5dbd-191a-4809-9e27-f66ad5ac8552",
+      "name": "Acumen",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "ad6a7224-454e-4367-97cc-def79169cb60",
+      "name": "BlaBlaCar",
+      "current_logo_url": "https://cdn.blablacar.com/language-selector/assets/images/apple-touch-icon-e35ef6a3c7072847.png",
+      "current_class": "external",
+      "plan": {
+        "action": "host",
+        "source": "homepage-icon",
+        "sha256": "cf22b7808f2a916e9f6955d7baf56f8d7dbb4e8fbd3e69383250dbaa316f6f99",
+        "key": "ad6a7224-454e-4367-97cc-def79169cb60/cf22b7808f2a916e9f6955d7baf56f8d7dbb4e8fbd3e69383250dbaa316f6f99.png",
+        "hosted_url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/ad6a7224-454e-4367-97cc-def79169cb60/cf22b7808f2a916e9f6955d7baf56f8d7dbb4e8fbd3e69383250dbaa316f6f99.png"
+      }
+    },
+    {
+      "id": "faa1306a-9f97-4489-af4f-062f2d5a178f",
+      "name": "HomeLight",
+      "current_logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/005/684/original/icon-color-padding-whitebg.png?1559074003",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "067f0c4e-61a8-47af-83c9-84a862576907",
+      "name": "Valimail",
+      "current_logo_url": null,
+      "current_class": "null",
+      "plan": {
+        "action": "keep-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    },
+    {
+      "id": "294fe7a1-8775-4b21-8b56-014ecad945c1",
+      "name": "Upwork",
+      "current_logo_url": "https://s3-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/055/900/original/Linkedinlogo.png?1664214414",
+      "current_class": "external",
+      "plan": {
+        "action": "clear-external-to-initials",
+        "reason": "no-source: no verified ATS image, homepage icon or resolver logo for a verified domain"
+      }
+    }
+  ]
+}

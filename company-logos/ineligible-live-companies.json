@@ -1,0 +1,2352 @@
+[
+  {
+    "id": "d8d3c61f-e992-4d3f-b09a-f94fd9c6721c",
+    "name": "Cloudflare",
+    "slug": "cloudflare",
+    "ats_type": "greenhouse",
+    "domain": "cloudflare.com",
+    "active_jobs": 504,
+    "logo_class": "external:other",
+    "logo_url": "https://www.cloudflare.com/favicon.ico"
+  },
+  {
+    "id": "20e0b5eb-b15a-4729-b931-2cc785492280",
+    "name": "MongoDB",
+    "slug": "mongodb",
+    "ats_type": "greenhouse",
+    "domain": "mongodb.com",
+    "active_jobs": 417,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=mongodb.com&sz=128"
+  },
+  {
+    "id": "108366c5-22ef-4890-aa02-a3e407d63fc4",
+    "name": "DoorDash",
+    "slug": "doordashusa",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 408,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "313cffdb-945f-404e-96ce-7042e19059d7",
+    "name": "Zscaler",
+    "slug": "zscaler",
+    "ats_type": "greenhouse",
+    "domain": "zscaler.com",
+    "active_jobs": 386,
+    "logo_class": "external:other",
+    "logo_url": "https://www.zscaler.com/favicons/apple-touch-icon.png"
+  },
+  {
+    "id": "1d73ee1c-838f-4f34-9e1c-cd40c998224c",
+    "name": "Datadog",
+    "slug": "datadog",
+    "ats_type": "greenhouse",
+    "domain": "datadoghq.com",
+    "active_jobs": 378,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/datadoghq.com?fallback=false"
+  },
+  {
+    "id": "1d12455d-d1c8-484d-8a46-dc9f70ebec52",
+    "name": "HelloFresh",
+    "slug": "hellofresh",
+    "ats_type": "greenhouse",
+    "domain": "hellofresh.com",
+    "active_jobs": 375,
+    "logo_class": "external:other",
+    "logo_url": "https://hf-website-live.s3.eu-west-1.amazonaws.com/us/EarnedMedia/OpenGraphImages/HelloFresh_OpenGraph.png"
+  },
+  {
+    "id": "a6242fef-babf-4ef1-8809-fe4904aec642",
+    "name": "Okta",
+    "slug": "okta",
+    "ats_type": "greenhouse",
+    "domain": "okta.com",
+    "active_jobs": 372,
+    "logo_class": "external:other",
+    "logo_url": "https://www.okta.com/apple-touch-icon.png"
+  },
+  {
+    "id": "1721d4e1-804e-40f4-a934-a7a4ebb7ec96",
+    "name": "Toast",
+    "slug": "toast",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 323,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "2270f3ef-9fe2-47db-a90f-18698d0a817b",
+    "name": "Canonical",
+    "slug": "canonical",
+    "ats_type": "greenhouse",
+    "domain": "canonical.com",
+    "active_jobs": 318,
+    "logo_class": "external:other",
+    "logo_url": "https://assets.ubuntu.com/v1/f38b9c7e-COF%20apple-touch-icon.png"
+  },
+  {
+    "id": "760e6994-1530-4d79-86df-e623ea9b3c61",
+    "name": "SumUp",
+    "slug": "sumup",
+    "ats_type": "greenhouse",
+    "domain": "sumup.com",
+    "active_jobs": 315,
+    "logo_class": "external:other",
+    "logo_url": "https://static.sumup.com/favicons/apple-touch-icon.png"
+  },
+  {
+    "id": "d71e70bc-70cc-430d-8dc4-352f5336cfe4",
+    "name": "Palantir",
+    "slug": "palantir",
+    "ats_type": "lever",
+    "domain": "palantir.com",
+    "active_jobs": 308,
+    "logo_class": "external:other",
+    "logo_url": "https://www.palantir.com/assets/xrfr7uokpv1b/5MGQnj3IDJpURPzBDnXklZ/b7eed64a4f71a959250e19ec76bdf5de/Palantir_Chevron.png"
+  },
+  {
+    "id": "4d618ff5-c18a-4c77-8f85-fd98e97af65d",
+    "name": "Celonis",
+    "slug": "celonis",
+    "ats_type": "greenhouse",
+    "domain": "celonis.com",
+    "active_jobs": 262,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=celonis.com&sz=128"
+  },
+  {
+    "id": "b9c30343-4c73-43de-a30d-855797713d07",
+    "name": "Coinbase",
+    "slug": "coinbase",
+    "ats_type": "greenhouse",
+    "domain": "coinbase.com",
+    "active_jobs": 251,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/coinbase.com?fallback=false"
+  },
+  {
+    "id": "06a6fc57-47d9-423f-9b84-8754fc1702eb",
+    "name": "Adyen",
+    "slug": "adyen",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 243,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "0eb63c12-af01-4873-aa5a-8f5a26dd5702",
+    "name": "Pennylane",
+    "slug": "pennylane",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 203,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "d0dbe4cb-a83e-4ad4-8124-4a8be1e877eb",
+    "name": "Riot Games",
+    "slug": "riotgames",
+    "ats_type": "greenhouse",
+    "domain": "riotgames.com",
+    "active_jobs": 202,
+    "logo_class": "external:other",
+    "logo_url": "https://www.riotgames.com/assets/img/meta/87021767499a895b42bbe1e6a9edaf27/apple-touch-icon-precomposed-180x180.png"
+  },
+  {
+    "id": "1588465f-da41-4cb7-88cc-0419774ae0fe",
+    "name": "Paytm",
+    "slug": "paytm",
+    "ats_type": "lever",
+    "domain": "paytm.com",
+    "active_jobs": 199,
+    "logo_class": "external:other",
+    "logo_url": "https://paytm.com/favicon.ico"
+  },
+  {
+    "id": "5bff5bec-7c78-4c2e-aebd-fc97e21510a1",
+    "name": "Wolt",
+    "slug": "wolt",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 181,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "1feb2b97-c84b-4a64-8d85-831b76ae0b20",
+    "name": "Pinterest",
+    "slug": "pinterest",
+    "ats_type": "greenhouse",
+    "domain": "pinterestcareers.com",
+    "active_jobs": 174,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=pinterestcareers.com&sz=128"
+  },
+  {
+    "id": "f793a8f1-5942-4a15-9668-ab4aec2dc049",
+    "name": "Scopely",
+    "slug": "scopely",
+    "ats_type": "greenhouse",
+    "domain": "scopely.com",
+    "active_jobs": 172,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/scopely.com?fallback=false"
+  },
+  {
+    "id": "7b671ff8-2789-4629-94c6-2ac3cdc2d94a",
+    "name": "Scale AI",
+    "slug": "scaleai",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 166,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "92fe9dc1-32d5-433c-8169-61fe605cc4cd",
+    "name": "Robinhood",
+    "slug": "robinhood",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 162,
+    "logo_class": "external:other",
+    "logo_url": "https://v.fastcdn.co/u/62ba1c13/65631118-0-RH-Favicon---Neon.jpg"
+  },
+  {
+    "id": "2308b965-7bdd-4c97-9225-5c7e122c3933",
+    "name": "Ebury",
+    "slug": "ebury",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 162,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "8ba20556-7f58-4c1a-b293-22aab74eaf61",
+    "name": "Reddit",
+    "slug": "reddit",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 147,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "a1146120-5da3-4cc3-8156-906f02c9482f",
+    "name": "Tenstorrent",
+    "slug": "tenstorrent",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 145,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "9b0b04b7-1183-4e29-ae50-c942f00ac90a",
+    "name": "Lyft",
+    "slug": "lyft",
+    "ats_type": "greenhouse",
+    "domain": "free-now.com",
+    "active_jobs": 145,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/free-now.com?fallback=false"
+  },
+  {
+    "id": "c46958b8-9859-482b-8fd0-a4173ba55c6a",
+    "name": "Grafana Labs",
+    "slug": "grafanalabs",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 140,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "f1545be3-de49-46a4-b022-abc8d1d7bd82",
+    "name": "Mozilla",
+    "slug": "mozilla",
+    "ats_type": "greenhouse",
+    "domain": "mozilla.org",
+    "active_jobs": 138,
+    "logo_class": "external:other",
+    "logo_url": "https://www.mozilla.org/media/img/favicons/mozilla/favicon-196x196.e143075360ea.png"
+  },
+  {
+    "id": "dd3f19c4-87d0-4669-8bde-ad3fad48b1f3",
+    "name": "Epic Games",
+    "slug": "epicgames",
+    "ats_type": "greenhouse",
+    "domain": "epicgames.com",
+    "active_jobs": 138,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=epicgames.com&sz=128"
+  },
+  {
+    "id": "83eb5fb0-967f-4823-b5b6-96f774c0da28",
+    "name": "Netskope",
+    "slug": "netskope",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 124,
+    "logo_class": "external:other",
+    "logo_url": "https://www.netskope.com/wp-content/uploads/2019/04/cropped-favicon-192x192.png"
+  },
+  {
+    "id": "feccde1c-ced8-4cef-992c-e93641a41fc1",
+    "name": "Cato Networks",
+    "slug": "catonetworks",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 120,
+    "logo_class": "external:other",
+    "logo_url": "https://www.catonetworks.com/wp-content/uploads/2026/02/cropped-ring-ico-1-2-192x192.png"
+  },
+  {
+    "id": "6562c081-50ae-44d4-b346-3587651cca80",
+    "name": "Asana",
+    "slug": "asana",
+    "ats_type": "greenhouse",
+    "domain": "asana.com",
+    "active_jobs": 111,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=asana.com&sz=128"
+  },
+  {
+    "id": "c903a87c-bc17-4441-8737-575ea3faaf9d",
+    "name": "Twilio",
+    "slug": "twilio",
+    "ats_type": "greenhouse",
+    "domain": "twilio.com",
+    "active_jobs": 109,
+    "logo_class": "external:other",
+    "logo_url": "https://www.twilio.com/content/dam/twilio-com/core-assets/social/apple-touch-icon.png"
+  },
+  {
+    "id": "46e4650f-c493-4be0-94d2-4bba2491790a",
+    "name": "BetterHelp",
+    "slug": "betterhelp",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 101,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "611c09c7-a5f0-468d-9030-22c5a3268840",
+    "name": "Spotify",
+    "slug": "spotify",
+    "ats_type": "lever",
+    "domain": "spotifyjobs.com",
+    "active_jobs": 91,
+    "logo_class": "external:other",
+    "logo_url": "https://www.lifeatspotify.com/icons/icon-512x512.png"
+  },
+  {
+    "id": "c80e7ee1-b875-49fc-9a03-0fdde772f3f6",
+    "name": "Tailscale",
+    "slug": "tailscale",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 89,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s5-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/350/900/original/images.jpeg?1704484717"
+  },
+  {
+    "id": "f95e45ff-d112-49cd-996e-1e3b1ffc12c8",
+    "name": "Cursor",
+    "slug": "cursor",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 89,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "2649a423-27e9-4751-bd6c-53f5b6eb724a",
+    "name": "Paypay",
+    "slug": "paypay",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 87,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "b096d7a6-acff-4ad7-ad6c-614c37695fa7",
+    "name": "Vercel",
+    "slug": "vercel",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 86,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "b849a715-3c8b-449c-9402-e498832ece49",
+    "name": "Abnormal Security",
+    "slug": "abnormalsecurity",
+    "ats_type": "greenhouse",
+    "domain": "abnormal.ai",
+    "active_jobs": 85,
+    "logo_class": "external:other",
+    "logo_url": "https://abnormal.ai/favicon-196x196.png"
+  },
+  {
+    "id": "6e3e7fcd-4c6e-4027-b09b-acf7092858f8",
+    "name": "Tide",
+    "slug": "tide",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 83,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "c08f0578-f969-4f46-b1d4-c73fa0110255",
+    "name": "Gusto",
+    "slug": "gusto",
+    "ats_type": "greenhouse",
+    "domain": "gusto.com",
+    "active_jobs": 82,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=gusto.com&sz=128"
+  },
+  {
+    "id": "39c95d8f-afc2-4c1b-8f35-4f997c25ca18",
+    "name": "1Password",
+    "slug": "1password",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 81,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c2693b0acff7658eb55417509c137f477b112299/favicon.png"
+  },
+  {
+    "id": "d28860cb-7b0c-499e-a696-c58eb2d9fe8a",
+    "name": "Chime",
+    "slug": "chime",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 80,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "733b4d94-bab1-4946-bccc-c87e38918a4a",
+    "name": "Carta",
+    "slug": "carta",
+    "ats_type": "greenhouse",
+    "domain": "carta.com",
+    "active_jobs": 80,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=carta.com&sz=128"
+  },
+  {
+    "id": "bb2b06c3-4894-4773-80df-7ca21f1569c8",
+    "name": "InMobi",
+    "slug": "inmobi",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 75,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/001/321/original/li_logo.png?1606111857"
+  },
+  {
+    "id": "c598707a-051e-4476-8ff8-8183b477f9a9",
+    "name": "Faire",
+    "slug": "faire",
+    "ats_type": "greenhouse",
+    "domain": "faire.com",
+    "active_jobs": 74,
+    "logo_class": "external:other",
+    "logo_url": "https://www.faire.com/apple-touch-icon.png"
+  },
+  {
+    "id": "eae4b697-df1a-49b3-8660-04af2ce3533c",
+    "name": "Match Group",
+    "slug": "matchgroup",
+    "ats_type": "lever",
+    "domain": "mtch.com",
+    "active_jobs": 72,
+    "logo_class": "external:other",
+    "logo_url": "https://mtch.com/wp-content/uploads/2026/06/cropped-Match-Group-Favicon-192x192.png"
+  },
+  {
+    "id": "89656732-b632-4f37-b417-2143d8358dad",
+    "name": "Sweetgreen",
+    "slug": "sweetgreen",
+    "ats_type": "greenhouse",
+    "domain": "sweetgreen.com",
+    "active_jobs": 72,
+    "logo_class": "external:other",
+    "logo_url": "https://www.sweetgreen.com/apple-touch-icon.png"
+  },
+  {
+    "id": "df2d1be0-a69f-4c9c-b59e-a86cea93c5e5",
+    "name": "Smartly.io",
+    "slug": "smartlyio",
+    "ats_type": "greenhouse",
+    "domain": "smartly.io",
+    "active_jobs": 71,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/6ad772a5f22aca7ce9ac227f/6ad772a5f22aca7ce9ac246c_63f49282d1798911f80d368e_smartly-webclip.webp"
+  },
+  {
+    "id": "581d321f-203e-42e4-85fe-0c054d6d516e",
+    "name": "Alpaca",
+    "slug": "alpaca",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 68,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "fefe9d08-058c-45a9-9beb-dfaadb3d318d",
+    "name": "AlphaSights",
+    "slug": "alphasights",
+    "ats_type": "greenhouse",
+    "domain": "alphasights.com",
+    "active_jobs": 67,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=alphasights.com&sz=128"
+  },
+  {
+    "id": "25e6c24d-2187-4409-a527-74d740160d6b",
+    "name": "Neo4j",
+    "slug": "neo4j",
+    "ats_type": "greenhouse",
+    "domain": "graphacademy.neo4j.com",
+    "active_jobs": 63,
+    "logo_class": "external:other",
+    "logo_url": "https://graphacademy.neo4j.com/favicon-194x194.png"
+  },
+  {
+    "id": "b574d78c-137d-4f45-81b2-56aa66be0d4f",
+    "name": "Truelogic",
+    "slug": "truelogic",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 61,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png"
+  },
+  {
+    "id": "72d9fda8-ffb6-4546-94a8-19bd0c895fa8",
+    "name": "Monzo",
+    "slug": "monzo",
+    "ats_type": "greenhouse",
+    "domain": "monzo.com",
+    "active_jobs": 59,
+    "logo_class": "external:other",
+    "logo_url": "https://static-assets.monzo.com/monzo-com/a6c1301943401578f80993387fd6ed94e9731b25/_next/static/media/favicon.87a9df8c.png"
+  },
+  {
+    "id": "36c862a8-bcbe-40e8-9e2a-5b3fa9162b04",
+    "name": "SoFi",
+    "slug": "sofi",
+    "ats_type": "greenhouse",
+    "domain": "sofi.com",
+    "active_jobs": 53,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=sofi.com&sz=128"
+  },
+  {
+    "id": "a4f2bd09-7a0c-4119-ace1-b44f3d25db42",
+    "name": "Workato",
+    "slug": "workato",
+    "ats_type": "greenhouse",
+    "domain": "workato.com",
+    "active_jobs": 53,
+    "logo_class": "external:other",
+    "logo_url": "https://www.workato.com/favicon.ico"
+  },
+  {
+    "id": "7db1bb40-88c2-40a1-ab4a-80dd91043ca0",
+    "name": "Contentful",
+    "slug": "contentful",
+    "ats_type": "greenhouse",
+    "domain": "contentful.com",
+    "active_jobs": 50,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/contentful.com?fallback=false"
+  },
+  {
+    "id": "e284058a-55e0-451a-9747-9afb289405bc",
+    "name": "Twitch",
+    "slug": "twitch",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 50,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "c74e928b-d50f-427e-9fbb-b9fa1d522fdf",
+    "name": "Fastly",
+    "slug": "fastly",
+    "ats_type": "greenhouse",
+    "domain": "fastly.com",
+    "active_jobs": 48,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=fastly.com&sz=128"
+  },
+  {
+    "id": "10c2b8d6-c662-46ab-8994-c9190f93bf31",
+    "name": "Meesho",
+    "slug": "meesho",
+    "ats_type": "lever",
+    "domain": "meesho.io",
+    "active_jobs": 48,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/meesho.io?fallback=false"
+  },
+  {
+    "id": "3433e1bf-7baa-4c6b-927e-bf61602343bd",
+    "name": "PagerDuty",
+    "slug": "pagerduty",
+    "ats_type": "greenhouse",
+    "domain": "pagerduty.com",
+    "active_jobs": 48,
+    "logo_class": "external:other",
+    "logo_url": "https://www.pagerduty.com/favicon/prod/apple-touch-icon.png"
+  },
+  {
+    "id": "adbe6df9-cacd-4141-94fe-aa703dc401b2",
+    "name": "Dropbox",
+    "slug": "dropbox",
+    "ats_type": "greenhouse",
+    "domain": "dropbox.com",
+    "active_jobs": 47,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=dropbox.com&sz=128"
+  },
+  {
+    "id": "0b6a95f7-18cc-43e6-99b9-8ed4487a55e6",
+    "name": "Cloudbeds",
+    "slug": "cloudbeds",
+    "ats_type": "greenhouse",
+    "domain": "cloudbeds.com",
+    "active_jobs": 47,
+    "logo_class": "external:other",
+    "logo_url": "https://www.cloudbeds.com/wp-content/themes/cloudbeds-rebrand/assets/images/android-chrome-512x512.png"
+  },
+  {
+    "id": "3dec62c9-aa45-4f94-ba1b-cabae0945c83",
+    "name": "Huntress",
+    "slug": "huntress",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 47,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "3cffc65f-4816-47eb-8d08-b682274bbda2",
+    "name": "Hudl",
+    "slug": "hudl",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 46,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "160878bf-e4c8-4927-b6ea-0a3d50377b00",
+    "name": "Cabify",
+    "slug": "cabify",
+    "ats_type": "greenhouse",
+    "domain": "cabify.careers",
+    "active_jobs": 45,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/cabify.careers?fallback=false"
+  },
+  {
+    "id": "9eb15a7f-6d95-4ceb-a278-317f0ee3a54e",
+    "name": "Snorkel AI",
+    "slug": "snorkelai",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 43,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "df0ed2d6-21c5-4194-862e-2eb96123cde5",
+    "name": "Sentry",
+    "slug": "sentry",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 42,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png"
+  },
+  {
+    "id": "fb8ec1e7-2616-48c6-86c3-3159beef85e9",
+    "name": "Peloton",
+    "slug": "peloton",
+    "ats_type": "greenhouse",
+    "domain": "onepeloton.com",
+    "active_jobs": 42,
+    "logo_class": "external:other",
+    "logo_url": "https://www.onepeloton.com/images/apple-touch-icon-192.png"
+  },
+  {
+    "id": "e8af4267-e0cb-4b02-b9f5-354f969d4d61",
+    "name": "Bitpanda",
+    "slug": "bitpanda",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 42,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "7a111687-f88a-4fba-a6f9-61d6f4b8c051",
+    "name": "Wheely",
+    "slug": "wheely",
+    "ats_type": "greenhouse",
+    "domain": "x.com",
+    "active_jobs": 41,
+    "logo_class": "external:other",
+    "logo_url": "https://x.com/apple-touch-icon.png"
+  },
+  {
+    "id": "8e96bfe8-4ea2-4d7a-a0ee-5c89feec951f",
+    "name": "Mixpanel",
+    "slug": "mixpanel",
+    "ats_type": "greenhouse",
+    "domain": "mixpanel.com",
+    "active_jobs": 40,
+    "logo_class": "external:other",
+    "logo_url": "https://framerusercontent.com/images/j6EPdIw4BKPE9dPx3zrTjkkAM14.png"
+  },
+  {
+    "id": "9683fa2d-84d7-4ea6-bd06-8e980a8e6a00",
+    "name": "Datacamp",
+    "slug": "datacamp",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 38,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "1e4e0a38-e9f3-411d-85fe-8d79f9f1d74a",
+    "name": "Checkr",
+    "slug": "checkr",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 38,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "ef370796-25c9-4a33-8efa-b65ccbeef895",
+    "name": "Render",
+    "slug": "render",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 37,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png"
+  },
+  {
+    "id": "a62d4bfb-cc8c-4c02-b0d5-e5e75d4c221b",
+    "name": "SeatGeek",
+    "slug": "seatgeek",
+    "ats_type": "greenhouse",
+    "domain": "seatgeek.com",
+    "active_jobs": 36,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=seatgeek.com&sz=128"
+  },
+  {
+    "id": "2b7638e4-1a7d-4f46-8ef9-64003afc0a1b",
+    "name": "Verve",
+    "slug": "verve",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 36,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "0bf3d810-59fb-4649-adf5-e06e72499257",
+    "name": "Starburst Data",
+    "slug": "starburst",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 36,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s8-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/366/500/original/Starburst_Burst-Black.png?1733770630"
+  },
+  {
+    "id": "be4b4e26-b445-4a98-96ac-cbb07ee1adcb",
+    "name": "Sysdig",
+    "slug": "sysdig",
+    "ats_type": "lever",
+    "domain": "sysdig.com",
+    "active_jobs": 35,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/681a1c8e5b6ebfc0f8529533/6949b653bba4e2246dc01ebb_webclip.png"
+  },
+  {
+    "id": "19c7b3ce-c6ec-4142-897f-29ea4797e341",
+    "name": "Trustpilot",
+    "slug": "trustpilot",
+    "ats_type": "greenhouse",
+    "domain": "corporate.trustpilot.com",
+    "active_jobs": 35,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/corporate.trustpilot.com?fallback=false"
+  },
+  {
+    "id": "06df26de-7a20-4d1a-970f-a276976c1bdc",
+    "name": "Coursera",
+    "slug": "coursera",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 34,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "f0c6b2ce-5d12-42af-acb4-8529d3a28a75",
+    "name": "Bounteous",
+    "slug": "bounteous",
+    "ats_type": "lever",
+    "domain": "bounteous.com",
+    "active_jobs": 34,
+    "logo_class": "external:other",
+    "logo_url": "https://www.bounteous.com/public/static/favicon-0d412dcf90815a41a1bb68bdf1960bf5.png"
+  },
+  {
+    "id": "c1009f27-7a24-474c-b6c7-c195439f2347",
+    "name": "Raft",
+    "slug": "raft",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 34,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "bc8e1fd2-72a2-46e0-bc0a-22644b272498",
+    "name": "Maven Clinic",
+    "slug": "mavenclinic",
+    "ats_type": "greenhouse",
+    "domain": "mavenclinic.com",
+    "active_jobs": 34,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/5fb2b678e994739660d95086/5fb2b678e9947320e3d950dc_web-clip.png"
+  },
+  {
+    "id": "2177f0b5-cf7d-42c4-8f46-4e24b11b46c1",
+    "name": "Alloy",
+    "slug": "alloy",
+    "ats_type": "greenhouse",
+    "domain": "alloy.com",
+    "active_jobs": 33,
+    "logo_class": "external:other",
+    "logo_url": "https://www.alloy.com/icons/apple-touch-icon.png"
+  },
+  {
+    "id": "c6517995-1ca2-4bce-b83b-0b6205e1c9d9",
+    "name": "Pleo",
+    "slug": "pleo",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 33,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "64f42422-6950-4e7e-adb0-6a6193abf023",
+    "name": "LaunchDarkly",
+    "slug": "launchdarkly",
+    "ats_type": "greenhouse",
+    "domain": "launchdarkly.com",
+    "active_jobs": 33,
+    "logo_class": "external:other",
+    "logo_url": "https://launchdarkly.com/icon.png?8354b0c15ee5b065"
+  },
+  {
+    "id": "967dd9c4-ddeb-4918-9a07-417f4ddb72b0",
+    "name": "Wizeline",
+    "slug": "wizeline",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 32,
+    "logo_class": "external:other",
+    "logo_url": "https://www.wizeline.ai/wp-content/uploads/2025/01/favicon-300x300.png"
+  },
+  {
+    "id": "889e6c56-3016-49aa-8064-8f66c9668daa",
+    "name": "AutoScout24",
+    "slug": "autoscout24",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 31,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "79e4723f-1050-4e47-8627-a8e7f5401bdf",
+    "name": "Turing",
+    "slug": "turing",
+    "ats_type": "greenhouse",
+    "domain": "turing.com",
+    "active_jobs": 31,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=turing.com&sz=128"
+  },
+  {
+    "id": "b45c80ec-0181-4ae1-a447-4ec8a8e7950d",
+    "name": "HackerRank",
+    "slug": "hackerrank",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 31,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "c275948b-85ea-40a5-b4d0-eebebaae0e8a",
+    "name": "ThoughtWorks",
+    "slug": "thoughtworks",
+    "ats_type": "greenhouse",
+    "domain": "thoughtworks.com",
+    "active_jobs": 31,
+    "logo_class": "external:other",
+    "logo_url": "https://www.thoughtworks.com/etc.clientlibs/thoughtworks/clientlibs/clientlib-site/resources/images/android-chrome-512x512.png"
+  },
+  {
+    "id": "40087e6e-e862-4b61-a3b7-1f03b71856d1",
+    "name": "VTEX",
+    "slug": "vtex",
+    "ats_type": "greenhouse",
+    "domain": "mkt.vtex.com",
+    "active_jobs": 31,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/mkt.vtex.com?fallback=false"
+  },
+  {
+    "id": "9a84ee82-d339-4426-b695-d692b7897dd8",
+    "name": "Culture Amp",
+    "slug": "cultureamp",
+    "ats_type": "greenhouse",
+    "domain": "cultureamp.com",
+    "active_jobs": 30,
+    "logo_class": "external:other",
+    "logo_url": "https://image-service.usw2.wp-prod-us.cultureamp-cdn.com/T5JfgVukEEO_aNOa1KROQRhiHfo=/96x96/cultureampcom/production/4ea/815/07a/4ea81507a9374c4607bbb6a6/enso-favicon.png"
+  },
+  {
+    "id": "aa076c12-3722-4aa1-b92f-5145dce687b9",
+    "name": "Axios",
+    "slug": "axios",
+    "ats_type": "greenhouse",
+    "domain": "axios.com",
+    "active_jobs": 29,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/axios.com?fallback=false"
+  },
+  {
+    "id": "85226d9e-b22d-43ed-adc8-57f9b9463d6b",
+    "name": "Druva",
+    "slug": "druva",
+    "ats_type": "greenhouse",
+    "domain": "druva.com",
+    "active_jobs": 29,
+    "logo_class": "external:other",
+    "logo_url": "https://www.druva.com/etc.clientlibs/druvaincprogram/clientlibs/clientlib-site/resources/images/cropped-site-icon-180x180.png"
+  },
+  {
+    "id": "55e31797-1f5e-44f3-a4cd-6f4026d15633",
+    "name": "Hopper",
+    "slug": "hopper",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 29,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "24c758ca-2522-49fd-ae60-55242144ad7d",
+    "name": "StockX",
+    "slug": "stockx",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 29,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s2-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/651/600/original/BR-share.png?1618588074"
+  },
+  {
+    "id": "8e74f1f7-288e-493f-bcfa-3e34e9339c75",
+    "name": "Algolia",
+    "slug": "algolia",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 28,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "09b2bbbb-2f7e-4650-9713-4327ded68868",
+    "name": "Supercell",
+    "slug": "supercell",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 27,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "395292f7-e037-4618-ac59-4e9f83f047ab",
+    "name": "DriveWealth",
+    "slug": "drivewealth",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 26,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "ae681269-c075-4919-b348-65d98ed05ba5",
+    "name": "Gemini",
+    "slug": "gemini",
+    "ats_type": "greenhouse",
+    "domain": "exchange.gemini.com",
+    "active_jobs": 26,
+    "logo_class": "external:other",
+    "logo_url": "https://exchange.gemini.com/assets/images/apple-touch-icon-precomposed.png"
+  },
+  {
+    "id": "400a9476-dcd1-4c7e-acef-34c23914b35c",
+    "name": "Sumo Logic",
+    "slug": "sumologic",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 26,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "8af12389-54b1-45e6-a57d-575d008efc32",
+    "name": "ContentSquare",
+    "slug": "contentsquare",
+    "ats_type": "lever",
+    "domain": "contentsquare.com",
+    "active_jobs": 25,
+    "logo_class": "external:other",
+    "logo_url": "https://contentsquare.com/favicons/apple-touch-icon.png"
+  },
+  {
+    "id": "546505d5-938d-492f-90f4-fed0202fb4a6",
+    "name": "Porter",
+    "slug": "porter",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 25,
+    "logo_class": "external:other",
+    "logo_url": "https://porter.works/wp-content/uploads/2021/11/p-512-300x300.png"
+  },
+  {
+    "id": "2c812f89-0be9-47da-8b7e-5d94f4a91ce1",
+    "name": "Ifit",
+    "slug": "ifit",
+    "ats_type": "greenhouse",
+    "domain": "ifit.com",
+    "active_jobs": 24,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/ifit.com?fallback=false"
+  },
+  {
+    "id": "480f5928-4efa-4222-9a56-827ebc371864",
+    "name": "Drata",
+    "slug": "drata",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 24,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "7a22e67e-d5e0-433b-a1f0-6ced96bc99f8",
+    "name": "Column",
+    "slug": "column",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 24,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png"
+  },
+  {
+    "id": "94425904-dc6f-47d5-9198-d61053854b9b",
+    "name": "Salesloft",
+    "slug": "salesloft",
+    "ats_type": "greenhouse",
+    "domain": "salesloft.com",
+    "active_jobs": 24,
+    "logo_class": "external:other",
+    "logo_url": "https://www.salesloft.com/apple-touch-icon.png"
+  },
+  {
+    "id": "12ca8668-3e18-4bf9-85cb-422f13ec3f76",
+    "name": "N26",
+    "slug": "n26",
+    "ats_type": "greenhouse",
+    "domain": "n26.com",
+    "active_jobs": 23,
+    "logo_class": "external:other",
+    "logo_url": "https://n26.com/_build/logo-256x256.png"
+  },
+  {
+    "id": "ec727c12-1627-437c-9122-9527f9d17425",
+    "name": "Slice",
+    "slug": "slice",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 22,
+    "logo_class": "external:other",
+    "logo_url": "https://images.squarespace-cdn.com/content/v1/63480a950e8d02595e60c8d9/1f7478a1-c2e1-408f-a422-223b34ffa19f/favicon.ico"
+  },
+  {
+    "id": "8884780e-d235-4b92-8244-776a471fb8ef",
+    "name": "Udacity",
+    "slug": "udacity",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 22,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "b1dc6675-70d3-409b-95a9-530f5589ae99",
+    "name": "Metabase",
+    "slug": "metabase",
+    "ats_type": "lever",
+    "domain": "metabase.com",
+    "active_jobs": 21,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.metabase.com/images/apple-touch-icon.png"
+  },
+  {
+    "id": "f9af4515-2f7b-4923-9941-57fb6cc07f0b",
+    "name": "Vox Media",
+    "slug": "voxmedia",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 21,
+    "logo_class": "external:other",
+    "logo_url": "https://www.voxmedia.com/wp-content/uploads/2025/07/vm_favicon_grayscale.png?w=192"
+  },
+  {
+    "id": "b2154a92-ba62-427b-89cc-a2a4dd9ffd9f",
+    "name": "Oddball",
+    "slug": "oddball",
+    "ats_type": "greenhouse",
+    "domain": "oddball.io",
+    "active_jobs": 20,
+    "logo_class": "external:other",
+    "logo_url": "https://oddball.io/wp-content/uploads/2020/12/cropped-icon-48x48-1-192x192.png"
+  },
+  {
+    "id": "e291af78-b500-4f4a-bc12-5d5154f66bc2",
+    "name": "Trivago",
+    "slug": "trivago",
+    "ats_type": "greenhouse",
+    "domain": "trivago.com",
+    "active_jobs": 20,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/trivago.com?fallback=false"
+  },
+  {
+    "id": "43bac28b-4c16-48a5-a247-a030c76e0d6c",
+    "name": "Gamma",
+    "slug": "gamma",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 20,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "40bde7c9-1e25-4aae-9fbd-68d3a7dfb71e",
+    "name": "Ataccama",
+    "slug": "ataccama",
+    "ats_type": "lever",
+    "domain": "ataccama.com",
+    "active_jobs": 20,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.ataccama.com/assets/2024/12/cropped-favicon-192x192.png"
+  },
+  {
+    "id": "b558bd06-dc5a-4272-a0b3-42d2bb51a388",
+    "name": "Fingerprint",
+    "slug": "fingerprint",
+    "ats_type": "greenhouse",
+    "domain": "fingerprint.com",
+    "active_jobs": 20,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=fingerprint.com&sz=128"
+  },
+  {
+    "id": "5a59b839-77f4-4e9b-ab70-cf70689787e3",
+    "name": "Wealthfront",
+    "slug": "wealthfront",
+    "ats_type": "lever",
+    "domain": "wealthfront.com",
+    "active_jobs": 20,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=wealthfront.com&sz=128"
+  },
+  {
+    "id": "1a4d88a1-ea05-4e84-a980-5af3eaccc7b2",
+    "name": "Axonius",
+    "slug": "axonius",
+    "ats_type": "greenhouse",
+    "domain": "axonius.com",
+    "active_jobs": 20,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=axonius.com&sz=128"
+  },
+  {
+    "id": "2cecf4cd-7f71-4c5b-b18b-fe339d884b29",
+    "name": "Honeycomb",
+    "slug": "honeycomb",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 19,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "0b170939-f9fd-4ba0-94bc-3babd4e97bab",
+    "name": "Webflow",
+    "slug": "webflow",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 19,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "1f5bd3fa-e197-4d73-aadb-a8b70ab9d09f",
+    "name": "Godaddy",
+    "slug": "godaddy",
+    "ats_type": "greenhouse",
+    "domain": "careers.godaddy",
+    "active_jobs": 19,
+    "logo_class": "external:other",
+    "logo_url": "https://d25wby5c7p9100.cloudfront.net/public/uploads/2e600d4953b2ff0367325c9cbb39eee9/companies/favicons/2e600d4953b2ff0367325c9cbb39eee9/basic/godaddy-favicon-96x96.png?1687461063"
+  },
+  {
+    "id": "54062e9d-749e-4307-9165-58a7bade16ed",
+    "name": "Talkspace",
+    "slug": "talkspace",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 19,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/5f1b10a955e49d279bdc2192/663251151e1d86ae8193dc3b_webclip.png"
+  },
+  {
+    "id": "9c10ebfe-6047-4dbe-b5de-736a352a2276",
+    "name": "Waymark",
+    "slug": "waymark",
+    "ats_type": "greenhouse",
+    "domain": "waymarkcare.com",
+    "active_jobs": 19,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/64a3c873c4968010f637b2dc/64c2f1947a6615fd5c783979_Waymark-Webclip.png"
+  },
+  {
+    "id": "44f03f3c-899b-488c-a589-cb20c4081cf7",
+    "name": "Glossier",
+    "slug": "glossier",
+    "ats_type": "greenhouse",
+    "domain": "glossier.com",
+    "active_jobs": 18,
+    "logo_class": "external:other",
+    "logo_url": "https://www.glossier.com/cdn/shop/files/favicon-light_180x180.webp?v=1681821719"
+  },
+  {
+    "id": "cb757020-6bce-4203-933e-ddf50beb3388",
+    "name": "Fleetio",
+    "slug": "fleetio",
+    "ats_type": "greenhouse",
+    "domain": "fleetio.com",
+    "active_jobs": 17,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=fleetio.com&sz=128"
+  },
+  {
+    "id": "4d685c04-ac11-446f-9a1e-ddef0a27b1bf",
+    "name": "Ginkgo Bioworks",
+    "slug": "ginkgobioworks",
+    "ats_type": "greenhouse",
+    "domain": "ginkgobioworks.com",
+    "active_jobs": 17,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/691b94a518664e13feebd656/692cd99bb36d17aec8b4f222_webclip.png"
+  },
+  {
+    "id": "ba16eadc-90c2-4050-ad96-769ae21bd01e",
+    "name": "HeyGen",
+    "slug": "heygen",
+    "ats_type": "greenhouse",
+    "domain": "heygen.com",
+    "active_jobs": 16,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=heygen.com&sz=128"
+  },
+  {
+    "id": "74ad233c-09c8-42bd-b617-0cf8ffb8c098",
+    "name": "ImmobilienScout24",
+    "slug": "scout24",
+    "ats_type": "greenhouse",
+    "domain": "scout24.com",
+    "active_jobs": 16,
+    "logo_class": "external:other",
+    "logo_url": "https://www.scout24.com/_assets/0fc4c476ba417208cc581328d051a35d/Favicons/Scout24/apple-touch-icon.png"
+  },
+  {
+    "id": "1bc516ce-e340-4ca2-80d6-b3e0b34f6b38",
+    "name": "Midjourney",
+    "slug": "midjourney",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 16,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "c89af545-4a0d-463d-bcad-f15e796bdfe8",
+    "name": "Appen",
+    "slug": "appen",
+    "ats_type": "lever",
+    "domain": "crowdgen.com",
+    "active_jobs": 16,
+    "logo_class": "external:other",
+    "logo_url": "https://i0.wp.com/crowdgen.com/wp-content/uploads/2026/08/crowdgen-site-icon-512.png?fit=192%2C192&#038;ssl=1"
+  },
+  {
+    "id": "3e4bd34d-b2bf-46f1-be28-4b136700624b",
+    "name": "Flip",
+    "slug": "flip",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 15,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "be1c7c2f-aaa8-4595-a679-6071687f8884",
+    "name": "Weploy",
+    "slug": "weploy",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 15,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s2-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/012/200/original/795f400adfd01b5137dea7421ba93144.webp?1724289336"
+  },
+  {
+    "id": "2812805c-73c0-43a4-bc83-8d486be5d055",
+    "name": "Olo",
+    "slug": "olo",
+    "ats_type": "lever",
+    "domain": "olo.com",
+    "active_jobs": 15,
+    "logo_class": "external:other",
+    "logo_url": "https://www.olo.com/hubfs/2024-Website/assets/logos/favicon-Olo.png"
+  },
+  {
+    "id": "8a7d1ffd-fa7c-4196-8354-7ea7b74481e6",
+    "name": "Superside",
+    "slug": "superside",
+    "ats_type": "lever",
+    "domain": "superside.com",
+    "active_jobs": 15,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/superside.com?fallback=false"
+  },
+  {
+    "id": "8e77dd51-a150-4b83-8ad1-81ab316e9107",
+    "name": "SaasGroup",
+    "slug": "saasgroup",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 14,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s101-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/080/510/original/saas-group-greenhouse.png?1712921635"
+  },
+  {
+    "id": "3a2e2b54-993d-4691-8992-d59d374fe5d7",
+    "name": "Dashlane",
+    "slug": "dashlane",
+    "ats_type": "greenhouse",
+    "domain": "dashlane.com",
+    "active_jobs": 13,
+    "logo_class": "external:other",
+    "logo_url": "https://www.dashlane.com/dashlane-favicon.png"
+  },
+  {
+    "id": "fac40682-c72e-473f-9c6a-635ced41291b",
+    "name": "Extend",
+    "slug": "extend",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 13,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "0949f356-d1e8-4f03-b457-db6f94dea743",
+    "name": "Cube",
+    "slug": "cube",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 13,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "0bbf6d8a-6724-49d3-8135-ce13d243b618",
+    "name": "Sonatype",
+    "slug": "sonatype",
+    "ats_type": "lever",
+    "domain": "sonatype.com",
+    "active_jobs": 13,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/sonatype.com?fallback=false"
+  },
+  {
+    "id": "a28bb8be-bbd3-4f7d-84f0-9c9b78616334",
+    "name": "Character.ai",
+    "slug": "character",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 13,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "46e76fdf-10d4-4f5e-9f4f-0d2a07b0d689",
+    "name": "Labelbox",
+    "slug": "labelbox",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 13,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s7-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/195/400/original/On_light_background_(1).png?1691093207"
+  },
+  {
+    "id": "a4c2e3d5-4bb7-4e0f-b76e-a4ec6a87cf3e",
+    "name": "Knix",
+    "slug": "knix",
+    "ats_type": "lever",
+    "domain": null,
+    "active_jobs": 12,
+    "logo_class": "external:other",
+    "logo_url": "https://lever-client-logos.s3.us-west-2.amazonaws.com/ac8357dc-add3-42d2-9524-65a6e5a92bbf-1630074286879.png"
+  },
+  {
+    "id": "d2d698c5-968d-40c4-8135-2d423317a2d0",
+    "name": "Buildkite",
+    "slug": "buildkite",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 12,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "e0fab701-c558-4382-b523-193cc007d7fa",
+    "name": "Luma AI",
+    "slug": "lumaai",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 12,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "a85def0d-416f-4afa-9810-1df648c38712",
+    "name": "Cockroach Labs",
+    "slug": "cockroachlabs",
+    "ats_type": "greenhouse",
+    "domain": "cockroachlabs.com",
+    "active_jobs": 12,
+    "logo_class": "external:other",
+    "logo_url": "https://www.cockroachlabs.com/icon1.png?38190d312b196e2c"
+  },
+  {
+    "id": "a9c298d8-f072-48c8-96c2-caafb5222f47",
+    "name": "BigID",
+    "slug": "bigid",
+    "ats_type": "greenhouse",
+    "domain": "bigid.com",
+    "active_jobs": 12,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/bigid.com?fallback=false"
+  },
+  {
+    "id": "94e839a0-96e1-4ec0-b967-66ec5b390f64",
+    "name": "Persona",
+    "slug": "persona",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 12,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "748d3232-5928-4b24-911c-bc248105b24a",
+    "name": "Wikimedia",
+    "slug": "wikimedia",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 12,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/000/342/original/200px-Wikimedia_Foundation_logo_-_vertical.svg.png?1654716141"
+  },
+  {
+    "id": "50b7be95-e72f-420f-8937-38d51237cf95",
+    "name": "Doximity",
+    "slug": "doximity",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 12,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "57068339-2c62-4f92-b309-f3a936e9dc12",
+    "name": "Scandit",
+    "slug": "scandit",
+    "ats_type": "greenhouse",
+    "domain": "scandit.com",
+    "active_jobs": 11,
+    "logo_class": "external:other",
+    "logo_url": "https://www.scandit.com/apple-touch-icon.png"
+  },
+  {
+    "id": "c2af1425-cc42-4604-9e16-a0b2a876e644",
+    "name": "Karat",
+    "slug": "karat",
+    "ats_type": "greenhouse",
+    "domain": "karat.com",
+    "active_jobs": 11,
+    "logo_class": "external:other",
+    "logo_url": "https://karat.com/wp-content/themes/karat/assets/img/png/favicon.png"
+  },
+  {
+    "id": "f925b67e-2764-4aaf-a669-9ff11855fa23",
+    "name": "Secureframe",
+    "slug": "secureframe",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 11,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "caffdb5b-b3af-4a41-9732-c7081d26f274",
+    "name": "ArmorCode",
+    "slug": "armorcode",
+    "ats_type": "greenhouse",
+    "domain": "armorcode.com",
+    "active_jobs": 11,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/armorcode.com?fallback=false"
+  },
+  {
+    "id": "74837463-7129-4d6c-aaa7-83bfba8d4a4f",
+    "name": "Mindful",
+    "slug": "mindful",
+    "ats_type": "lever",
+    "domain": "getmindfulhealth.com",
+    "active_jobs": 11,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=getmindfulhealth.com&sz=128"
+  },
+  {
+    "id": "08a0cebd-3128-4677-af27-5d567f4e3a0b",
+    "name": "Pocket FM",
+    "slug": "pocketfm",
+    "ats_type": "lever",
+    "domain": null,
+    "active_jobs": 10,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "f5bc1d6f-7f00-4481-a48b-da2959ad58bd",
+    "name": "Securityscorecard",
+    "slug": "securityscorecard",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 10,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "f44021d8-9af7-4a09-a904-61fe536bd84b",
+    "name": "Lightspeed",
+    "slug": "lightspeed",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 10,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "90341112-a975-4a6f-a02a-af7b29e7058e",
+    "name": "Mattermost",
+    "slug": "mattermost",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 10,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "806fd35a-81c9-41c7-9642-c387d59bf5ec",
+    "name": "Tigera",
+    "slug": "tigera",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 9,
+    "logo_class": "external:other",
+    "logo_url": "https://www.tigera.io/app/uploads/2026/01/Tigera-logo-2026-badge-orange-450x450-1-300x300.png?v=2"
+  },
+  {
+    "id": "5bfe6d9d-5790-4c94-97a9-6ba07c3e393a",
+    "name": "Veriff",
+    "slug": "veriff",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 9,
+    "logo_class": "external:other",
+    "logo_url": "https://www.veriff.com/wp-content/uploads/2025/09/cropped-veriff-favicon_logo-192x192.png"
+  },
+  {
+    "id": "08851559-5fb1-4913-b1c4-334d6e7ac2ad",
+    "name": "Zapier",
+    "slug": "zapier",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 9,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "58a1826e-d3cc-45ff-a746-ffa4e6904c2e",
+    "name": "Britecore",
+    "slug": "britecore",
+    "ats_type": "lever",
+    "domain": "britecore.com",
+    "active_jobs": 9,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/5daf81e2fcdc1986561e6add/5e8613aa94f87cd4176eaf7c_webclip.png"
+  },
+  {
+    "id": "aa93c89c-365f-4d7b-8004-3e217f27d34d",
+    "name": "PostHog",
+    "slug": "posthog",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 9,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/3895ef7c0afd5f599008a6fa2519dedd43c775b4/favicon.png"
+  },
+  {
+    "id": "456c2f6b-8415-45f5-9c97-7ec3e8f7d977",
+    "name": "Brave",
+    "slug": "brave",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 9,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "85b805b4-b94a-4137-a63f-8c66b3b40ff4",
+    "name": "Groww",
+    "slug": "groww",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 8,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "5a747ef2-70fa-454d-9d2e-1ba93fd0b0da",
+    "name": "Logrocket",
+    "slug": "logrocket",
+    "ats_type": "lever",
+    "domain": "logrocket.com",
+    "active_jobs": 8,
+    "logo_class": "external:other",
+    "logo_url": "https://logrocket.com/favicon/apple-touch-icon.png"
+  },
+  {
+    "id": "02d85769-94eb-4969-b48c-c024580f77f8",
+    "name": "Platform.sh",
+    "slug": "platformsh",
+    "ats_type": "greenhouse",
+    "domain": "platform.sh",
+    "active_jobs": 8,
+    "logo_class": "external:other",
+    "logo_url": "https://upsun.com/icons/icon-512x512.png?v=cdd6ef938d75e3c80c7f4330f35ea20d"
+  },
+  {
+    "id": "16cca0d3-9937-45bb-8d0f-310adc51295e",
+    "name": "Sertis",
+    "slug": "sertis",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 8,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "6e7a5283-02fa-47f4-8b88-8b4c388bbe6f",
+    "name": "Activecampaign",
+    "slug": "activecampaign",
+    "ats_type": "lever",
+    "domain": "activecampaign.com",
+    "active_jobs": 8,
+    "logo_class": "external:other",
+    "logo_url": "https://www.activecampaign.com/dist/favicon-192x192.png"
+  },
+  {
+    "id": "bbc2958e-a12a-45a3-9acd-e3b49f373fee",
+    "name": "Appinio",
+    "slug": "appinio",
+    "ats_type": "greenhouse",
+    "domain": "appinio.com",
+    "active_jobs": 8,
+    "logo_class": "external:other",
+    "logo_url": "https://www.appinio.com/hubfs/B2B%20Redesign%2024/Favicon/apple-touch-icon.png"
+  },
+  {
+    "id": "6dfea0e9-cfd2-4578-94bf-80ea09c7071a",
+    "name": "Gymshark",
+    "slug": "gymshark",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 8,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s101-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/019/210/original/Gymshark_Symbol_Logo_Black-01.jpg?1630003405"
+  },
+  {
+    "id": "a5acc33d-1115-4c70-afff-bd9985623182",
+    "name": "IDEO",
+    "slug": "ideo",
+    "ats_type": "greenhouse",
+    "domain": "ideo.com",
+    "active_jobs": 8,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/67cb2dd62d5110e2973d39d7/69375a9ab7d2ba7920eeeb01_ideo_favicon_large.png"
+  },
+  {
+    "id": "5536a39b-98e4-4b72-9714-e9672f7b4bac",
+    "name": "Able",
+    "slug": "able",
+    "ats_type": "greenhouse",
+    "domain": "able.co",
+    "active_jobs": 8,
+    "logo_class": "external:other",
+    "logo_url": "https://able.co/icons/apple-touch-icon.png"
+  },
+  {
+    "id": "9f0e2a23-e3ac-4617-b860-09926a44ed6b",
+    "name": "Findem",
+    "slug": "findem",
+    "ats_type": "lever",
+    "domain": "findem.ai",
+    "active_jobs": 7,
+    "logo_class": "external:other",
+    "logo_url": "https://www.findem.ai/_ploy_static/favicon-ea1f814f42da2b67d36e3e27c481879535ea4a15a4f4be26be3cdfa7c3894e4d.png"
+  },
+  {
+    "id": "d0deaf17-e2f1-44c7-89a8-55216a87a7e8",
+    "name": "Upbound",
+    "slug": "upbound",
+    "ats_type": "greenhouse",
+    "domain": "upbound.io",
+    "active_jobs": 7,
+    "logo_class": "external:other",
+    "logo_url": "https://framerusercontent.com/images/CFHcLUQFDzrxU9pG8x6mBVDQ5E.png"
+  },
+  {
+    "id": "083ff3c4-5f2a-44a6-984d-504a99ba9873",
+    "name": "Teamsnap",
+    "slug": "teamsnap",
+    "ats_type": "lever",
+    "domain": "teamsnap.com",
+    "active_jobs": 7,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/6a82d14b9117f57d1fb06f4c/6a980c6fa3777e1695117ba8_Favicon.png"
+  },
+  {
+    "id": "42062b3f-8c19-433d-8077-978a32d5b1e5",
+    "name": "IDnow",
+    "slug": "idnow",
+    "ats_type": "greenhouse",
+    "domain": "idnow.io",
+    "active_jobs": 7,
+    "logo_class": "external:other",
+    "logo_url": "https://idnow.io/wp-content/uploads/favicon.png"
+  },
+  {
+    "id": "7bd14c89-1f20-40e2-8eeb-57278680ce54",
+    "name": "Aestudio",
+    "slug": "aestudio",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 7,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "571c6209-8151-4202-8280-95e92e86a5a6",
+    "name": "MyHeritage",
+    "slug": "myheritage",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 7,
+    "logo_class": "external:other",
+    "logo_url": "https://cf.mhcache.com/FP/Assets/Images/Social/mh_logo_350x350.png"
+  },
+  {
+    "id": "92143b4b-ecad-48c3-b423-09d4b27e990d",
+    "name": "Anomali",
+    "slug": "anomali",
+    "ats_type": "lever",
+    "domain": "anomali.com",
+    "active_jobs": 7,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/68228a4fdbfec3b02c9c5186/68228a4fdbfec3b02c9c5804_Anomali-webclip-256x256-2024.png"
+  },
+  {
+    "id": "11e06480-77b7-4982-82ad-1cf5e882dbdb",
+    "name": "Atlan",
+    "slug": "atlan",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 7,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c2693b0acff7658eb55417509c137f477b112299/favicon.png"
+  },
+  {
+    "id": "0ead309f-1da7-4d9b-8749-168a02c04605",
+    "name": "Form3",
+    "slug": "form3",
+    "ats_type": "greenhouse",
+    "domain": "form3.tech",
+    "active_jobs": 6,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/form3.tech?fallback=false"
+  },
+  {
+    "id": "be93b7df-d1ee-4435-a13c-26890d0b4c38",
+    "name": "Netlify",
+    "slug": "netlify",
+    "ats_type": "greenhouse",
+    "domain": "netlify.com",
+    "active_jobs": 6,
+    "logo_class": "external:other",
+    "logo_url": "https://www.netlify.com/favicon/apple-touch-icon.png"
+  },
+  {
+    "id": "f100ca7e-454b-45f7-b863-0d26e2cf615b",
+    "name": "JustWatch",
+    "slug": "justwatch",
+    "ats_type": "lever",
+    "domain": "justwatch.com",
+    "active_jobs": 6,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=justwatch.com&sz=128"
+  },
+  {
+    "id": "899ade40-622b-48c1-87ec-04f6e6e7c691",
+    "name": "Udemy",
+    "slug": "udemy",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 6,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "b4227f40-5c9f-4329-9ef9-d81d2d6dcf20",
+    "name": "Openzeppelin",
+    "slug": "openzeppelin",
+    "ats_type": "greenhouse",
+    "domain": "openzeppelin.com",
+    "active_jobs": 6,
+    "logo_class": "external:other",
+    "logo_url": "https://www.openzeppelin.com/icon.png?icon.0n__x8e_phqgx.png"
+  },
+  {
+    "id": "923c818b-a7d4-437c-b06d-1222f151f838",
+    "name": "Acquia",
+    "slug": "acquia",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 6,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "8a6c0dca-b98c-424d-95d5-85420933e8d2",
+    "name": "Zensurance",
+    "slug": "zensurance",
+    "ats_type": "lever",
+    "domain": "zensurance.com",
+    "active_jobs": 6,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn-ileijpa.nitrocdn.com/jvyQSbsjELWVIKgkoqglyDHuITLJxzFe/assets/images/optimized/rev-192b997/www.zensurance.com/wp-content/uploads/2019/09/Favicon.png"
+  },
+  {
+    "id": "30b72480-b92e-4713-8d80-77f723de971c",
+    "name": "Ghost",
+    "slug": "ghost",
+    "ats_type": "greenhouse",
+    "domain": "ghst.io",
+    "active_jobs": 5,
+    "logo_class": "external:other",
+    "logo_url": "https://framerusercontent.com/images/roaH3dMQWHQp7TJNcHClOlhwx8.png"
+  },
+  {
+    "id": "112c0fdf-f7cd-4748-9163-9c617c814a96",
+    "name": "Udio",
+    "slug": "udio",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 5,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s8-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/228/800/original/avatar-raspberry-on-black.png?1763058735"
+  },
+  {
+    "id": "ad6a7224-454e-4367-97cc-def79169cb60",
+    "name": "BlaBlaCar",
+    "slug": "blablacar",
+    "ats_type": "lever",
+    "domain": "blablacar.com",
+    "active_jobs": 5,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.blablacar.com/language-selector/assets/images/apple-touch-icon-e35ef6a3c7072847.png"
+  },
+  {
+    "id": "faa1306a-9f97-4489-af4f-062f2d5a178f",
+    "name": "HomeLight",
+    "slug": "homelight",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 5,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/005/684/original/icon-color-padding-whitebg.png?1559074003"
+  },
+  {
+    "id": "658d5dbd-191a-4809-9e27-f66ad5ac8552",
+    "name": "Acumen",
+    "slug": "acumen",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 5,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "19956c22-75a1-4b86-a56f-e939a2d3f42f",
+    "name": "YLD",
+    "slug": "yld",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 5,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "294fe7a1-8775-4b21-8b56-014ecad945c1",
+    "name": "Upwork",
+    "slug": "upwork",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s3-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/055/900/original/Linkedinlogo.png?1664214414"
+  },
+  {
+    "id": "067f0c4e-61a8-47af-83c9-84a862576907",
+    "name": "Valimail",
+    "slug": "valimail",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "e412ac2a-30f0-4690-844b-73dda7d57549",
+    "name": "Seesaw",
+    "slug": "seesaw",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://s6-recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/140/900/original/Seesaw-Mark-PMS2090.png?1699391919"
+  },
+  {
+    "id": "334de184-83c9-412c-8cfe-330e87329167",
+    "name": "Apiiro",
+    "slug": "apiiro",
+    "ats_type": "greenhouse",
+    "domain": "apiiro.com",
+    "active_jobs": 4,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/apiiro.com?fallback=false"
+  },
+  {
+    "id": "f18b46b1-21e6-4088-b004-a117c7b93222",
+    "name": "Gohiring",
+    "slug": "gohiring",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "external:other",
+    "logo_url": "https://gohiring.com/wp-content/uploads/2022/03/cropped-android-chrome-192x192-1-192x192.png"
+  },
+  {
+    "id": "7e51f435-2c9f-4483-92ef-9f781218924f",
+    "name": "Luxor",
+    "slug": "luxor",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png"
+  },
+  {
+    "id": "6a45d7c1-4667-4e65-ab83-b44d2030c713",
+    "name": "Hologram",
+    "slug": "hologram",
+    "ats_type": "greenhouse",
+    "domain": "hologram.io",
+    "active_jobs": 4,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/hologram.io?fallback=false"
+  },
+  {
+    "id": "45964dde-72f8-4ccc-9b5f-72a6c6cbb783",
+    "name": "Metalab",
+    "slug": "metalab",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/006/348/original/metalab_icon_profile.jpg?1710453155"
+  },
+  {
+    "id": "7101f04c-3b16-44b1-93bb-f7375a6a71f4",
+    "name": "Updater",
+    "slug": "updater",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 4,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "766e33c1-b112-44cc-82f9-cf07195218c6",
+    "name": "Motive",
+    "slug": "motive",
+    "ats_type": "greenhouse",
+    "domain": "wearemotive.com",
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://wearemotive.com/assets/img/favicon.png"
+  },
+  {
+    "id": "df2e6692-92a1-4a6c-b648-eb75394eebde",
+    "name": "Aerostrat",
+    "slug": "aerostrat",
+    "ats_type": "lever",
+    "domain": "aerostratsoftware.com",
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://aerostratsoftware.com/wp-content/uploads/Logos/cropped-favicon-300x300.png"
+  },
+  {
+    "id": "08793da4-22ee-4064-9897-80589e9d7cf1",
+    "name": "Stability AI",
+    "slug": "stabilityai",
+    "ats_type": "greenhouse",
+    "domain": "stability.ai",
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://images.squarespace-cdn.com/content/v1/6213c340453c3f502425776e/804f0e8b-0028-4262-a8b0-b9f1c5de72c0/favicon.ico?format=100w"
+  },
+  {
+    "id": "c4796498-5f80-4671-9df4-093f8176044e",
+    "name": "Voxel51",
+    "slug": "voxel51",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.sanity.io/images/h6toihm1/production/ac5eeac7c3e7c21e4b66f7e04b9841b876d0fb6e-250x248.png?rect=1,0,248,248&w=512&h=512&fit=max&auto=format"
+  },
+  {
+    "id": "b275cc6a-18a1-4b87-ac5f-711634fadb11",
+    "name": "Thorn",
+    "slug": "thorn",
+    "ats_type": "greenhouse",
+    "domain": "thorn.org",
+    "active_jobs": 3,
+    "logo_class": "external:google-favicon",
+    "logo_url": "https://www.google.com/s2/favicons?domain=thorn.org&sz=128"
+  },
+  {
+    "id": "72897491-5952-416d-845a-f6647184c5fd",
+    "name": "Twingate",
+    "slug": "twingate",
+    "ats_type": "lever",
+    "domain": "twingate.com",
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://framerusercontent.com/images/e76KKdP64F9YgzYu302f5fcNbcw.png"
+  },
+  {
+    "id": "bcfde686-2673-4574-a10d-b5169963f8ad",
+    "name": "Renofi",
+    "slug": "renofi",
+    "ats_type": "lever",
+    "domain": "renofi.com",
+    "active_jobs": 3,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/renofi.com?fallback=false"
+  },
+  {
+    "id": "68a44526-f6e9-4408-beae-3fd8093fadb2",
+    "name": "Deepnote",
+    "slug": "deepnote",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 3,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/c70aeedff989db81ccbb0d8f1e7cd7b67b21ab93/favicon.png"
+  },
+  {
+    "id": "46c9b138-4cf8-4841-aeac-f199b78ff36c",
+    "name": "Kinsta",
+    "slug": "kinsta",
+    "ats_type": "lever",
+    "domain": "kinsta.com",
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://kinsta.com/wp-content/uploads/2024/09/cropped-Kinsta-black-favicon-1-192x192.png"
+  },
+  {
+    "id": "8a3626cd-b656-4a62-9e70-ca08390798fc",
+    "name": "Spreedly",
+    "slug": "spreedly",
+    "ats_type": "lever",
+    "domain": "spreedly.com",
+    "active_jobs": 3,
+    "logo_class": "external:other",
+    "logo_url": "https://cdn.prod.website-files.com/69425f6d131b9d00a72f1b11/69425f6d131b9d00a72f1c64_Fav%20256.png"
+  },
+  {
+    "id": "559569c5-8d87-4b9b-a577-652261aae0a8",
+    "name": "Symplicity",
+    "slug": "symplicity",
+    "ats_type": "lever",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "443170a8-4d71-444d-a09c-3fa064612370",
+    "name": "Calibre",
+    "slug": "calibre",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "fa37baea-3d48-4e08-bf15-a2f3d4d53a7d",
+    "name": "Remote",
+    "slug": "remote",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/000/011/844/original/RGB-Red_Small_GeneralAssembly-Cog.png?1568230150"
+  },
+  {
+    "id": "032aef6b-02c2-41f9-8f26-b23bf374f5fe",
+    "name": "Knock",
+    "slug": "knock",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "d5092b9e-d338-4f60-9be9-e1010b15ba35",
+    "name": "Jamasoftware",
+    "slug": "jamasoftware",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:other",
+    "logo_url": "https://www.jamasoftware.com/media/sites/2/2026/01/cropped-jama-favicon-192x192.png"
+  },
+  {
+    "id": "29f74234-607a-4e13-a6f5-cae461745190",
+    "name": "Collabora",
+    "slug": "collabora",
+    "ats_type": "lever",
+    "domain": "collabora.com",
+    "active_jobs": 2,
+    "logo_class": "external:other",
+    "logo_url": "https://www.collabora.com/assets/images/icons/apple-touch-icon-precomposed.png"
+  },
+  {
+    "id": "487e5c95-a740-4833-ad86-f97ecfe6a9f9",
+    "name": "Clerk",
+    "slug": "clerk",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "96eab7bb-a9c7-42ce-ab80-a263f9516d0b",
+    "name": "Founders",
+    "slug": "founders",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "37c2a89a-93b3-4ee5-b051-ec829e9f211e",
+    "name": "Articulate",
+    "slug": "articulate",
+    "ats_type": "lever",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "0272c38e-8997-4fb7-90c9-910ffea7693c",
+    "name": "Textio",
+    "slug": "textio",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:other",
+    "logo_url": "https://textio.com/hubfs/raw_assets/public/textio/static/images/apple-touch-icon-180x180.png"
+  },
+  {
+    "id": "9c6d0b50-f949-4431-b7aa-da8cfa34f91b",
+    "name": "Streamnative",
+    "slug": "streamnative",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "5f8d23d1-b613-4918-8453-417c46637669",
+    "name": "KUNGFU.AI",
+    "slug": "kungfuai",
+    "ats_type": "greenhouse",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "null",
+    "logo_url": null
+  },
+  {
+    "id": "d45bb361-94b7-4b55-8957-058e0add572e",
+    "name": "Weaviate",
+    "slug": "weaviate",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 2,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "b200925a-028c-4971-9c4f-556bf0b07d26",
+    "name": "Tinybird",
+    "slug": "tinybird",
+    "ats_type": "lever",
+    "domain": "tinybird.com",
+    "active_jobs": 1,
+    "logo_class": "external:unavatar",
+    "logo_url": "https://unavatar.io/tinybird.com?fallback=false"
+  },
+  {
+    "id": "89f13543-2c3c-4ede-8f6b-866add26abef",
+    "name": "Hightouch",
+    "slug": "hightouch",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 1,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "86763c80-fe26-40a5-9264-cfad4a118cef",
+    "name": "Mixmax",
+    "slug": "mixmax",
+    "ats_type": "greenhouse",
+    "domain": "mixmax.com",
+    "active_jobs": 1,
+    "logo_class": "external:other",
+    "logo_url": "https://www.mixmax.com/favicon.png"
+  },
+  {
+    "id": "9070298f-8a63-417f-8196-f0ca00dad5d3",
+    "name": "Unit",
+    "slug": "unit",
+    "ats_type": "ashby",
+    "domain": null,
+    "active_jobs": 1,
+    "logo_class": "external:ats-or-vendor",
+    "logo_url": "https://cdn.ashbyprd.com/cdn_assets/1c331a51e6bc8472ecb3cab04c3b5eac92211c68/favicon.png"
+  },
+  {
+    "id": "da8c5623-b5d3-4e1a-9cf7-4db3a55cc42d",
+    "name": "Gradle",
+    "slug": "gradle",
+    "ats_type": "greenhouse",
+    "domain": "develocity.ai",
+    "active_jobs": 1,
+    "logo_class": "external:other",
+    "logo_url": "https://develocity.ai/apple-icon.png?apple-icon.0wmlv1bnrdbn5.png"
+  }
+]
