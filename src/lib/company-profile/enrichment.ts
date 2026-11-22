@@ -10,6 +10,10 @@ export interface OfficialPageExtraction {
 
 export interface EnrichmentOptions { write: boolean; cap: number; afterId?: string }
 export interface CompanyAtsEvidence { ats_type?: string | null; slug?: string | null; careers_url?: string | null }
+export const companyProfileObservationRpc = {
+  leadership: "record_company_profile_leadership_observation",
+  news: "record_company_profile_news_observation",
+} as const;
 
 export interface CompanyProfileFreshnessInput {
   now: string;
@@ -235,14 +239,14 @@ function verifiedSocialLinks(organization: Record<string, any>, expectedName: st
 }
 
 /** Extracts only first-party structured facts from an employer page; no title/copyright guesses. */
-export function extractOfficialCompanyPage(input: {
+function extractOfficialCompanyPageInternal(input: {
   html: string; pageUrl: string; canonicalDomain: string; companyName: string; retrievedAt?: string; atsBoards?: CompanyAtsEvidence[];
-}): OfficialPageExtraction {
+}, atsVerifiedByHomepage = false): OfficialPageExtraction {
   const pageUrl = safeCompanySourceUrl(input.pageUrl);
   const expectedHost = normalizedHost(`https://${input.canonicalDomain}`);
   const fetchedHost = pageUrl ? normalizedHost(pageUrl) : null;
   if (!pageUrl || !expectedHost || fetchedHost !== expectedHost) return { verified: false, facts: {}, leadership: [], news: [] };
-  if (!isAtsEvidenceLinked(input.canonicalDomain, input.html, pageUrl, input.atsBoards || [])) return { verified: false, facts: {}, leadership: [], news: [] };
+  if (!atsVerifiedByHomepage && !isAtsEvidenceLinked(input.canonicalDomain, input.html, pageUrl, input.atsBoards || [])) return { verified: false, facts: {}, leadership: [], news: [] };
   const retrievedAt = iso(input.retrievedAt || new Date().toISOString())!;
   const parsed = Array.from(input.html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)).flatMap((match) => {
     try { return objects(JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"))); } catch { return []; }
@@ -290,11 +294,24 @@ export function extractOfficialCompanyPage(input: {
   return { verified: true, facts, leadership, news };
 }
 
+export function extractOfficialCompanyPage(input: {
+  html: string; pageUrl: string; canonicalDomain: string; companyName: string; retrievedAt?: string; atsBoards?: CompanyAtsEvidence[];
+}): OfficialPageExtraction {
+  return extractOfficialCompanyPageInternal(input);
+}
+
 /** Keeps the ATS identity evidence available when validating first-party subpages. */
 export function extractOfficialCompanySubpage(input: {
   html: string; pageUrl: string; canonicalDomain: string; companyName: string; retrievedAt?: string; atsBoards: CompanyAtsEvidence[];
+  homepageContext?: { verified: boolean; homepageUrl: string; homepageHtml: string };
 }): OfficialPageExtraction {
-  return extractOfficialCompanyPage(input);
+  const expectedHost = normalizedHost(`https://${input.canonicalDomain}`);
+  const homepageHost = input.homepageContext ? normalizedHost(input.homepageContext.homepageUrl) : null;
+  const subpageHost = normalizedHost(input.pageUrl);
+  const verifiedHomepageContext = input.homepageContext?.verified === true
+    && Boolean(expectedHost && homepageHost === expectedHost && subpageHost === expectedHost)
+    && isAtsEvidenceLinked(input.canonicalDomain, input.homepageContext!.homepageHtml, input.homepageContext!.homepageUrl, input.atsBoards);
+  return extractOfficialCompanyPageInternal(input, verifiedHomepageContext);
 }
 
 /** Failed/empty/ambiguous observations never erase an existing sourced fact. */

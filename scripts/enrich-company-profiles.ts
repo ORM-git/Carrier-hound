@@ -3,7 +3,7 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { createClient } from "@supabase/supabase-js";
-import { evaluateCompanyProfileFreshness, extractOfficialCompanyPage, extractOfficialCompanySubpage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
+import { companyProfileObservationRpc, evaluateCompanyProfileFreshness, extractOfficialCompanyPage, extractOfficialCompanySubpage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
 import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,12 +84,13 @@ async function main() {
       const page = await fetchWithBackoff(`https://${domain}/`);
       if (!isAtsEvidenceLinked(domain, page.text, page.url, atsBoards || [])) return;
       let extracted = extractOfficialCompanyPage({ html: page.text, pageUrl: page.url, canonicalDomain: domain, companyName: company.name, atsBoards: atsBoards || [] });
+      const verifiedHomepageContext = extracted.verified ? { verified: true, homepageUrl: page.url, homepageHtml: page.text } : undefined;
       for (const candidateUrl of officialCandidateUrls(page.text, page.url)) {
         const path = new URL(candidateUrl).pathname;
         if (!robotsAllows(robots.text, path)) continue;
         await delay(1_000);
         const candidate = await fetchWithBackoff(candidateUrl);
-        const candidateData = extractOfficialCompanySubpage({ html: candidate.text, pageUrl: candidate.url, canonicalDomain: domain, companyName: company.name, atsBoards: atsBoards || [] });
+        const candidateData = extractOfficialCompanySubpage({ html: candidate.text, pageUrl: candidate.url, canonicalDomain: domain, companyName: company.name, atsBoards: atsBoards || [], homepageContext: verifiedHomepageContext });
         if (!candidateData.verified) continue;
         extracted = { verified: true, facts: reconcileCompanyFacts(extracted.facts, candidateData.facts, true), leadership: [...extracted.leadership, ...candidateData.leadership].slice(0, 12), news: [...extracted.news, ...candidateData.news].slice(0, 8) };
       }
@@ -103,8 +104,8 @@ async function main() {
         report.facts_written += factRows.length;
         const leaders = extracted.leadership.map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf, source_url: p.sourceUrl, retrieved_at: p.retrievedAt }));
         const news = extracted.news.map((n) => ({ company_id: company.id, headline: n.headline, published_at: n.publishedAt, source_url: n.sourceUrl, excerpt: n.excerpt, retrieved_at: new Date().toISOString() }));
-        if (leaders.length) { const r = await supabase.from("company_profile_leadership").upsert(leaders, { onConflict: "company_id,name,role,role_as_of", ignoreDuplicates: true }); if (r.error) throw r.error; report.leaders_written += leaders.length; }
-        if (news.length) { const r = await supabase.from("company_profile_news").upsert(news, { onConflict: "company_id,source_url", ignoreDuplicates: true }); if (r.error) throw r.error; report.news_written += news.length; }
+        if (leaders.length) { const r = await supabase.rpc(companyProfileObservationRpc.leadership, { p_observations: leaders }); if (r.error) throw r.error; report.leaders_written += leaders.length; }
+        if (news.length) { const r = await supabase.rpc(companyProfileObservationRpc.news, { p_observations: news }); if (r.error) throw r.error; report.news_written += news.length; }
         const conflict = Object.values(next).some((fact) => fact.status === "conflict");
         const checkedAt = new Date().toISOString();
         const refresh = await supabase.from("company_profile_refresh_state").upsert({ company_id: company.id, status: conflict ? "conflict" : "fresh", last_attempted_at: checkedAt, last_succeeded_at: checkedAt, next_refresh_at: new Date(Date.now() + (conflict ? 30 : 7) * 86_400_000).toISOString(), last_error: null }, { onConflict: "company_id" });

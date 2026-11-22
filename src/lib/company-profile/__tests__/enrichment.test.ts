@@ -34,10 +34,22 @@ describe("official company enrichment", () => {
     const extractSubpage = (loaded as typeof loaded & { extractOfficialCompanySubpage?: (input: any) => ReturnType<typeof extractOfficialCompanyPage> }).extractOfficialCompanySubpage;
     expect(typeof extractSubpage).toBe("function");
     if (!extractSubpage) return;
-    const result = extractSubpage({ ...fixture.affirmSubpage, atsBoards: [{ ats_type: "greenhouse", slug: "affirm", careers_url: "https://boards.greenhouse.io/affirm" }], retrievedAt: "2026-11-22T10:00:00Z" });
+    const atsBoards = [{ ats_type: "greenhouse", slug: "affirm", careers_url: "https://boards.greenhouse.io/affirm" }];
+    const verifiedHomepage = extractOfficialCompanyPage({ ...fixture.affirm, atsBoards });
+    const result = extractSubpage({ ...fixture.affirmSubpage, atsBoards, homepageContext: { verified: verifiedHomepage.verified, canonicalDomain: fixture.affirm.canonicalDomain, homepageUrl: fixture.affirm.pageUrl, homepageHtml: fixture.affirm.html }, retrievedAt: "2026-11-22T10:00:00Z" });
     expect(result.verified).toBe(true);
     expect(result.leadership).toEqual([expect.objectContaining({ name: "Max Levchin", role: "CEO" })]);
     expect(result.news).toEqual([expect.objectContaining({ headline: "Company update" })]);
+    expect(extractSubpage({ ...fixture.affirmSubpage, pageUrl: "https://attacker.example/about/leadership-news", atsBoards, homepageContext: { verified: true, canonicalDomain: fixture.affirm.canonicalDomain, homepageUrl: fixture.affirm.pageUrl, homepageHtml: fixture.affirm.html } }).verified).toBe(false);
+  });
+
+  it("routes repeated observations through timestamp-only conflict handlers", async () => {
+    const loaded = await import("../enrichment");
+    const handlers = (loaded as typeof loaded & { companyProfileObservationRpc?: any }).companyProfileObservationRpc;
+    expect(handlers).toEqual({
+      leadership: "record_company_profile_leadership_observation",
+      news: "record_company_profile_news_observation",
+    });
   });
 
   it("rejects unlinked ATS boards, leaders affiliated with another company, and personal profile links", () => {
