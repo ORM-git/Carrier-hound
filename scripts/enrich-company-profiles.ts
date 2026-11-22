@@ -3,7 +3,7 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { createClient } from "@supabase/supabase-js";
-import { evaluateCompanyProfileFreshness, extractOfficialCompanyPage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
+import { evaluateCompanyProfileFreshness, extractOfficialCompanyPage, extractOfficialCompanySubpage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
 import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,7 +89,7 @@ async function main() {
         if (!robotsAllows(robots.text, path)) continue;
         await delay(1_000);
         const candidate = await fetchWithBackoff(candidateUrl);
-        const candidateData = extractOfficialCompanyPage({ html: candidate.text, pageUrl: candidate.url, canonicalDomain: domain, companyName: company.name });
+        const candidateData = extractOfficialCompanySubpage({ html: candidate.text, pageUrl: candidate.url, canonicalDomain: domain, companyName: company.name, atsBoards: atsBoards || [] });
         if (!candidateData.verified) continue;
         extracted = { verified: true, facts: reconcileCompanyFacts(extracted.facts, candidateData.facts, true), leadership: [...extracted.leadership, ...candidateData.leadership].slice(0, 12), news: [...extracted.news, ...candidateData.news].slice(0, 8) };
       }

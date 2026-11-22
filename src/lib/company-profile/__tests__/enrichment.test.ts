@@ -29,6 +29,17 @@ describe("official company enrichment", () => {
     expect(result.news[0]?.publishedAt).toBe("2026-10-01T00:00:00.000Z");
   });
 
+  it("extracts affiliated leaders and dated news from an ATS-linked about subpage", async () => {
+    const loaded = await import("../enrichment");
+    const extractSubpage = (loaded as typeof loaded & { extractOfficialCompanySubpage?: (input: any) => ReturnType<typeof extractOfficialCompanyPage> }).extractOfficialCompanySubpage;
+    expect(typeof extractSubpage).toBe("function");
+    if (!extractSubpage) return;
+    const result = extractSubpage({ ...fixture.affirmSubpage, atsBoards: [{ ats_type: "greenhouse", slug: "affirm", careers_url: "https://boards.greenhouse.io/affirm" }], retrievedAt: "2026-11-22T10:00:00Z" });
+    expect(result.verified).toBe(true);
+    expect(result.leadership).toEqual([expect.objectContaining({ name: "Max Levchin", role: "CEO" })]);
+    expect(result.news).toEqual([expect.objectContaining({ headline: "Company update" })]);
+  });
+
   it("rejects unlinked ATS boards, leaders affiliated with another company, and personal profile links", () => {
     const unrelatedBoard = { ...fixture.affirm, atsBoards: [{ ats_type: "greenhouse", slug: "unrelated", careers_url: "https://boards.greenhouse.io/unrelated" }] };
     expect(extractOfficialCompanyPage(unrelatedBoard).verified).toBe(false);
@@ -107,6 +118,7 @@ describe("official company enrichment", () => {
       leadership: [{ retrievedAt: "2026-11-21T00:00:00.000Z" }],
     });
     expect(fresh).toMatchObject({ status: "fresh", shouldRefresh: false });
+    expect(evaluate({ now, state: { status: "fresh", last_succeeded_at: "2026-11-22T00:00:00.000Z", next_refresh_at: "2026-11-29T00:00:00.000Z" }, facts: { overview: { value: "Partial but valid profile", retrievedAt: "2026-11-22T00:00:00.000Z" } }, leadership: [] })).toMatchObject({ status: "fresh", shouldRefresh: false });
     expect(evaluate({ now, state: { status: "fresh", last_succeeded_at: "2026-11-21T00:00:00.000Z", next_refresh_at: "2026-11-29T00:00:00.000Z" }, facts: { overview: { value: "old", retrievedAt: "2026-01-01T00:00:00.000Z" } }, leadership: [{ retrievedAt: "2026-11-21T00:00:00.000Z" }] })).toMatchObject({ status: "stale", shouldRefresh: true });
     expect(evaluate({ now, state: { status: "fresh", last_succeeded_at: "2026-10-01T00:00:00.000Z", next_refresh_at: "2026-10-08T00:00:00.000Z" }, facts: {}, leadership: [{ retrievedAt: "2026-10-01T00:00:00.000Z" }] })).toMatchObject({ status: "stale", shouldRefresh: true });
     expect(evaluate({ now, state: { status: "fresh", last_succeeded_at: "2026-11-21T00:00:00.000Z", next_refresh_at: "2026-11-29T00:00:00.000Z" }, facts: { overview: { retrievedAt: "2026-11-21T00:00:00.000Z" } }, leadership: [{ retrievedAt: "2026-11-21T00:00:00.000Z" }], news: [{ publishedAt: "2026-11-20T00:00:00.000Z", retrievedAt: "2026-01-01T00:00:00.000Z" }] })).toMatchObject({ status: "stale", shouldRefresh: true });

@@ -28,7 +28,7 @@ export function evaluateCompanyProfileFreshness(input: CompanyProfileFreshnessIn
   };
   const conflicts = state?.status === "conflict" || Object.values(input.facts).some((fact) => fact?.status === "conflict");
   const staleFacts = Object.values(input.facts).some((fact) => !fact || daysOld(fact.retrievedAt) > 180);
-  const staleLeadership = !input.leadership.length || input.leadership.some((leader) => daysOld(leader.retrievedAt) > 30);
+  const staleLeadership = input.leadership.some((leader) => daysOld(leader.retrievedAt) > 30);
   const staleNews = input.news !== undefined && input.news.some((item) => daysOld(item.retrievedAt || item.publishedAt) > 90);
   const refreshDue = daysOld(state?.next_refresh_at) >= 0;
   const stale = staleFacts || staleLeadership || staleNews || !state?.last_succeeded_at || refreshDue;
@@ -288,6 +288,13 @@ export function extractOfficialCompanyPage(input: {
     return [{ id: `${publishedAt}:${index}`, headline, publishedAt, sourceUrl, excerpt: clean(o.description, 300) || null }];
   });
   return { verified: true, facts, leadership, news };
+}
+
+/** Keeps the ATS identity evidence available when validating first-party subpages. */
+export function extractOfficialCompanySubpage(input: {
+  html: string; pageUrl: string; canonicalDomain: string; companyName: string; retrievedAt?: string; atsBoards: CompanyAtsEvidence[];
+}): OfficialPageExtraction {
+  return extractOfficialCompanyPage(input);
 }
 
 /** Failed/empty/ambiguous observations never erase an existing sourced fact. */
