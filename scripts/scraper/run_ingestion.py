@@ -7,7 +7,8 @@ Features:
   `arbeitnow`, `adzuna`, or a specific company slug).
 - Strict per-source error isolation (one failing board never crashes the batch).
 - Tracks per-source completeness and failures in the run report.
-- Expiry is disabled for every run, including full-coverage and capped runs.
+- Expiry is disabled by default. Explicit --expire enables it for uncapped write runs;
+  partial-coverage, incomplete, or failed boards remain vetoed.
 """
 
 from __future__ import annotations
@@ -149,6 +150,8 @@ async def run_master_ingestion(
     dry_run: bool = True,
     max_rows: int | None = None,
     no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
     baseline_active_count: int = 0,
     expire_stale_hours: int = 72,
     transport: httpx.AsyncBaseTransport | None = None,
@@ -156,9 +159,12 @@ async def run_master_ingestion(
 ) -> dict[str, Any]:
     """
     Runs selected ingestion layers/sources with per-source error isolation,
-    safe set-diff upserts; expiry remains disabled for every run.
+    safe set-diff upserts; expiry requires an explicit opt-in on an uncapped write.
     """
-    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
+    validate_row_cap(
+        dry_run=dry_run, max_rows=max_rows, no_expire=no_expire,
+        allow_uncapped=allow_uncapped, allow_expire=allow_expire,
+    )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     raw_filters = sources or ["all"]
@@ -559,13 +565,18 @@ def main() -> None:
 
     try:
         dry_run = dry_run_from_args(args)
-        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
+        validate_row_cap(
+            dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
+        )
         report = asyncio.run(
             run_master_ingestion(
                 sources=args.source,
                 dry_run=dry_run,
                 max_rows=args.max_rows,
                 no_expire=args.no_expire,
+                allow_uncapped=args.production,
+                allow_expire=not args.no_expire,
                 baseline_active_count=args.baseline_count,
             )
         )

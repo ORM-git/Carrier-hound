@@ -84,11 +84,12 @@ CLIS = [(engine, "run_ingestion"), (run_ingestion, "run_master_ingestion")]
 class CliModeTests(unittest.TestCase):
     def test_no_flag_is_dry_run_even_with_credentials_present(self):
         for module, target in CLIS:
-            with self.subTest(cli=module.__name__), isolated(FAKE_ENV):
-                fake_run, code, err = run_cli(module, [], target)
-                self.assertEqual(code, 0)
-                self.assertIs(fake_run.call_args.kwargs["dry_run"], True)
-                self.assertIn("DRY-RUN", err)
+            for argv in ([], ["--production"]):
+                with self.subTest(cli=module.__name__, argv=argv), isolated(FAKE_ENV):
+                    fake_run, code, err = run_cli(module, argv, target)
+                    self.assertEqual(code, 0)
+                    self.assertIs(fake_run.call_args.kwargs["dry_run"], True)
+                    self.assertIn("DRY-RUN", err)
 
     def test_explicit_dry_run_flag(self):
         for module, target in CLIS:
@@ -111,6 +112,40 @@ class CliModeTests(unittest.TestCase):
                 self.assertIs(fake_run.call_args.kwargs["dry_run"], False)
                 self.assertEqual(fake_run.call_args.kwargs["max_rows"], 10)
                 self.assertIs(fake_run.call_args.kwargs["no_expire"], True)
+
+    def test_production_flag_allows_uncapped_write_on_both_clis(self):
+        for module, target in CLIS:
+            with self.subTest(cli=module.__name__), isolated(FAKE_ENV):
+                fake_run, code, _ = run_cli(module, [engine.WRITE_FLAG, "--production"], target)
+                self.assertEqual(code, 0)
+                self.assertIs(fake_run.call_args.kwargs["dry_run"], False)
+                self.assertIsNone(fake_run.call_args.kwargs["max_rows"])
+                self.assertIs(fake_run.call_args.kwargs["allow_uncapped"], True)
+                self.assertIs(fake_run.call_args.kwargs["no_expire"], True)
+
+    def test_expire_flag_enables_expiry_only_for_uncapped_production_write(self):
+        for module, target in CLIS:
+            with self.subTest(cli=module.__name__), isolated(FAKE_ENV):
+                fake_run, code, _ = run_cli(
+                    module, [engine.WRITE_FLAG, "--production", "--expire"], target,
+                )
+                self.assertEqual(code, 0)
+                self.assertIsNone(fake_run.call_args.kwargs["max_rows"])
+                self.assertIs(fake_run.call_args.kwargs["no_expire"], False)
+                self.assertIs(fake_run.call_args.kwargs["allow_expire"], True)
+
+    def test_expiry_flag_refuses_capped_and_dry_run_modes(self):
+        cases = [
+            [engine.WRITE_FLAG, "--max-rows", "10", "--expire"],
+            ["--dry-run", "--expire"],
+        ]
+        for module, target in CLIS:
+            for argv in cases:
+                with self.subTest(cli=module.__name__, argv=argv), isolated(FAKE_ENV):
+                    fake_run, code, err = run_cli(module, argv, target)
+                    self.assertEqual(code, 2)
+                    self.assertIn("expiry", err.lower())
+                    fake_run.assert_not_called()
 
     def test_write_mode_requires_positive_cap_before_invoking_either_orchestrator(self):
         for module, target in CLIS:
@@ -414,15 +449,77 @@ class DryRunZeroWriteTests(unittest.TestCase):
             with isolated(FAKE_ENV), patch.object(run_ingestion, "fetch_layer1_seed", side_effect=fake_fetch), \
                     patch.object(run_ingestion, "SupabaseSetDiffWriter", return_value=RecordingWriter()):
                 report = asyncio.run(run_ingestion.run_master_ingestion(
-                    sources=["smartrecruiters"], seeds_path=tmp.name, dry_run=False, max_rows=10,
+                    sources=["smartrecruiters"], seeds_path=tmp.name, dry_run=False, max_rows=None,
+                    allow_uncapped=True, no_expire=False, allow_expire=True,
                     transport=httpx.MockTransport(rec),
                 ))
         finally:
             Path(tmp.name).unlink(missing_ok=True)
 
         self.assertFalse(report["sources"][0]["is_full_coverage"])
-        self.assertEqual(report["expiry_reports"], [])
+        self.assertEqual(report["expiry_reports"][0]["status"], "skipped_partial_coverage")
         self.assertEqual(rec.db_calls(), [])
+
+    def test_expire_flag_runs_the_existing_full_coverage_expiry_path(self):
+        seeds = {
+            "rate_limit": {"default_rps_per_host": 4.0, "burst_per_host": 1.0},
+            "layer1_public_ats": [{"ats": "greenhouse", "slug": "stripe", "source_priority": 1}],
+            "layer2_enterprise_json": {},
+        }
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(seeds, tmp)
+        tmp.close()
+        job = {
+            "source_type": "greenhouse", "source_id": BOARD, "source_job_id": "stripe-101",
+            "company": "Stripe", "company_slug": "stripe", "title": "Engineer", "source_priority": 1,
+        }
+
+        class ExpiryRecorder(Recorder):
+            def __call__(self, request: httpx.Request) -> httpx.Response:
+                if request.url.host == FAKE_HOST and request.method == "GET" and request.url.path.endswith("/jobs"):
+                    self.calls.append((request.method, request.url.host, request.url.path))
+                    return httpx.Response(200, json=[{"id": "row-1"}], headers={"content-range": "0-0/1"})
+                if request.url.host == FAKE_HOST and request.method == "PATCH" and request.url.path.endswith("/jobs"):
+                    self.calls.append((request.method, request.url.host, request.url.path))
+                    return httpx.Response(200, json=[{"id": "stale-row"}])
+                return super().__call__(request)
+
+        class RecordingWriter:
+            persistence_failed = False
+            failed_writes = 0
+            write_errors: list[str] = []
+            base_url = f"https://{FAKE_HOST}/rest/v1"
+            headers = {"apikey": FAKE_KEY, "Authorization": f"Bearer {FAKE_KEY}"}
+
+            async def sync_companies(self, _client, _jobs):
+                return {"stripe": "company-stripe"}
+
+            async def sync_jobs_set_diff(self, _client, selected, _company_map):
+                return {
+                    "inserted": len(selected), "updated": 0, "skipped_unchanged": 0,
+                    "failed_writes": 0, "persistence_failed": False, "write_errors": [],
+                    "persisted_ids": ["row-1"], "persisted_source_keys": [[BOARD, "stripe-101"]],
+                }
+
+        async def fake_fetch(_client, _limiter, _seed):
+            return [job]
+
+        rec = ExpiryRecorder()
+        try:
+            with isolated(FAKE_ENV), patch.object(run_ingestion, "fetch_layer1_seed", side_effect=fake_fetch), \
+                    patch.object(run_ingestion, "SupabaseSetDiffWriter", return_value=RecordingWriter()):
+                report = asyncio.run(run_ingestion.run_master_ingestion(
+                    sources=[BOARD], seeds_path=tmp.name, dry_run=False, max_rows=None,
+                    allow_uncapped=True, no_expire=False, allow_expire=True,
+                    transport=httpx.MockTransport(rec),
+                ))
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+
+        self.assertEqual(report["expiry_reports"][0]["status"], "completed", (report["expiry_reports"], rec.calls))
+        self.assertEqual(report["expiry_reports"][0]["expired"], 1)
+        self.assertEqual(report["db"]["expired"], 1)
+        self.assertEqual([method for method, host, _ in rec.calls if host == FAKE_HOST], ["GET", "PATCH"])
 
 
 if __name__ == "__main__":

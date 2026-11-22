@@ -69,13 +69,24 @@ class WriteAuthorizationError(RuntimeError):
     """Write mode was requested without valid Supabase credentials. Never carries the credential values."""
 
 
-def validate_row_cap(*, dry_run: bool, max_rows: int | None, no_expire: bool = True) -> None:
+def validate_row_cap(
+    *,
+    dry_run: bool,
+    max_rows: int | None,
+    no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
+) -> None:
     if max_rows is not None and (isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0):
         raise WriteAuthorizationError("ingestion refused: --max-rows must be a positive integer")
-    if not dry_run and max_rows is None:
+    if not dry_run and max_rows is None and not allow_uncapped:
         raise WriteAuthorizationError("write mode refused: an explicit positive --max-rows cap is required")
-    if not no_expire:
-        raise WriteAuthorizationError("ingestion refused: --no-expire is mandatory; expiry cannot be enabled")
+    if not no_expire and not allow_expire:
+        raise WriteAuthorizationError("ingestion refused: expiry requires the explicit --expire flag")
+    if not no_expire and dry_run:
+        raise WriteAuthorizationError("expiry refused: --expire requires --write-to-database")
+    if not no_expire and max_rows is not None:
+        raise WriteAuthorizationError("expiry refused: capped runs cannot expire jobs")
 
 
 def select_unique_jobs(jobs: list[dict[str, Any]], max_rows: int | None) -> list[dict[str, Any]]:
@@ -121,13 +132,17 @@ def resolve_write_credentials() -> tuple[str, str]:
 
 
 def add_write_mode_arguments(parser: argparse.ArgumentParser) -> None:
-    """Dry-run is the default; writing needs the explicit flag; the two are mutually exclusive."""
+    """Dry-run is the default; write, uncapped, and expiry modes need explicit opt-ins."""
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="Fetch and normalize only; never writes (the default)")
     mode.add_argument(WRITE_FLAG, dest="write_to_database", action="store_true",
-                      help="Explicitly authorize capped company/job writes (requires a positive --max-rows cap and valid Supabase service credentials)")
+                      help="Explicitly authorize company/job writes (requires valid Supabase service credentials)")
+    parser.add_argument("--production", action="store_true", help="Allow uncapped writes when combined with --write-to-database")
     parser.add_argument("--max-rows", type=int, default=None, help="Hard cap on unique canonical job identities selected globally")
-    parser.add_argument("--no-expire", action="store_true", default=True, help="Keep expiry disabled (the default and only supported mode)")
+    expiry = parser.add_mutually_exclusive_group()
+    expiry.add_argument("--no-expire", dest="no_expire", action="store_true", help="Keep stale-job expiry disabled (the default)")
+    expiry.add_argument("--expire", dest="no_expire", action="store_false", help="Enable stale-job expiry (uncapped write mode only)")
+    parser.set_defaults(no_expire=True)
 
 
 def dry_run_from_args(args: argparse.Namespace) -> bool:
@@ -638,11 +653,16 @@ async def run_ingestion(
     dry_run: bool = True,
     max_rows: int | None = None,
     no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
     max_seeds_per_layer: int | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Runs Layer 1 (Public ATS) and Layer 2 (Workday CXS, Amazon, Microsoft) ingestion."""
-    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
+    validate_row_cap(
+        dry_run=dry_run, max_rows=max_rows, no_expire=no_expire,
+        allow_uncapped=allow_uncapped, allow_expire=allow_expire,
+    )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     config = load_company_seeds(seeds_path)
@@ -757,9 +777,13 @@ def main() -> None:
 
     try:
         dry_run = dry_run_from_args(args)
-        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
+        validate_row_cap(
+            dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
+        )
         summary = asyncio.run(run_ingestion(
             dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
             max_seeds_per_layer=args.limit,
         ))
     except WriteAuthorizationError as exc:
