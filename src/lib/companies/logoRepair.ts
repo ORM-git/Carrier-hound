@@ -17,7 +17,7 @@
  * gets a reason and a bounded backoff, and the UI shows initials. Never throws for branding issues.
  */
 import crypto from "node:crypto";
-import zlib from "node:zlib";
+import sharp from "sharp";
 import { eligibleLogoUrl, hostedLogoPublicUrl, logoObjectKey } from "./logoEligibility";
 import { fetchWithTimeout, getCleanImageMeta, type CompanyRecord, type FetchWithTimeoutOptions, type JobUrlInfo, type ResolveLogoOptions, type ResolvedLogoResult } from "./logoResolver";
 
@@ -32,46 +32,35 @@ export const KNOWN_VENDOR_DEFAULT_SHA256: readonly string[] = [
 
 export const sha256Hex = (buf: Buffer) => crypto.hash("sha256", buf, "hex");
 
-const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const PNG_CHANNELS: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+/** Decode limits: logos are icons, so anything past these bounds is rejected before/while decoding. */
+export const MAX_DECODE_SIDE_PX = 2048;
+const MAX_DECODE_PIXELS = MAX_DECODE_SIDE_PX * MAX_DECODE_SIDE_PX; // <= 16 MiB of RGBA once decoded
+const DECODABLE = new Set(["png", "jpeg", "webp", "gif"]);
 
 /**
- * True only when the bytes decode as a PNG image (header sniffing is not enough: a bare header
- * would otherwise be hosted as a "logo"). PNG: every chunk parsed and the IDAT stream inflated to the exact
- * size its IHDR implies.
- * shortcut: JPEG/WebP/GIF/interlaced PNG are not decoded (no declared decoder), so they are rejected and the
- * chain falls through to the next source (favicon services serve PNG); add a decoder if that becomes a gap.
+ * True only when the bytes fully decode as a PNG, JPEG, WebP or GIF (header sniffing is not enough).
+ * libvips decodes every pixel with failOn "error" (bad filter bytes, CRC errors, truncated or missing image
+ * data all fail). Bounded: the header's dimensions are checked before decoding, libvips refuses inputs above
+ * the pixel limit, and only the first animation frame is decoded, so a small compressed bomb cannot expand
+ * past MAX_DECODE_PIXELS x 4 bytes.
  */
-export function decodesAsRaster(buf: Buffer): boolean {
+export async function decodesAsRaster(buf: Buffer): Promise<boolean> {
   try {
-    if (buf.subarray(0, 8).equals(PNG_SIG)) {
-      let off = 8, w = 0, h = 0, depth = 0, color = -1, interlace = 1;
-      const idat: Buffer[] = [];
-      while (off + 12 <= buf.length) {
-        const len = buf.readUInt32BE(off);
-        const type = buf.toString("ascii", off + 4, off + 8);
-        if (off + 12 + len > buf.length) return false;
-        const data = buf.subarray(off + 8, off + 8 + len);
-        if (type === "IHDR") { w = data.readUInt32BE(0); h = data.readUInt32BE(4); depth = data[8]; color = data[9]; interlace = data[12]; }
-        if (type === "IDAT") idat.push(data);
-        off += 12 + len;
-        if (type === "IEND") break;
-      }
-      const ch = PNG_CHANNELS[color];
-      if (!w || !h || !ch || interlace !== 0 || !idat.length) return false;
-      const raw = zlib.inflateSync(Buffer.concat(idat));
-      return raw.length === h * (1 + Math.ceil((w * ch * depth) / 8));
-    }
+    const opts = { failOn: "error" as const, limitInputPixels: MAX_DECODE_PIXELS, pages: 1 };
+    const meta = await sharp(buf, opts).metadata();
+    if (!meta.format || !DECODABLE.has(meta.format) || !meta.width || !meta.height) return false;
+    if (meta.width > MAX_DECODE_SIDE_PX || meta.height > MAX_DECODE_SIDE_PX) return false;
+    const { info } = await sharp(buf, opts).raw().toBuffer({ resolveWithObject: true });
+    return info.width === meta.width && info.size > 0;
   } catch {
     return false;
   }
-  return false;
 }
 
 /**
  * Health check for a stored hosted logo: "ok" or a reason. Only this project's eligible URLs are fetched,
  * through the SSRF-safe fetcher (scheme + DNS/private-IP checks, timeout, size cap) with no redirects
- * followed; the bytes must be a raster image, and PNGs must fully decode.
+ * followed; the bytes must fully decode (every format, see decodesAsRaster).
  */
 export async function verifyHostedLogo(url: string, supabaseUrl: string, opts: FetchWithTimeoutOptions = {}): Promise<string> {
   if (!eligibleLogoUrl(url, supabaseUrl)) return "ineligible-url";
@@ -81,7 +70,7 @@ export async function verifyHostedLogo(url: string, supabaseUrl: string, opts: F
     const buf = Buffer.from(await r.arrayBuffer());
     const meta = buf.length ? getCleanImageMeta(r.headers.get("content-type") || "", buf, url) : null;
     if (!meta) return "not-a-raster-image";
-    if (meta.ext === "png" && !decodesAsRaster(buf)) return "does-not-decode";
+    if (!(await decodesAsRaster(buf))) return "does-not-decode";
     return "ok";
   } catch (e) {
     return `fetch-error: ${String((e as Error)?.message || e).slice(0, 120)}`;
@@ -172,7 +161,7 @@ export async function repairCompanyLogo(company: ClaimedCompany, deps: LogoRepai
       { id: company.id, name: company.name, slug: company.slug, domain: company.domain, careers_url: company.careers_url, ats_type: company.ats_type, logo_url: null },
       jobs,
       // Default/vendor images are skipped inside the chain, so the next tier (homepage, free resolver) still runs.
-      { isRejected: (buf) => deps.knownDefaultHashes.has(sha256Hex(buf)) || !decodesAsRaster(buf) }
+      { isRejected: async (buf) => deps.knownDefaultHashes.has(sha256Hex(buf)) || !(await decodesAsRaster(buf)) }
     );
   } catch (e) {
     return fail(`resolver-error: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
@@ -182,7 +171,7 @@ export async function repairCompanyLogo(company: ClaimedCompany, deps: LogoRepai
   if (resolved.width > MAX_LOGO_SIDE_PX || resolved.height > MAX_LOGO_SIDE_PX) {
     return fail(`not-a-logo: ${resolved.width}x${resolved.height} image from ${resolved.source} is a banner/photo, not an icon`, false);
   }
-  if (!decodesAsRaster(resolved.buffer)) return fail(`corrupt-image: ${resolved.source} bytes do not decode as a PNG`, false);
+  if (!(await decodesAsRaster(resolved.buffer))) return fail(`corrupt-image: ${resolved.source} bytes do not decode`, false);
   const sha256 = sha256Hex(resolved.buffer);
   if (deps.knownDefaultHashes.has(sha256)) return fail(`default-branding: ${resolved.serviceName || resolved.source} returned its default image`, false);
   if ((await deps.companiesSharingHash(sha256, company.id)) >= SHARED_HASH_LIMIT) return fail("shared-image: identical bytes already used by another company (vendor/default mark)", false);

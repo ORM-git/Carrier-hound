@@ -86,6 +86,11 @@ async function runParityTests() {
     statsNoteIdx < tickerIdx && tickerIdx < cmpHeadingIdx,
     "LandingJobsTickerStrip MUST be placed directly between the stats row and the comparison table"
   );
+  // The ticker keeps the sample strip's spacing hook: the comparison section's reduced top padding (52px desktop / 38px mobile).
+  assert.ok(
+    cssSrc.includes(".landing-wrapper .ls + section.s,.landing-wrapper .jobs-ticker-strip + section.s{padding-top:calc(var(--sec) - var(--ls-in))}"),
+    "ticker strip must keep the .ls + section.s spacing rule"
+  );
 
   // Founder content checks
   assert.ok(pageSrc.includes('src="/owner.jpg"'), "Founder image must point to /owner.jpg");

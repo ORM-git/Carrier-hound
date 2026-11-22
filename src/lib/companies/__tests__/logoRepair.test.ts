@@ -168,12 +168,19 @@ describe("repairCompanyLogo", () => {
 
   it("only bytes that decode are hosted: a bare PNG header is rejected as corrupt", async () => {
     const headerOnly = PNG.subarray(0, 33); // signature + IHDR (claims 64x64), no IDAT payload
-    expect(decodesAsRaster(PNG)).toBe(true);
-    expect(decodesAsRaster(headerOnly)).toBe(false);
-    expect(decodesAsRaster(Buffer.from("GIF89a....."))).toBe(false);
+    expect(await decodesAsRaster(PNG)).toBe(true);
+    expect(await decodesAsRaster(headerOnly)).toBe(false);
     const d = deps({ resolve: vi.fn(async () => ({ imageUrl: "https://acme.com/i.png", source: "homepage-icon" as const, domain: "acme.com", buffer: headerOnly, contentType: "image/png", ext: "png", width: 64, height: 64 })) });
     const out = await repairCompanyLogo(company(), d);
     expect(out).toMatchObject({ status: "missing", reason: expect.stringMatching(/^corrupt-image/) });
+    expect(d.upload).not.toHaveBeenCalled();
+  });
+
+  it("a CRC-correct PNG with an illegal row filter (255) is never hosted", async () => {
+    const corrupt = makePng(128, 128, "acme", 255);
+    expect(await decodesAsRaster(corrupt)).toBe(false);
+    const d = deps({ resolve: vi.fn(async () => ({ imageUrl: "https://acme.com/i.png", source: "homepage-icon" as const, domain: "acme.com", buffer: corrupt, contentType: "image/png", ext: "png", width: 128, height: 128 })) });
+    expect(await repairCompanyLogo(company(), d)).toMatchObject({ status: "missing", reason: expect.stringMatching(/^corrupt-image/) });
     expect(d.upload).not.toHaveBeenCalled();
   });
 

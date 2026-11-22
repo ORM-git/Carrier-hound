@@ -275,7 +275,7 @@ async function main() {
     await pool(todo, args.concurrency, async (c) => {
       try {
         const jobs = await deps.jobsFor(c.id);
-        const r = await resolveCompanyLogo({ ...c, logo_url: null }, jobs, { isRejected: (b) => defaults.has(sha256Hex(b)) || !decodesAsRaster(b) });
+        const r = await resolveCompanyLogo({ ...c, logo_url: null }, jobs, { isRejected: async (b) => defaults.has(sha256Hex(b)) || !(await decodesAsRaster(b)) });
         pre.set(c.id, { r });
       } catch (e) {
         pre.set(c.id, { e });

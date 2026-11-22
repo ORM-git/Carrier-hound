@@ -811,7 +811,7 @@ export function parsePageImages(
 export async function inspectCompanyHomepage(
   domain: string,
   minSize: number = 32,
-  isRejected: (buf: Buffer) => boolean = () => false,
+  isRejected: (buf: Buffer) => boolean | Promise<boolean> = () => false,
   includeOgImage: boolean = true
 ): Promise<ResolvedLogoResult | null> {
   const homeUrls = [`https://${domain}`, `https://www.${domain}`];
@@ -845,7 +845,7 @@ export async function inspectCompanyHomepage(
   // 1. Try icons in order of declared size
   for (const icon of iconUrls) {
     const imgData = await downloadAndValidateImage(icon.url, minSize);
-    if (imgData && !isRejected(imgData.buffer)) {
+    if (imgData && !(await isRejected(imgData.buffer))) {
       return {
         imageUrl: icon.url,
         source: "homepage-icon",
@@ -862,7 +862,7 @@ export async function inspectCompanyHomepage(
   // 2. Try og:image fallback (not used by the logo contract: social banners are not company icons)
   if (ogImageUrl && includeOgImage) {
     const imgData = await downloadAndValidateImage(ogImageUrl, minSize);
-    if (imgData && !isRejected(imgData.buffer)) {
+    if (imgData && !(await isRejected(imgData.buffer))) {
       return {
         imageUrl: ogImageUrl,
         source: "homepage-icon",
@@ -887,13 +887,13 @@ export async function fetchFreeLogoService(
   domain: string,
   minSize: number = 32,
   fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout,
-  isRejected: (buf: Buffer) => boolean = () => false
+  isRejected: (buf: Buffer) => boolean | Promise<boolean> = () => false
 ): Promise<ResolvedLogoResult | null> {
   // Service 1: Unavatar (returns HTTP 200 image or 404 when fallback=false)
   try {
     const unavUrl = `https://unavatar.io/${domain}?fallback=false`;
     const unavData = await downloadAndValidateImage(unavUrl, minSize, fetcher);
-    if (unavData && !isRejected(unavData.buffer)) {
+    if (unavData && !(await isRejected(unavData.buffer))) {
       return {
         imageUrl: unavUrl,
         source: "free-service",
@@ -912,7 +912,7 @@ export async function fetchFreeLogoService(
   try {
     const gglUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
     const gglData = await downloadAndValidateImage(gglUrl, minSize, fetcher);
-    if (gglData && !isRejected(gglData.buffer)) {
+    if (gglData && !(await isRejected(gglData.buffer))) {
       return {
         imageUrl: gglUrl,
         source: "free-service",
@@ -931,7 +931,7 @@ export async function fetchFreeLogoService(
   try {
     const ddgUrl = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
     const ddgData = await downloadAndValidateImage(ddgUrl, minSize, fetcher);
-    if (ddgData && !isRejected(ddgData.buffer)) {
+    if (ddgData && !(await isRejected(ddgData.buffer))) {
       return {
         imageUrl: ddgUrl,
         source: "free-service",
@@ -954,7 +954,8 @@ export async function fetchFreeLogoService(
  */
 export interface ResolveLogoOptions {
   /** Vendor/default images (e.g. an ATS board's own mark) are skipped and the next tier is tried. */
-  isRejected?: (buf: Buffer) => boolean;
+  /** Rejected images are skipped and the chain continues (vendor defaults, bytes that do not decode). */
+  isRejected?: (buf: Buffer) => boolean | Promise<boolean>;
 }
 
 export async function resolveCompanyLogo(
@@ -1011,7 +1012,7 @@ export async function resolveCompanyLogo(
       // Check board icon >= 128px
       for (const icon of iconUrls) {
         const imgData = await downloadAndValidateImage(icon.url, 128);
-        if (imgData && !isRejected(imgData.buffer)) {
+        if (imgData && !(await isRejected(imgData.buffer))) {
           return {
             imageUrl: icon.url,
             source: "ats-board",
@@ -1027,7 +1028,7 @@ export async function resolveCompanyLogo(
       // Check board og:image
       if (ogImageUrl) {
         const imgData = await downloadAndValidateImage(ogImageUrl, 128);
-        if (imgData && !isRejected(imgData.buffer)) {
+        if (imgData && !(await isRejected(imgData.buffer))) {
           return {
             imageUrl: ogImageUrl,
             source: "ats-board",
