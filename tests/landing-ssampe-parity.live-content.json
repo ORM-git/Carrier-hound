@@ -1,0 +1,227 @@
+{
+  "source": "https://careermonke.com/",
+  "snapshot": {
+    "ownerCheck": "2026-11-22 ~12:45-12:46 IST (owner-supplied review/founder screenshots)",
+    "recheck": "2026-11-22T07:24:52Z (live HTML re-fetched before this change; identical records, orders and counts)"
+  },
+  "note": "Snapshot of what the live page displays. Not proof of the underlying testimonials or claims. Quotes are shown on the page wrapped in curly quotes “”.",
+  "reviews": [
+    {
+      "id": "D1",
+      "name": "Rohan S.",
+      "initials": "RS",
+      "location": "Bengaluru",
+      "quote": "Honestly didn't expect much but found an early-stage startup role here that wasn't on Naukri at all. Resume score feature is quite strict though!",
+      "avatar": "/images/avatars/male-1.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/male-1.webp",
+      "avatarSha256": "607a6e241f21eb81ac1f87723c4c755dea5c77e16de8766672d93d217636ef8d"
+    },
+    {
+      "id": "D2",
+      "name": "Pooja Verma",
+      "initials": "PV",
+      "location": "Pune",
+      "quote": "The AI editor caught so many formatting flaws in my CV. Got two interview callbacks within 10 days of fixing my score.",
+      "avatar": "/images/avatars/female-1.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/female-1.webp",
+      "avatarSha256": "2f6174b2a44fcca4349f78c6f288c8a7705658b146585228cebbbe8e6d5e60d3"
+    },
+    {
+      "id": "D3",
+      "name": "Aditya K.",
+      "initials": "AK",
+      "location": "Gurgaon",
+      "quote": "Job market is brutal right now, applying on LinkedIn felt useless. Found my current role listed here in the first week itself.",
+      "avatar": "/images/avatars/male-2.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/male-2.webp",
+      "avatarSha256": "12dbca2029df3edbbfcafeac18732836cf59f67bb33046ccd065d6e0591e1463"
+    },
+    {
+      "id": "D4",
+      "name": "Sneha M.",
+      "initials": "SM",
+      "location": "Hyderabad",
+      "quote": "Resume scanner is super helpful, pointed out missing action verbs immediately. Site took a few seconds to load the jobs list once, but good tool overall.",
+      "avatar": "/images/avatars/female-2.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/female-2.webp",
+      "avatarSha256": "37f66b020c266591122d7a866ff5e95d6b6a013dfef2c078648cafca89961e59"
+    },
+    {
+      "id": "D5",
+      "name": "Tanmay Das",
+      "initials": "TD",
+      "location": "Kolkata",
+      "quote": "Loved that it cuts through the usual sponsored listings garbage. Re-wrote my project points using the suggestions and my profile looks way sharper.",
+      "avatar": "/images/avatars/male-3.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/male-3.webp",
+      "avatarSha256": "0ac9bca3240af704d970c002f0fe15b2974c26ec71fb50bcf5bc5eff35a34900"
+    },
+    {
+      "id": "D6",
+      "name": "Kavita R.",
+      "initials": "KR",
+      "location": "Mumbai",
+      "quote": "Such a clean concept. Most platforms just repost the same 50 corporate openings, but here I actually saw genuine hidden vacancies.",
+      "avatar": "/images/avatars/female-3.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/female-3.webp",
+      "avatarSha256": "4e6827118dd8fbe79edd315f75afc9b59acc47a598a0528709c6e5475b1b4b85"
+    },
+    {
+      "id": "D7",
+      "name": "Brett H.",
+      "initials": "BH",
+      "location": "Austin, TX",
+      "quote": "Tired of competing with 800 applicants on every single posting. Found a niche seed-round role listed here that fit my background cleanly.",
+      "avatar": "/images/avatars/male-4.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/male-4.webp",
+      "avatarSha256": "11097239566a86b1bce8f13722d02fdcfe555195a80b958bddaa2fad6869eff9"
+    },
+    {
+      "id": "D8",
+      "name": "Elena C.",
+      "initials": "EC",
+      "location": "Seattle, WA",
+      "quote": "UI has a few rough edges, but the verified job feed is legit. Easily saved me 10+ hours of doomscrolling this week.",
+      "avatar": "/images/avatars/female-4.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/female-4.webp",
+      "avatarSha256": "375cea435b7c11f4a89e83020e3a5f6cf38f58906d92a3ebf1803874ce28d677"
+    },
+    {
+      "id": "D9",
+      "name": "Marcus T.",
+      "initials": "MT",
+      "location": "Chicago, IL",
+      "quote": "Resume review pointed out my bullets were way too wordy and gave me concrete fixes. Landed an interview 4 days later.",
+      "avatar": "/images/avatars/male-5.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/male-5.webp",
+      "avatarSha256": "3844decc1bcb1fde2c7ba7c2e0ae3f22cf95548d1129b06a662a8663ffc26c91"
+    },
+    {
+      "id": "D10",
+      "name": "Lin Wei",
+      "initials": "LW",
+      "location": "Shanghai",
+      "quote": "Applying for remote global roles from China is usually painful. This helped me find open global positions that never show up locally.",
+      "avatar": "/images/avatars/female-5.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/female-5.webp",
+      "avatarSha256": "92543130b16d107e339a3b8951291751c58c1fbc788148b2281caadcc77c76dd"
+    },
+    {
+      "id": "D11",
+      "name": "Chen Hao",
+      "initials": "CH",
+      "location": "Beijing",
+      "quote": "English resume scoring gave very practical suggestions for Western ATS systems. Fixed my grammar issues and boosted my score to 88.",
+      "avatar": "/images/avatars/male-6.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/male-6.webp",
+      "avatarSha256": "33ee0078a3826827ee46ed7e3f74c5873adc6f9ae439b8619561b1a39cd229e6"
+    },
+    {
+      "id": "D12",
+      "name": "Yifei Z.",
+      "initials": "YZ",
+      "location": "Shenzhen",
+      "quote": "Very useful for discovering stealth and cross-border startups. Good tool, already recommended it to two college friends.",
+      "avatar": "/images/avatars/female-6.webp",
+      "avatarSourceUrl": "https://careermonke.com/images/avatars/female-6.webp",
+      "avatarSha256": "69d390e75b1c46c9004da7895e717b922ad0dc6d9fcbf17f70e7f245231ac8dd"
+    }
+  ],
+  "movingRow": {
+    "heading": "From early‑access users",
+    "order": [
+      "D1",
+      "D2",
+      "D3",
+      "D4",
+      "D5",
+      "D6",
+      "D7",
+      "D8",
+      "D9",
+      "D10",
+      "D11",
+      "D12"
+    ],
+    "duplicateGroups": 1
+  },
+  "wall": {
+    "heading": "What job seekers are saying",
+    "columns": [
+      {
+        "className": "wl-down",
+        "order": [
+          "D1",
+          "D4",
+          "D7",
+          "D10"
+        ]
+      },
+      {
+        "className": "wl-up",
+        "order": [
+          "D2",
+          "D5",
+          "D8",
+          "D11"
+        ]
+      },
+      {
+        "className": "wl-down",
+        "order": [
+          "D3",
+          "D6",
+          "D9",
+          "D12"
+        ]
+      }
+    ],
+    "duplicateGroupsPerColumn": 1
+  },
+  "founder": {
+    "photo": "/owner.jpg",
+    "photoSourceUrl": "https://careermonke.com/owner.jpg",
+    "photoSha256": "f0507e2a5943f49eaed29a205a073e56d2266bcb5eb2919f2e51439ed24dbc5f",
+    "alt": "Orissa Lee Patnaik, founder of CareerMonke",
+    "width": 112,
+    "height": 112,
+    "heading": "Orissa here!",
+    "role": "Creator of CareerMonke",
+    "socials": [
+      {
+        "label": "Instagram",
+        "href": "https://www.instagram.com/orissa.patnaik",
+        "external": true
+      },
+      {
+        "label": "LinkedIn",
+        "href": "https://www.linkedin.com/in/orissa-patnaik-85071a1aa/",
+        "external": true
+      },
+      {
+        "label": "Email",
+        "href": "mailto:support@careermonke.com",
+        "external": false
+      }
+    ],
+    "statsRow": "removed (live founder block has none)"
+  },
+  "headerLogo": {
+    "src": "/careermonke-logo.png",
+    "sourceUrl": "https://careermonke.com/careermonke-logo.png",
+    "sha256": "ecda48f5c8e4a2c56fb10447b35600aedd624c9299adf328ffe86e29828b274f",
+    "natural": [
+      617,
+      749
+    ],
+    "cssHeight": 32,
+    "linkLabel": "CareerMonke home"
+  },
+  "unchanged": {
+    "favicon": {
+      "path": "/favicon.ico",
+      "sha256": "8ac21d2f333759edbba57b0f5a12a1929481cb053025fff1ffdef0bf65596dfd"
+    },
+    "footerLogo": "/careermonke-logo.png"
+  }
+}

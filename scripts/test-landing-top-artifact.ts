@@ -25,7 +25,7 @@ function runNegativeControlSubprocess() {
 
 async function main() {
   console.log("================================================================================");
-  console.log("       LANDING TOP HERO & INTERACTIVE DEMO VERIFICATION SUITE                   ");
+  console.log("       LANDING TOP FOLD & LOWER PAGE RUNTIME VERIFICATION SUITE                   ");
   console.log("================================================================================\n");
 
   if (isNegativeControl) {
@@ -46,51 +46,52 @@ async function main() {
 
   const pageSrc = fs.readFileSync(pagePath, "utf8");
   const cssSrc = fs.readFileSync(cssPath, "utf8");
+  const lowerCssSrc = fs.readFileSync(path.join(ROOT, "src", "styles", "careermonke-landing-lower.css"), "utf8");
+  // JSX wraps long copy across lines; compare copy on whitespace-normalised source.
+  const flatSrc = pageSrc.replace(/\{" "\}/g, " ").replace(/\s+/g, " ");
 
-  // 1. Exact 1:1 Headline and Hero Copy
+  // 1. Exact 1:1 Headline and Hero Copy (new top fold, ssampe@f21504b)
   assert.ok(
-    pageSrc.includes("Skip LinkedIn competition") && pageSrc.includes("job"),
-    "page.tsx must contain exact headline 'Skip LinkedIn competition. Start jobmaxxing with AI'"
+    pageSrc.includes('<p className="kicker">Skip LinkedIn competition</p>') &&
+      // approved hero: ssampe@3386250 ascending m/a/x/x inside a no-wrap "jobmaxxing", "with AI" kept together
+      /<h1 aria-label="Start jobmaxxing with AI"> Start <span className="nw"> job <span className="mx"> <span className="m1" aria-hidden="true"> m <\/span> <span className="m2" aria-hidden="true"> a <\/span> <span className="m3" aria-hidden="true"> x <\/span> <span className="m4" aria-hidden="true"> x <\/span> <\/span> ing <\/span> with&nbsp;AI <\/h1>/.test(flatSrc),
+    "page.tsx must contain exact kicker 'Skip LinkedIn competition' and headline 'Start jobmaxxing with AI' with the ascending maxx letters"
   );
   assert.ok(
     pageSrc.includes("1,240 new jobs found today"),
     "page.tsx must contain exact badge '1,240 new jobs found today'"
   );
   assert.ok(
-    pageSrc.includes("Find verified employer jobs and tailor your resume to clear their ATS in seconds."),
+    flatSrc.includes("Find verified employer jobs and tailor your resume to clear their ATS in seconds."),
     "page.tsx must contain lead copy about verified employer jobs"
   );
   assert.ok(
-    pageSrc.includes("Sign up for free"),
-    "page.tsx must contain 'Sign up for free'"
+    pageSrc.includes("Sign up free"),
+    "page.tsx must contain 'Sign up free'"
   );
 
   // 2. Working Navigation and CTAs wired to real routes
-  assert.ok(pageSrc.includes('href="/signup"'), "Hero CTA must link to /signup");
-  assert.ok(pageSrc.includes('href="/login"'), "Top nav must link to /login");
-  assert.ok(pageSrc.includes('href="/radar"'), "Top nav must link to /radar");
-  assert.ok(pageSrc.includes('href="/jobs"'), "Navigation must link to /jobs");
-  assert.ok(pageSrc.includes('id="try-demo"'), "Hero must include #try-demo button");
+  assert.ok(pageSrc.includes('href="/signup" className="btn-dark"'), "Top nav Sign up free must link to /signup");
+  assert.ok(pageSrc.includes('href="/login" className="btn-ghost"'), "Top nav Sign in must link to /login");
+  assert.ok(pageSrc.includes('href="/radar"'), "Lower page must link to /radar");
+  assert.ok(pageSrc.includes('href="/jobs" className="btn-cta"'), "Top-fold View Jobs must link to /jobs");
+  assert.ok(!pageSrc.includes('id="try-demo"'), "Old hero #try-demo button must not come back");
 
-  // 3. Interactive Demo Structure and Chips
-  assert.ok(pageSrc.includes('id="demo"'), "page.tsx must contain interactive demo section with id='demo'");
-  const requiredChips = ["Backend", "Remote", "Marketing", "Data &amp; AI", "Sales", "Design"];
-  for (const chip of requiredChips) {
-    assert.ok(
-      pageSrc.includes(chip),
-      `Demo must include job chip "${chip}"`
-    );
+  // 3. Top fold structure: one full job card and a half-visible second card (peek) above the CTA
+  assert.ok(pageSrc.includes('id="first-card"'), "Top fold must include the full first job card");
+  assert.ok(pageSrc.includes('<div className="peek" aria-hidden="true">'), "Top fold must include the half-visible second card");
+  assert.ok(!pageSrc.includes('id="demo"'), "Old interactive demo must not come back");
+
+  // 4. Old demo states stay removed
+  for (const st of ["pick", "scan", "match", "applied"]) {
+    assert.ok(!pageSrc.includes(`data-state="${st}"`), `Old demo state '${st}' must not come back`);
   }
 
-  // 4. Demo States
-  assert.ok(pageSrc.includes('data-state="pick"'), "Demo must include 'pick' state");
-  assert.ok(pageSrc.includes('data-state="scan"'), "Demo must include 'scan' state");
-  assert.ok(pageSrc.includes('data-state="match"'), "Demo must include 'match' state");
-  assert.ok(pageSrc.includes('data-state="applied"'), "Demo must include 'applied' state");
-
-  // 5. Brand Styling in CSS & Complete Scoping under .landing-wrapper
-  assert.ok(cssSrc.includes("--blue:#2563EB"), "careermonke-landing.css must define brand blue #2563EB");
-  assert.ok(cssSrc.includes("--navy:#090E34"), "careermonke-landing.css must define brand navy #090E34");
+  // 5. Brand Styling in CSS: top fold tokens (scoped .cm-top) and lower-page tokens (scoped .landing-wrapper)
+  assert.ok(cssSrc.includes("--blue: #2563eb;"), "careermonke-landing.css must define top-fold blue #2563eb");
+  assert.ok(cssSrc.includes("--navy: #0b1035;"), "careermonke-landing.css must define top-fold navy #0b1035");
+  assert.ok(lowerCssSrc.includes("--blue:#2563EB"), "careermonke-landing-lower.css must define brand blue #2563EB");
+  assert.ok(lowerCssSrc.includes("--navy:#090E34"), "careermonke-landing-lower.css must define brand navy #090E34");
 
   // Ensure zero commented WhiteHeroButton or router.push in page.tsx
   assert.ok(!pageSrc.includes("WhiteHeroButton"), "page.tsx must not contain WhiteHeroButton");
@@ -109,6 +110,7 @@ async function main() {
   ];
   for (const pat of forbiddenGlobalPatterns) {
     assert.ok(!pat.test(cssSrc), `Landing CSS must not have global unscoped selector matching ${pat}`);
+    assert.ok(!pat.test(lowerCssSrc), `Lower landing CSS must not have global unscoped selector matching ${pat}`);
   }
 
   // 6. Runtime Interactive Verification (React Strict Mode mount -> cleanup -> remount simulation)
@@ -116,38 +118,68 @@ async function main() {
   const { JSDOM } = await import("jsdom");
   const { performance } = await import("node:perf_hooks");
   const { initCareerMonkeLanding } = await import("../src/components/landing/careermonke-landing-runtime");
+  const { initCareerMonkeLandingLower } = await import("../src/components/landing/careermonke-landing-lower-runtime");
 
-  // Extract landing-wrapper markup from pageSrc
-  const wrapperMatch = pageSrc.match(/<div className="landing-wrapper">([\s\S]*?)<\/div>\s*\);\s*\}/);
-  assert.ok(wrapperMatch, "page.tsx must have .landing-wrapper root container");
+  // Extract the composite page markup (.cm-top fold + .landing-wrapper lower page) from pageSrc
+  const wrapperMatch = pageSrc.match(/return \(\s*<>([\s\S]*?)<\/>\s*\);\s*\}/);
+  assert.ok(wrapperMatch, "page.tsx must render the .cm-top fold and the .landing-wrapper lower page as siblings");
   const cleanMarkup = wrapperMatch[1]
+    .replace(/className=\{`cm-top \$\{jakarta\.variable\}`\}/, 'class="cm-top"')
+    .replace(/\sref=\{lowerRef\}/, "")
     .replace(/className=/g, "class=")
-    .replace(/tabIndex={-1}/g, 'tabindex="-1"')
-    .replace(/tabIndex={0}/g, 'tabindex="0"')
+    .replace(/tabIndex=\{(-?\d+)\}/g, 'tabindex="$1"')
     .replace(/style=\{\{[^}]*\}\}/g, "")
+    .replace(/\{" "\}/g, " ")
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  assert.ok(cleanMarkup.includes('<div class="cm-top">'), "Top fold must be wrapped in .cm-top");
+  assert.ok(cleanMarkup.includes('<div class="landing-wrapper">'), "Lower page must be wrapped in .landing-wrapper");
 
-  const dom = new JSDOM(`<!DOCTYPE html><html><body><div class="landing-wrapper">${cleanMarkup}</div></body></html>`, {
+  const dom = new JSDOM(`<!DOCTYPE html><html><body>${cleanMarkup}</body></html>`, {
     url: "http://localhost:3000",
     pretendToBeVisual: true,
   });
 
-  // Polyfill browser globals
+  // Polyfill browser globals, counting every listener / frame / timer / observer so leaks are visible
+  const live = { listeners: 0, frames: new Set<any>(), timers: new Set<any>(), observers: 0 };
   globalThis.window = dom.window as any;
   globalThis.document = dom.window.document;
   globalThis.HTMLElement = dom.window.HTMLElement;
   globalThis.HTMLCanvasElement = dom.window.HTMLCanvasElement;
   globalThis.performance = performance as any;
-  globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as any;
-  globalThis.cancelAnimationFrame = (id: any) => clearTimeout(id);
+  (globalThis as any).innerHeight = 800;
+  const ET = dom.window.EventTarget.prototype as any;
+  const add = ET.addEventListener;
+  const remove = ET.removeEventListener;
+  ET.addEventListener = function (...a: any[]) { live.listeners++; return add.apply(this, a); };
+  ET.removeEventListener = function (...a: any[]) { live.listeners--; return remove.apply(this, a); };
+  const realSetTimeout = setTimeout;
+  const realClearTimeout = clearTimeout;
+  const realSetInterval = setInterval;
+  const realClearInterval = clearInterval;
+  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    const id = realSetTimeout(() => { live.frames.delete(id); cb(performance.now()); }, 16);
+    live.frames.add(id);
+    return id;
+  }) as any;
+  globalThis.cancelAnimationFrame = ((id: any) => { live.frames.delete(id); realClearTimeout(id); }) as any;
+  (globalThis as any).setTimeout = (fn: () => void, ms?: number) => {
+    const id = realSetTimeout(() => { live.timers.delete(id); fn(); }, ms);
+    live.timers.add(id);
+    return id;
+  };
+  (globalThis as any).clearTimeout = (id: any) => { live.timers.delete(id); realClearTimeout(id); };
+  (globalThis as any).setInterval = (fn: () => void, ms?: number) => { const id = realSetInterval(fn, ms); live.timers.add(id); return id; };
+  (globalThis as any).clearInterval = (id: any) => { live.timers.delete(id); realClearInterval(id); };
   (dom.window as any).requestAnimationFrame = globalThis.requestAnimationFrame;
   (dom.window as any).cancelAnimationFrame = globalThis.cancelAnimationFrame;
-  (dom.window as any).matchMedia = () => ({ matches: true, addListener: () => {}, removeListener: () => {} });
+  let reduceMotion = false;
+  (dom.window as any).matchMedia = () => ({ matches: reduceMotion, addListener: () => {}, removeListener: () => {} });
   globalThis.matchMedia = (dom.window as any).matchMedia;
-  class MockIntersectionObserver {
-    observe() {}
+  class MockObserver {
+    constructor(_cb?: unknown) {}
+    observe() { live.observers++; }
     unobserve() {}
-    disconnect() {}
+    disconnect() { live.observers = Math.max(0, live.observers - 1); }
   }
   (dom.window.HTMLCanvasElement.prototype as any).getContext = () => ({
     clearRect: () => {},
@@ -161,86 +193,67 @@ async function main() {
     measureText: () => ({ width: 50 }),
     setTransform: () => {},
   });
-  globalThis.IntersectionObserver = MockIntersectionObserver as any;
-  (dom.window as any).IntersectionObserver = MockIntersectionObserver as any;
+  globalThis.IntersectionObserver = MockObserver as any;
+  (dom.window as any).IntersectionObserver = MockObserver as any;
+  globalThis.ResizeObserver = MockObserver as any;
+  (dom.window as any).ResizeObserver = MockObserver as any;
   (dom.window.Element.prototype as any).scrollIntoView = () => {};
 
-  // Mount 1
-  const cleanup1 = initCareerMonkeLanding();
-  assert.strictEqual(typeof cleanup1, "function", "initCareerMonkeLanding must return a cleanup function");
+  const lowerRoot = document.querySelector<HTMLElement>(".landing-wrapper")!;
+  const mount = () => {
+    const stopTop = initCareerMonkeLanding();
+    const stopLower = initCareerMonkeLandingLower(lowerRoot);
+    assert.strictEqual(typeof stopTop, "function", "initCareerMonkeLanding must return a cleanup function");
+    assert.strictEqual(typeof stopLower, "function", "initCareerMonkeLandingLower must return a cleanup function");
+    return () => { stopTop(); stopLower(); };
+  };
+  const assertNothingLive = (when: string) => {
+    assert.strictEqual(live.listeners, 0, `${when}: every listener must be removed (left ${live.listeners})`);
+    assert.strictEqual(live.frames.size, 0, `${when}: every animation frame must be cancelled (left ${live.frames.size})`);
+    assert.strictEqual(live.timers.size, 0, `${when}: every timer must be cleared (left ${live.timers.size})`);
+    assert.strictEqual(live.observers, 0, `${when}: every observer must be disconnected (left ${live.observers})`);
+  };
 
-  // Cleanup 1 (Unmount in Strict Mode)
+  // Mount 1 (full motion) -> Cleanup 1 (Unmount in Strict Mode)
+  const cleanup1 = mount();
+  assert.ok(live.listeners > 0 && live.frames.size > 0 && live.observers > 0, "Mount must start listeners, frames and observers");
+  assert.ok(
+    document.querySelector<HTMLElement>(".cm-top .peek")!.style.getPropertyValue("--peek-h"),
+    "Top runtime must size the half-visible second card"
+  );
+  await new Promise((r) => realSetTimeout(r, 50));
   cleanup1();
+  assertNothingLive("after Strict Mode unmount");
 
   // Mount 2 (Remount in Strict Mode)
-  const cleanup2 = initCareerMonkeLanding();
-  assert.strictEqual(typeof cleanup2, "function", "remount must return a cleanup function");
+  const cleanup2 = mount();
 
-  // Verify Interactive Demo Flow:
-  const backendChip = document.querySelector<HTMLButtonElement>('.chip[data-field="backend"]');
-  assert.ok(backendChip, "Backend job chip must exist");
+  // Sticky View Jobs bar: hidden above the comparison, shown once it is reached, hidden again on scroll back
+  const bar = lowerRoot.querySelector<HTMLElement>(".sb")!;
+  const cmpSection = lowerRoot.querySelector("#vs")!.closest("section")!;
+  let cmpTop = 2000;
+  (cmpSection as any).getBoundingClientRect = () => ({ top: cmpTop });
+  dom.window.dispatchEvent(new dom.window.Event("scroll"));
+  assert.ok(!bar.classList.contains("on"), "Sticky bar must stay hidden above the comparison section");
+  cmpTop = 300;
+  dom.window.dispatchEvent(new dom.window.Event("scroll"));
+  assert.ok(bar.classList.contains("on"), "Sticky bar must appear once the comparison section is reached");
+  cmpTop = 2000;
+  dom.window.dispatchEvent(new dom.window.Event("scroll"));
+  assert.ok(!bar.classList.contains("on"), "Sticky bar must hide again when scrolling back above the comparison");
 
-  // Click backend chip
-  backendChip.click();
-  // Allow microtasks/macrotasks to complete
-  await new Promise((r) => setTimeout(r, 50));
-
-  const actBtn = document.getElementById("act") as HTMLButtonElement | null;
-  assert.ok(actBtn, "#act button must exist");
-  assert.strictEqual(actBtn.dataset.next, "tailor", "After pick & match, #act must have data-next='tailor'");
-
-  const matchState = document.querySelector<HTMLElement>('.state[data-state="match"]');
-  const appliedState = document.querySelector<HTMLElement>('.state[data-state="applied"]');
-  assert.ok(matchState && !matchState.hidden, "Match state must be visible");
-  assert.ok(appliedState && appliedState.hidden, "Applied state must remain hidden before click");
-
-  // STRICT MODE VERIFICATION:
-  // Single click on #act must advance EXACTLY one step to 'apply' (tailor), NOT skip straight to 'applied'.
-  actBtn.click();
-  await new Promise((r) => setTimeout(r, 50));
-
-  assert.strictEqual(
-    actBtn.dataset.next,
-    "apply",
-    "First click on #act must advance to data-next='apply' (step 2 -> step 3)"
-  );
-  assert.ok(
-    appliedState.hidden,
-    "Strict Mode safety check: single click on #act must NOT skip to applied state"
-  );
-
-  // Second click on #act advances to 'applied' (step 3 -> step 4)
-  actBtn.click();
-  await new Promise((r) => setTimeout(r, 50));
-
-  assert.ok(
-    !appliedState.hidden,
-    "Second click on #act must advance to applied state"
-  );
-  assert.ok(
-    matchState.hidden,
-    "Match state must be hidden once applied"
-  );
-
-  // Click #again: resets back to 'pick'
-  const againBtn = document.getElementById("again") as HTMLButtonElement | null;
-  assert.ok(againBtn, "#again button must exist in applied state");
-  againBtn.click();
-  await new Promise((r) => setTimeout(r, 50));
-
-  const pickState = document.querySelector<HTMLElement>('.state[data-state="pick"]');
-  assert.ok(pickState && !pickState.hidden, "#again button must reset demo back to pick state");
-
-  // Click #try-demo
-  const tryDemoBtn = document.getElementById("try-demo") as HTMLElement | null;
-  assert.ok(tryDemoBtn, "#try-demo button must exist");
-  tryDemoBtn.click();
-  await new Promise((r) => setTimeout(r, 50));
-
-  // Final cleanup must execute cleanly
+  // Final cleanup must execute cleanly, and Back (unmount) leaves nothing running
   cleanup2();
+  assertNothingLive("after final unmount");
 
-  console.log("  [PASS-LOCAL] All top hero and interactive demo assertions passed cleanly.");
+  // Reduced motion: no card timers are scheduled, and cleanup is still complete
+  reduceMotion = true;
+  const cleanup3 = mount();
+  assert.strictEqual(live.timers.size, 0, "Reduced motion must not schedule card timers");
+  cleanup3();
+  assertNothingLive("after reduced-motion unmount");
+
+  console.log("  [PASS-LOCAL] All top fold, lower page runtime and cleanup assertions passed cleanly.");
 }
 
 main().catch((err) => {

@@ -293,6 +293,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-reconciliation-workflow-wiring.ts", command: "npx tsx scripts/test-reconciliation-workflow-wiring.ts", classification: "offline" },
   { name: "scripts/test-ingest-board-scale.ts", command: "npx tsx scripts/test-ingest-board-scale.ts", classification: "offline" },
   { name: "scripts/test-landing-parity.ts", command: "npx tsx scripts/test-landing-parity.ts", classification: "offline" },
+  { name: "tests/landing-ssampe-parity.ts", command: "npx tsx tests/landing-ssampe-parity.ts", classification: "offline" },
   { name: "scripts/test-custom-domain-types.ts", command: "npx tsx scripts/test-custom-domain-types.ts", classification: "offline" },
   { name: "scripts/test-token-generation-guard.ts", command: "npx tsx scripts/test-token-generation-guard.ts", classification: "offline" },
   { name: "scripts/test-token-budget.ts", command: "npx tsx scripts/test-token-budget.ts", classification: "offline" },
