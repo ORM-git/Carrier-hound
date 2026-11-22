@@ -23,6 +23,7 @@ from .fetchers import (
     fetch_microsoft_jobs,
     fetch_smartrecruiters,
     fetch_workday_cxs,
+    enrich_greenhouse_pay_transparency,
 )
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
@@ -68,6 +69,45 @@ class WriteAuthorizationError(RuntimeError):
     """Write mode was requested without valid Supabase credentials. Never carries the credential values."""
 
 
+def validate_row_cap(*, dry_run: bool, max_rows: int | None, no_expire: bool = True) -> None:
+    if max_rows is not None and (isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0):
+        raise WriteAuthorizationError("ingestion refused: --max-rows must be a positive integer")
+    if not dry_run and max_rows is None:
+        raise WriteAuthorizationError("write mode refused: an explicit positive --max-rows cap is required")
+    if not no_expire:
+        raise WriteAuthorizationError("ingestion refused: --no-expire is mandatory; expiry cannot be enabled")
+
+
+def select_unique_jobs(jobs: list[dict[str, Any]], max_rows: int | None) -> list[dict[str, Any]]:
+    """Deduplicate and cap canonical source identities in stable key order."""
+    selected_by_identity: dict[tuple[str, str], tuple[tuple[int, str], dict[str, Any]]] = {}
+    for job in jobs:
+        source_job_id = str(job.get("source_job_id") or "").strip()
+        source_key = str(job.get("source_id") or job.get("source_type") or "").strip()
+        if not source_job_id or not source_key:
+            continue
+        identity = (source_key, source_job_id)
+        rank = (
+            int(job.get("source_priority", 2)),
+            json.dumps(job, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":")),
+        )
+        current = selected_by_identity.get(identity)
+        if current is None or rank < current[0]:
+            selected_by_identity[identity] = (rank, dict(job))
+    ordered = [selected_by_identity[key][1] for key in sorted(selected_by_identity)]
+    return ordered if max_rows is None else ordered[:max_rows]
+
+
+def ingestion_has_errors(report: dict[str, Any]) -> bool:
+    db = report.get("db") if isinstance(report.get("db"), dict) else {}
+    return bool(
+        report.get("errors")
+        or report.get("failed_sources")
+        or db.get("persistence_failed")
+        or db.get("write_errors")
+    )
+
+
 def resolve_write_credentials() -> tuple[str, str]:
     """Fail-closed credential check for write mode, run before any network call."""
     url = (os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL") or "").strip()
@@ -85,7 +125,9 @@ def add_write_mode_arguments(parser: argparse.ArgumentParser) -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="Fetch and normalize only; never writes (the default)")
     mode.add_argument(WRITE_FLAG, dest="write_to_database", action="store_true",
-                      help="Explicitly authorize company/job writes and expiry (requires valid Supabase service credentials)")
+                      help="Explicitly authorize capped company/job writes (requires a positive --max-rows cap and valid Supabase service credentials)")
+    parser.add_argument("--max-rows", type=int, default=None, help="Hard cap on unique canonical job identities selected globally")
+    parser.add_argument("--no-expire", action="store_true", default=True, help="Keep expiry disabled (the default and only supported mode)")
 
 
 def dry_run_from_args(args: argparse.Namespace) -> bool:
@@ -210,6 +252,8 @@ def partition_set_diff(
 
         ex_id = str(existing["id"])
         job["_existing_id"] = ex_id
+        if not job.get("posted_at") and existing.get("posted_at"):
+            job["posted_at"] = existing["posted_at"]
         ex_priority = int(existing.get("source_priority") or 2)
         in_priority = int(job.get("source_priority") or 2)
 
@@ -280,10 +324,16 @@ class SupabaseSetDiffWriter:
                 for row in get_resp.json():
                     if isinstance(row, dict) and "slug" in row:
                         existing_map[row["slug"]] = row
+            else:
+                self.failed_writes += 1
+                self.persistence_failed = True
+                self.write_errors.append(f"Companies lookup error {get_resp.status_code if get_resp.status_code != 200 else 'invalid response'}")
+                return {}
         except Exception as exc:
             self.write_errors.append(f"Companies lookup exception: {redact_sensitive_params(str(exc))}")
+            self.failed_writes += 1
             self.persistence_failed = True
-            existing_map = {}
+            return {}
 
         to_insert: list[dict[str, Any]] = []
         company_id_map: dict[str, str] = {slug: row["id"] for slug, row in existing_map.items() if "id" in row}
@@ -343,11 +393,18 @@ class SupabaseSetDiffWriter:
                     self.persistence_failed = True
                     self.write_errors.append(f"Company insert error {ins_resp.status_code}: {ins_resp.text}")
                 else:
-                    data = ins_resp.json()
-                    if isinstance(data, list):
-                        for row in data:
-                            if isinstance(row, dict) and "slug" in row and "id" in row:
-                                company_id_map[row["slug"]] = row["id"]
+                    try:
+                        data = ins_resp.json()
+                    except ValueError:
+                        data = None
+                    confirmed = [row for row in data if isinstance(row, dict) and row.get("slug") and row.get("id")] if isinstance(data, list) else []
+                    if len(confirmed) != len(to_insert):
+                        self.failed_writes += len(to_insert) - len(confirmed) or 1
+                        self.persistence_failed = True
+                        self.write_errors.append("Company insert response did not confirm every row")
+                    else:
+                        for row in confirmed:
+                            company_id_map[row["slug"]] = row["id"]
             except Exception as exc:
                 self.failed_writes += len(to_insert)
                 self.persistence_failed = True
@@ -385,6 +442,43 @@ class SupabaseSetDiffWriter:
             "last_seen_at", "is_active", "status",
         }
 
+        # Complete every identity lookup before the first job write. A later batch lookup
+        # failure must not leave an earlier batch partially committed by this invocation.
+        existing_by_start: dict[int, list[dict[str, Any]]] = {}
+        for i in range(0, len(jobs), batch_size):
+            chunk = jobs[i : i + batch_size]
+            sids = [str(j["source_job_id"]) for j in chunk if j.get("source_job_id")]
+            if not sids:
+                existing_by_start[i] = []
+                continue
+            quoted_sids = ",".join(f'"{sid}"' for sid in sids)
+            q_url = (
+                f"{self.base_url}/jobs"
+                f"?select=id,company,company_id,title,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
+                f"&or=(source_job_id.in.({quoted_sids}))"
+            )
+            try:
+                get_resp = await client.get(q_url, headers=self.headers)
+                rows = get_resp.json() if get_resp.status_code == 200 else None
+                if not isinstance(rows, list):
+                    self.failed_writes += 1
+                    self.persistence_failed = True
+                    self.write_errors.append(f"Jobs lookup error {get_resp.status_code if get_resp.status_code != 200 else 'invalid response'}")
+                    break
+                existing_by_start[i] = rows
+            except Exception as exc:
+                self.failed_writes += 1
+                self.persistence_failed = True
+                self.write_errors.append(f"Jobs lookup exception: {redact_sensitive_params(str(exc))}")
+                break
+        if self.persistence_failed:
+            stats.update({
+                "failed_writes": self.failed_writes,
+                "persistence_failed": True,
+                "write_errors": self.write_errors,
+            })
+            return stats
+
         for i in range(0, len(jobs), batch_size):
             chunk = jobs[i : i + batch_size]
             for j in chunk:
@@ -392,33 +486,7 @@ class SupabaseSetDiffWriter:
                 if slug and slug in company_id_map:
                     j["company_id"] = company_id_map[slug]
 
-            # Look up existing rows by source_job_id (identity only; dedupe_hash is advisory)
-            sids = [j["source_job_id"] for j in chunk if j.get("source_job_id")]
-            or_parts: list[str] = []
-            if sids:
-                quoted_sids = ",".join(f'"{s}"' for s in sids)
-                or_parts.append(f"source_job_id.in.({quoted_sids})")
-
-            existing_rows: list[dict[str, Any]] = []
-            if or_parts:
-                q_url = (
-                    f"{self.base_url}/jobs"
-                    f"?select=id,company,company_id,title,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
-                    f"&or=({','.join(or_parts)})"
-                )
-                try:
-                    get_resp = await client.get(q_url, headers=self.headers)
-                    if get_resp.status_code == 200 and isinstance(get_resp.json(), list):
-                        existing_rows = get_resp.json()
-                    elif get_resp.status_code >= 400:
-                        self.failed_writes += 1
-                        self.persistence_failed = True
-                        self.write_errors.append(f"Jobs lookup error {get_resp.status_code}")
-                except Exception as exc:
-                    self.failed_writes += 1
-                    self.persistence_failed = True
-                    self.write_errors.append(f"Jobs lookup exception: {redact_sensitive_params(str(exc))}")
-
+            existing_rows = existing_by_start[i]
             to_insert, to_update, unchanged_ids = partition_set_diff(chunk, existing_rows)
 
             # Unchanged jobs must still refresh last_seen_at
@@ -430,17 +498,22 @@ class SupabaseSetDiffWriter:
                     try:
                         touch_resp = await client.patch(
                             f"{self.base_url}/jobs?id=in.({quoted_u})",
-                            headers={**self.headers, "Prefer": "return=minimal"},
+                            headers={**self.headers, "Prefer": "return=representation"},
                             json={"last_seen_at": now_iso},
                         )
-                        if touch_resp.status_code >= 400:
+                        touch_rows = touch_resp.json() if touch_resp.status_code < 300 and isinstance(touch_resp.json(), list) else []
+                        confirmed_ids = [row["id"] for row in touch_rows if isinstance(row, dict) and row.get("id")]
+                        if touch_resp.status_code >= 300 or len(confirmed_ids) != len(u_chunk):
                             self.failed_writes += len(u_chunk)
                             self.persistence_failed = True
-                            self.write_errors.append(f"Touch last_seen_at error {touch_resp.status_code}")
+                            self.write_errors.append(
+                                f"Touch last_seen_at error {touch_resp.status_code}" if touch_resp.status_code >= 300
+                                else "Touch last_seen_at response did not confirm every row"
+                            )
                         else:
-                            stats["skipped_unchanged"] += len(u_chunk)
-                            stats["persisted_ids"].extend(u_chunk)
-                            u_set = set(u_chunk)
+                            stats["skipped_unchanged"] += len(confirmed_ids)
+                            stats["persisted_ids"].extend(confirmed_ids)
+                            u_set = set(confirmed_ids)
                             for j in chunk:
                                 if j.get("_existing_id") in u_set:
                                     sid = str(j.get("source_id") or "")
@@ -452,6 +525,9 @@ class SupabaseSetDiffWriter:
                         self.persistence_failed = True
                         self.write_errors.append(f"Touch last_seen_at exception: {redact_sensitive_params(str(exc))}")
 
+            if self.persistence_failed:
+                break
+
             if to_insert:
                 clean_insert = [{k: v for k, v in row.items() if k in db_columns} for row in to_insert]
                 try:
@@ -461,16 +537,23 @@ class SupabaseSetDiffWriter:
                         json=clean_insert,
                     )
                     if ins_resp.status_code < 300:
-                        inserted_rows = ins_resp.json() if isinstance(ins_resp.json(), list) else []
-                        stats["inserted"] += len(clean_insert)
-                        for r in inserted_rows:
-                            if isinstance(r, dict) and "id" in r:
-                                stats["persisted_ids"].append(r["id"])
-                        for row in to_insert:
-                            sid = str(row.get("source_id") or "")
-                            sjid = str(row.get("source_job_id") or "")
-                            if sid and sjid:
-                                persisted_source_keys.add((sid, sjid))
+                        try:
+                            inserted_rows = ins_resp.json()
+                        except ValueError:
+                            inserted_rows = None
+                        confirmed_rows = [row for row in inserted_rows if isinstance(row, dict) and row.get("id")] if isinstance(inserted_rows, list) else []
+                        stats["inserted"] += len(confirmed_rows)
+                        stats["persisted_ids"].extend(row["id"] for row in confirmed_rows)
+                        if len(confirmed_rows) == len(clean_insert):
+                            for row in to_insert:
+                                sid = str(row.get("source_id") or "")
+                                sjid = str(row.get("source_job_id") or "")
+                                if sid and sjid:
+                                    persisted_source_keys.add((sid, sjid))
+                        else:
+                            self.failed_writes += len(clean_insert) - len(confirmed_rows) or 1
+                            self.persistence_failed = True
+                            self.write_errors.append("Job insert response did not confirm every row")
                     else:
                         self.failed_writes += len(clean_insert)
                         self.persistence_failed = True
@@ -480,21 +563,34 @@ class SupabaseSetDiffWriter:
                     self.persistence_failed = True
                     self.write_errors.append(f"Job insert exception: {redact_sensitive_params(str(exc))}")
 
+            if self.persistence_failed:
+                break
+
             for ex_id, row in to_update:
                 clean_upd = {k: v for k, v in row.items() if k in db_columns}
                 try:
                     upd_resp = await client.patch(
                         f"{self.base_url}/jobs?id=eq.{ex_id}",
-                        headers={**self.headers, "Prefer": "return=minimal"},
+                        headers={**self.headers, "Prefer": "return=representation"},
                         json=clean_upd,
                     )
                     if upd_resp.status_code < 300:
-                        stats["updated"] += 1
-                        stats["persisted_ids"].append(ex_id)
-                        sid = str(row.get("source_id") or "")
-                        sjid = str(row.get("source_job_id") or "")
-                        if sid and sjid:
-                            persisted_source_keys.add((sid, sjid))
+                        try:
+                            updated_rows = upd_resp.json()
+                        except ValueError:
+                            updated_rows = None
+                        confirmed_ids = [item["id"] for item in updated_rows if isinstance(item, dict) and item.get("id")] if isinstance(updated_rows, list) else []
+                        if ex_id not in confirmed_ids:
+                            self.failed_writes += 1
+                            self.persistence_failed = True
+                            self.write_errors.append(f"Job update response did not confirm row {ex_id}")
+                        else:
+                            stats["updated"] += 1
+                            stats["persisted_ids"].append(ex_id)
+                            sid = str(row.get("source_id") or "")
+                            sjid = str(row.get("source_job_id") or "")
+                            if sid and sjid:
+                                persisted_source_keys.add((sid, sjid))
                     else:
                         self.failed_writes += 1
                         self.persistence_failed = True
@@ -503,6 +599,11 @@ class SupabaseSetDiffWriter:
                     self.failed_writes += 1
                     self.persistence_failed = True
                     self.write_errors.append(f"Job update exception on {ex_id}: {redact_sensitive_params(str(exc))}")
+
+                if self.persistence_failed:
+                    break
+            if self.persistence_failed:
+                break
 
         stats["persisted_source_keys"] = [list(k) for k in persisted_source_keys]
         stats["failed_writes"] = self.failed_writes
@@ -532,10 +633,13 @@ async def run_ingestion(
     *,
     seeds_path: str | Path = DEFAULT_SEEDS_PATH,
     dry_run: bool = True,
+    max_rows: int | None = None,
+    no_expire: bool = True,
     max_seeds_per_layer: int | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Runs Layer 1 (Public ATS) and Layer 2 (Workday CXS, Amazon, Microsoft) ingestion."""
+    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     config = load_company_seeds(seeds_path)
@@ -579,7 +683,23 @@ async def run_ingestion(
             elif isinstance(res, list):
                 all_jobs.extend(res)
 
+        fetched_count = len(all_jobs)
+        unique_jobs = select_unique_jobs(all_jobs, None)
+        all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
+        for seed in layer1_seeds:
+            if (seed.get("ats") or "").lower() != "greenhouse":
+                continue
+            greenhouse_seed = {**seed, "token": seed.get("token") or seed.get("slug")}
+            board_source_id = f"greenhouse:{greenhouse_seed['token']}"
+            try:
+                await enrich_greenhouse_pay_transparency(
+                    client, limiter, greenhouse_seed,
+                    [job for job in all_jobs if job.get("source_id") == board_source_id],
+                )
+            except Exception as exc:
+                errors.append(redact_sensitive_params(str(exc)))
         to_insert, to_update, unchanged = partition_set_diff(all_jobs, [])
+        projected_counts = {"inserted": len(to_insert), "updated": len(to_update), "unchanged": len(unchanged)}
         db_stats: dict[str, Any] = {
             "inserted": len(to_insert),
             "updated": len(to_update),
@@ -591,13 +711,34 @@ async def run_ingestion(
             "persisted_source_keys": [],
         }
 
-        if credentials is not None:
+        if credentials is not None and errors:
+            db_stats.update({"inserted": 0, "updated": 0, "skipped_unchanged": 0})
+        elif credentials is not None:
             writer = SupabaseSetDiffWriter(*credentials)
             company_map = await writer.sync_companies(client, all_jobs)
-            db_stats = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
+            if writer.persistence_failed:
+                db_stats.update({
+                    "inserted": 0,
+                    "updated": 0,
+                    "skipped_unchanged": 0,
+                    "failed_writes": writer.failed_writes,
+                    "persistence_failed": True,
+                    "write_errors": list(writer.write_errors),
+                })
+            else:
+                db_stats = await writer.sync_jobs_set_diff(client, all_jobs, company_map)
 
     return {
-        "fetched": len(all_jobs),
+        "dry_run": dry_run,
+        "fetched": fetched_count,
+        "selected": len(all_jobs),
+        "skipped_by_cap": max(0, len(unique_jobs) - len(all_jobs)),
+        "projected_counts": projected_counts,
+        "persisted_counts": None if dry_run else {
+            "inserted": db_stats["inserted"],
+            "updated": db_stats["updated"],
+            "unchanged": db_stats["skipped_unchanged"],
+        },
         "unique_after_dedupe": db_stats["inserted"] + db_stats["updated"] + db_stats["skipped_unchanged"],
         "db": db_stats,
         "errors": errors,
@@ -612,11 +753,19 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        summary = asyncio.run(run_ingestion(dry_run=dry_run_from_args(args), max_seeds_per_layer=args.limit))
+        dry_run = dry_run_from_args(args)
+        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
+        summary = asyncio.run(run_ingestion(
+            dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            max_seeds_per_layer=args.limit,
+        ))
     except WriteAuthorizationError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)
     print(json.dumps(summary, indent=2))
+    if ingestion_has_errors(summary):
+        print("ingestion failed: source or persistence errors were reported", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

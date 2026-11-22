@@ -22,6 +22,9 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import asyncio
+
+import httpx
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -35,6 +38,9 @@ from scripts.scraper.enrichment import (
     compute_dedupe_hash,
     compute_similarity_hash_v2,
 )
+from scripts.scraper.engine import partition_set_diff
+from scripts.scraper.fetchers import fetch_greenhouse
+from scripts.scraper.rate_limiter import PerHostRateLimiter
 
 FIXTURES_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "identity_golden_cases.json"
 
@@ -163,6 +169,57 @@ def test_build_scoped_job_identity_validations():
 
     with pytest.raises(ValueError, match="provider_job_id must be a non-empty string"):
         build_scoped_job_identity("greenhouse:stripe", "")
+
+
+def test_greenhouse_python_payload_transitions_ts_shaped_row_without_inserting():
+    fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "python-greenhouse-canary.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8-sig"))
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=fixture)
+
+    async def fetch():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_greenhouse(
+                client, PerHostRateLimiter(default_rps=100),
+                {"name": "Stripe", "slug": "stripe", "token": "stripe", "canonical_domain": "stripe.com"},
+            )
+
+    incoming = next(job for job in asyncio.run(fetch()) if job["source_job_id"] == "stripe-8172510")
+    ts_existing_row = {
+        "id": "existing-ts-row-8172510",
+        "source": "greenhouse",
+        "source_type": "ats",
+        "source_id": "greenhouse:stripe",
+        "source_job_id": "stripe-8172510",
+        "company": "Stripe",
+        "company_slug": "stripe",
+        "title": fixture["jobs"][0]["title"],
+        "apply_url": fixture["jobs"][0]["absolute_url"],
+        "source_url": "https://boards.greenhouse.io/stripe",
+    }
+
+    inserts, updates, unchanged = partition_set_diff([incoming], [ts_existing_row])
+    assert inserts == []
+    assert len(updates) + len(unchanged) == 1
+    if updates:
+        assert updates[0][0] == "existing-ts-row-8172510"
+        assert updates[0][1]["apply_url"] == ts_existing_row["apply_url"]
+    else:
+        assert unchanged == ["existing-ts-row-8172510"]
+
+
+def test_greenhouse_authoritative_identity_keeps_boards_and_requisitions_distinct():
+    common = {"source_type": "greenhouse", "company": "Example", "title": "Engineer"}
+    jobs = [
+        {**common, "source_id": "greenhouse:board-a", "source_job_id": "board-a-123"},
+        {**common, "source_id": "greenhouse:board-b", "source_job_id": "board-b-123"},
+        {**common, "source_id": "greenhouse:board-a", "source_job_id": "board-a-456"},
+    ]
+    inserts, updates, unchanged = partition_set_diff(jobs, [])
+    assert len(inserts) == 3
+    assert updates == []
+    assert unchanged == []
 
 
 DEDUPE_VECTORS_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "job_dedupe_test_vectors.json"

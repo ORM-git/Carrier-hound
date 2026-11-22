@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
+import math
+import re
 from typing import Any
 
 import httpx
@@ -17,7 +20,7 @@ from .enrichment import (
     resolve_logo_url,
     strip_html,
 )
-from .rate_limiter import PerHostRateLimiter, request_with_backoff
+from .rate_limiter import PerHostRateLimiter, redact_sensitive_params, request_with_backoff
 
 COUNTRY_NAMES = {
     "US": "United States",
@@ -35,6 +38,7 @@ COUNTRY_NAMES = {
     "PL": "Poland",
     "ES": "Spain",
     "IL": "Israel",
+    "MX": "Mexico",
 }
 
 
@@ -42,27 +46,122 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_iso_date(raw: Any) -> str:
-    if not raw:
-        return _iso_now()
+def _normalize_iso_date(raw: Any, *, missing_as_now: bool = True) -> str | None:
+    if raw is None or raw == "" or isinstance(raw, bool):
+        return _iso_now() if missing_as_now else None
     if isinstance(raw, (int, float)):
-        ts = raw / 1000.0 if raw > 1e11 else float(raw)
+        if not math.isfinite(float(raw)):
+            return _iso_now() if missing_as_now else None
+        ts = raw / 1000.0 if abs(raw) > 1e11 else float(raw)
         try:
             return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-        except Exception:
-            return _iso_now()
+        except (OverflowError, OSError, ValueError):
+            return _iso_now() if missing_as_now else None
     if isinstance(raw, str):
         s = raw.strip()
         if not s:
-            return _iso_now()
+            return _iso_now() if missing_as_now else None
         try:
             dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt.isoformat()
-        except Exception:
-            return _iso_now()
-    return _iso_now()
+        except ValueError:
+            return _iso_now() if missing_as_now else None
+    return _iso_now() if missing_as_now else None
+
+
+def _greenhouse_country_code(item: dict[str, Any], location: str) -> str | None:
+    """Use explicit Greenhouse country metadata or unambiguous country tokens only."""
+    metadata_code = None
+    metadata = item.get("metadata")
+    if isinstance(metadata, list):
+        for entry in metadata:
+            if not isinstance(entry, dict) or not re.search(r"\bcountry\b", str(entry.get("name") or ""), re.I):
+                continue
+            value = entry.get("value")
+            if isinstance(value, str):
+                code = _explicit_country_code(value, allow_ambiguous_region_code=True)
+                if code:
+                    metadata_code = code
+                    break
+    location_code = _explicit_country_code(location)
+    if metadata_code and location_code and metadata_code != location_code:
+        return None
+    return metadata_code or location_code
+
+
+def _explicit_country_code(value: str, *, allow_ambiguous_region_code: bool = False) -> str | None:
+    text = value.strip().lower()
+    codes = {
+        "us": "US", "usa": "US", "u.s.": "US", "u.s.a.": "US", "united states": "US",
+        "mx": "MX", "mexico": "MX", "ca": "CA", "canada": "CA", "in": "IN", "india": "IN",
+        "gb": "GB", "uk": "GB", "united kingdom": "GB", "de": "DE", "germany": "DE",
+        "fr": "FR", "france": "FR", "ie": "IE", "ireland": "IE", "es": "ES", "spain": "ES",
+        "br": "BR", "brazil": "BR", "au": "AU", "australia": "AU", "jp": "JP", "japan": "JP",
+        "nl": "NL", "netherlands": "NL", "sg": "SG", "singapore": "SG", "pl": "PL", "poland": "PL",
+        "il": "IL", "israel": "IL",
+    }
+    if text in codes:
+        if text in {"ca", "in"} and not allow_ambiguous_region_code:
+            return None
+        return codes[text]
+    if re.search(r"\bmexico city\b", text):
+        return "MX"
+    for token, code in codes.items():
+        if len(token) > 2 and re.search(rf"\b{re.escape(token)}\b", text):
+            return code
+    # CA and IN are also common region/preposition tokens, so only accept them as exact
+    # metadata values above; never infer Canada from "San Francisco, CA" or India from "in US".
+    match = re.search(r"\b(us|usa|mx|gb|uk|de|fr|ie|es|br|au|jp|nl|sg|pl|il)\b", text)
+    return codes[match.group(1)] if match else None
+
+
+def _greenhouse_remote_eligibility(location: str, is_remote: bool, country_code: str | None) -> str:
+    if not is_remote:
+        return "unknown"
+    if re.search(r"\b(anywhere|worldwide|global|all regions|work from anywhere)\b", location, re.I):
+        return "worldwide"
+    return "country_restricted" if country_code else "unknown"
+
+
+def _positive_number(raw: Any) -> float | None:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)) or raw <= 0:
+        return None
+    return float(raw)
+
+
+def _greenhouse_salary(item: dict[str, Any]) -> dict[str, Any]:
+    ranges = item.get("pay_input_ranges")
+    chosen = next((
+        row for row in ranges if isinstance(row, dict) and (
+            _positive_number(row.get("min_cents")) or _positive_number(row.get("max_cents"))
+        )
+    ), None) if isinstance(ranges, list) else None
+    if not chosen:
+        return {"salary_text": None, "salary_min": None, "salary_max": None, "currency": None, "salary_period": None}
+
+    raw_min = _positive_number(chosen.get("min_cents"))
+    raw_max = _positive_number(chosen.get("max_cents"))
+    salary_min = math.floor(raw_min / 100 + 0.5) if raw_min is not None else None
+    salary_max = math.floor(raw_max / 100 + 0.5) if raw_max is not None else None
+    if salary_min is not None and salary_max is not None and salary_min > salary_max:
+        salary_min, salary_max = salary_max, salary_min
+
+    currency_raw = chosen.get("currency_type")
+    currency = currency_raw.strip().upper() if isinstance(currency_raw, str) and currency_raw.strip() else None
+    context = f"{chosen.get('title') or ''} {chosen.get('blurb') or ''}"
+    period = "hourly" if currency == "USD" and re.search(r"\b(hour|hourly|/hr)\b", context, re.I) else None
+    format_currency = currency or "USD"
+    prefix = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "CAD": "CA$", "AUD": "AU$", "SGD": "SG$", "CHF": "CHF "}.get(format_currency, f"{format_currency} ")
+    suffix = " /hr" if period == "hourly" else " /yr"
+    number = lambda amount: f"{amount:,}"
+    if salary_min is not None and salary_max is not None and salary_min != salary_max:
+        salary_text = f"{prefix}{number(salary_min)} - {prefix}{number(salary_max)}{suffix}"
+    else:
+        amount = salary_min if salary_min is not None else salary_max
+        salary_text = f"{prefix}{number(amount or 0)}{suffix}"
+    return {"salary_text": salary_text, "salary_min": salary_min, "salary_max": salary_max, "currency": currency, "salary_period": period}
 
 
 def _detect_remote(title: str, location: str, explicit_remote: bool | None = None) -> bool:
@@ -97,9 +196,15 @@ def build_normalized_job(
     salary_text: str | None = None,
     salary_min: float | None = None,
     salary_max: float | None = None,
-    currency: str = "USD",
-    salary_period: str = "year",
+    currency: str | None = "USD",
+    salary_period: str | None = "year",
     country_code_hint: str | None = None,
+    infer_country_from_location: bool = True,
+    country_unknown_as_location: bool = True,
+    posted_at_missing_as_now: bool = True,
+    description_limit: int | None = 4000,
+    description_fallback: bool = True,
+    remote_eligibility: str | None = None,
     source_layer: str = "layer1",
     source_priority: int = 1,
 ) -> dict[str, Any]:
@@ -117,10 +222,15 @@ def build_normalized_job(
     clean_title = (title or "Untitled Position").strip()
     clean_location = (location or "Remote").strip() or "Remote"
     is_remote = _detect_remote(clean_title, clean_location, explicit_remote)
-    country_code = (country_code_hint or detect_country_code(clean_location) or "").upper() or None
-    country_name = COUNTRY_NAMES.get(country_code, clean_location if is_remote else (country_code or ""))
+    inferred_country_code = detect_country_code(clean_location) if infer_country_from_location else None
+    country_code = (country_code_hint or inferred_country_code or "").upper() or None
+    country_name = COUNTRY_NAMES.get(country_code, "")
+    if country_unknown_as_location and not country_code and is_remote:
+        country_name = clean_location
 
-    clean_desc = strip_html(description_raw)[:4000] if description_raw else f"{clean_title} at {company_name}"
+    clean_desc = strip_html(description_raw) if description_raw else (f"{clean_title} at {company_name}" if description_fallback else "")
+    if description_limit is not None:
+        clean_desc = clean_desc[:description_limit]
     top_keywords = extract_top_keywords(clean_title, clean_desc, max_keywords=8)
     role_category = assign_role_category(clean_title, department, top_keywords)
     legacy_category = assign_legacy_category(clean_title, role_category)
@@ -128,7 +238,7 @@ def build_normalized_job(
     dedupe_hash = compute_dedupe_hash(company_name, clean_title, country_code or country_name, clean_location)
     now_iso = _iso_now()
 
-    return {
+    job = {
         "company": company_name,
         "company_slug": company_slug,
         "canonical_domain": canonical_domain,
@@ -161,11 +271,14 @@ def build_normalized_job(
         "source_priority": source_priority,
         "dedupe_hash": dedupe_hash,
         "verified": source_priority == 1,
-        "posted_at": _normalize_iso_date(posted_at),
+        "posted_at": _normalize_iso_date(posted_at, missing_as_now=posted_at_missing_as_now),
         "last_seen_at": now_iso,
         "is_active": True,
         "status": "active",
     }
+    if remote_eligibility is not None:
+        job["remote_eligibility"] = remote_eligibility
+    return job
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +293,7 @@ async def fetch_greenhouse(
 ) -> list[dict[str, Any]]:
     """Greenhouse: GET https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"""
     token = seed["token"]
-    url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
+    url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true&pay_transparency=true"
     resp = await request_with_backoff(client, limiter, "GET", url)
     payload = resp.json()
     jobs_raw = payload.get("jobs") or []
@@ -195,24 +308,85 @@ async def fetch_greenhouse(
         loc = (item.get("location") or {}).get("name") or "Remote"
         depts = item.get("departments") or []
         dept_name = depts[0].get("name") if depts and isinstance(depts[0], dict) else None
+        salary = _greenhouse_salary(item)
+        country_code = _greenhouse_country_code(item, loc)
+        is_remote = _detect_remote(title, loc)
         results.append(
             build_normalized_job(
                 seed=seed,
                 source="greenhouse",
                 source_type="greenhouse",
                 source_id=f"greenhouse:{token}",
-                source_job_id=f"{token}:{job_id}",
+                source_job_id=f"{token}-{job_id}",
                 title=title,
                 location=loc,
                 apply_url=apply_url,
                 description_raw=item.get("content"),
                 department=dept_name,
-                posted_at=item.get("updated_at") or item.get("first_published"),
+                posted_at=item.get("first_published"),
+                explicit_remote=is_remote,
+                salary_text=salary["salary_text"],
+                salary_min=salary["salary_min"],
+                salary_max=salary["salary_max"],
+                currency=salary["currency"],
+                salary_period=salary["salary_period"],
+                country_code_hint=country_code,
+                infer_country_from_location=False,
+                country_unknown_as_location=False,
+                posted_at_missing_as_now=False,
+                description_limit=None,
+                description_fallback=False,
+                remote_eligibility=_greenhouse_remote_eligibility(loc, is_remote, country_code),
                 source_layer="layer1",
                 source_priority=1,
             )
         )
     return results
+
+
+async def enrich_greenhouse_pay_transparency(
+    client: httpx.AsyncClient,
+    limiter: PerHostRateLimiter,
+    seed: dict[str, Any],
+    jobs: list[dict[str, Any]],
+) -> None:
+    """Fetch documented per-job pay ranges for selected Greenhouse identities in place."""
+    token = str(seed["token"])
+    source_id = f"greenhouse:{token}"
+    prefix = f"{token}-"
+    pending = [
+        job for job in jobs
+        if job.get("source_id") == source_id
+        and job.get("salary_min") is None
+        and job.get("salary_max") is None
+    ]
+    semaphore = asyncio.Semaphore(8)
+
+    async def fetch_detail(job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        source_job_id = str(job.get("source_job_id") or "")
+        if not source_job_id.startswith(prefix) or not source_job_id[len(prefix):]:
+            raise ValueError(f"invalid Greenhouse source_job_id for pay lookup: {source_job_id}")
+        provider_job_id = source_job_id[len(prefix):]
+        url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs/{provider_job_id}?pay_transparency=true"
+        async with semaphore:
+            response = await request_with_backoff(client, limiter, "GET", url)
+        payload = response.json()
+        if not isinstance(payload, dict) or "pay_input_ranges" not in payload:
+            raise ValueError("Greenhouse pay-transparency response did not include pay_input_ranges")
+        return job, _greenhouse_salary(payload)
+
+    results = await asyncio.gather(*(fetch_detail(job) for job in pending), return_exceptions=True)
+    failures: list[str] = []
+    for job, result in zip(pending, results):
+        if isinstance(result, BaseException):
+            failures.append(
+                f"{job.get('source_job_id')}: {redact_sensitive_params(str(result))}"
+            )
+            continue
+        _job, salary = result
+        job.update(salary)
+    if failures:
+        raise RuntimeError("Greenhouse pay-transparency lookup failed: " + "; ".join(failures))
 
 
 async def fetch_lever(

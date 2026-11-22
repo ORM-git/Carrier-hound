@@ -1,0 +1,93 @@
+{
+  "jobs": [
+    {
+      "id": 8172510,
+      "title": "Senior Payments Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172510",
+      "location": {
+        "name": "Remote US"
+      },
+      "first_published": "2026-10-20T10:30:00Z",
+      "updated_at": "2026-11-20T09:00:00Z",
+      "content": "&lt;p&gt;Qualifications: Go and PostgreSQL.&lt;/p&gt;&lt;p&gt;Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. &lt;/p&gt;&lt;script&gt;alert('xss')&lt;/script&gt;&lt;ul&gt;&lt;li&gt;Benefits: health coverage and paid leave.&lt;/li&gt;&lt;/ul&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 21000000,
+          "max_cents": 16000000,
+          "currency_type": "usd",
+          "title": "Hourly rate"
+        }
+      ]
+    },
+    {
+      "id": 8172511,
+      "title": "Mexico Support Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172511",
+      "location": {
+        "name": "Mexico City"
+      },
+      "first_published": "not-a-date",
+      "updated_at": "2026-11-19T09:00:00Z",
+      "content": "&lt;p&gt;Support customers in Mexico City.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 5000000,
+          "max_cents": 0,
+          "currency_type": "MXN"
+        }
+      ]
+    },
+    {
+      "id": 8172512,
+      "title": "Remote Analyst",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172512",
+      "location": {
+        "name": "Remote"
+      },
+      "updated_at": "2026-11-18T09:00:00Z",
+      "content": "&lt;p&gt;Details unavailable.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 0,
+          "max_cents": 6500000,
+          "currency_type": "USD"
+        }
+      ]
+    },
+    {
+      "id": 8172513,
+      "title": "Program Manager",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172513",
+      "location": {
+        "name": "Remote, worldwide"
+      },
+      "content": "&lt;p&gt;No published pay range. The description also mentions salary of $150,000, which must not be inferred.&lt;/p&gt;",
+      "pay_input_ranges": []
+    },
+    {
+      "id": 8172514,
+      "title": "US Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172514",
+      "location": { "name": "US-Remote" },
+      "first_published": "2026-11-01T12:00:00Z",
+      "content": "&lt;p&gt;Role available to US candidates.&lt;/p&gt;"
+    },
+    {
+      "id": 8172515,
+      "title": "Remote Canada Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172515",
+      "location": { "name": "Remote" },
+      "metadata": [{ "name": "Country", "value": "Canada" }],
+      "first_published": "2026-11-02T12:00:00Z",
+      "content": "&lt;p&gt;Role for Canada-based candidates.&lt;/p&gt;"
+    },
+    {
+      "id": 8172516,
+      "title": "Office Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172516",
+      "location": { "name": "Seattle, WA" },
+      "first_published": "2026-11-03T12:00:00Z",
+      "content": "&lt;p&gt;On-site role.&lt;/p&gt;"
+    }
+  ]
+}
