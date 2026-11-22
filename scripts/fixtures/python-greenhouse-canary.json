@@ -1,0 +1,277 @@
+{
+  "jobs": [
+    {
+      "id": 8172510,
+      "title": "Senior Payments Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172510",
+      "location": {
+        "name": "Remote US"
+      },
+      "first_published": "2026-10-20T10:30:00Z",
+      "updated_at": "2026-11-20T09:00:00Z",
+      "content": "&lt;p&gt;Qualifications: Go and PostgreSQL.&lt;/p&gt;&lt;p&gt;Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. Detailed requirements and responsibilities. &lt;/p&gt;&lt;script&gt;alert('xss')&lt;/script&gt;&lt;ul&gt;&lt;li&gt;Benefits: health coverage and paid leave.&lt;/li&gt;&lt;/ul&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 21000000,
+          "max_cents": 16000000,
+          "currency_type": "usd",
+          "title": "Hourly rate"
+        }
+      ]
+    },
+    {
+      "id": 8172511,
+      "title": "Mexico Support Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172511",
+      "location": {
+        "name": "Mexico City"
+      },
+      "first_published": "not-a-date",
+      "updated_at": "2026-11-19T09:00:00Z",
+      "content": "&lt;p&gt;Support customers in Mexico City.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 5000000,
+          "max_cents": 0,
+          "currency_type": "MXN"
+        }
+      ]
+    },
+    {
+      "id": 8172512,
+      "title": "Remote Analyst",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172512",
+      "location": {
+        "name": "Remote"
+      },
+      "updated_at": "2026-11-18T09:00:00Z",
+      "content": "&lt;p&gt;Details unavailable.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 0,
+          "max_cents": 6500000,
+          "currency_type": "USD"
+        }
+      ]
+    },
+    {
+      "id": 8172513,
+      "title": "Program Manager",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172513",
+      "location": {
+        "name": "Remote, worldwide"
+      },
+      "content": "&lt;p&gt;No published pay range. The description also mentions salary of $150,000, which must not be inferred.&lt;/p&gt;",
+      "pay_input_ranges": []
+    },
+    {
+      "id": 8172514,
+      "title": "US Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172514",
+      "location": {
+        "name": "US-Remote"
+      },
+      "first_published": "2026-11-01T12:00:00Z",
+      "content": "&lt;p&gt;Role available to US candidates.&lt;/p&gt;"
+    },
+    {
+      "id": 8172515,
+      "title": "Remote Canada Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172515",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "Canada"
+        }
+      ],
+      "first_published": "2026-11-02T12:00:00Z",
+      "content": "&lt;p&gt;Role for Canada-based candidates.&lt;/p&gt;"
+    },
+    {
+      "id": 8172516,
+      "title": "Office Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172516",
+      "location": {
+        "name": "Seattle, WA"
+      },
+      "first_published": "2026-11-03T12:00:00Z",
+      "content": "&lt;p&gt;On-site role.&lt;/p&gt;"
+    },
+    {
+      "id": 8172517,
+      "title": "Remote Product Analyst",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172517",
+      "location": {
+        "name": "Remote US / Canada"
+      },
+      "first_published": "2026-11-01T09:00:00Z",
+      "content": "<p>Remote role with country restrictions for the United States or Canada.</p>",
+      "pay_input_ranges": []
+    },
+    {
+      "id": 8172518,
+      "title": "Remote Operations Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172518",
+      "location": {
+        "name": "Remote US"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "Canada"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Conflicting source country metadata and location.</p>"
+    },
+    {
+      "id": 8172519,
+      "title": "Remote German or French Analyst",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172519",
+      "location": {
+        "name": "Remote Germany / France"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Remote role restricted to Germany or France.</p>"
+    },
+    {
+      "id": 8172520,
+      "title": "Remote European Support Specialist",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172520",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "Germany"
+        },
+        {
+          "name": "Country",
+          "value": "France"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Conflicting country metadata.</p>"
+    },
+    {
+      "id": 8172521,
+      "title": "Chicago Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172521",
+      "location": {
+        "name": "Chicago, IL"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Chicago office role.</p>"
+    },
+    {
+      "id": 8172522,
+      "title": "Chicago Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172522",
+      "location": {
+        "name": "Chicago, IL, US"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Role restricted to the United States.</p>"
+    },
+    {
+      "id": 8172523,
+      "title": "Wilmington Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172523",
+      "location": {
+        "name": "Wilmington, DE"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Wilmington office role.</p>"
+    },
+    {
+      "id": 8172524,
+      "title": "Wilmington Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172524",
+      "location": {
+        "name": "Wilmington, DE, United States"
+      },
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Role restricted to the United States.</p>"
+    },
+    {
+      "id": 8172525,
+      "title": "Remote Germany Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172525",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "DE"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Explicit country code metadata.</p>"
+    },
+    {
+      "id": 8172526,
+      "title": "Remote US Canada Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172526",
+      "location": {
+        "name": "Remote"
+      },
+      "metadata": [
+        {
+          "name": "Country",
+          "value": "United States"
+        },
+        {
+          "name": "Country",
+          "value": "Canada"
+        }
+      ],
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Multiple explicit country metadata values.</p>"
+    },
+    {
+      "id": 8172527,
+      "title": "Remote Chicago Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172527",
+      "location": {"name": "Remote - Chicago, IL"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Remote Chicago role.</p>"
+    },
+    {
+      "id": 8172528,
+      "title": "Chicago Hybrid Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172528",
+      "location": {"name": "Chicago, IL (Hybrid)"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Hybrid Chicago role.</p>"
+    },
+    {
+      "id": 8172529,
+      "title": "Wilmington Remote Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172529",
+      "location": {"name": "Wilmington, DE (Remote)"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Remote Wilmington role.</p>"
+    },
+    {
+      "id": 8172530,
+      "title": "Chicago Office Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172530",
+      "location": {"name": "Chicago IL"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Chicago office role.</p>"
+    },
+    {
+      "id": 8172531,
+      "title": "Wilmington Office Engineer",
+      "absolute_url": "https://boards.greenhouse.io/stripe/jobs/8172531",
+      "location": {"name": "Wilmington DE"},
+      "first_published": "2026-11-02T09:00:00Z",
+      "content": "<p>Wilmington office role.</p>"
+    }
+  ]
+}

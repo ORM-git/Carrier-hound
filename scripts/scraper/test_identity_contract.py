@@ -35,7 +35,6 @@ from scripts.scraper.enrichment import (
     compute_dedupe_hash,
     compute_similarity_hash_v2,
 )
-
 FIXTURES_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "identity_golden_cases.json"
 
 
@@ -163,6 +162,15 @@ def test_build_scoped_job_identity_validations():
 
     with pytest.raises(ValueError, match="provider_job_id must be a non-empty string"):
         build_scoped_job_identity("greenhouse:stripe", "")
+
+
+def test_greenhouse_authoritative_identity_keeps_boards_and_requisitions_distinct():
+    identities = [
+        build_scoped_job_identity("greenhouse:board-a", "123"),
+        build_scoped_job_identity("greenhouse:board-b", "123"),
+        build_scoped_job_identity("greenhouse:board-a", "456"),
+    ]
+    assert len(set(identities)) == 3
 
 
 DEDUPE_VECTORS_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "job_dedupe_test_vectors.json"

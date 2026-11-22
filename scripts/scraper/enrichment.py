@@ -15,6 +15,7 @@ import html
 import re
 import unicodedata
 from collections import deque
+from html.parser import HTMLParser
 
 COMPANY_CATEGORIES = (
     "MNC_BIGTECH",
@@ -425,15 +426,55 @@ def get_extractor() -> AhoCorasickExtractor:
     return _GLOBAL_EXTRACTOR
 
 
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
+class _PlainTextHTMLParser(HTMLParser):
+    _BLOCK_TAGS = frozenset({"address", "article", "blockquote", "br", "dd", "div", "dl", "dt", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "li", "ol", "p", "pre", "section", "table", "tr", "ul"})
+    _SKIP_TAGS = frozenset({"embed", "iframe", "object", "script", "style", "svg", "template"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._skip: list[str] = []
+
+    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+        if self._skip:
+            if tag in self._SKIP_TAGS:
+                self._skip.append(tag)
+            return
+        if tag in self._SKIP_TAGS:
+            self._skip.append(tag)
+            return
+        if tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+        if tag == "li":
+            self.parts.append("• ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._skip:
+            if tag == self._skip[-1]:
+                self._skip.pop()
+            return
+        if tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(data)
 
 
 def strip_html(text: str | None) -> str:
     if not text:
         return ""
-    clean = _HTML_TAG_RE.sub(" ", text)
-    clean = html.unescape(clean)
-    return " ".join(clean.split())
+    decoded = text
+    for _ in range(5):
+        unescaped = html.unescape(decoded)
+        if unescaped == decoded:
+            break
+        decoded = unescaped
+    parser = _PlainTextHTMLParser()
+    parser.feed(decoded)
+    parser.close()
+    lines = [" ".join(line.split()) for line in "".join(parser.parts).splitlines()]
+    return "\n".join(line for line in lines if line)
 
 
 def extract_top_keywords(

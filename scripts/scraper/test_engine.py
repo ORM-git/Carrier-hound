@@ -161,6 +161,15 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertIn(("workday", "walmart:walmart_careers:101"), keys)
         self.assertIn(("amazon", "amazon:101"), keys)
 
+    def test_greenhouse_country_rules_do_not_change_other_vendor_remote_fallback(self) -> None:
+        job = build_normalized_job(
+            seed={"name": "Lever Co", "slug": "lever-co", "token": "lever-co"},
+            source="lever", source_type="lever", source_job_id="lever-co-1",
+            title="Engineer", location="Remote", apply_url="https://jobs.example.com/1",
+        )
+        self.assertIsNone(job["country_code"])
+        self.assertEqual(job["country"], "Remote")
+
     def test_rate_limiter_spacing_and_token_bucket(self) -> None:
         """Requirement 2: Token bucket enforces proper spacing per host; 20 requests cannot pass in 0.25s at 4 req/s."""
         bucket = HostTokenBucket(rate_per_sec=4.0, capacity=1.0)
@@ -602,8 +611,156 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         self.assertEqual(len(to_update2), 0)
         self.assertEqual(unchanged_ids2, ["uuid-stripe-101"])
 
-    def test_per_board_expiry_normal_run_expires_disappeared_job_and_failed_run_expires_nothing(self) -> None:
-        """Requirement 2: Expiry is scoped per board (source_id); normal run expires disappeared job; failed run expires 0."""
+    def test_missing_incoming_posted_at_never_clears_valid_original_date(self) -> None:
+        existing = {
+            "id": "row-original-date", "source_type": "greenhouse", "source_id": "greenhouse:stripe",
+            "source_job_id": "stripe-101", "company": "Stripe", "title": "Engineer",
+            "description": "Old description", "posted_at": "2026-10-01T00:00:00+00:00",
+        }
+        incoming = {**existing, "description": "Updated description", "posted_at": None}
+        incoming.pop("id")
+
+        inserts, updates, unchanged = partition_set_diff([incoming], [existing])
+        self.assertEqual(inserts, [])
+        self.assertEqual(unchanged, [])
+        self.assertEqual(updates[0][0], "row-original-date")
+        self.assertEqual(updates[0][1]["posted_at"], existing["posted_at"])
+
+    def test_real_writer_preserves_unknown_date_and_persists_date_only_correction(self) -> None:
+        preserved_date = "2026-10-01T00:00:00+00:00"
+        corrected_date = "2026-11-02T00:00:00+00:00"
+        base = {
+            "source_type": "greenhouse", "source_id": "greenhouse:stripe", "source_priority": 1,
+            "company": "Stripe", "company_slug": "stripe", "title": "Engineer", "location": "Remote US",
+            "country": "United States", "country_code": "US", "remote": True, "is_remote": True,
+            "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time",
+            "category": "engineering", "role_category": "engineering", "status": "active", "is_active": True,
+            "verified": False, "description": "Role description", "apply_url": "https://example.test/apply",
+            "salary_text": None, "salary_min": None, "salary_max": None, "salary_period": None, "currency": None,
+            "source": "greenhouse", "dedupe_hash": "hash", "source_url": "https://example.test/job",
+            "logo_url": None, "canonical_domain": "stripe.com", "top_keywords": [], "skills": [],
+        }
+        incoming_unknown = {**base, "source_job_id": "stripe-preserve", "description": "Updated description", "posted_at": None}
+        incoming_correction = {**base, "source_job_id": "stripe-correct", "posted_at": corrected_date}
+        existing_rows = [
+            {**incoming_unknown, "id": "row-preserve", "description": "Original description", "posted_at": preserved_date},
+            {**incoming_correction, "id": "row-correct", "posted_at": preserved_date},
+        ]
+        patches: dict[str, dict[str, Any]] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "GET" and "/jobs" in request.url.path:
+                self.assertIn("posted_at", request.url.params.get("select", "").split(","))
+                return httpx.Response(200, json=existing_rows)
+            if request.method == "PATCH" and "/jobs" in request.url.path:
+                row_id = request.url.params.get("id", "").removeprefix("eq.")
+                patches[row_id] = json.loads(request.content)
+                return httpx.Response(200, json=[{"id": row_id}])
+            raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await writer.sync_jobs_set_diff(client, [incoming_unknown, incoming_correction], {})
+
+        result = asyncio.run(run())
+        self.assertEqual(result["updated"], 2)
+        self.assertFalse(result["persistence_failed"])
+        self.assertEqual(patches["row-preserve"]["posted_at"], preserved_date)
+        self.assertEqual(patches["row-correct"]["posted_at"], corrected_date)
+
+    def test_company_patch_failure_stops_before_next_company_insert(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, request.url.path))
+            if request.method == "GET":
+                return httpx.Response(200, json=[{
+                    "id": "company-existing", "slug": "existing", "name": "Existing",
+                    "logo_url": None, "domain": "old.example", "canonical_domain": "old.example",
+                    "category": "MNC_BIGTECH", "ats_type": "greenhouse",
+                }])
+            if request.method == "PATCH":
+                return httpx.Response(503, json={"error": "temporarily unavailable"})
+            if request.method == "POST":
+                return httpx.Response(201, json=[{"id": "company-new", "slug": "new-company"}])
+            raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+        jobs = [
+            {"company": "Existing", "company_slug": "existing", "canonical_domain": "existing.example",
+             "company_category": "MNC_BIGTECH", "logo_url": "https://existing.example/logo.png",
+             "source": "greenhouse", "source_priority": 1},
+            {"company": "New Company", "company_slug": "new-company", "source": "greenhouse", "source_priority": 1},
+        ]
+
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                company_map = await writer.sync_companies(client, jobs)
+            return writer, company_map
+
+        writer, company_map = asyncio.run(run())
+        self.assertTrue(writer.persistence_failed)
+        self.assertEqual(company_map, {"existing": "company-existing"})
+        self.assertEqual(calls, [
+            ("GET", "/rest/v1/companies"),
+            ("PATCH", "/rest/v1/companies"),
+        ])
+
+    def test_job_lookups_for_all_batches_finish_before_any_job_write(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, request.url.path))
+            if request.method == "GET" and len([c for c in calls if c[0] == "GET"]) == 2:
+                return httpx.Response(503, json={"error": "lookup unavailable"})
+            return httpx.Response(200, json=[])
+
+        jobs = [
+            {"source_type": "greenhouse", "source_id": "greenhouse:stripe", "source_job_id": f"stripe-{index}",
+             "source_priority": 1, "company": "Stripe", "company_slug": "stripe", "title": f"Role {index}"}
+            for index in range(51)
+        ]
+
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                result = await writer.sync_jobs_set_diff(client, jobs, {})
+            return result
+
+        result = asyncio.run(run())
+        self.assertTrue(result["persistence_failed"])
+        self.assertTrue(any("Jobs lookup error 503" in error for error in result["write_errors"]))
+        self.assertEqual(calls, [("GET", "/rest/v1/jobs"), ("GET", "/rest/v1/jobs")])
+
+    def test_successful_insert_without_confirmed_rows_is_not_reported_as_persisted(self) -> None:
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.method)
+            if request.method == "GET":
+                return httpx.Response(200, json=[])
+            if request.method == "POST":
+                return httpx.Response(201, json=[])
+            return httpx.Response(200, json=[])
+
+        job = {"source_type": "greenhouse", "source_id": "greenhouse:stripe", "source_job_id": "stripe-101",
+               "source_priority": 1, "company": "Stripe", "company_slug": "stripe", "title": "Engineer"}
+
+        async def run():
+            writer = SupabaseSetDiffWriter("https://unit-test-project.supabase.co", "fake-key")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                return await writer.sync_jobs_set_diff(client, [job], {})
+
+        result = asyncio.run(run())
+        self.assertEqual(result["inserted"], 0)
+        self.assertEqual(result["persisted_ids"], [])
+        self.assertTrue(result["persistence_failed"])
+        self.assertIn("Job insert response did not confirm every row", result["write_errors"])
+        self.assertEqual(calls, ["GET", "POST"])
+
+    def test_capped_complete_or_failed_run_never_expires_jobs(self) -> None:
+        """Every canary write is capped and expiry remains disabled, even for full-coverage boards."""
         board_id = "greenhouse:stripe"
         cutoff_date = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
 
@@ -620,6 +777,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             "source_priority": 1,
             "dedupe_hash": "hash_stripe_1",
             "is_active": True,
+            "salary_min": 1,
+            "salary_max": 1,
         }
 
         patch_calls: list[str] = []
@@ -667,22 +826,18 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
                             sources=["stripe"],
                             seeds_path=tmp_seeds,
                             dry_run=False,
+                            max_rows=10,
                             transport=transport,
                         )
             finally:
                 if tmp_seeds.exists():
                     tmp_seeds.unlink()
 
-        # 1. Run normal: job-2 must expire because persisted count 1 vs baseline 2 is 50% (meets drop guard)
+        # A successful capped run must never issue baseline queries or expiry PATCHes.
         result_normal = asyncio.run(_run_normal())
-        self.assertEqual(result_normal["db"]["expired"], 1)
-        self.assertEqual(len(result_normal["expiry_reports"]), 1)
-        self.assertEqual(result_normal["expiry_reports"][0]["status"], "completed")
-        self.assertEqual(result_normal["expiry_reports"][0]["source_id"], "greenhouse:stripe")
-
-        # Verify patch was called specifically with source_id=eq.greenhouse:stripe
-        found_expiry_patch = any(("source_id=eq.greenhouse:stripe" in call or "source_id=eq.greenhouse%3Astripe" in call) and "last_seen_at=lt." in call for call in patch_calls)
-        self.assertTrue(found_expiry_patch, f"Expiry PATCH must filter by source_id=eq.greenhouse:stripe; got {patch_calls}")
+        self.assertEqual(result_normal["db"]["expired"], 0)
+        self.assertEqual(result_normal["expiry_reports"], [])
+        self.assertEqual(patch_calls, [])
 
         # 2. Run failed source: when fetch fails or returns error, expiry must be skipped entirely
         patch_calls.clear()
@@ -707,6 +862,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
                             sources=["stripe"],
                             seeds_path=tmp_seeds,
                             dry_run=False,
+                            max_rows=10,
                             transport=transport,
                         )
             finally:
@@ -715,14 +871,12 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
 
         result_failed = asyncio.run(_run_failed())
         self.assertEqual(result_failed["db"]["expired"], 0)
-        self.assertEqual(len(result_failed["expiry_reports"]), 1)
-        self.assertEqual(result_failed["expiry_reports"][0]["status"], "skipped_incomplete_source")
-        # Ensure no expiry PATCH was issued
+        self.assertEqual(result_failed["expiry_reports"], [])
         expiry_patches = [c for c in patch_calls if "last_seen_at=lt." in c]
         self.assertEqual(len(expiry_patches), 0)
 
-    def test_per_board_expiry_duplicate_response_zero_persisted_and_failure(self) -> None:
-        """Requirement 1: Expiry guard counts distinct persisted keys; duplicate response, zero persisted, or write failure aborts expiry."""
+    def test_capped_duplicate_and_failed_persistence_runs_never_expire(self) -> None:
+        """Duplicate and persistence-error canary runs never invoke expiry."""
         board_id = "greenhouse:stripe"
 
         # Duplicate job payload: 1 job repeated 5 times in the fetch response
@@ -736,6 +890,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             "source_priority": 1,
             "dedupe_hash": "hash_stripe_1",
             "is_active": True,
+            "salary_min": 1,
+            "salary_max": 1,
         }
 
         # 1. Duplicate response test:
@@ -775,17 +931,14 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
                     # Return 5 duplicates in fetch
                     with patch("scripts.scraper.run_ingestion.fetch_layer1_seed", AsyncMock(return_value=[duplicated_job] * 5)):
                         transport = httpx.MockTransport(handler_duplicate)
-                        return await run_master_ingestion(sources=["stripe"], seeds_path=tmp_seeds, dry_run=False, transport=transport)
+                        return await run_master_ingestion(sources=["stripe"], seeds_path=tmp_seeds, dry_run=False, max_rows=10, transport=transport)
             finally:
                 if tmp_seeds.exists():
                     tmp_seeds.unlink()
 
         res_dup = asyncio.run(_run_duplicate())
         self.assertEqual(res_dup["db"]["expired"], 0)
-        self.assertEqual(res_dup["expiry_reports"][0]["status"], "skipped_drop_guard")
-        self.assertIn("50% count-drop guard triggered", res_dup["expiry_reports"][0]["guard"]["reason"])
-        # Distinct persisted count must be 1, NOT 5!
-        self.assertEqual(res_dup["expiry_reports"][0]["guard"]["persisted_count"], 1)
+        self.assertEqual(res_dup["expiry_reports"], [])
 
         # 2. Zero persisted test:
         # Zero persisted keys must mean 0 persisted count, NEVER raw fetch length!
@@ -819,7 +972,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
                 }):
                     with patch("scripts.scraper.run_ingestion.fetch_layer1_seed", AsyncMock(return_value=[duplicated_job])):
                         transport = httpx.MockTransport(handler_zero_persisted)
-                        return await run_master_ingestion(sources=["stripe"], seeds_path=tmp_seeds, dry_run=False, transport=transport)
+                        return await run_master_ingestion(sources=["stripe"], seeds_path=tmp_seeds, dry_run=False, max_rows=10, transport=transport)
             finally:
                 if tmp_seeds.exists():
                     tmp_seeds.unlink()
@@ -828,6 +981,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         # Write failure vetos expiry completely
         self.assertTrue(res_zero["expiry_vetoed"])
         self.assertEqual(res_zero["db"]["expired"], 0)
+        self.assertEqual(res_zero["expiry_reports"], [])
         self.assertEqual(len(res_zero["db"]["persisted_source_keys"]), 0)
 
     def test_retry_after_above_30s_is_honored_not_cut(self) -> None:
