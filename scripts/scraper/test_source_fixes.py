@@ -72,9 +72,7 @@ class TestSourceFixes(unittest.TestCase):
                     max_concurrent_calls = active_calls
                 await asyncio.sleep(0.01)
                 active_calls -= 1
-                mock_resp = MagicMock()
-                mock_resp.json.return_value = {"jobPostings": []}
-                return mock_resp
+                return {"jobPostings": []}
 
             client = MagicMock()
             limiter = AsyncMock()
@@ -82,7 +80,7 @@ class TestSourceFixes(unittest.TestCase):
             seed1 = {"slug": "board1", "tenant": "t1", "site": "s1", "name": "B1"}
             seed2 = {"slug": "board2", "tenant": "t2", "site": "s2", "name": "B2"}
 
-            with patch("scripts.scraper.fetchers.request_with_backoff", side_effect=mock_request):
+            with patch("scripts.scraper.fetchers._workday_post", side_effect=mock_request):
                 # Run two boards concurrently
                 await asyncio.gather(
                     fetch_workday_cxs(client, limiter, seed1, max_pages=1, polite_delay=0.0),
@@ -191,14 +189,207 @@ class TestSourceFixes(unittest.TestCase):
                 self.assertIsNotNone(err)
                 self.assertIn("python-jobspy", err)
 
-            # Case 2: partial timeout but jobs returned -> succeeds without fatal error
+            # Case 2: every query succeeds -> no error
             with patch("scripts.scraper.fetch_aggregators_and_india.run_jobspy_scrape_in_subprocess", new_callable=AsyncMock) as mock_proc:
                 mock_proc.return_value = ([{"title": "Dev", "company": "Acme", "job_url": "https://example.com/1"}], None)
                 jobs, err = await fetch_jobspy_india(roles=("Dev",), locations=("Bangalore",))
                 self.assertEqual(len(jobs), 1)
                 self.assertIsNone(err)
 
+            # Case 3: one query succeeds, the next times out -> rows kept for the report, source still incomplete
+            with patch("scripts.scraper.fetch_aggregators_and_india.run_jobspy_scrape_in_subprocess", new_callable=AsyncMock) as mock_proc:
+                mock_proc.side_effect = [
+                    ([{"title": "Dev", "company": "Acme", "job_url": "https://example.com/1"}], None),
+                    ([], "JobSpy timed out after 60.0s for QA in Bangalore"),
+                ]
+                jobs, err = await fetch_jobspy_india(roles=("Dev", "QA"), locations=("Bangalore",))
+                self.assertEqual(len(jobs), 1)
+                self.assertIsNotNone(err)
+                self.assertIn("timed out", err)
+
         asyncio.run(_test())
+
+
+
+class _Sleeps:
+    """Records requested sleeps without waiting (and lets time pass as if they happened)."""
+
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+        self.offset = 0.0
+
+    async def sleep(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        self.offset += max(0.0, seconds)
+
+    def monotonic(self) -> float:
+        return self.offset
+
+
+class TestWorkdaySharedBudget(unittest.TestCase):
+    """One transport (httpx via the limiter), one bounded budget per page, Retry-After respected and shared."""
+
+    URL_HOST = "t1.wd5.myworkdayjobs.com"
+
+    def setUp(self) -> None:
+        from scripts.scraper import fetchers
+        self.fetchers = fetchers
+        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        self.clock = _Sleeps()
+        self.requests: list[str] = []
+        self.limiter_calls: list[str] = []
+
+    def _run(self, handler, seeds):
+        import httpx
+        from scripts.scraper.rate_limiter import PerHostRateLimiter
+
+        class Limiter(PerHostRateLimiter):
+            async def acquire(inner, url: str) -> None:  # noqa: N805 - records, never waits
+                self.limiter_calls.append(url)
+
+        def record(request: httpx.Request) -> httpx.Response:
+            self.requests.append(request.url.host)
+            return handler(len(self.requests))
+
+        async def _go():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+                out = []
+                for seed in seeds:
+                    try:
+                        out.append(await self.fetchers.fetch_workday_cxs(client, Limiter(), seed, max_pages=1, polite_delay=0.0))
+                    except Exception as exc:  # noqa: BLE001
+                        out.append(exc)
+                return out
+
+        with patch.object(self.fetchers.asyncio, "sleep", self.clock.sleep), \
+                patch.object(self.fetchers.time, "monotonic", self.clock.monotonic):
+            return asyncio.run(_go())
+
+    def test_long_retry_after_fails_fast_and_cools_down_every_tenant(self) -> None:
+        import httpx
+        seeds = [{"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}, {"slug": "b", "tenant": "t2", "site": "s2", "name": "B"}]
+        out = self._run(lambda n: httpx.Response(429, headers={"Retry-After": "120"}), seeds)
+        self.assertIsInstance(out[0], self.fetchers.WorkdayRateLimited)
+        self.assertIsInstance(out[1], self.fetchers.WorkdayRateLimited)
+        self.assertEqual(len(self.requests), 1, "after a 120s Retry-After no further Workday request may be sent")
+        self.assertEqual(self.limiter_calls, [f"https://{self.URL_HOST}/wday/cxs/t1/s1/jobs"])
+        self.assertTrue(all(s <= 60.0 for s in self.clock.calls), self.clock.calls)
+
+    def test_short_retry_after_is_waited_out_within_the_page_budget(self) -> None:
+        import httpx
+        seed = {"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}
+
+        def handler(n):
+            if n < 3:
+                return httpx.Response(429, headers={"Retry-After": "5"})
+            return httpx.Response(200, json={"jobPostings": [{"title": "Engineer", "externalPath": "/job/1", "bulletFields": ["R1"]}]})
+
+        out = self._run(handler, [seed])
+        self.assertEqual(len(out[0]), 1)
+        self.assertEqual(len(self.requests), 3)
+        self.assertEqual(len(self.limiter_calls), 3, "every request, including retries, goes through the limiter")
+        self.assertGreaterEqual(sum(self.clock.calls), 10.0, "each Retry-After must be honoured before the next request")
+
+    def test_exhausted_budget_is_bounded_and_raises(self) -> None:
+        import httpx
+        seed = {"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}
+        out = self._run(lambda n: httpx.Response(429, headers={"Retry-After": "1"}), [seed])
+        self.assertIsInstance(out[0], self.fetchers.WorkdayRateLimited)
+        self.assertEqual(len(self.requests), self.fetchers.WORKDAY_MAX_RETRIES + 1)
+        self.assertNotIn("curl_cffi", pathlib_text(self.fetchers.__file__))
+
+
+def pathlib_text(path: str) -> str:
+    return Path(path).read_text(encoding="utf-8")
+
+
+class TestMixedSuccessZeroWriteVeto(unittest.TestCase):
+    """End to end through run_master_ingestion in write mode: a source with one good and one failed query
+    must be reported failed, and no writer may be constructed or called."""
+
+    def _run(self, sources, transport_handler):
+        import httpx
+        from scripts.scraper import fetchers, rate_limiter, run_ingestion
+
+        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        env = {
+            "NEXT_PUBLIC_SUPABASE_URL": "https://unit-test-project.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "fake-service-role-key-for-tests-0123456789",
+            "ADZUNA_APP_ID": "fake-id", "ADZUNA_APP_KEY": "fake-key",
+        }
+        writer = MagicMock(side_effect=AssertionError("writer must not be constructed"))
+        db_calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "unit-test-project.supabase.co":
+                db_calls.append(request.url.path)
+                return httpx.Response(500)
+            return transport_handler(request)
+
+        async def no_sleep(_s: float) -> None:
+            return None
+
+        with patch.dict(os.environ, env), \
+                patch.object(run_ingestion, "load_dotenv_into_env", lambda: None), \
+                patch.object(run_ingestion, "SupabaseSetDiffWriter", writer), \
+                patch.object(rate_limiter.asyncio, "sleep", no_sleep):
+            report = asyncio.run(run_ingestion.run_master_ingestion(
+                sources=sources, dry_run=False, max_rows=50, transport=httpx.MockTransport(handler)))
+        return report, writer, db_calls
+
+    def test_jobspy_one_query_ok_next_times_out_withholds_all_writes(self) -> None:
+        import httpx
+        calls = {"n": 0}
+
+        async def scrape(**kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return ([{"title": "Backend Engineer", "company": "Acme", "job_url": "https://example.com/j/1", "site": "indeed"}], None)
+            return ([], f"JobSpy timed out after 60.0s for {kwargs.get('search_term')} in {kwargs.get('location')}")
+
+        with patch("scripts.scraper.fetch_aggregators_and_india.run_jobspy_scrape_in_subprocess", side_effect=scrape):
+            report, writer, db_calls = self._run(["jobspy"], lambda r: httpx.Response(404))
+        self.assertGreater(calls["n"], 1)
+        src = [s for s in report["sources"] if s["source"] == "jobspy:india"][0]
+        self.assertEqual(src["status"], "failed")
+        self.assertFalse(src["completed"])
+        self.assertIn("timed out", src["error"])
+        self.assertEqual([f["source"] for f in report["failed_sources"]], ["jobspy:india"])
+        writer.assert_not_called()
+        self.assertEqual(db_calls, [])
+        self.assertEqual(report["db"]["inserted"], 0)
+
+    def test_adzuna_one_country_ok_other_503_withholds_all_writes(self) -> None:
+        import httpx
+
+        def adzuna(request: httpx.Request) -> httpx.Response:
+            if request.url.host != "api.adzuna.com":
+                return httpx.Response(404)
+            if "/jobs/in/" in request.url.path:
+                return httpx.Response(200, json={"results": [{
+                    "id": f"in-{request.url.params.get('what')}", "title": "Data Analyst", "company": {"display_name": "Acme"},
+                    "redirect_url": "https://www.adzuna.in/land/ad/1", "location": {"display_name": "Bangalore"}, "created": "2026-11-22T00:00:00Z",
+                }]})
+            return httpx.Response(503)
+
+        report, writer, db_calls = self._run(["adzuna"], adzuna)
+        src = [s for s in report["sources"] if s["source"] == "adzuna:in"][0]
+        self.assertEqual(src["status"], "failed")
+        self.assertIn("Adzuna", src["error"])
+        self.assertNotIn("fake-key", json.dumps(report))
+        self.assertTrue(report["failed_sources"])
+        writer.assert_not_called()
+        self.assertEqual(db_calls, [])
+
+    def test_workday_rate_limited_board_is_reported_failed_and_withholds_writes(self) -> None:
+        import httpx
+        report, writer, db_calls = self._run(
+            ["workday"], lambda r: httpx.Response(429, headers={"Retry-After": "120"}) if "myworkdayjobs.com" in r.url.host else httpx.Response(404))
+        workday = [s for s in report["sources"] if s["source"].startswith("workday:")]
+        self.assertTrue(workday)
+        self.assertTrue(all(s["status"] == "failed" for s in workday), workday)
+        writer.assert_not_called()
+        self.assertEqual(db_calls, [])
 
 
 if __name__ == "__main__":

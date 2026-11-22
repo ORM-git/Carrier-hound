@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timezone
 import math
 import re
+import time
 from typing import Any
 
 import httpx
@@ -20,7 +21,7 @@ from .enrichment import (
     resolve_logo_url,
     strip_html,
 )
-from .rate_limiter import PerHostRateLimiter, redact_sensitive_params, request_with_backoff
+from .rate_limiter import PerHostRateLimiter, parse_retry_after, redact_sensitive_params, request_with_backoff
 
 COUNTRY_NAMES = {
     "US": "United States",
@@ -573,6 +574,46 @@ async def fetch_smartrecruiters(
 # ---------------------------------------------------------------------------
 
 _WORKDAY_LOCK = asyncio.Lock()
+# Shared across every Workday tenant in this process: once Workday rate-limits us, all boards wait out the
+# server's Retry-After (or fail fast if it is longer than we are willing to wait) instead of retrying elsewhere.
+_WORKDAY_COOLDOWN_UNTIL = 0.0
+WORKDAY_MAX_RETRIES = 2          # per page: at most 3 requests, all through the per-host limiter
+WORKDAY_MAX_COOLDOWN_SECONDS = 60.0
+
+
+class WorkdayRateLimited(RuntimeError):
+    """Workday rate-limited this run beyond its retry/cooldown budget; the board is reported failed."""
+
+
+async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    """One page request under the shared budget: limiter-paced, Retry-After respected, no transport switching."""
+    global _WORKDAY_COOLDOWN_UNTIL
+    for attempt in range(WORKDAY_MAX_RETRIES + 1):
+        wait = _WORKDAY_COOLDOWN_UNTIL - time.monotonic()
+        if wait > WORKDAY_MAX_COOLDOWN_SECONDS:
+            raise WorkdayRateLimited(f"Workday cooldown active for {wait:.0f}s more; not requesting {url}")
+        if wait > 0:
+            await asyncio.sleep(wait)
+        await limiter.acquire(url)
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            if attempt >= WORKDAY_MAX_RETRIES:
+                raise RuntimeError(f"Workday network error for {url}: {redact_sensitive_params(str(exc))}") from None
+            await asyncio.sleep(2.0 * (2 ** attempt))  # same budget: counts as one of the page's requests
+            continue
+        if resp.status_code == 429 or resp.status_code in (502, 503, 504):
+            delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=2.0 * (2 ** attempt))
+            _WORKDAY_COOLDOWN_UNTIL = max(_WORKDAY_COOLDOWN_UNTIL, time.monotonic() + delay)
+            if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS:
+                raise WorkdayRateLimited(
+                    f"Workday HTTP {resp.status_code} for {url} (Retry-After {delay:.0f}s) after {attempt + 1} request(s)"
+                )
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    raise WorkdayRateLimited(f"Workday retry budget exhausted for {url}")
+
 
 
 async def fetch_workday_cxs(
@@ -585,8 +626,10 @@ async def fetch_workday_cxs(
 ) -> list[dict[str, Any]]:
     """Workday CXS: POST https://{tenant}.{wd_cluster}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
     
-    Executes one board at a time under _WORKDAY_LOCK with polite delay, exponential backoff,
-    and automatic browser impersonation fallback if Cloudflare challenges TLS fingerprints.
+    Executes one board at a time under _WORKDAY_LOCK with a polite delay. Every request goes through the
+    per-host limiter and the shared Workday retry/cooldown budget (_workday_post); a rate limit is never
+    retried with a different transport or fingerprint. When the budget is exhausted the board raises, so
+    the source is reported failed and the run-level guard withholds writes.
     """
     async with _WORKDAY_LOCK:
         tenant = seed["tenant"]
@@ -608,47 +651,7 @@ async def fetch_workday_cxs(
 
             offset = page_idx * 20
             body = {"limit": 20, "offset": offset, "searchText": ""}
-            resp_data = None
-            last_err = None
-
-            for attempt in range(4):
-                try:
-                    resp = await request_with_backoff(
-                        client,
-                        limiter,
-                        "POST",
-                        url,
-                        json=body,
-                        headers=headers,
-                        base_backoff=2.0,
-                    )
-                    resp_data = resp.json()
-                    break
-                except Exception as exc:
-                    last_err = exc
-                    err_str = str(exc)
-                    if "429" in err_str:
-                        # Cloudflare TLS fingerprint challenge; try curl_cffi if installed
-                        try:
-                            from curl_cffi import requests as cffi_requests
-
-                            def _cffi_post():
-                                return cffi_requests.post(url, json=body, impersonate="chrome", timeout=15)
-
-                            c_resp = await asyncio.to_thread(_cffi_post)
-                            if c_resp.status_code == 200:
-                                resp_data = c_resp.json()
-                                break
-                        except Exception:
-                            pass
-                        await asyncio.sleep(2.0 * (attempt + 1))
-                    else:
-                        raise
-
-            if resp_data is None:
-                if last_err:
-                    raise last_err
-                raise RuntimeError(f"Workday request failed for {url}")
+            resp_data = await _workday_post(client, limiter, url, body, headers)
 
             postings = resp_data.get("jobPostings") or []
             if not postings:

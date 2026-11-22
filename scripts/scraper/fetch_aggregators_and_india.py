@@ -336,9 +336,9 @@ async def fetch_jobspy_india(
                     )
                 )
 
-    # Only report fatal error if no jobs were fetched at all (e.g. JobSpy missing or total outage)
-    # If jobs were fetched successfully, transient query glitches do not fail the entire source
-    error_summary = "; ".join(errors[:3]) if (errors and not results) else None
+    # Any failed/timed-out query makes this source incomplete: report it so the run-level guard withholds
+    # all writes (rows are still returned for the report). Partial writes would be a separate policy decision.
+    error_summary = "; ".join(errors[:3]) if errors else None
     return results, error_summary
 
 
@@ -477,7 +477,7 @@ async def fetch_adzuna(
                     )
                 )
 
-    # Only report fatal error if no jobs were fetched at all (e.g. JobSpy missing or total outage)
-    # If jobs were fetched successfully, transient query glitches do not fail the entire source
-    error_summary = "; ".join(errors[:3]) if (errors and not results) else None
+    # Any failed/timed-out query makes this source incomplete: report it so the run-level guard withholds
+    # all writes (rows are still returned for the report). Partial writes would be a separate policy decision.
+    error_summary = "; ".join(errors[:3]) if errors else None
     return results, error_summary
