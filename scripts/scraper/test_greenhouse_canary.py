@@ -7,6 +7,8 @@ from pathlib import Path
 import httpx
 
 from scripts.scraper.fetchers import (
+    _greenhouse_country_evidence,
+    _greenhouse_location_country_evidence,
     _explicit_country_code,
     _greenhouse_salary,
     enrich_greenhouse_pay_transparency,
@@ -24,6 +26,45 @@ def test_greenhouse_country_tokens_are_unambiguous():
     assert _explicit_country_code("Remote in US") == "US"
     assert _explicit_country_code("San Francisco, CA") is None
     assert _explicit_country_code("CA", allow_ambiguous_region_code=True) == "CA"
+
+
+def test_greenhouse_us_state_country_code_collisions_require_explicit_evidence():
+    ambiguous_locations = [
+        ("Chicago, IL (On-site)", set()),
+        ("Chicago, IL - Hybrid", set()),
+        ("Remote - Chicago, IL", set()),
+        ("Chicago IL", set()),
+        ("chicago, il (hybrid)", set()),
+        ("Wilmington, DE - Remote", set()),
+        ("Wilmington DE (On-site)", set()),
+        ("Remote - Wilmington, DE", set()),
+        ("San Francisco, CA (Hybrid)", set()),
+        ("San Francisco CA - On-site", set()),
+        ("Remote - San Francisco, CA", set()),
+        ("San Francisco CA", set()),
+        ("Bangalore, IN (Remote)", set()),
+        ("Bangalore IN - Hybrid", set()),
+        ("Remote - Bangalore, IN", set()),
+        ("bangalore in (on-site)", set()),
+    ]
+    for location, expected in ambiguous_locations:
+        assert _greenhouse_location_country_evidence(location) == expected, location
+
+    explicit_locations = [
+        ("IL", {"IL"}),
+        ("DE", {"DE"}),
+        ("CA", {"CA"}),
+        ("IN", {"IN"}),
+        ("Chicago, IL, US", {"US"}),
+        ("Wilmington, DE, United States", {"US"}),
+        ("San Francisco, CA, Canada", {"CA"}),
+        ("Bangalore, IN, India", {"IN"}),
+    ]
+    for location, expected in explicit_locations:
+        assert _greenhouse_location_country_evidence(location) == expected, location
+
+    metadata_job = {"metadata": [{"name": "Country", "value": "DE"}]}
+    assert _greenhouse_country_evidence(metadata_job, "Wilmington, DE (Remote)") == {"DE"}
 
 
 def test_greenhouse_salary_rounding_matches_typescript_math_round():

@@ -41,6 +41,12 @@ COUNTRY_NAMES = {
     "MX": "Mexico",
 }
 
+_US_STATE_COUNTRY_CODE_COLLISIONS = frozenset({
+    "AL", "AR", "AZ", "CA", "CO", "DE", "GA", "ID", "IL", "IN", "KY", "LA",
+    "MA", "MD", "ME", "MN", "MO", "MS", "MT", "NC", "NE", "PA", "SC", "SD",
+    "TN", "VA",
+})
+
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -91,15 +97,14 @@ def _greenhouse_country_evidence(item: dict[str, Any], location: str) -> set[str
 
 
 def _greenhouse_location_country_evidence(location: str) -> set[str]:
-    # IL and DE are both country codes and US state abbreviations. When either is
-    # the terminal city-region token, including common remote/hybrid qualifiers,
-    # treat it as ambiguous. This covers comma and whitespace separators while
-    # leaving explicit country names/codes elsewhere in the location intact.
-    country_text = re.sub(
-        r"(?i)(?:,|\s+)(?:IL|DE)(?:\s*\((?:remote|hybrid)\))?(?=\s*(?:,|$))",
-        "",
-        location,
-    )
+    # Two-letter ISO codes that also name US states are ambiguous inside a
+    # location string, regardless of punctuation or qualifiers. Accept these
+    # codes only as the complete location; structured metadata is parsed apart.
+    stripped = location.strip()
+    if re.fullmatch(r"[A-Za-z]{2}", stripped):
+        return _explicit_country_codes(stripped, allow_ambiguous_region_code=True)
+    collision_pattern = r"\b(?:" + "|".join(sorted(_US_STATE_COUNTRY_CODE_COLLISIONS)) + r")\b"
+    country_text = re.sub(collision_pattern, " ", location, flags=re.I)
     return _explicit_country_codes(country_text)
 
 
