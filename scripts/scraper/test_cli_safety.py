@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import datetime
 import io
 import json
 import os
@@ -124,15 +125,14 @@ class CliModeTests(unittest.TestCase):
                 self.assertIs(fake_run.call_args.kwargs["no_expire"], True)
 
     def test_expire_flag_enables_expiry_only_for_uncapped_production_write(self):
-        for module, target in CLIS:
-            with self.subTest(cli=module.__name__), isolated(FAKE_ENV):
-                fake_run, code, _ = run_cli(
-                    module, [engine.WRITE_FLAG, "--production", "--expire"], target,
-                )
-                self.assertEqual(code, 0)
-                self.assertIsNone(fake_run.call_args.kwargs["max_rows"])
-                self.assertIs(fake_run.call_args.kwargs["no_expire"], False)
-                self.assertIs(fake_run.call_args.kwargs["allow_expire"], True)
+        with isolated(FAKE_ENV):
+            fake_run, code, _ = run_cli(
+                run_ingestion, [engine.WRITE_FLAG, "--production", "--expire"], "run_master_ingestion",
+            )
+            self.assertEqual(code, 0)
+            self.assertIsNone(fake_run.call_args.kwargs["max_rows"])
+            self.assertIs(fake_run.call_args.kwargs["no_expire"], False)
+            self.assertIs(fake_run.call_args.kwargs["allow_expire"], True)
 
     def test_expiry_flag_refuses_capped_and_dry_run_modes(self):
         cases = [
@@ -144,8 +144,45 @@ class CliModeTests(unittest.TestCase):
                 with self.subTest(cli=module.__name__, argv=argv), isolated(FAKE_ENV):
                     fake_run, code, err = run_cli(module, argv, target)
                     self.assertEqual(code, 2)
-                    self.assertIn("expiry", err.lower())
+                    if module is engine:
+                        self.assertIn("scripts.scraper.run_ingestion", err)
+                    else:
+                        self.assertIn("expiry", err.lower())
                     fake_run.assert_not_called()
+
+    def test_environment_variables_cannot_enable_writes_or_expiry(self):
+        unsafe_looking_env = {
+            **FAKE_ENV, "PRODUCTION": "1", "ALLOW_UNCAPPED": "1",
+            "WRITE_TO_DATABASE": "1", "EXPIRE": "1", "NO_EXPIRE": "0",
+        }
+        for module, target in CLIS:
+            with self.subTest(cli=module.__name__), isolated(unsafe_looking_env):
+                fake_run, code, _ = run_cli(module, [], target)
+                self.assertEqual(code, 0)
+                self.assertTrue(fake_run.call_args.kwargs["dry_run"])
+                self.assertTrue(fake_run.call_args.kwargs["no_expire"])
+
+    def test_engine_cli_refuses_expiry_before_network_and_points_to_master_runner(self):
+        with isolated(FAKE_ENV), patch.object(sys, "argv", [
+            "prog", engine.WRITE_FLAG, "--production", "--expire",
+        ]), patch.object(httpx, "AsyncClient", side_effect=AssertionError("network called")):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    engine.main()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("scripts.scraper.run_ingestion", err.getvalue())
+
+    def test_failure_reports_make_ingestion_error_and_cli_exit_nonzero(self):
+        failure_report = {"expiry_reports": [{"source_id": BOARD, "status": "failed", "error": "HTTP 500"}]}
+        self.assertTrue(engine.ingestion_has_errors(failure_report))
+        for module, target in CLIS:
+            with self.subTest(cli=module.__name__), isolated(FAKE_ENV):
+                _fake_run, code, err = run_cli(
+                    module, ["--max-rows", "10"], target, failure_report,
+                )
+                self.assertEqual(code, 1)
+                self.assertIn("expiry", err.lower())
 
     def test_write_mode_requires_positive_cap_before_invoking_either_orchestrator(self):
         for module, target in CLIS:
@@ -475,12 +512,18 @@ class DryRunZeroWriteTests(unittest.TestCase):
         }
 
         class ExpiryRecorder(Recorder):
+            def __init__(self) -> None:
+                super().__init__()
+                self.requests: list[httpx.Request] = []
+
             def __call__(self, request: httpx.Request) -> httpx.Response:
                 if request.url.host == FAKE_HOST and request.method == "GET" and request.url.path.endswith("/jobs"):
                     self.calls.append((request.method, request.url.host, request.url.path))
+                    self.requests.append(request)
                     return httpx.Response(200, json=[{"id": "row-1"}], headers={"content-range": "0-0/1"})
                 if request.url.host == FAKE_HOST and request.method == "PATCH" and request.url.path.endswith("/jobs"):
                     self.calls.append((request.method, request.url.host, request.url.path))
+                    self.requests.append(request)
                     return httpx.Response(200, json=[{"id": "stale-row"}])
                 return super().__call__(request)
 
@@ -520,6 +563,82 @@ class DryRunZeroWriteTests(unittest.TestCase):
         self.assertEqual(report["expiry_reports"][0]["expired"], 1)
         self.assertEqual(report["db"]["expired"], 1)
         self.assertEqual([method for method, host, _ in rec.calls if host == FAKE_HOST], ["GET", "PATCH"])
+        baseline_req, expiry_req = rec.requests
+        self.assertEqual(baseline_req.url.params["source_id"], f"eq.{BOARD}")
+        self.assertEqual(expiry_req.url.params["source_id"], f"eq.{BOARD}")
+        cutoff = expiry_req.url.params["last_seen_at"].removeprefix("lt.")
+        parsed_cutoff = datetime.fromisoformat(cutoff)
+        self.assertIsNotNone(parsed_cutoff.tzinfo)
+        self.assertIn("%2B00%3A00", str(expiry_req.url))
+
+    def test_expiry_http_errors_invalid_responses_and_exceptions_fail_cli(self):
+        seeds = {
+            "rate_limit": {"default_rps_per_host": 4.0, "burst_per_host": 1.0},
+            "layer1_public_ats": [{"ats": "greenhouse", "slug": "stripe", "source_priority": 1}],
+            "layer2_enterprise_json": {},
+        }
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(seeds, tmp)
+        tmp.close()
+        job = {
+            "source_type": "greenhouse", "source_id": BOARD, "source_job_id": "stripe-101",
+            "company": "Stripe", "company_slug": "stripe", "title": "Engineer", "source_priority": 1,
+        }
+
+        class RecordingWriter:
+            persistence_failed = False
+            failed_writes = 0
+            write_errors: list[str] = []
+            base_url = f"https://{FAKE_HOST}/rest/v1"
+            headers = {"apikey": FAKE_KEY, "Authorization": f"Bearer {FAKE_KEY}"}
+
+            async def sync_companies(self, _client, _jobs):
+                return {"stripe": "company-stripe"}
+
+            async def sync_jobs_set_diff(self, _client, selected, _company_map):
+                return {
+                    "inserted": len(selected), "updated": 0, "skipped_unchanged": 0,
+                    "failed_writes": 0, "persistence_failed": False, "write_errors": [],
+                    "persisted_ids": ["row-1"], "persisted_source_keys": [[BOARD, "stripe-101"]],
+                }
+
+        async def fake_fetch(_client, _limiter, _seed):
+            return [job]
+
+        scenarios = [
+            ("HTTP 400", httpx.Response(400, json={"error": "bad filter"})),
+            ("HTTP 500", httpx.Response(500, json={"error": "database unavailable"})),
+            ("malformed JSON", httpx.Response(200, content=b"not-json", headers={"content-type": "application/json"})),
+            ("wrong response shape", httpx.Response(200, json={"id": "stale-row"})),
+            ("transport exception", RuntimeError("connection dropped")),
+        ]
+        try:
+            for label, patch_result in scenarios:
+                def respond(request: httpx.Request) -> httpx.Response:
+                    if request.url.host == FAKE_HOST and request.method == "GET":
+                        return httpx.Response(200, json=[{"id": "row-1"}], headers={"content-range": "0-0/1"})
+                    if request.url.host == FAKE_HOST and request.method == "PATCH":
+                        if isinstance(patch_result, Exception):
+                            raise patch_result
+                        return patch_result
+                    return Recorder()(request)
+
+                with self.subTest(scenario=label), isolated(FAKE_ENV), \
+                        patch.object(run_ingestion, "fetch_layer1_seed", side_effect=fake_fetch), \
+                        patch.object(run_ingestion, "SupabaseSetDiffWriter", return_value=RecordingWriter()):
+                    report = asyncio.run(run_ingestion.run_master_ingestion(
+                        sources=[BOARD], seeds_path=tmp.name, dry_run=False, max_rows=None,
+                        allow_uncapped=True, no_expire=False, allow_expire=True,
+                        transport=httpx.MockTransport(respond),
+                    ))
+                    self.assertEqual(report["expiry_reports"][0]["status"], "failed", report.get("sources"))
+                    _fake_run, code, err = run_cli(
+                        run_ingestion, ["--max-rows", "10"], "run_master_ingestion", report,
+                    )
+                    self.assertEqual(code, 1)
+                    self.assertIn("expiry", err.lower())
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

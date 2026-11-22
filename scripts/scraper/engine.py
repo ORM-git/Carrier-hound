@@ -111,11 +111,13 @@ def select_unique_jobs(jobs: list[dict[str, Any]], max_rows: int | None) -> list
 
 def ingestion_has_errors(report: dict[str, Any]) -> bool:
     db = report.get("db") if isinstance(report.get("db"), dict) else {}
+    expiry_reports = report.get("expiry_reports") if isinstance(report.get("expiry_reports"), list) else []
     return bool(
         report.get("errors")
         or report.get("failed_sources")
         or db.get("persistence_failed")
         or db.get("write_errors")
+        or any(item.get("status") == "failed" for item in expiry_reports if isinstance(item, dict))
     )
 
 
@@ -659,6 +661,10 @@ async def run_ingestion(
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Runs Layer 1 (Public ATS) and Layer 2 (Workday CXS, Amazon, Microsoft) ingestion."""
+    if not no_expire:
+        raise WriteAuthorizationError(
+            "--expire is unsupported by engine.py; use python -m scripts.scraper.run_ingestion"
+        )
     validate_row_cap(
         dry_run=dry_run, max_rows=max_rows, no_expire=no_expire,
         allow_uncapped=allow_uncapped, allow_expire=allow_expire,
@@ -777,6 +783,10 @@ def main() -> None:
 
     try:
         dry_run = dry_run_from_args(args)
+        if not args.no_expire:
+            raise WriteAuthorizationError(
+                "--expire is unsupported by engine.py; use python -m scripts.scraper.run_ingestion"
+            )
         validate_row_cap(
             dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
             allow_uncapped=args.production, allow_expire=not args.no_expire,
@@ -791,7 +801,7 @@ def main() -> None:
         raise SystemExit(2)
     print(json.dumps(summary, indent=2))
     if ingestion_has_errors(summary):
-        print("ingestion failed: source or persistence errors were reported", file=sys.stderr)
+        print("ingestion failed: source, persistence, or expiry errors were reported", file=sys.stderr)
         raise SystemExit(1)
 
 
