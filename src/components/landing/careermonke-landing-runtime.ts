@@ -3,7 +3,7 @@
 export function initCareerMonkeLanding(): () => void {
   if (typeof window === "undefined" || typeof ResizeObserver === "undefined") return () => {};
   const first = document.getElementById("first-card");
-  const peek = document.querySelector<HTMLElement>(".landing-wrapper .peek");
+  const peek = document.querySelector<HTMLElement>(".cm-top .peek");
   if (!first || !peek) return () => {};
 
   const set = () => peek.style.setProperty("--peek-h", Math.round(first.offsetHeight * 0.5 + 28) + "px"); // +28 = area hidden under the CTA overlap

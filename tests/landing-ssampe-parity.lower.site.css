@@ -1,0 +1,195 @@
+/* Sections added for the standalone site (phone-first layouts). Tokens come from landing.css. */
+.landing-wrapper{padding-bottom:96px} /* room for the sticky bar */
+
+/* Job cards block (after the hero): static copy of the CareerMonke job card (src/app/jobs/page.tsx) */
+.landing-wrapper .hj{max-width:820px;margin:0 auto;text-align:center}
+.landing-wrapper .fj-cards{text-align:left}
+.landing-wrapper .jc{background:#fff;border-radius:16px;box-shadow:0 0 0 1px #E2E8F0;padding:16px;margin-bottom:12px;color:#0F172A}
+.landing-wrapper .jc .ic{width:16px;height:16px;flex:none;color:#475569}
+.landing-wrapper .jc h3{margin:0}
+.landing-wrapper .jc-logo{flex:none;width:72px;height:72px;box-sizing:border-box;border-radius:12px;background:#fff;border:1px solid rgba(226,232,240,.9);padding:12px;display:grid;place-items:center;overflow:hidden}
+.landing-wrapper .jc-logo img{display:block;width:100%;height:100%;object-fit:contain}
+.landing-wrapper .jc-logo.sm{width:32px;height:32px;border-radius:8px;padding:5px}
+.landing-wrapper .jc-hr{border-bottom:1px solid #E2E8F0}
+.landing-wrapper .jc-menu{flex:none;display:grid;place-items:center;width:28px;height:28px;color:#475569}
+.landing-wrapper .jc-act{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.landing-wrapper .jc-ib{width:44px;height:44px;border-radius:999px;border:1px solid #E2E8F0;background:#F1F5F9;display:grid;place-items:center}
+.landing-wrapper .jc-apply{width:120px;height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:999px;background:#2563EB;color:#fff;font-size:12px;font-weight:700;text-decoration:none}
+.landing-wrapper .jc-apply .ic{width:14px;height:14px;color:#fff}
+/* desktop variant (CareerMonke sm: 640px and up) */
+.landing-wrapper .jc-m{display:none}
+.landing-wrapper .jc-d{display:flex;align-items:stretch;gap:16px;min-height:196px}
+.landing-wrapper .jc-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:10px}
+.landing-wrapper .jc-top{display:flex;align-items:flex-start;gap:16px;min-width:0}
+.landing-wrapper .jc-head{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.landing-wrapper .jc-row1{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:22px}
+.landing-wrapper .jc-pills{display:flex;flex-wrap:wrap;gap:6px}
+.landing-wrapper .jc-pill{height:22px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:4px}
+.landing-wrapper .jc-pill.b{background:#EFF6FF;color:#1E40AF;border:1px solid #BFDBFE}
+.landing-wrapper .jc-pill.b .ic{width:12px;height:12px;color:#2563EB}
+.landing-wrapper .jc-pill.s{background:#F1F5F9;color:#475569;font-weight:600}
+.landing-wrapper .jc-title{font-size:20px;font-weight:600;line-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.landing-wrapper .jc-co{display:flex;align-items:center;gap:6px;height:20px;font-size:13px;color:#334155;font-weight:500}
+.landing-wrapper .jc-cat{height:20px;padding:2px 6px;border-radius:4px;font-size:11px;border:1px solid;display:inline-flex;align-items:center}
+.landing-wrapper .jc-cat.t0{background:#EFF6FF;color:#1D4ED8;border-color:rgba(191,219,254,.7)}
+.landing-wrapper .jc-cat.t1{background:#ECFDF5;color:#065F46;border-color:rgba(167,243,208,.7)}
+.landing-wrapper .jc-cat.t2{background:#F5F3FF;color:#5B21B6;border-color:rgba(221,214,254,.7)}
+.landing-wrapper .jc-cat.t3{background:#FFFBEB;color:#92400E;border-color:rgba(253,230,138,.7)}
+.landing-wrapper .jc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 16px;font-size:13px;font-weight:600;color:#1E293B}
+.landing-wrapper .jc-grid span{display:flex;align-items:center;gap:6px;height:20px;min-width:0;white-space:nowrap;overflow:hidden}
+.landing-wrapper .jc-grid .sal b{font-weight:600;color:#0F172A}
+.landing-wrapper .jc-match{flex:none;width:176px;margin:2px 2px 2px 0;padding:12px;border-radius:16px;border:1px solid rgba(2,44,34,.4);background:linear-gradient(to bottom,#09151E,#0B1E28,#06241D);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center;box-shadow:inset 0 2px 4px rgba(0,0,0,.05)}
+.landing-wrapper .jc-mtop{display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.landing-wrapper .jc-ring{position:relative;width:70px;height:70px;display:grid;place-items:center}
+.landing-wrapper .jc-ring svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.landing-wrapper .jc-ring b{position:relative;font-size:20px;font-weight:900;line-height:1;letter-spacing:-.025em}
+.landing-wrapper .jc-mtop p{margin:8px 0 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#F1F5F9}
+.landing-wrapper .jc-checks{list-style:none;margin:8px 0 0;padding:8px 0 0 8px;width:100%;border-top:1px solid rgba(255,255,255,.1);text-align:left;font-size:11px;color:#CBD5E1}
+.landing-wrapper .jc-checks li{display:flex;gap:6px}
+.landing-wrapper .jc-checks li+li{margin-top:4px}
+.landing-wrapper .jc-checks i{font-style:normal;font-weight:700;color:#34D399}
+/* mobile variant (under 640px) */
+@media (max-width:639px){
+  .landing-wrapper .jc-d{display:none}
+  .landing-wrapper .jc-m{display:flex;flex-direction:column;gap:12px}
+  .landing-wrapper .jc-mrow{display:flex;align-items:center;gap:10px}
+  .landing-wrapper .jc-mco{flex:1;min-width:0;line-height:1.25}
+  .landing-wrapper .jc-mco b{display:block;font-size:14px;font-weight:600;color:#0F172A}
+  .landing-wrapper .jc-mco span{display:block;margin-top:2px;font-size:12px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .landing-wrapper .jc-badge{flex:none;width:54px;height:30px;border-radius:999px;border:1px solid rgba(16,185,129,.3);background:rgba(16,185,129,.1);display:grid;place-items:center;font-size:12px;font-weight:700;color:#059669}
+  .landing-wrapper .jc-menu .ic{width:20px;height:20px}
+  .landing-wrapper .jc-mtitle{margin-top:4px!important;font-size:16px;font-weight:700;line-height:1.375}
+  .landing-wrapper .jc-chips{display:flex;flex-wrap:wrap;gap:6px;padding-top:4px}
+  .landing-wrapper .jc-chips span{height:24px;padding:2px 10px;border-radius:6px;background:#F1F5F9;color:#1E293B;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+  .landing-wrapper .jc-chips .ic{width:12px;height:12px}
+  .landing-wrapper .jc-mfoot{display:flex;align-items:center;justify-content:space-between;margin-top:4px;padding-top:12px;border-top:1px solid #E2E8F0;font-size:12px;color:#475569}
+  .landing-wrapper .jc-mfoot .jc-act{gap:6px}
+  .landing-wrapper .jc-apply.sm{width:auto;padding:8px 16px}
+}
+/* second card fades out: only its top part shows (height still from content); View Jobs sits over the fade */
+.landing-wrapper .jc+.jc{margin-bottom:0;-webkit-mask-image:linear-gradient(#000 30%,transparent);mask-image:linear-gradient(#000 30%,transparent)}
+.landing-wrapper .jc+.jc :is(.jc-hr,.jc-grid,.jc-act,.jc-match,.jc-chips,.jc-mfoot,.jc-mtitle){display:none}
+.landing-wrapper .jc+.jc .jc-d{min-height:0}
+.landing-wrapper .hj .cta-row{position:relative;z-index:1}
+.landing-wrapper .fj-note{margin:10px 0 0;font-size:14px;color:var(--muted)}
+
+/* stats row, after the job cards */
+/* stats row: same section gap above and below */
+.landing-wrapper section.stats-row{padding-top:var(--sec);padding-bottom:var(--sec)}
+.landing-wrapper .stats-row .stats{margin-top:0}
+
+/* 4. Logo slider (static copy of the jobs ticker look) */
+.landing-wrapper .ls{overflow:hidden;background:#0A0A0A;border-block:1px solid rgba(255,255,255,.1);height:84px;display:flex;align-items:center}
+.landing-wrapper .ls-track{display:flex;width:max-content;animation:lsMarquee 60s linear infinite}
+.landing-wrapper .ls:hover .ls-track,.landing-wrapper .ls:focus-within .ls-track{animation-play-state:paused}
+.landing-wrapper .ls-set{display:flex}
+.landing-wrapper .ls-card{display:flex;align-items:center;gap:12px;margin-right:48px;color:#fff;text-decoration:none;white-space:nowrap}
+.landing-wrapper .ls-logo{width:40px;height:40px;border-radius:9px;background:#1F1F1F;border:1px solid rgba(255,255,255,.1);display:grid;place-items:center;font-weight:600}
+.landing-wrapper .ls-txt{display:flex;flex-direction:column}
+.landing-wrapper .ls-meta{font-size:12px;color:#A1A1AA}
+.landing-wrapper .ls-meta b{color:#D4D4D8;font-weight:500}
+.landing-wrapper .ls-title{font-size:15px;font-weight:700}
+@keyframes lsMarquee{to{transform:translateX(-50%)}}
+@media (min-width:768px){.landing-wrapper .ls{height:104px}.landing-wrapper .ls-logo{width:48px;height:48px}.landing-wrapper .ls-title{font-size:17px}.landing-wrapper .ls-meta{font-size:13px}}
+
+/* 7. Reviews carousel */
+.landing-wrapper .rv{background:var(--soft);padding-bottom:28px;margin-top:var(--sec)}
+.landing-wrapper .rv-track{list-style:none;margin:24px 0 0;padding:0 var(--pad) 4px;display:flex;gap:16px;overflow-x:auto;scrollbar-width:none}
+.landing-wrapper .rv-track::-webkit-scrollbar{display:none}
+.landing-wrapper .rv-card{flex:0 0 80%;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;min-height:200px}
+.landing-wrapper .rv-top{display:flex;align-items:center;gap:12px}
+.landing-wrapper .rv-av{flex:none;width:44px;height:44px;border-radius:50%;background:var(--blue-100);color:var(--blue-d);display:grid;place-items:center;font-weight:700;font-size:14px}
+.landing-wrapper .rv-top b{display:block;font-size:15px;color:var(--navy)}
+.landing-wrapper .rv-st{color:#F59E0B;letter-spacing:1px}
+.landing-wrapper .rv-card p{margin:14px 0 0;font-size:17px;line-height:1.5;color:var(--ink)}
+.landing-wrapper .rv-hint{margin:16px 0 0;text-align:center;color:var(--muted);font-size:15px}
+@media (min-width:768px){.landing-wrapper .rv-card{flex-basis:44%}}
+@media (prefers-reduced-motion:reduce){.landing-wrapper .rv-card[aria-hidden="true"]{display:none}}
+@media (min-width:1024px){.landing-wrapper .rv-track{max-width:1120px;margin-inline:auto}.landing-wrapper .rv-card{flex-basis:calc((100% - 32px)/3)}.landing-wrapper .rv-hint{display:none}}
+
+/* 8. Founder with stats row */
+.landing-wrapper .fd{max-width:760px}
+.landing-wrapper .fd-top{display:flex;align-items:center;gap:20px}
+.landing-wrapper .fd-ph{flex:none;width:96px;height:96px;border-radius:50%;background:var(--blue-50);border:2px solid var(--blue);object-fit:cover}
+.landing-wrapper .fd h2{margin:0;font-size:24px;line-height:1.2;font-weight:800;color:var(--navy)}
+.landing-wrapper .fd-role{margin:4px 0 0;color:var(--muted);font-size:17px}
+.landing-wrapper .fd-bio{margin:20px 0 0;font-size:18px;line-height:1.6;color:var(--ink)}
+.landing-wrapper .fd-bio+.fd-bio{margin-top:12px}
+.landing-wrapper .fd-stats{display:grid;grid-template-columns:repeat(3,1fr);margin:24px 0 0;text-align:center}
+.landing-wrapper .fd-stats div{display:flex;flex-direction:column-reverse}
+.landing-wrapper .fd-stats dd{margin:0;font-size:24px;font-weight:800;color:var(--navy)}
+.landing-wrapper .fd-stats dt{margin-top:4px;color:var(--muted);font-size:15px}
+@media (min-width:768px){.landing-wrapper .fd-ph{width:120px;height:120px}.landing-wrapper .fd h2{font-size:30px}}
+
+/* 10. Free preview spacing (band itself styled in landing.css) */
+.landing-wrapper .free-preview-band{margin-top:var(--sec)}
+
+/* Sticky dark CTA bar */
+.landing-wrapper .sb{position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));z-index:50;display:flex;align-items:center;gap:12px;max-width:680px;margin:0 auto;padding:8px 8px 8px 12px;background:var(--navy);border-radius:20px;color:#fff;box-shadow:0 12px 32px -8px rgba(9,14,52,.5);transform:translateY(calc(100% + 32px));visibility:hidden;transition:transform .4s ease,visibility 0s .4s}
+/* shown by main.ts once the comparison section is reached */
+.landing-wrapper .sb.on{transform:none;visibility:visible;transition:transform .4s ease}
+.landing-wrapper .sb img{width:48px;height:48px;object-fit:contain}
+.landing-wrapper .sb p{flex:1;margin:0;min-width:0;line-height:1.25}
+.landing-wrapper .sb b{display:block;text-transform:uppercase;letter-spacing:.08em;font-size:14px}
+.landing-wrapper .sb p span{font-size:13px;opacity:.85}
+.landing-wrapper .sb a{flex:none;background:#fff;color:var(--navy);text-decoration:none;font-weight:700;font-size:17px;border-radius:14px;padding:14px 18px}
+@media (min-width:768px){.landing-wrapper .sb b{font-size:15px}.landing-wrapper .sb p span{font-size:14px}}
+
+/* Phones: fit hero, both job cards, View Jobs and "Free preview" in the first screen (360x740 and up). Spacing/sizing only. */
+@media (max-width:767px){
+  body{margin:0}
+  .landing-wrapper .top{height:52px}
+  .landing-wrapper .hero{padding-top:16px;padding-bottom:18px}
+  .landing-wrapper .hero h1{margin-top:8px}
+  .landing-wrapper .hero h1 .l2{margin-top:4px}
+  .landing-wrapper .hero .sub{margin-top:14px}
+  .landing-wrapper .hj .cta-row{margin-top:16px}
+  .landing-wrapper section.hjs{padding-top:18px}
+  .landing-wrapper .fj-note{margin-top:4px}
+}
+
+/* Desktop: fit hero, first card, faded second card and View Jobs in the first screen (1280x720 and up). Spacing only. */
+@media (min-width:768px){
+  body{margin:0}
+  .landing-wrapper .top{height:48px}
+  .landing-wrapper .hero{padding-top:4px;padding-bottom:24px}
+  .landing-wrapper .hero h1{margin-top:2px}
+  .landing-wrapper .hero h1 .l2{margin-top:0}
+  .landing-wrapper .hero .sub{margin-top:20px;max-width:none}
+  .landing-wrapper section.hjs{padding-top:24px}
+  .landing-wrapper .jc{margin-bottom:6px;padding:12px}
+  .landing-wrapper .jc+.jc{padding-bottom:0}
+  .landing-wrapper .jc-main{gap:6px}
+  .landing-wrapper .hj .cta-row{margin-top:16px}
+  .landing-wrapper .fj-note{margin-top:4px}
+}
+
+/* One vertical rhythm from hero to footer: R = 60px phones, 80px desktop.
+   Text to text is R everywhere. At a background edge (bands, logo strip, footer) R is split: half outside, half inside.
+   Hero to job cards splits R across the hero edge (R/2 each side) to keep the first screen. */
+.landing-wrapper{--sec:60px}
+@media (min-width:768px){.landing-wrapper{--sec:80px}}
+.landing-wrapper{--half:calc(var(--sec) / 2)}
+.landing-wrapper main{padding-bottom:0}
+/* logo strip: its cards sit 22px (phones) / 28px (desktop) inside the bar, so text to strip cards is still R */
+.landing-wrapper{--ls-in:22px}
+@media (min-width:768px){.landing-wrapper{--ls-in:28px}}
+.landing-wrapper section.stats-row{padding-bottom:calc(var(--sec) - var(--ls-in))}
+.landing-wrapper .ls + section.s{padding-top:calc(var(--sec) - var(--ls-in))}
+.landing-wrapper section.rv,.landing-wrapper section.s.band{margin-top:var(--half);padding-top:var(--half);padding-bottom:var(--half)}
+.landing-wrapper section.rv + section.s,.landing-wrapper section.s.band + section.s{padding-top:var(--half)}
+.landing-wrapper .free-preview-band{margin-top:var(--half);padding-top:var(--half);padding-bottom:var(--half)}
+.landing-wrapper footer{padding-top:var(--half)}
+/* section heading to its content: 28px phones, 32px desktop (founder and Free preview keep their title/subtitle pairs) */
+.landing-wrapper :is(.vs,.fx,.rv-track,.faq,.wl){margin-top:28px}
+@media (min-width:768px){.landing-wrapper :is(.vs,.fx,.rv-track,.faq,.wl){margin-top:32px}}
+/* a little more room inside cards and blocks */
+.landing-wrapper .rv-card{padding:22px}
+.landing-wrapper .wl-card{padding:12px}
+.landing-wrapper .faq summary{padding-top:18px;padding-bottom:18px}
+.landing-wrapper .faq details p{padding-bottom:20px}
+.landing-wrapper .vs td{padding-top:9px;padding-bottom:9px}
+@media (min-width:768px){.landing-wrapper .rv-card{padding:26px}.landing-wrapper .wl-card{padding:20px}.landing-wrapper .vs td{padding-top:12px;padding-bottom:12px}}
+/* feature rows: same gap as sections, no screen-height rows */
+.landing-wrapper .fx{gap:var(--sec)}
+.landing-wrapper .fxi{min-height:0}
