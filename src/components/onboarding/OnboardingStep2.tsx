@@ -225,7 +225,8 @@ export default function OnboardingStep2({
   // View/Download link to the file uploaded in this session (an object URL; nothing is fetched from the server).
   const [resumeFileUrl, setResumeFileUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (!resumeFile) {
+    // No object-URL support (some embedded browsers, test DOMs): View/Download are simply not offered.
+    if (!resumeFile || typeof URL.createObjectURL !== "function") {
       setResumeFileUrl(null);
       return;
     }
