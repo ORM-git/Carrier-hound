@@ -493,34 +493,39 @@ class SupabaseSetDiffWriter:
                         self.logo_enqueue["status"] = f"invalid: unexpected coverage shape (got {cov_type})"
                         return
 
-                    metric_keys = {"total_companies", "with_logo", "coverage_pct", "coverage", "total", "backlog", "orphan"}
-                    matched_metrics = set(cov_val.keys()).intersection(metric_keys)
-                    if not matched_metrics:
+                    # Real company_logo_coverage contract (20261122 base + 20261123 review state)
+                    base_keys = {
+                        "companies_with_active_jobs",
+                        "eligible_hosted",
+                        "missing_or_ineligible",
+                        "pending",
+                        "failed",
+                        "missing",
+                        "queued_retries",
+                        "orphan_links",
+                    }
+                    review_state_keys = {"held", "intentional_initials", "approved"}
+                    allowed_keys = base_keys | review_state_keys
+
+                    if not base_keys.issubset(cov_val.keys()):
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: coverage missing required keys"
+                        return
+
+                    unexpected = set(cov_val.keys()) - allowed_keys
+                    if unexpected:
                         self.logo_enqueue["coverage"] = "unknown"
                         self.logo_enqueue["status"] = "invalid: unexpected coverage keys"
                         return
 
-                    for k in matched_metrics:
-                        v = cov_val[k]
-                        if k in {"total_companies", "with_logo", "total", "backlog", "orphan"}:
-                            if isinstance(v, bool) or not isinstance(v, int) or v < 0:
-                                self.logo_enqueue["coverage"] = "unknown"
-                                self.logo_enqueue["status"] = f"invalid: coverage {k} must be non-negative integer"
-                                return
-                        elif k in {"coverage_pct", "coverage"}:
-                            if isinstance(v, bool) or not isinstance(v, (int, float)):
-                                self.logo_enqueue["coverage"] = "unknown"
-                                self.logo_enqueue["status"] = f"invalid: coverage {k} must be numeric"
-                                return
-                            if not (0.0 <= float(v) <= 100.0):
-                                self.logo_enqueue["coverage"] = "unknown"
-                                self.logo_enqueue["status"] = f"invalid: coverage {k} out of range [0, 100]"
-                                return
-
-                    if "total_companies" in cov_val and "with_logo" in cov_val:
-                        if cov_val["with_logo"] > cov_val["total_companies"]:
+                    for k, v in cov_val.items():
+                        if isinstance(v, bool) or not isinstance(v, int):
                             self.logo_enqueue["coverage"] = "unknown"
-                            self.logo_enqueue["status"] = "invalid: coverage with_logo exceeds total_companies"
+                            self.logo_enqueue["status"] = f"invalid: coverage {k} must be integer"
+                            return
+                        if v < 0:
+                            self.logo_enqueue["coverage"] = "unknown"
+                            self.logo_enqueue["status"] = f"invalid: coverage {k} cannot be negative"
                             return
 
                     self.logo_enqueue["coverage"] = cov_val
