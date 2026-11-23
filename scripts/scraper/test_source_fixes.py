@@ -321,6 +321,37 @@ class TestWorkdaySharedBudget(unittest.TestCase):
         self.assertEqual(len(self.requests), 3, "25s + 25s + 25s exceeds the 60s page budget on the third 429")
         self.assertLessEqual(sum(self.clock.calls), self.fetchers.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS)
 
+    def test_mixed_timeout_and_429_waits_share_one_page_deadline(self) -> None:
+        import httpx
+        seed = {"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}
+
+        def handler(n):
+            if n == 1:
+                raise httpx.ReadTimeout("timed out")  # 2s network backoff
+            if n in (2, 3):
+                return httpx.Response(429, headers={"Retry-After": "30"})
+            return httpx.Response(200, json={"jobPostings": [{"title": "Engineer", "externalPath": "/job/1", "bulletFields": ["R1"]}]})
+
+        out = self._run(handler, [seed])
+        self.assertIsInstance(out[0], self.fetchers.WorkdayRateLimited)
+        self.assertEqual(len(self.requests), 3, "2s + 30s + 30s passes the 60s deadline: request 4 must not be sent")
+        self.assertLessEqual(sum(self.clock.calls), self.fetchers.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS)
+
+    def test_inherited_cooldown_counts_against_the_page_deadline(self) -> None:
+        import httpx
+        self.fetchers._WORKDAY_COOLDOWN_UNTIL = 25.0  # left by an earlier tenant's 429
+        seed = {"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}
+
+        def handler(n):
+            if n <= 2:
+                return httpx.Response(429, headers={"Retry-After": "30"})
+            return httpx.Response(200, json={"jobPostings": [{"title": "Engineer", "externalPath": "/job/1", "bulletFields": ["R1"]}]})
+
+        out = self._run(handler, [seed])
+        self.assertIsInstance(out[0], self.fetchers.WorkdayRateLimited)
+        self.assertEqual(len(self.requests), 2, "25s inherited + 30s + 30s passes the 60s deadline: request 3 must not be sent")
+        self.assertLessEqual(sum(self.clock.calls), self.fetchers.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS)
+
     def test_requests_are_spaced_per_tenant_not_across_tenants(self) -> None:
         import httpx
         sent: list[tuple[str, float]] = []
