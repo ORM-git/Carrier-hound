@@ -97,6 +97,42 @@ export async function POST(req: Request) {
     return jsonResponse({ error: "Unauthorized: Invalid session" }, 401);
   }
 
+  // Refuse onboarding if account has an interrupted deletion pending
+  try {
+    const { data: tombstone, error: tombstoneErr } = await supabaseAdmin
+      .from("deleted_account_tombstones")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const isMissingTombstone = (err: any) => {
+      if (!err) return false;
+      const msg = String(err.message || "").toLowerCase();
+      return (
+        err.code === "42P01" ||
+        err.code === "PGRST204" ||
+        err.code === "PGRST205" ||
+        msg.includes("does not exist") ||
+        msg.includes("relation")
+      );
+    };
+
+    if (tombstoneErr && !isMissingTombstone(tombstoneErr)) {
+      log.error("Failed to verify tombstone state in /api/onboarding", { error: tombstoneErr.message });
+      return jsonResponse({ error: "Service temporarily unavailable" }, 503);
+    }
+
+    if (tombstone) {
+      return jsonResponse(
+        { error: "Account deletion is pending. Please resolve or cancel deletion in Settings before onboarding." },
+        409
+      );
+    }
+  } catch (err: any) {
+    log.error("Tombstone verification error in /api/onboarding", { error: err?.message || err });
+    return jsonResponse({ error: "Service temporarily unavailable" }, 503);
+  }
+
   let body: any;
   try {
     body = await req.json();

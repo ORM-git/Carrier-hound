@@ -16,6 +16,8 @@ export interface FakeDbOptions {
   failTables?: Record<string, DbError>;
   /** Force auth.admin.deleteUser to fail. */
   authDeleteError?: DbError;
+  /** Role of client: 'service_role' (default for admin) or 'authenticated'/'anon' (RLS-restricted). */
+  role?: "service_role" | "authenticated" | "anon";
 }
 
 export function createFakeSupabase(options: FakeDbOptions = {}) {
@@ -45,6 +47,9 @@ export function createFakeSupabase(options: FakeDbOptions = {}) {
 
     const run = (): { data: Row[]; error: DbError } => {
       calls.push(`${op}:${table}`);
+      if (options.role && options.role !== "service_role" && table === "deleted_account_tombstones") {
+        return { data: [], error: { code: "42501", message: "permission denied for table deleted_account_tombstones" } };
+      }
       if (failTables[table]) return { data: [], error: failTables[table] };
       if (usesDeletedAt && missingDeletedAt.has(table)) return { data: [], error: missingColumn(table) };
       const matched = rows(table).filter((r) => filters.every((f) => f(r)));

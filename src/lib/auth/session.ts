@@ -81,39 +81,50 @@ export async function getAuthUser(): Promise<User | null> {
 /** Columns that exist before migration 20261117 (country columns excluded). */
 const PREFS_COLUMNS_WITHOUT_COUNTRY =
   "roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at";
+const PREFS_COLUMNS_WITH_COUNTRY = `${PREFS_COLUMNS_WITHOUT_COUNTRY}, country, country_code`;
 
 /**
  * Retrieves user preferences from Supabase with fallback to local storage.
  * A missing row means the user has saved nothing yet: return blank preferences
  * and write NOTHING (no seeded roles, experience level, salary or work auth).
  */
-export async function getUserPreferences(userId?: string): Promise<UserPreferences> {
-  const supabase = createClient();
+export async function getUserPreferences(userId?: string, clientOverride?: any): Promise<UserPreferences> {
+  const supabase = clientOverride || createClient();
   if (userId && userId !== "local-user") {
     try {
       let { data, error } = await supabase
         .from("user_preferences")
-        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at, country, country_code, deleted_at")
+        .select(`${PREFS_COLUMNS_WITH_COUNTRY}, deleted_at`)
         .eq("user_id", userId)
         .is("deleted_at", null)
         .maybeSingle();
 
       if (error && (isMissingCountryColumnError(error) || isMissingDeletedAtColumnError(error))) {
-        // Migration not applied yet: read everything else, the country stays unknown.
-        if (isMissingCountryColumnError(error)) {
+        const missingCountry = isMissingCountryColumnError(error);
+        const missingDeletedAt = isMissingDeletedAtColumnError(error);
+
+        if (missingCountry && missingDeletedAt) {
+          // Neither column exists (legacy schema before both migrations)
+          ({ data, error } = await supabase
+            .from("user_preferences")
+            .select(PREFS_COLUMNS_WITHOUT_COUNTRY)
+            .eq("user_id", userId)
+            .maybeSingle());
+        } else if (missingDeletedAt) {
+          // Country columns present, deleted_at absent: preserve country!
+          ({ data, error } = await supabase
+            .from("user_preferences")
+            .select(PREFS_COLUMNS_WITH_COUNTRY)
+            .eq("user_id", userId)
+            .maybeSingle());
+        } else if (missingCountry) {
+          // Country absent, deleted_at present: filter deleted_at
           log.warn("user_preferences country columns missing; reading without them", { migration: COUNTRY_MIGRATION });
           ({ data, error } = await supabase
             .from("user_preferences")
             .select(`${PREFS_COLUMNS_WITHOUT_COUNTRY}, deleted_at`)
             .eq("user_id", userId)
             .is("deleted_at", null)
-            .maybeSingle());
-        }
-        if (error && isMissingDeletedAtColumnError(error)) {
-          ({ data, error } = await supabase
-            .from("user_preferences")
-            .select(PREFS_COLUMNS_WITHOUT_COUNTRY)
-            .eq("user_id", userId)
             .maybeSingle());
         }
       }

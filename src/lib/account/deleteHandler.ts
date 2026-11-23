@@ -213,6 +213,67 @@ export async function handleAccountDeleteRequest(
     const userId = user.id;
     const normalizedEmail = String(user.email || "").trim().toLowerCase();
 
+    // 1a. Handle explicit cancellation of an interrupted deletion
+    let reqBody: any = null;
+    try {
+      const clone = req.clone();
+      reqBody = await clone.json();
+    } catch {}
+
+    if (reqBody && reqBody.action === "cancel") {
+      const { data: tombstone, error: tombstoneErr } = await supabaseAdmin
+        .from("deleted_account_tombstones")
+        .select("user_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const isIgnorableErr = (err: any) => {
+        if (!err) return true;
+        const msg = String(err.message || "").toLowerCase();
+        return (
+          err.code === "PGRST116" ||
+          err.code === "PGRST204" ||
+          err.code === "PGRST205" ||
+          err.code === "42P01" ||
+          msg.includes("does not exist") ||
+          msg.includes("relation")
+        );
+      };
+
+      if (tombstoneErr && !isIgnorableErr(tombstoneErr)) {
+        return NextResponse.json(
+          { success: false, error: `Unable to inspect deletion state: ${tombstoneErr.message || String(tombstoneErr)}` },
+          { status: 503 }
+        );
+      }
+
+      if (!tombstone) {
+        return NextResponse.json(
+          { success: false, error: "No pending deletion request found to cancel." },
+          { status: 400 }
+        );
+      }
+
+      const { error: cancelError } = await supabaseAdmin
+        .from("deleted_account_tombstones")
+        .delete()
+        .eq("user_id", userId);
+
+      if (cancelError) {
+        return NextResponse.json(
+          { success: false, error: `Failed to cancel deletion request: ${cancelError.message || String(cancelError)}` },
+          { status: 500 }
+        );
+      }
+
+      log.info("Interrupted deletion cancelled by user", { userId });
+      return NextResponse.json({
+        success: true,
+        action: "cancelled",
+        message: "Deletion request cancelled. Account reset for fresh setup.",
+      });
+    }
+
     // 1b. Shared rate limit (per user), same pattern as the public endpoints:
     // durable via the check_rate_limit RPC, in-memory fallback per isolate.
     const deleteLimit = await checkSharedRateLimit(
@@ -501,6 +562,14 @@ export async function handleAccountDeleteRequest(
         { status: 500 }
       );
     }
+
+    // Update tombstone to mark truthful completion timestamp before auth identity removal
+    try {
+      await supabaseAdmin
+        .from("deleted_account_tombstones")
+        .update({ deletion_completed_at: new Date().toISOString() })
+        .eq("user_id", userId);
+    } catch {}
 
     // 6. Delete the Auth User Identity from Supabase Auth (last step)
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);

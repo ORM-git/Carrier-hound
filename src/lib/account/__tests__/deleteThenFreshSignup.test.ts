@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { handleAccountDeleteRequest } from "@/lib/account/deleteHandler";
-import { resolvePostAuthDestination } from "@/lib/auth/onboarding";
+import { checkAccountOnboardingCompleted, resolvePostAuthDestination } from "@/lib/auth/onboarding";
 import { createFakeSupabase, seedCompletedAccount } from "@/lib/auth/__tests__/fakeSupabase";
+import { getUserPreferences } from "@/lib/auth/session";
 
 /*
  * MOCK COVERAGE: the deletion handler and the onboarding rule run for real against a stateful local
@@ -12,16 +13,20 @@ import { createFakeSupabase, seedCompletedAccount } from "@/lib/auth/__tests__/f
 
 type Db = ReturnType<typeof createFakeSupabase>;
 
-async function deleteAccount(db: Db, userId: string) {
+async function deleteAccount(db: Db, userId: string, bodyJson?: any) {
   const req = new Request("http://localhost/api/account/delete", {
     method: "POST",
-    headers: { authorization: `Bearer ${userId}` },
+    headers: { authorization: `Bearer ${userId}`, "content-type": "application/json" },
+    body: bodyJson ? JSON.stringify(bodyJson) : undefined,
   });
   const res = await handleAccountDeleteRequest(req, { getSupabaseAdmin: () => db.client });
   return { status: res.status, body: await res.json() };
 }
 
 describe("account deletion contract", () => {
+  beforeEach(() => {
+    (globalThis as any).__mockRateLimitClient = null;
+  });
   it("success: data cleaned, Auth identity deleted last, success=true", async () => {
     const db = createFakeSupabase();
     const user = db.signUp("ok@example.test");
@@ -179,4 +184,55 @@ describe("delete -> fresh sign-up with the same email (stateful local stub)", ()
       expect(db.rowsOf("profiles").map((r) => r.user_id)).toEqual([bystander.id]);
     });
   }
+
+  it("interrupted deletion recovery: user can cancel deletion to start fresh", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("cancel@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "temporary error" });
+
+    // Step 1: Deletion fails midway
+    const delRes = await deleteAccount(db, user.id);
+    expect(delRes.status).toBe(500);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+
+    // Step 2: Cancel interrupted deletion
+    const cancelRes = await deleteAccount(db, user.id, { action: "cancel" });
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.success).toBe(true);
+    expect(cancelRes.body.action).toBe("cancelled");
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(0);
+
+    // Step 3: Account can now proceed cleanly to onboarding
+    expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
+  });
+
+  it("realistic RLS permission: unprivileged authenticated client getting 42501 on tombstones is not falsely blocked", async () => {
+    const db = createFakeSupabase({ role: "authenticated" });
+    const user = db.signUp("client@example.test");
+    seedCompletedAccount(db, user.id);
+
+    // Authenticated role cannot select tombstones (42501), but completed account is still evaluated
+    const completed = await checkAccountOnboardingCompleted(db.client, user.id);
+    expect(completed).toBe(true);
+  });
+});
+
+describe("getUserPreferences independent column compatibility", () => {
+  it("preserves country when deleted_at alone is absent (schema before 20261106h)", async () => {
+    const db = createFakeSupabase({ missingDeletedAt: ["user_preferences"] });
+    const user = db.signUp("country@example.test");
+    db.insert("user_preferences", {
+      user_id: user.id,
+      country: "India",
+      country_code: "IN",
+      onboarding_completed: true,
+      roles: ["Engineer"],
+    });
+
+    const prefs = await getUserPreferences(user.id, db.client);
+    expect(prefs.country).toBe("India");
+    expect(prefs.countryCode).toBe("IN");
+    expect(prefs.roles).toEqual(["Engineer"]);
+  });
 });

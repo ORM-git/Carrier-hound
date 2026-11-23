@@ -622,6 +622,18 @@ async function middlewareImpl(request: NextRequest) {
         if (userId) {
           const adminClient = getAdminSupabaseClient();
           if (adminClient) {
+            try {
+              const { data: tombstone } = await adminClient
+                .from("deleted_account_tombstones")
+                .select("user_id")
+                .eq("user_id", userId)
+                .maybeSingle();
+              if (tombstone?.user_id) {
+                const redirect = NextResponse.redirect(new URL("/settings?tab=privacy&state=deletion_pending", request.url));
+                for (const cookie of authResponse.cookies.getAll()) redirect.cookies.set(cookie);
+                return redirect;
+              }
+            } catch {}
             const completed = await checkAccountOnboardingCompleted(adminClient, userId);
             completedDestination = completed;
           }
@@ -652,10 +664,24 @@ async function middlewareImpl(request: NextRequest) {
       return redirect;
     }
     if (userId) {
+      const adminClient = getAdminSupabaseClient();
+      if (adminClient) {
+        try {
+          const { data: tombstone } = await adminClient
+            .from("deleted_account_tombstones")
+            .select("user_id")
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (tombstone?.user_id) {
+            const redirect = NextResponse.redirect(new URL("/settings?tab=privacy&state=deletion_pending", request.url));
+            for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+            return redirect;
+          }
+        } catch {}
+      }
       const modeParam = request.nextUrl.searchParams.get("mode") || request.nextUrl.searchParams.get("edit");
       const isEditMode = modeParam === "edit" || modeParam === "true";
       if (!isEditMode) {
-        const adminClient = getAdminSupabaseClient();
         if (adminClient) {
           const completed = await checkAccountOnboardingCompleted(adminClient, userId);
           if (completed) {

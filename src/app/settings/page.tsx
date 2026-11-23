@@ -36,11 +36,13 @@ function SettingsPageInner() {
   const { isExpanded } = useSidebarMode();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") || "preferences";
+  const isPendingQuery = searchParams.get("state") === "deletion_pending";
+  const initialTab = searchParams.get("tab") || (isPendingQuery ? "privacy" : "preferences");
 
   const [activeTab, setActiveTab] = useState<"preferences" | "notifications" | "billing" | "privacy">(
     initialTab as any
   );
+  const [isDeletionPending, setIsDeletionPending] = useState(isPendingQuery);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -120,6 +122,24 @@ function SettingsPageInner() {
 
       getUserSubscription().then((sub: UserSubscription | null) => {
         setSubscription(sub);
+      });
+
+      // Check server account status for interrupted deletion
+      createClient().auth.getSession().then((sessionRes: any) => {
+        const session = sessionRes?.data?.session;
+        if (session?.access_token) {
+          fetch("/api/account/status", {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((status) => {
+              if (status?.deletionPending) {
+                setIsDeletionPending(true);
+                setActiveTab("privacy");
+              }
+            })
+            .catch(() => {});
+        }
       });
 
       setLoading(false);
@@ -231,6 +251,41 @@ function SettingsPageInner() {
     } catch (err: any) {
       console.error("Delete account error:", err);
       toast.error(err?.message || "An unexpected error occurred while deleting your account.");
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        toast.error("You must be signed in to cancel deletion.");
+        return;
+      }
+
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success !== true) {
+        toast.error(result.error || "Failed to cancel deletion request.");
+        return;
+      }
+
+      setIsDeletionPending(false);
+      toast.info("Deletion request cancelled. Account reset for fresh setup.");
+      router.push("/onboarding");
+    } catch (err: any) {
+      console.error("Cancel deletion error:", err);
+      toast.error(err?.message || "An error occurred cancelling deletion.");
     }
   };
 
@@ -587,6 +642,37 @@ function SettingsPageInner() {
             </h2>
 
             <div className="space-y-4">
+              {/* Account Deletion Interrupted Recovery Banner */}
+              {isDeletionPending && (
+                <div className="p-4 rounded-xl border border-amber-300 bg-amber-50/80 space-y-3">
+                  <div className="space-y-1">
+                    <span className="font-bold text-xs sm:text-sm text-amber-900 block">
+                      Account Deletion Incomplete
+                    </span>
+                    <p className="text-xs text-amber-800">
+                      A previous account deletion attempt was interrupted before completion. Your profile data has been removed. You can retry deletion now to permanently delete your auth account, or cancel the deletion request to start fresh.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDeleteAccount}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Retry Account Deletion</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelDeletion}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+                    >
+                      <span>Cancel Deletion & Start Fresh</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Export Data */}
               <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
                 <div className="space-y-0.5">

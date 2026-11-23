@@ -84,11 +84,18 @@ export async function checkAccountOnboardingCompleted(
       .select("user_id")
       .eq("user_id", userId)
       .maybeSingle();
-    if (error && !isMissingTombstoneTable(error)) {
-      log.warn("Unable to verify account deletion state", { code: error.code });
+    if (error) {
+      if (error.code === "42501") {
+        // Unprivileged client lacks direct SELECT grant (REVOKE ALL in migration 20261106h).
+        // Proceed to profile check; server status endpoint & middleware enforce tombstones under server authority.
+        log.warn("Client lacks direct SELECT grant on tombstones (42501); proceeding to profile check");
+      } else if (!isMissingTombstoneTable(error)) {
+        log.warn("Unable to verify account deletion state", { code: error.code });
+        return false;
+      }
+    } else if (tombstone) {
       return false;
     }
-    if (!error && tombstone) return false;
   } catch (err) {
     log.warn("Unable to verify account deletion state", { error: err });
     return false;
@@ -176,7 +183,32 @@ export async function resolvePostAuthDestination(
   destination: string
 ): Promise<string> {
   const safeDestination = getValidReturnUrl(destination);
-  const completed = userId ? await checkAccountOnboardingCompleted(supabase, userId) : false;
+  if (!userId) return onboardingRedirectFor(safeDestination);
+
+  // In browser, use authenticated server-side status contract to inspect deletion markers
+  // under server authority and respect tombstone table RLS permissions (42501).
+  if (typeof window !== "undefined" && typeof fetch === "function") {
+    try {
+      const sessionRes = await supabase?.auth?.getSession?.();
+      const token = sessionRes?.data?.session?.access_token;
+      if (token) {
+        const res = await fetch("/api/account/status", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const status = await res.json();
+          if (status.deletionPending) {
+            return "/settings?tab=privacy&state=deletion_pending";
+          }
+          return status.onboardingCompleted ? safeDestination : onboardingRedirectFor(safeDestination);
+        }
+      }
+    } catch (err) {
+      log.warn("Failed to query /api/account/status, falling back to direct check", { error: err });
+    }
+  }
+
+  const completed = await checkAccountOnboardingCompleted(supabase, userId);
   return completed ? safeDestination : onboardingRedirectFor(safeDestination);
 }
 
