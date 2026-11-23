@@ -24,6 +24,7 @@ function deps(over: Partial<LogoRepairDeps> = {}) {
     resolve: vi.fn(async () => ({ imageUrl: "https://boards.greenhouse.io/acme/logo.png", source: "ats-board" as const, domain: "acme.com", buffer: PNG, contentType: "image/png", ext: "png", width: 256, height: 256 })),
     jobsFor: vi.fn(async () => [{ apply_url: "https://boards.greenhouse.io/acme/jobs/1" }]),
     knownDefaultHashes: new Set<string>(),
+    rejectedHashes: vi.fn(async () => new Set<string>()),
     companiesSharingHash: vi.fn(async () => 0),
     upload: vi.fn(async (key: string, bytes: Buffer) => { if (store.has(key)) return "exists" as const; store.set(key, bytes); return "created" as const; }),
     commitHosted: vi.fn(async (a) => { const r = rows.get(a.id)!; if (r.token !== a.token || r.logo_url !== a.expectedLogoUrl) return false; r.logo_url = a.logoUrl; return true; }),

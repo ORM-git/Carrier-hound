@@ -5,12 +5,15 @@
  *   Dry run (default, read-only):  npx tsx scripts/repair-company-logos.ts --limit 40
  *       Resolves candidates, uploads nothing, writes reports/logo-repair/manifest-<ts>.json (+ rollback SQL)
  *       and prints the scoped --write command for exactly those companies.
- *   Write (needs migration 20261122_company_logo_contract + approval):
+ *   Write (needs migrations 20261122_company_logo_contract + 20261123_company_logo_review_state + approval):
  *       npx tsx scripts/repair-company-logos.ts --write --limit 40 --trigger sweep
- *       npx tsx scripts/repair-company-logos.ts --write --limit 40 --manifest reports/logo-repair/manifest-....json --trigger backfill
+ *       npx tsx scripts/repair-company-logos.ts --write --trigger backfill --limit 40 --concurrency 4 --verify 0 --manifest reports/logo-repair/manifest-....json
  *
+ * Owner review state (company_logo_reviews / company_logo_rejected_hashes) is honoured everywhere: held and
+ * keep-initials companies are never claimed, previewed or verified, and an owner-rejected image hash is never
+ * selected again whichever source returns it. A manifest run touches only its listed companies (--verify 0).
  * Caps are explicit and bounded: --limit 1..200 is REQUIRED (never empty/unlimited), --concurrency 1..8,
- * --verify 0..100 hosted logos re-checked per run. Companies are leased via claim_company_logo_batch
+ * --verify 0..100 hosted logos re-checked per run (default 25 for sweeps; manifest runs must use 0). Companies are leased via claim_company_logo_batch
  * (FOR UPDATE SKIP LOCKED), so TS ingest follow-ups, Python-enqueued work and sweeps never collide.
  * Exit codes: 0 ok, 1 run error, 2 usage/migration missing, 3 alert (stalled previous run or rising backlog).
  */
@@ -23,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { COMPANY_LOGO_BUCKET, classifyLogoUrl, eligibleLogoUrl, logoObjectKey, logoProjectOrigin } from "../src/lib/companies/logoEligibility";
 import { fetchWithTimeout, resolveCompanyLogo, type JobUrlInfo, type ResolvedLogoResult } from "../src/lib/companies/logoResolver";
-import { decodesAsRaster, KNOWN_VENDOR_DEFAULT_SHA256, repairCompanyLogo, sha256Hex, verifyHostedLogo, type ClaimedCompany, type LogoRepairDeps, type RepairOutcome } from "../src/lib/companies/logoRepair";
+import { candidateRejection, KNOWN_VENDOR_DEFAULT_SHA256, repairCompanyLogo, sha256Hex, verifyHostedLogo, type ClaimedCompany, type LogoRepairDeps, type RepairOutcome } from "../src/lib/companies/logoRepair";
 
 export type Trigger = "ingest-ts" | "ingest-python" | "sweep" | "backfill";
 export interface RepairArgs { write: boolean; limit: number; concurrency: number; verify: number; leaseSeconds: number; trigger: Trigger; manifest: string | null; outDir: string }
@@ -53,11 +56,14 @@ export function parseArgs(argv: string[]): RepairArgs {
   const write = argv.includes("--write");
   const manifest = get("--manifest") ?? null;
   if (trigger === "backfill" && write && !manifest) throw new Error("--trigger backfill --write requires --manifest <reviewed manifest>");
+  const verify = int("--verify", get("--verify"), 0, 100, manifest ? 0 : 25);
+  // The verification pass is unscoped: it would touch companies outside the reviewed manifest.
+  if (manifest && verify !== 0) throw new Error("--manifest runs must use --verify 0 (verification would touch companies outside the manifest)");
   return {
     write,
     limit: int("--limit", get("--limit"), 1, 200),
     concurrency: int("--concurrency", get("--concurrency"), 1, 8, 4),
-    verify: int("--verify", get("--verify"), 0, 100, 25),
+    verify,
     leaseSeconds: int("--lease-seconds", get("--lease-seconds"), 60, 3600, 900),
     trigger,
     manifest,
@@ -65,7 +71,17 @@ export function parseArgs(argv: string[]): RepairArgs {
   };
 }
 
-type Coverage = { companies_with_active_jobs: number; eligible_hosted: number; missing_or_ineligible: number; pending?: number; failed?: number; missing?: number; queued_retries?: number; orphan_links: number };
+type Coverage = { companies_with_active_jobs: number; eligible_hosted: number; missing_or_ineligible: number; held?: number; intentional_initials?: number; approved?: number; pending?: number; failed?: number; missing?: number; queued_retries?: number; orphan_links: number };
+
+/** Companies the owner put on hold or keep-initials (20261123), or null before that migration exists. */
+async function blockedCompanyIds(sb: SupabaseClient): Promise<Set<string> | null> {
+  const { data, error } = await sb.from("company_logo_reviews").select("company_id").is("cleared_at", null).in("decision", ["hold", "initials"]);
+  if (error) {
+    if (/PGRST205|42P01|does not exist|Could not find the table/i.test(`${error.code} ${error.message}`)) return null;
+    throw new Error(`review state read failed: ${error.message}`);
+  }
+  return new Set((data || []).map((r: any) => r.company_id));
+}
 
 async function hasMigration(sb: SupabaseClient, origin: string): Promise<boolean> {
   const { error } = await sb.rpc("company_logo_coverage", { p_origin: origin });
@@ -117,7 +133,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
-function buildDeps(sb: SupabaseClient, supabaseUrl: string, defaults: Set<string>, write: boolean, previewDir: string | null = null): LogoRepairDeps {
+export function buildDeps(sb: SupabaseClient, supabaseUrl: string, defaults: Set<string>, write: boolean, previewDir: string | null = null): LogoRepairDeps {
   const bucket = sb.storage.from(COMPANY_LOGO_BUCKET);
   const conditional = (q: any, id: string, token: string, expected: string | null) => {
     q = q.eq("id", id).eq("logo_claim_token", token);
@@ -131,6 +147,12 @@ function buildDeps(sb: SupabaseClient, supabaseUrl: string, defaults: Set<string
       return (data || []) as JobUrlInfo[];
     },
     knownDefaultHashes: defaults,
+    async rejectedHashes(companyId) {
+      const { data, error } = await sb.from("company_logo_rejected_hashes").select("sha256").eq("company_id", companyId).is("cleared_at", null);
+      // A write never proceeds blind (the commit trigger would refuse a rejected image anyway).
+      if (error) { if (write) throw new Error(`rejected-hash read failed: ${error.message}`); return new Set<string>(); }
+      return new Set<string>((data || []).map((r: any) => r.sha256));
+    },
     async companiesSharingHash(sha, excludeId) {
       const { count, error } = await sb.from("companies").select("id", { count: "exact", head: true }).eq("logo_hash", sha).neq("id", excludeId);
       if (error) return 0; // column absent (dry run before migration): the default-hash probe still applies
@@ -183,14 +205,20 @@ function buildDeps(sb: SupabaseClient, supabaseUrl: string, defaults: Set<string
   };
 }
 
+/** The reviewed write for a dry-run manifest: always manifest-scoped, bounded, and with no verification pass. */
+export function reviewedWriteCommand(count: number, concurrency: number, manifestPath: string): string {
+  return `npx tsx scripts/repair-company-logos.ts --write --trigger backfill --limit ${Math.max(1, count)} --concurrency ${concurrency} --verify 0 --manifest ${manifestPath}`;
+}
+
 function sqlLit(v: string | null) {
   return v == null ? "NULL" : `'${v.replace(/'/g, "''")}'`;
 }
 
 export function rollbackSql(outcomes: RepairOutcome[]): string {
-  // Run-scoped: restores each committed row's previous logo_url only if it still holds this run's value.
+  // Run-scoped: restores each committed row's previous logo_url only if it still holds this run's value and the
+  // owner has not since put it under review, so later legitimate changes are never overwritten.
   const lines = outcomes.filter((o) => o.status === "repaired" || (o.status !== "already-eligible" && o.previousLogoUrl))
-    .map((o) => `UPDATE public.companies SET logo_url = ${sqlLit(o.previousLogoUrl)}, logo_status = NULL WHERE id = '${o.id}' AND logo_url IS NOT DISTINCT FROM ${sqlLit(o.status === "repaired" ? o.logoUrl : null)};`);
+    .map((o) => `UPDATE public.companies SET logo_url = ${sqlLit(o.previousLogoUrl)}, logo_status = NULL WHERE id = '${o.id}' AND logo_url IS NOT DISTINCT FROM ${sqlLit(o.status === "repaired" ? o.logoUrl : null)} AND NOT public.company_logo_blocked('${o.id}');`);
   return ["-- Scoped rollback for this run. Storage objects are versioned and never deleted, so old URLs stay valid.", "BEGIN;", ...lines, "COMMIT;", ""].join("\n");
 }
 
@@ -210,6 +238,9 @@ async function main() {
   const startedAt = new Date();
   const migrated = await hasMigration(sb, origin);
   if (args.write && !migrated) { console.error("::error::migration 20261122_company_logo_contract is not applied; --write refused"); process.exit(2); }
+  const blocked = await blockedCompanyIds(sb);
+  if (args.write && !blocked) { console.error("::error::migration 20261123_company_logo_review_state is not applied; --write refused (owner holds/rejections must be enforced)"); process.exit(2); }
+  const isBlocked = (id: string) => blocked?.has(id) ?? false;
 
   const alerts: string[] = [];
   let runId: number | null = null;
@@ -259,7 +290,7 @@ async function main() {
   } else {
     const { live } = migrated ? { live: null as Map<string, number> | null } : await coverageReadOnly(sb, supabaseUrl);
     const { data } = await sb.from("companies").select("id,name,slug,domain,careers_url,ats_type,logo_url").order("id").limit(5000);
-    let rows = (data || []) as any[];
+    let rows = ((data || []) as any[]).filter((r) => !isBlocked(r.id)); // same rule as claim_company_logo_batch
     if (manifest) rows = rows.filter((r) => manifest!.some((m) => m.id === r.id));
     else rows = rows.filter((r) => !eligibleLogoUrl(r.logo_url, supabaseUrl) && (!live || live.has(r.id)));
     if (live) rows.sort((a, b) => (live.get(b.id) || 0) - (live.get(a.id) || 0));
@@ -275,7 +306,8 @@ async function main() {
     await pool(todo, args.concurrency, async (c) => {
       try {
         const jobs = await deps.jobsFor(c.id);
-        const r = await resolveCompanyLogo({ ...c, logo_url: null }, jobs, { isRejected: async (b) => defaults.has(sha256Hex(b)) || !(await decodesAsRaster(b)) });
+        const rejected = await deps.rejectedHashes(c.id);
+        const r = await resolveCompanyLogo({ ...c, logo_url: null }, jobs, { isRejected: async (b) => (await candidateRejection(b, defaults, rejected)) !== null });
         pre.set(c.id, { r });
       } catch (e) {
         pre.set(c.id, { e });
@@ -336,7 +368,7 @@ async function main() {
     const { data } = await q;
     // Only this project's eligible URLs are fetched, through the resolver's safe fetcher (DNS/private-IP and
     // redirect checks, timeout, size cap); a logo is broken only if it fails to download AND decode twice.
-    const candidates = ((data || []) as any[]).filter((c) => eligibleLogoUrl(c.logo_url, supabaseUrl));
+    const candidates = ((data || []) as any[]).filter((c) => eligibleLogoUrl(c.logo_url, supabaseUrl) && !isBlocked(c.id));
     await pool(candidates, args.concurrency, async (c) => {
       let status = await verifyHostedLogo(c.logo_url, supabaseUrl);
       if (status !== "ok") status = await verifyHostedLogo(c.logo_url, supabaseUrl); // one retry: transient blips are not "broken"
@@ -355,6 +387,10 @@ async function main() {
     counts: {
       companies_with_active_jobs: after.companies_with_active_jobs,
       eligible_hosted: after.eligible_hosted,
+      intentional_initials: after.intentional_initials ?? 0,
+      held: after.held ?? blocked?.size ?? 0,
+      pending: after.pending ?? 0,
+      failed: after.failed ?? 0,
       missing_or_ineligible: after.missing_or_ineligible,
       failed_resolutions_or_uploads: count("failed"),
       no_logo_available: count("missing"),
@@ -387,7 +423,7 @@ async function main() {
     const mf = path.join(args.outDir, `manifest-${stamp}.json`);
     fs.writeFileSync(mf, JSON.stringify(manifestOut, null, 2));
     fs.writeFileSync(path.join(args.outDir, `rollback-${stamp}.sql`), rollbackSql(outcomes));
-    console.log(`\nReviewed write command (exactly these ${outcomes.length} companies):\n  npx tsx scripts/repair-company-logos.ts --write --trigger backfill --limit ${Math.max(1, outcomes.length)} --concurrency ${args.concurrency} --manifest ${mf}`);
+    console.log(`\nReviewed write command (exactly these ${outcomes.length} companies):\n  ${reviewedWriteCommand(outcomes.length, args.concurrency, mf)}`);
   } else {
     fs.writeFileSync(path.join(args.outDir, `rollback-${stamp}.sql`), rollbackSql(outcomes));
   }

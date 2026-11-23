@@ -13,7 +13,9 @@ import { makePng } from "./pngFixture";
 // committed conditionally; failures retry later; two concurrent workers never double-process a company.
 
 const SB = "https://proj.supabase.co";
-const MIGRATION = fs.readFileSync(path.resolve(__dirname, "../../../../supabase/migrations/20261122_company_logo_contract.sql"), "utf8");
+const migration = (f: string) => fs.readFileSync(path.resolve(__dirname, `../../../../supabase/migrations/${f}.sql`), "utf8");
+const MIGRATION = migration("20261122_company_logo_contract");
+const REVIEW_MIGRATION = migration("20261123_company_logo_review_state");
 const BYTES = makePng(64, 64, "real-company-mark");
 const SHA = crypto.createHash("sha256").update(BYTES).digest("hex");
 const TS_ID = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -34,6 +36,7 @@ beforeEach(async () => {
     CREATE TABLE public.companies (id uuid PRIMARY KEY, name text NOT NULL, slug text UNIQUE NOT NULL, domain text, careers_url text, ats_type text, logo_url text);
     CREATE TABLE public.jobs (id serial PRIMARY KEY, company_id uuid, status text, is_active boolean, apply_url text, source_url text);`);
   await db.exec(MIGRATION);
+  await db.exec(REVIEW_MIGRATION);
 });
 
 /** A supabase-js-shaped client whose rpc() runs the real SQL functions (what both ingest paths call). */
@@ -55,6 +58,7 @@ function deps(over: Partial<LogoRepairDeps> = {}): LogoRepairDeps {
     resolve: vi.fn(async () => ({ imageUrl: "https://acme.com/apple-touch-icon.png", source: "homepage-icon" as const, domain: "acme.com", buffer: BYTES, contentType: "image/png", ext: "png", width: 180, height: 180 })),
     jobsFor: async () => [],
     knownDefaultHashes: new Set(),
+    rejectedHashes: async (id) => new Set((await one<{ sha256: string }>("SELECT sha256 FROM company_logo_rejected_hashes WHERE company_id = $1 AND cleared_at IS NULL", [id])).map((r) => r.sha256)),
     companiesSharingHash: async (sha, id) => (await one<{ n: number }>("SELECT count(*)::int AS n FROM companies WHERE logo_hash = $1 AND id <> $2", [sha, id]))[0].n,
     upload: async (key, bytes) => (store.has(key) ? "exists" : (store.set(key, bytes), "created")),
     commitHosted: async (a) => {
@@ -202,5 +206,20 @@ describe("retries, duplicates and concurrency on real SQL", () => {
     expect(out).toMatchObject({ status: "missing", reason: expect.stringMatching(/^shared-image/) });
     const [row] = await one<any>("SELECT logo_url, logo_status FROM companies WHERE id = $1", [TS_ID]);
     expect(row).toMatchObject({ logo_url: null, logo_status: "missing" });
+  });
+});
+
+describe("no logo anywhere -> stable initials, not rescanned every run", () => {
+  it("a new company with no verified source ends 'missing' with logo_url null and is not reclaimed until its backoff", async () => {
+    await db.query("INSERT INTO companies (id, name, slug) VALUES ($1,'Nologo','nologo')", [TS_ID]);
+    await enqueueCompanyLogos(sbClient() as any, [TS_ID]);
+    const [c] = await claim();
+    const out = await repairCompanyLogo(c, deps({ resolve: async () => null }));
+    expect(out).toMatchObject({ status: "missing", reason: expect.stringMatching(/^no-source/) });
+    const [row] = await one<any>("SELECT logo_url, logo_status, logo_next_attempt_at > now() + interval '30 minutes' AS later FROM companies");
+    expect(row).toMatchObject({ logo_url: null, logo_status: "missing", later: true }); // UI renders initials
+    for (let run = 0; run < 3; run++) expect(await claim()).toHaveLength(0); // later sweeps skip it
+    // a later ingest seeing it again does not re-queue it either
+    expect(await enqueueCompanyLogos(sbClient() as any, [TS_ID])).toMatchObject({ enqueued: 0 });
   });
 });

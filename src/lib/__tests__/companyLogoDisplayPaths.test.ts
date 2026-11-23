@@ -153,3 +153,21 @@ describe("service.ts mapping: nested-only logo reaches cards and detail", () => 
     expect(job?.companyDomain).toBe("acme.com");
   });
 });
+
+describe("landing ticker: logos by stable company id only", () => {
+  it("a job without company_id never borrows the logo of a same-named company; an id match still gets its logo", async () => {
+    const at = new Date().toISOString();
+    state.tables.jobs = [
+      { id: "j1", company: "Acme Corp", company_id: null, title: "Name-only job", posted_at: at, status: "active", is_active: true },
+      { id: "j2", company: "Beta", company_id: "co_beta", title: "Id-linked job", posted_at: at, status: "active", is_active: true },
+    ];
+    state.tables.companies = [
+      { id: "co_acme", name: "Acme Corp", logo_url: HOSTED },
+      { id: "co_beta", name: "Beta", logo_url: HOSTED.replace("0b3f6c2e", "1b3f6c2e") },
+    ];
+    const { GET } = await import("@/app/api/ticker/route");
+    const items = await (await GET(req("http://localhost/api/ticker"))).json();
+    expect(items.find((i: any) => i.title === "Name-only job").logo_url).toBeNull();
+    expect(items.find((i: any) => i.title === "Id-linked job").logo_url).toBe(HOSTED.replace("0b3f6c2e", "1b3f6c2e"));
+  });
+});

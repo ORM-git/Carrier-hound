@@ -2,7 +2,7 @@
 import React from "react";
 import { describe, it, expect, afterEach, beforeEach, beforeAll, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
-import CompanyLogo from "../CompanyLogo";
+import CompanyLogo, { companyInitial } from "../CompanyLogo";
 
 const SB = "https://proj.supabase.co";
 beforeAll(() => {
@@ -18,6 +18,18 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+const sized = (img: HTMLImageElement, w = 128, h = 128) => {
+  vi.spyOn(img, "naturalWidth", "get").mockReturnValue(w);
+  vi.spyOn(img, "naturalHeight", "get").mockReturnValue(h);
+};
+// jsdom has no canvas: give the pixel check a 2D context that returns one uniform colour.
+const pixels = (rgba: [number, number, number, number]) => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: () => undefined,
+    getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: Uint8ClampedArray.from({ length: w * h * 4 }, (_, i) => rgba[i % 4]) }),
+  } as any);
+};
 
 // Failures are remembered per URL for the page session, so every test uses its own eligible hosted URL.
 let n = 0;
@@ -77,12 +89,64 @@ describe("CompanyLogo", () => {
     const logo = url();
     const { container } = render(<CompanyLogo company="Acme" logoUrl={logo} className="w-10 h-10" />);
     const img = container.querySelector("img")!;
-    vi.spyOn(img, "naturalWidth", "get").mockReturnValue(128);
+    sized(img);
     fireEvent.load(img);
     expect(container.querySelector("img")!.getAttribute("src")).toBe(logo);
+    expect(container.querySelector("img")!.className).not.toContain("opacity-0");
+    expect(container.textContent).toBe(""); // initials layer removed once the logo is shown
     const tile = container.firstElementChild as HTMLElement;
     expect(tile.className).toContain("bg-slate-50");
     expect(tile.className).toContain("w-10 h-10");
+  });
+
+  it("while the logo loads, readable initials are visible in the same box (no blank tile, no layout shift)", () => {
+    const { container } = render(<CompanyLogo company="Acme" logoUrl={url()} className="w-10 h-10" />);
+    const tile = container.firstElementChild as HTMLElement;
+    const loadingClasses = tile.className;
+    expect(container.querySelector("img")!.className).toContain("opacity-0");
+    expect(container.textContent).toBe("A");
+    fireEvent.error(container.querySelector("img")!);
+    expect((container.firstElementChild as HTMLElement).className).toBe(loadingClasses); // identical box after failure
+    expect(container.textContent).toBe("A");
+  });
+
+  it("an image that loads but is transparent / near-invisible on the tile falls back to initials", () => {
+    pixels([0, 0, 0, 0]);
+    const logo = url();
+    const { container } = render(<CompanyLogo company="Acme" logoUrl={logo} />);
+    const img = container.querySelector("img")!;
+    sized(img);
+    fireEvent.load(img);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toBe("A");
+  });
+
+  it("an image measured readable on the tile is shown", () => {
+    pixels([17, 24, 39, 255]);
+    const { container } = render(<CompanyLogo company="Acme" logoUrl={url()} />);
+    const img = container.querySelector("img")!;
+    sized(img);
+    fireEvent.load(img);
+    expect(container.querySelector("img")!.className).not.toContain("opacity-0");
+  });
+
+  it("a failed old URL does not poison the repaired (new content-hashed) URL", () => {
+    const oldUrl = url();
+    const repaired = url();
+    const { container, rerender } = render(<CompanyLogo company="Acme" logoUrl={oldUrl} />);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    rerender(<CompanyLogo company="Acme" logoUrl={repaired} />);
+    const img = container.querySelector("img")!;
+    expect(img.getAttribute("src")).toBe(repaired);
+    sized(img);
+    fireEvent.load(img);
+    expect(container.querySelector("img")!.className).not.toContain("opacity-0");
+  });
+
+  it("loads the hosted logo with anonymous CORS so its pixels can be measured", () => {
+    const { container } = render(<CompanyLogo company="Acme" logoUrl={url()} />);
+    expect(container.querySelector("img")!.getAttribute("crossorigin")).toBe("anonymous");
   });
 
   it("once failed, stays on the tile across remounts and unrelated prop changes", () => {
@@ -117,5 +181,23 @@ describe("CompanyLogo", () => {
     const { container } = render(<CompanyLogo company="Zeta" logoUrl={null} className="w-8 h-8" />);
     expect((container.firstElementChild as HTMLElement).className).toContain("w-8 h-8");
     expect(container.textContent).toBe("Z");
+  });
+});
+
+describe("companyInitial", () => {
+  it("is deterministic: first letter or digit, upper-cased, '?' when none", () => {
+    expect(companyInitial("acme")).toBe("A");
+    expect(companyInitial("  (stealth) labs")).toBe("S");
+    expect(companyInitial("42crunch")).toBe("4");
+    expect(companyInitial("Ébène")).toBe("É");
+    expect(companyInitial("")).toBe("?");
+    expect(companyInitial(null)).toBe("?");
+  });
+
+  it("initials scale with the tile so the 24px detail chip never clips them", () => {
+    const { container } = render(<CompanyLogo company="Zeta" logoUrl={null} className="w-6 h-6 p-0.5" />);
+    const span = container.querySelector("span")!;
+    expect(span.style.fontSize).toBe("min(45cqmin, 1.25rem)");
+    expect((span.parentElement as HTMLElement).style.containerType).toBe("size");
   });
 });
