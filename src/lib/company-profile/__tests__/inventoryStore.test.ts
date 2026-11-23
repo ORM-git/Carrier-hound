@@ -106,7 +106,8 @@ async function postgrest(tables: Record<string, Row[]>, options: ServerOptions) 
 }
 
 const open: http.Server[] = [];
-afterEach(async () => { await Promise.all(open.splice(0).map((s) => new Promise((r) => s.close(r)))); });
+// close() waits for idle keep-alive sockets (fetch keeps them open), so drop them first or the hook can hang.
+afterEach(async () => { await Promise.all(open.splice(0).map((s) => new Promise((r) => { s.close(r); s.closeAllConnections(); }))); });
 
 const run = (client: Parameters<typeof supabaseInventoryStore>[0], extra: { afterId?: string | null; limit?: number } = {}) =>
   buildCompanyInventory({ store: supabaseInventoryStore(client), afterId: extra.afterId ?? null, limit: extra.limit ?? 1000, shortlist: 10, now: () => NOW, codeSha: null, target: "local" });
