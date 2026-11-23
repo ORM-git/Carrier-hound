@@ -549,6 +549,46 @@ describe("production company-profile canary", () => {
     } finally { await partial.close(); }
   }, 120_000);
 
+  it("reports 429, robots, network and cross-host redirect outcomes with zero actions and stored values kept", async () => {
+    const db = await disposableDb();
+    try {
+      const before = await liveRows(db);
+      const withPage = (url: string, override: (page: FetchedPage) => FetchedPage | never) => {
+        const { fetchPage } = officialPages();
+        let calls = 0;
+        const urls: string[] = [];
+        return { calls: () => calls, urls, fetchPage: async (u: string) => { urls.push(u); const page = await fetchPage(u); if (u !== url) return page; calls++; return override(page); } };
+      };
+      const cases: Array<[string, ReturnType<typeof withPage>, string, RegExp | null]> = [
+        ["429", withPage("https://affirm.com/", () => { throw new Error("Company source returned HTTP 429"); }), "fetch_failed", /HTTP 429/],
+        ["robots", withPage("https://affirm.com/robots.txt", (p) => ({ ...p, text: "User-agent: *\nDisallow: /\n" })), "robots_disallowed", null],
+        ["network", withPage("https://affirm.com/", () => { throw new Error(`fetch failed apikey=${FAKE_KEY} at https://affirm.com/`); }), "fetch_failed", /^fetch failed apikey=\[redacted\] at \[external URL\]$/],
+        ["redirect", withPage("https://affirm.com/", (p) => ({ ...p, url: "https://affirm-careers-lookalike.example/" })), "off_domain_redirect", null],
+        ["www", withPage("https://affirm.com/", (p) => ({ ...p, url: "https://www.affirm.com/" })), "same-site", null],
+      ];
+      for (const [name, pages, outcome, error] of cases.filter(([n]) => n !== "www")) {
+        const plan = await makePlan(db, pages.fetchPage);
+        const affirm = plan.companies.find((c) => c.company_id === A)!;
+        expect(affirm.outcome, name).toBe(outcome);
+        if (error) expect(affirm.error, name).toMatch(error); else expect(affirm.error, name).toBeNull();
+        expect(plan.actions, name).toEqual([]);
+        expect(affirm.proposed, name).toEqual({ facts: [], leadership: [], news: [] });
+        expect(affirm.current.company_profile_facts.map((r) => r.fact_value), name).toEqual(["Old overview"]);
+        expect(JSON.stringify(plan), name).not.toContain(FAKE_KEY);
+      }
+      expect(cases[0][1].calls()).toBe(1); // 429 is not retried
+      expect(cases[2][1].calls()).toBe(3); // network failures retry twice, then stop
+      // An off-site redirect stops before any other host is contacted; a www. redirect is the same site and proceeds.
+      const offSite = await makePlan(db, cases[3][1].fetchPage);
+      expect(offSite.sources.map((s) => s.final_url)).toEqual(["https://affirm.com/robots.txt", "https://affirm-careers-lookalike.example/"]);
+      expect(cases[3][1].urls.every((u) => u.startsWith("https://affirm.com/"))).toBe(true);
+      const sameSite = await makePlan(db, cases[4][1].fetchPage);
+      expect(sameSite.companies[0].outcome).not.toBe("off_domain_redirect");
+      expect(cases[4][1].urls).toContain("https://www.affirm.com/about/leadership-news");
+      expect(await liveRows(db)).toEqual(before);
+    } finally { await db.close(); }
+  });
+
   it("redacts credentials, tokens, connection strings and URLs from printed output", () => {
     const text = canary.redactCanaryText(`failed key=${FAKE_KEY} at https://${REF}.supabase.co/rest/v1 via postgres://u:p@db.internal/x sb_secret_abc123 raw=SECRETVALUE123`, ["SECRETVALUE123"]);
     for (const leaked of [FAKE_KEY, REF, "postgres://", "sb_secret_abc123", "SECRETVALUE123", "u:p@"]) expect(text).not.toContain(leaked);

@@ -13,6 +13,7 @@ import {
   readOnlyCanaryStore, redactCanaryText, resolveCodeSha, runCanaryRollback, runCanaryWrite,
   type CanaryJournal, type CanaryPlan, type CanaryRow, type CanaryStore, type JournalIO,
 } from "../src/lib/company-profile/canary";
+import { renderCanaryPlanSummary } from "../src/lib/company-profile/review";
 import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -107,7 +108,9 @@ async function runProductionCanary(argv: string[]) {
       const text = JSON.stringify(plan);
       if (secrets.some((secret) => secret && text.includes(secret))) throw new Error("Plan contains a credential value; refusing to write it");
       writeJsonDurable(planPath, plan);
-      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error })) }, null, 2));
+      const summaryPath = `${planPath.replace(/\.json$/i, "")}.summary.md`;
+      fs.writeFileSync(summaryPath, renderCanaryPlanSummary(plan), { flag: "wx" });
+      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, summary_file: summaryPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error })) }, null, 2));
       return;
     }
     const plan = JSON.parse(fs.readFileSync(path.resolve(options.planPath), "utf8")) as CanaryPlan;
