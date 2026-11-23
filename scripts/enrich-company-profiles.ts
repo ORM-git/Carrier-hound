@@ -2,46 +2,130 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-import { createClient } from "@supabase/supabase-js";
-import { companyProfileObservationRpc, dedupeCompanyNewsObservations, dedupeLeadershipObservations, evaluateCompanyProfileFreshness, extractOfficialCompanyPage, extractOfficialCompanySubpage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { companyProfileObservationRpc, dedupeCompanyNewsObservations, dedupeLeadershipObservations, evaluateCompanyProfileFreshness, isAllowedCompanyProfileWriteTarget, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts } from "../src/lib/company-profile/enrichment";
+import {
+  CANARY_ROUTING_FLAGS, CANARY_TABLES, buildCanaryPlan, crawlOfficialProfile, isAllowedCompanyProfileProductionTarget, normalizeCanaryRow, parseCanaryOptions,
+  readOnlyCanaryStore, redactCanaryText, resolveCodeSha, runCanaryRollback, runCanaryWrite,
+  type CanaryJournal, type CanaryPlan, type CanaryRow, type CanaryStore, type JournalIO,
+} from "../src/lib/company-profile/canary";
 import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function fetchWithBackoff(url: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try { return await safeFetchCompanyPage(url); }
-    catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (attempt === 2 || !/HTTP 5\d\d|timeout|fetch failed/i.test(message) || /HTTP 429|HTTP 403/i.test(message)) throw error;
-      await delay(500 * (attempt + 1));
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function supabaseCanaryStore(supabase: SupabaseClient): CanaryStore {
+  // NULL-safe equality on every column: the update/delete only touches a row still holding exactly `match`.
+  const where = (query: any, match: CanaryRow) => Object.entries(match).reduce((q, [column, value]) => (value === null ? q.is(column, null) : q.eq(column, value)), query);
+  return {
+    async missingSchema() {
+      const missing: string[] = [];
+      const required: Record<string, readonly string[]> = { companies: ["id", "name", "canonical_domain"], company_boards: ["id", "company_id", "ats_type", "slug", "careers_url", "enabled"], ...Object.fromEntries(Object.entries(CANARY_TABLES).map(([t, s]) => [t, s.columns])) };
+      for (const [table, columns] of Object.entries(required)) {
+        const { error } = await supabase.from(table).select(columns.join(",")).limit(0);
+        if (error) missing.push(`${table}(${columns.join(",")})`);
+      }
+      return missing;
+    },
+    async companies(ids) {
+      const { data, error } = await supabase.from("companies").select("id,name,canonical_domain").in("id", ids);
+      if (error) throw new Error(`Company lookup failed: ${error.message}`);
+      return data || [];
+    },
+    async boards(companyId) {
+      const { data, error } = await supabase.from("company_boards").select("id,ats_type,slug,careers_url").eq("company_id", companyId).eq("enabled", true).limit(10);
+      if (error) throw new Error(`ATS identity lookup failed: ${error.message}`);
+      return data || [];
+    },
+    async rows(table, companyIds) {
+      const { data, error } = await supabase.from(table).select(CANARY_TABLES[table].columns.join(",")).in("company_id", companyIds);
+      if (error) throw new Error(`${table} lookup failed: ${error.message}`);
+      return ((data || []) as unknown as Record<string, unknown>[]).map((row) => normalizeCanaryRow(table, row));
+    },
+    async insert(table, row) {
+      const { error } = await supabase.from(table).insert(row);
+      if (error) throw new Error(`${table} insert failed: ${error.message}`);
+    },
+    async updateWhere(table, match, set) {
+      const { data, error } = await where(supabase.from(table).update(set), match).select(CANARY_TABLES[table].key.join(","));
+      if (error) throw new Error(`${table} conditional update failed: ${error.message}`);
+      return data?.length || 0;
+    },
+    async deleteWhere(table, match) {
+      const { data, error } = await where(supabase.from(table).delete(), match).select(CANARY_TABLES[table].key.join(","));
+      if (error) throw new Error(`${table} conditional delete failed: ${error.message}`);
+      return data?.length || 0;
+    },
+  };
+}
+
+/** Durable JSON write: temp file, fsync, rename over the target. */
+function writeJsonDurable(file: string, value: unknown) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  const fd = fs.openSync(tmp, "w");
+  try { fs.writeSync(fd, `${JSON.stringify(value, null, 2)}\n`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, file);
+}
+
+function fileJournal(file: string): JournalIO {
+  return {
+    read: () => (fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as CanaryJournal) : null),
+    write: (journal) => writeJsonDurable(file, journal),
+  };
+}
+
+function gitState(): { head: string | null; dirty: boolean } {
+  try {
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() !== "";
+    return { head, dirty };
+  } catch { return { head: null, dirty: false }; }
+}
+
+async function runProductionCanary(argv: string[]) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
+  const secrets = [key, url];
+  try {
+    const options = parseCanaryOptions(argv);
+    if (!url || !key) throw new Error("Supabase service credentials are required");
+    // The target comes from --target-project; the loaded URL must match it, never the other way round.
+    if (!isAllowedCompanyProfileProductionTarget(url, process.env.COMPANY_PROFILE_ENV || "", options.targetProject, true)) {
+      throw new Error("Production canary refused: needs --production, --target-project <exact production ref>, COMPANY_PROFILE_ENV=production and a Supabase URL for exactly that project");
     }
+    const codeSha = resolveCodeSha(gitState(), options.codeSha);
+    const store = supabaseCanaryStore(createClient(url, key, { auth: { persistSession: false } }));
+    const fetchPage = (pageUrl: string) => safeFetchCompanyPage(pageUrl);
+    const binding = { targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, confirmDigest: options.confirmDigest || "", codeSha };
+    if (options.mode === "plan") {
+      const planPath = path.resolve(options.planPath);
+      if (fs.existsSync(planPath)) throw new Error("--plan-out file already exists; choose a new path");
+      const plan = await buildCanaryPlan({ store: readOnlyCanaryStore(store), fetchPage, sleep: delay, now: () => new Date(), newId: randomUUID, targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, codeSha, ttlHours: options.ttlHours, secrets });
+      const text = JSON.stringify(plan);
+      if (secrets.some((secret) => secret && text.includes(secret))) throw new Error("Plan contains a credential value; refusing to write it");
+      writeJsonDurable(planPath, plan);
+      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error })) }, null, 2));
+      return;
+    }
+    const plan = JSON.parse(fs.readFileSync(path.resolve(options.planPath), "utf8")) as CanaryPlan;
+    const journal = fileJournal(path.resolve(options.journalPath!));
+    const report = options.mode === "rollback"
+      ? await runCanaryRollback({ plan, binding, store, journal, secrets })
+      : await runCanaryWrite({ plan, binding, store, fetchPage, sleep: delay, journal, resume: options.mode === "resume", secrets });
+    console.log(JSON.stringify({ ...report, journal: path.resolve(options.journalPath!) }, null, 2));
+  } catch (error) {
+    console.error(redactCanaryText(error instanceof Error ? error.message : String(error), secrets));
+    process.exitCode = 1;
   }
-  throw new Error("Company source retry limit exceeded");
-}
-
-async function fetchRobots(url: string) {
-  try { return await fetchWithBackoff(url); }
-  catch (error) {
-    if (error instanceof Error && /HTTP 404/.test(error.message)) return { text: "", url, contentType: "text/plain", status: 404 };
-    throw error;
-  }
-}
-
-function officialCandidateUrls(homeHtml: string, origin: string): string[] {
-  const originHost = new URL(origin).hostname.toLowerCase().replace(/^www\./, "");
-  const urls = new Set<string>();
-  for (const match of Array.from(homeHtml.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>/gi))) {
-    try {
-      const url = new URL(match[1].replace(/&amp;/g, "&"), origin);
-      const host = url.hostname.toLowerCase().replace(/^www\./, "");
-      if (url.protocol === "https:" && host === originHost && /(?:about|leadership|team|management|news|press|stories|blog|reports?)/i.test(url.pathname)) urls.add(url.href);
-    } catch {}
-  }
-  return [...urls].slice(0, 3);
 }
 
 async function main() {
-  const options = parseEnrichmentOptions(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.some((arg) => CANARY_ROUTING_FLAGS.has(arg))) return runProductionCanary(argv);
+  const options = parseEnrichmentOptions(argv);
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) throw new Error("Supabase service credentials are required");
@@ -76,25 +160,9 @@ async function main() {
       }
       const { data: atsBoards, error: boardError } = await supabase.from("company_boards").select("id,ats_type,slug,careers_url").eq("company_id", company.id).eq("enabled", true).limit(10);
       if (boardError) throw new Error(`ATS identity lookup failed: ${boardError.message}`);
-      if (!atsBoards?.length) return;
-      const domain = String(company.canonical_domain || "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
-      if (!domain || domain.includes("@") || domain.includes(":")) throw new Error("Canonical domain is invalid");
-      const robots = await fetchRobots(`https://${domain}/robots.txt`);
-      if (!robotsAllows(robots.text, "/")) return;
-      const page = await fetchWithBackoff(`https://${domain}/`);
-      if (!isAtsEvidenceLinked(domain, page.text, page.url, atsBoards || [])) return;
-      let extracted = extractOfficialCompanyPage({ html: page.text, pageUrl: page.url, canonicalDomain: domain, companyName: company.name, atsBoards: atsBoards || [] });
-      const verifiedHomepageContext = extracted.verified ? { verified: true, homepageUrl: page.url, homepageHtml: page.text } : undefined;
-      for (const candidateUrl of officialCandidateUrls(page.text, page.url)) {
-        const path = new URL(candidateUrl).pathname;
-        if (!robotsAllows(robots.text, path)) continue;
-        await delay(1_000);
-        const candidate = await fetchWithBackoff(candidateUrl);
-        const candidateData = extractOfficialCompanySubpage({ html: candidate.text, pageUrl: candidate.url, canonicalDomain: domain, companyName: company.name, atsBoards: atsBoards || [], homepageContext: verifiedHomepageContext });
-        if (!candidateData.verified) continue;
-        extracted = { verified: true, facts: reconcileCompanyFacts(extracted.facts, candidateData.facts, true), leadership: [...extracted.leadership, ...candidateData.leadership].slice(0, 12), news: [...extracted.news, ...candidateData.news].slice(0, 8) };
-      }
-      if (!extracted.verified) return;
+      const crawl = await crawlOfficialProfile({ company, boards: atsBoards || [], fetchPage: (pageUrl) => safeFetchCompanyPage(pageUrl), sleep: delay, now: () => new Date().toISOString() });
+      if (!crawl.extracted) return;
+      const extracted = crawl.extracted;
       report.verified++;
       const next = reconcileCompanyFacts(existing, extracted.facts, true);
       const factRows = Object.entries(next).map(([fact_key, fact]) => ({ company_id: company.id, fact_key, fact_value: fact.value, source_url: fact.sourceUrl, source_kind: fact.sourceKind, retrieved_at: fact.retrievedAt, observed_at: fact.observedAt || null, fact_status: fact.status || "fresh", conflict_value: fact.conflict?.value || null, conflict_source_url: fact.conflict?.sourceUrl || null, conflict_source_kind: fact.conflict?.sourceKind || null, conflict_retrieved_at: fact.conflict?.retrievedAt || null, conflict_observed_at: fact.conflict?.observedAt || null }));
