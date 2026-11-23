@@ -342,6 +342,105 @@ describe("Step 2 Skip Both and Finish", () => {
   });
 });
 
+describe("Onboarding phone: no Copilot persona; step 2 Profile layout", () => {
+  const URL_IN = "https://www.linkedin.com/in/test-user";
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async (url: string) =>
+      url === "/api/onboarding/linkedin"
+        ? new Response(JSON.stringify({ linkedinUrl: URL_IN }), { status: 200 })
+        : new Response(JSON.stringify({ fileName: "cv.pdf", parse: null }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("neither step shows the Copilot persona; step 1 keeps its question", () => {
+    const one = render(<OnboardingStep1 {...step1Props} />);
+    expect(one.container.textContent).not.toMatch(/Copilot/);
+    expect(screen.getAllByText("What type of role are you looking for?").length).toBeGreaterThan(0);
+    one.unmount();
+    const two = render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    expect(two.container.textContent).not.toMatch(/Copilot/);
+  });
+
+  it("has a Profile header whose back control returns to step 1", () => {
+    const onBack = vi.fn();
+    render(<OnboardingStep2 onBack={onBack} onFinish={() => {}} isSaving={false} authToken="t" />);
+    expect(screen.getByRole("heading", { name: "Profile" })).toBeTruthy();
+    fireEvent.click(screen.getByTestId("btn-step2-back-mobile"));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("LinkedIn card: check mark only for a valid URL; Save then Update label; help link toggles", async () => {
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    const input = screen.getByTestId("input-linkedin-url-mobile");
+    const btn = screen.getByTestId("btn-save-linkedin-mobile");
+    expect(btn.textContent).toBe("Save LinkedIn URL");
+    fireEvent.change(input, { target: { value: "not a url" } });
+    expect(screen.queryByTestId("linkedin-valid-check-mobile")).toBeNull();
+    fireEvent.change(input, { target: { value: URL_IN } });
+    expect(screen.getByTestId("linkedin-valid-check-mobile")).toBeTruthy();
+    fireEvent.click(btn);
+    await waitFor(() => expect(btn.textContent).toBe("Update your LinkedIn URL"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/onboarding/linkedin", expect.anything());
+
+    const help = screen.getByTestId("btn-linkedin-help-mobile");
+    expect(help.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(help);
+    expect(help.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("linkedin-help-mobile")).not.toBeNull();
+  });
+
+  it("resume card: upload shows file name, saved badge, CM format/size copy, View and Download of the local file", async () => {
+    const onResumeFileSaved = vi.fn();
+    const createObjectURL = vi.fn(() => "blob:cv");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" onResumeFileSaved={onResumeFileSaved} />);
+
+    const card = screen.getByTestId("card-resume-mobile");
+    expect(card.textContent).toContain("PDF or DOCX, up to 5 MB. Stored privately.");
+    expect(screen.queryByTestId("btn-resume-view-mobile")).toBeNull();
+
+    const file = new File(["%PDF-1.4"], "cv.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByTestId("input-resume-file-mobile"), { target: { files: [file] } });
+    await waitFor(() => expect(document.getElementById("resume-card-title-mobile")?.textContent).toBe("cv.pdf"));
+    expect(screen.getByTestId("resume-saved-badge-mobile")).toBeTruthy();
+    expect(onResumeFileSaved).toHaveBeenCalledWith(file);
+
+    fireEvent.click(screen.getByTestId("btn-resume-view-mobile"));
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(openSpy).toHaveBeenCalledWith("blob:cv", "_blank", "noopener,noreferrer");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    fireEvent.click(screen.getByTestId("btn-resume-download-mobile"));
+    expect(click).toHaveBeenCalledTimes(1);
+    // Only the upload request went to the server; View/Download are local.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    openSpy.mockRestore();
+    click.mockRestore();
+  });
+
+  it("keeps the existing 5 MB limit and its message", async () => {
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    const big = new File(["x"], "big.pdf", { type: "application/pdf" });
+    Object.defineProperty(big, "size", { value: 5 * 1024 * 1024 + 1 });
+    fireEvent.change(screen.getByTestId("input-resume-file-mobile"), { target: { files: [big] } });
+    expect((await screen.findByTestId("resume-error-mobile")).textContent).toContain("Resume must be 5 MB or smaller.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Back keeps the uploaded file so View/Download stay available", () => {
+    const file = new File(["%PDF-1.4"], "cv.pdf", { type: "application/pdf" });
+    render(
+      <OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" initialResumeName="cv.pdf" initialResumeFile={file} />
+    );
+    expect(screen.getByTestId("btn-resume-view-mobile")).toBeTruthy();
+    expect(screen.getByTestId("btn-resume-download-mobile")).toBeTruthy();
+  });
+});
+
 describe("Step 2 phone: one bottom-right 'Skip for now' for LinkedIn and CV", () => {
   const URL_IN = "https://www.linkedin.com/in/test-user";
   let fetchMock: ReturnType<typeof vi.fn>;

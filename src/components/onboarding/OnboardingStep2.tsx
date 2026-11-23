@@ -21,6 +21,8 @@ interface OnboardingStep2Props {
   onResumeSaved?: (fileName: string, parse: ResumeParseSummary | null) => void;
   initialLinkedinUrl?: string | null;
   onLinkedinSaved?: (url: string) => void;
+  initialResumeFile?: File | null;
+  onResumeFileSaved?: (file: File) => void;
 }
 
 const ACCEPT = `.pdf,.docx,${RESUME_MIME.pdf},${RESUME_MIME.docx}`;
@@ -92,11 +94,16 @@ export default function OnboardingStep2({
   onResumeSaved,
   initialLinkedinUrl = null,
   onLinkedinSaved,
+  initialResumeFile = null,
+  onResumeFileSaved,
 }: OnboardingStep2Props) {
   const isFeatureEnabled = isOnboardingStep2EnabledClient();
 
   const [linkedinInput, setLinkedinInput] = useState(initialLinkedinUrl ?? "");
   const [linkedinSaved, setLinkedinSaved] = useState(Boolean(initialLinkedinUrl));
+  const [linkedinEverSaved, setLinkedinEverSaved] = useState(Boolean(initialLinkedinUrl));
+  const [showLinkedinHelp, setShowLinkedinHelp] = useState(false);
+  const [resumeFile, setResumeFile] = useState<File | null>(initialResumeFile);
   const [linkedinSkipped, setLinkedinSkipped] = useState(false);
   const [linkedinSaving, setLinkedinSaving] = useState(false);
   const [linkedinError, setLinkedinError] = useState<string | null>(null);
@@ -139,6 +146,7 @@ export default function OnboardingStep2({
       const savedUrl = data.linkedinUrl || check.normalizedUrl;
       setLinkedinInput(savedUrl);
       setLinkedinSaved(true);
+      setLinkedinEverSaved(true);
       onLinkedinSaved?.(savedUrl);
       toast.success("LinkedIn URL saved");
     } catch (err: any) {
@@ -189,6 +197,8 @@ export default function OnboardingStep2({
       setResumeName(finalName);
       setResumeParse(finalParse);
       onResumeSaved?.(finalName, finalParse);
+      setResumeFile(file);
+      onResumeFileSaved?.(file);
       toast.success("Resume saved");
     } catch (err: any) {
       if (reqId === activeUploadRef.current) {
@@ -212,6 +222,21 @@ export default function OnboardingStep2({
     if (!resumeUploading) mobileFileInputRef.current?.click();
   };
 
+  // View/Download use the file uploaded in this session (an object URL; nothing is fetched from the server).
+  const openResumeFile = (download: boolean) => {
+    if (!resumeFile) return;
+    const url = URL.createObjectURL(resumeFile);
+    if (download) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = resumeName || resumeFile.name;
+      a.click();
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
   const handleFinish = () => {
     if (isSaving || resumeUploading) return;
     onFinish();
@@ -229,30 +254,26 @@ export default function OnboardingStep2({
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
       <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-24 md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
-        <div className="mb-2 md:mb-6">
+        {/* Profile-style header: back control + title */}
+        <div className="relative flex items-center justify-center min-h-[44px] mb-2 md:mb-6">
           <button
             type="button"
             onClick={onBack}
             disabled={isSaving || resumeUploading}
-            className="inline-flex items-center gap-1.5 text-xs md:text-sm font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition disabled:opacity-40"
+            aria-label="Back to preferences"
+            data-testid="btn-step2-back-mobile"
+            className="absolute left-0 w-11 h-11 -ml-2 inline-flex items-center justify-center rounded-full text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
           >
-            <ArrowLeft className="w-3.5 h-3.5 md:w-4 md:h-4" />
-            <span>Back to preferences</span>
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </button>
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Profile</h2>
         </div>
-        <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
-          <div className="w-11 h-11 md:w-12 md:h-12 flex-shrink-0 rounded-2xl bg-[#E6F2FF] border border-[#0082FF]/20 flex items-center justify-center p-2 text-[#0020B0] shadow-sm">
-            <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
-          </div>
-          <div className="flex-1">
-            <span className="block text-sm md:text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">CareerMonke Copilot</span>
-            <div className="p-3.5 md:p-4 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm md:text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed">
-              {isFeatureEnabled
-                ? "Optional: add your LinkedIn profile and resume. You can skip either one and add them later."
-                : "Profile extras are coming soon. Skip ahead to your recommendations."}
-            </div>
-          </div>
-        </div>
+        {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
+        <p className="mb-6 md:mb-8 text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-relaxed">
+          {isFeatureEnabled
+            ? "Optional: add your LinkedIn profile and resume. You can skip either one and add them later."
+            : "Profile extras are coming soon. Skip ahead to your recommendations."}
+        </p>
 
         {!isFeatureEnabled ? (
           <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
@@ -270,175 +291,183 @@ export default function OnboardingStep2({
             ))}
           </div>
         ) : (
-          <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
+          <div className="space-y-3">
             {/* CARD 1: LinkedIn URL (validated + normalized only; never scraped) */}
-            <section data-testid="card-linkedin-mobile" aria-labelledby="linkedin-card-title-mobile" className={mobileCardClass}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#0077b5]/10 flex items-center justify-center text-[#0077b5] flex-shrink-0">
-                  <LinkedInIcon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 md:min-w-0">
-                  <h3 id="linkedin-card-title-mobile" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
-                    LinkedIn profile URL
-                  </h3>
-                </div>
-                <div className="md:flex-shrink-0">
-                  {linkedinSaved && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0020B0] dark:text-brand-400">
-                      <Check className="w-3 h-3" /> Saved
-                    </span>
+            <section data-testid="card-linkedin-mobile" aria-labelledby="linkedin-card-title-mobile" className={`${mobileCardClass} text-center`}>
+              <div className="w-20 h-20 mx-auto rounded-full bg-[#E6F2FF] flex items-center justify-center text-[#0020B0]">
+                <LinkedInIcon className="w-10 h-10" />
+              </div>
+              <h3 id="linkedin-card-title-mobile" className="sr-only">
+                LinkedIn profile URL
+              </h3>
+              <form onSubmit={handleSaveLinkedIn} className="space-y-3 text-left" noValidate>
+                <div className="relative">
+                  <input
+                    type="url"
+                    inputMode="url"
+                    autoComplete="url"
+                    data-testid="input-linkedin-url-mobile"
+                    aria-label="LinkedIn profile URL (mobile)"
+                    aria-invalid={Boolean(linkedinError)}
+                    aria-describedby={linkedinError ? "linkedin-error-mobile" : undefined}
+                    value={linkedinInput}
+                    onChange={(e) => {
+                      setLinkedinInput(e.target.value);
+                      setLinkedinError(null);
+                      setLinkedinSaved(false);
+                    }}
+                    placeholder="linkedin.com/in/your-name"
+                    className="w-full min-h-[48px] pl-4 pr-10 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0082FF]"
+                  />
+                  {validateAndNormalizeLinkedInUrl(linkedinInput).valid && (
+                    <Check
+                      data-testid="linkedin-valid-check-mobile"
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0020B0]"
+                      aria-hidden="true"
+                    />
                   )}
                 </div>
-              </div>
-
-              <form onSubmit={handleSaveLinkedIn} className="space-y-3 md:flex-1 md:flex md:flex-col md:justify-between" noValidate>
-                  <div className="space-y-3 md:space-y-2">
-                    <input
-                      type="url"
-                      inputMode="url"
-                      autoComplete="url"
-                      data-testid="input-linkedin-url-mobile"
-                      aria-label="LinkedIn profile URL (mobile)"
-                      aria-invalid={Boolean(linkedinError)}
-                      aria-describedby={linkedinError ? "linkedin-error-mobile" : undefined}
-                      value={linkedinInput}
-                      onChange={(e) => {
-                        setLinkedinInput(e.target.value);
-                        setLinkedinError(null);
-                        setLinkedinSaved(false);
-                      }}
-                      placeholder="linkedin.com/in/your-name"
-                      className="w-full px-4 py-2.5 md:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0082FF]"
-                    />
-                    {linkedinError && (
-                      <p
-                        id="linkedin-error-mobile"
-                        role="alert"
-                        data-testid="linkedin-error-mobile"
-                        className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5"
-                      >
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {linkedinError}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex justify-end md:pt-2">
-                    <button
-                      type="submit"
-                      disabled={linkedinSaving || !linkedinInput.trim() || linkedinSaved}
-                      data-testid="btn-save-linkedin-mobile"
-                      className="px-5 md:px-6 py-2 md:py-2.5 rounded-full text-xs md:text-sm font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-50 inline-flex items-center gap-1.5 md:shadow-sm"
-                    >
-                      {linkedinSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      {linkedinSaved ? "Saved" : linkedinSaving ? "Saving..." : "Save"}
-                    </button>
-                  </div>
+                {linkedinError && (
+                  <p
+                    id="linkedin-error-mobile"
+                    role="alert"
+                    data-testid="linkedin-error-mobile"
+                    className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {linkedinError}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  disabled={linkedinSaving || !linkedinInput.trim() || linkedinSaved}
+                  data-testid="btn-save-linkedin-mobile"
+                  className="w-full min-h-[48px] rounded-xl text-sm font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2"
+                >
+                  {linkedinSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {linkedinSaving ? "Saving..." : linkedinEverSaved ? "Update your LinkedIn URL" : "Save LinkedIn URL"}
+                </button>
+                {linkedinSaved && (
+                  <p role="status" className="text-xs text-center text-[#0020B0] dark:text-brand-300">
+                    Saved
+                  </p>
+                )}
               </form>
+              <button
+                type="button"
+                onClick={() => setShowLinkedinHelp((v) => !v)}
+                aria-expanded={showLinkedinHelp}
+                aria-controls="linkedin-help-mobile"
+                data-testid="btn-linkedin-help-mobile"
+                className="min-h-[44px] px-2 text-sm font-semibold text-[#0020B0] underline underline-offset-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
+              >
+                Where do I find my profile URL?
+              </button>
+              {showLinkedinHelp && (
+                <p id="linkedin-help-mobile" className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Open your own profile on LinkedIn. The address that starts with linkedin.com/in/ is your profile URL.
+                </p>
+              )}
             </section>
 
             {/* CARD 2: Resume upload (stored privately; text parsed server-side for ranking) */}
-            <section data-testid="card-resume-mobile" aria-labelledby="resume-card-title-mobile" className={mobileCardClass}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#E6F2FF] flex items-center justify-center text-[#0020B0] flex-shrink-0">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div className="flex-1 md:min-w-0">
-                  <h3 id="resume-card-title-mobile" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
-                    Upload resume
-                  </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">PDF or DOCX, up to 5 MB. Stored privately.</p>
-                </div>
-                <div className="md:flex-shrink-0">
-                  {resumeName && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0020B0] dark:text-brand-400">
-                      <Check className="w-3 h-3" /> Saved
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <>
-                  <input
-                    ref={mobileFileInputRef}
-                    type="file"
-                    accept={ACCEPT}
-                    aria-label="Upload resume file (PDF or DOCX) (mobile)"
-                    data-testid="input-resume-file-mobile"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void uploadResume(f);
-                    }}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    data-testid="resume-dropzone-mobile"
-                    onClick={openMobilePicker}
-                    disabled={resumeUploading}
-                    aria-describedby={resumeError ? "resume-error-mobile" : undefined}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setIsDragging(true);
-                    }}
-                    onDragLeave={(e) => {
-                      e.preventDefault();
-                      setIsDragging(false);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setIsDragging(false);
-                      const f = e.dataTransfer.files?.[0];
-                      if (f) void uploadResume(f);
-                    }}
-                    className={`w-full md:flex-1 border-2 border-dashed rounded-2xl p-4 md:p-8 text-center transition md:flex md:flex-col md:items-center md:justify-center md:min-h-[170px] ${
-                      isDragging
-                        ? "border-[#0082FF] bg-[#E6F2FF]/50 dark:bg-brand-900/30"
-                        : "border-zinc-300 dark:border-zinc-700 hover:border-[#0082FF]/80 bg-zinc-50/50 dark:bg-zinc-800/40"
-                    }`}
+            <section data-testid="card-resume-mobile" aria-labelledby="resume-card-title-mobile" className={`${mobileCardClass} text-center`}>
+              <div className="relative w-20 h-20 mx-auto rounded-full bg-[#E6F2FF] flex items-center justify-center text-[#0020B0]">
+                <FileText className="w-10 h-10" aria-hidden="true" />
+                {resumeName && (
+                  <span
+                    data-testid="resume-saved-badge-mobile"
+                    className="absolute bottom-1 right-1 w-6 h-6 rounded-md bg-[#0082FF] text-white flex items-center justify-center"
                   >
-                    {resumeUploading ? (
-                      <span className="flex flex-col items-center gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-                        <Loader2 className="w-6 h-6 text-[#0020B0] animate-spin" /> Uploading and reading...
-                      </span>
-                    ) : resumeName ? (
-                      <span className="flex flex-col items-center gap-1">
-                        <FileCheck className="w-6 h-6 text-[#0020B0]" />
-                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 break-all">{resumeName}</span>
-                        <span className="text-[11px] text-[#0020B0] dark:text-brand-400">Choose another file to replace</span>
-                      </span>
-                    ) : (
-                      <span className="flex flex-col items-center gap-1">
-                        <Upload className="w-6 h-6 text-zinc-400" />
-                        <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Choose a file or drag & drop</span>
-                        <span className="text-[11px] text-zinc-400 dark:text-zinc-500">PDF or DOCX up to 5 MB</span>
-                      </span>
-                    )}
-                  </button>
-                  {resumeError && (
-                    <p
-                      id="resume-error-mobile"
-                      role="alert"
-                      data-testid="resume-error-mobile"
-                      className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5"
-                    >
-                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {resumeError}
-                    </p>
+                    <Check className="w-4 h-4" aria-hidden="true" />
+                    <span className="sr-only">Saved</span>
+                  </span>
+                )}
+              </div>
+              <div>
+                <h3 id="resume-card-title-mobile" className="text-base font-bold text-zinc-900 dark:text-zinc-100 break-all">
+                  {resumeName || "Upload resume"}
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">PDF or DOCX, up to 5 MB. Stored privately.</p>
+              </div>
+              <input
+                ref={mobileFileInputRef}
+                type="file"
+                accept={ACCEPT}
+                aria-label="Upload resume file (PDF or DOCX) (mobile)"
+                data-testid="input-resume-file-mobile"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadResume(f);
+                }}
+                className="hidden"
+              />
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  data-testid="resume-dropzone-mobile"
+                  onClick={openMobilePicker}
+                  disabled={resumeUploading}
+                  aria-describedby={resumeError ? "resume-error-mobile" : undefined}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) void uploadResume(f);
+                  }}
+                  className={`w-full min-h-[48px] rounded-xl text-sm font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2${isDragging ? " ring-2 ring-[#0039F5]" : ""}`}
+                >
+                  {resumeUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Uploading and reading...
+                    </>
+                  ) : (
+                    "Upload resume"
                   )}
-                  {resumeName && !resumeError && (
-                    <p data-testid="resume-success-mobile" className="text-xs text-[#0020B0] dark:text-brand-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Resume saved
-                    </p>
-                  )}
-                  {resumeName && !resumeError && describeResumeParse(resumeParse) && (
-                    <p
-                      data-testid="resume-parse-status-mobile"
-                      data-status={resumeParse?.status}
-                      aria-live="polite"
-                      className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
-                    >
-                      {describeResumeParse(resumeParse)}
-                    </p>
-                  )}
-              </>
+                </button>
+                {resumeName && resumeFile && (
+                  <>
+                    <button type="button" data-testid="btn-resume-view-mobile" onClick={() => openResumeFile(false)} className="w-full min-h-[48px] rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
+                      View
+                    </button>
+                    <button type="button" data-testid="btn-resume-download-mobile" onClick={() => openResumeFile(true)} className="w-full min-h-[48px] rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
+                      Download
+                    </button>
+                  </>
+                )}
+              </div>
+              {resumeError && (
+                <p
+                  id="resume-error-mobile"
+                  role="alert"
+                  data-testid="resume-error-mobile"
+                  className="text-xs text-red-700 dark:text-red-300 flex items-center justify-center gap-1.5"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {resumeError}
+                </p>
+              )}
+              {resumeName && !resumeError && (
+                <p data-testid="resume-success-mobile" className="text-xs text-[#0020B0] dark:text-brand-300 flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Resume saved
+                </p>
+              )}
+              {resumeName && !resumeError && describeResumeParse(resumeParse) && (
+                <p
+                  data-testid="resume-parse-status-mobile"
+                  data-status={resumeParse?.status}
+                  aria-live="polite"
+                  className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400"
+                >
+                  {describeResumeParse(resumeParse)}
+                </p>
+              )}
             </section>
           </div>
         )}
