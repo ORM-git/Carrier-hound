@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl } from "@/lib/auth/session";
+import { onboardingRedirectFor, resolvePostAuthDestination } from "@/lib/auth/onboarding";
 import { clearCandidateProfileMemoryCache } from "@/lib/resume/storage";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
 import BrandIcon from "@/components/BrandIcon";
@@ -28,17 +29,41 @@ export default function AuthCallbackPage() {
 
     const supabase = createClient();
 
+    let deferTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const navigate = (destination: string) => {
+      if (cancelled) return;
+      clearCandidateProfileMemoryCache();
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem("careermonke_candidate_profile");
+        } catch {}
+      }
+      router.replace(destination);
+    };
+
+    // Error paths: one navigation, no onboarding check.
     const finish = (destination: string) => {
       if (!cancelled && !resolved) {
         resolved = true;
-        clearCandidateProfileMemoryCache();
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.removeItem("careermonke_candidate_profile");
-          } catch {}
-        }
-        router.replace(destination);
+        navigate(destination);
       }
+    };
+
+    // Every successful sign-in path: claim the single navigation now, then send accounts that have not
+    // completed onboarding to /onboarding (keeping `next` for afterwards). `defer` keeps Supabase queries
+    // out of the onAuthStateChange callback.
+    const finishSignedIn = (userId: string | null | undefined, defer = false) => {
+      if (cancelled || resolved) return;
+      resolved = true;
+      const run = () => {
+        if (cancelled) return;
+        resolvePostAuthDestination(supabase, userId, next)
+          .catch(() => onboardingRedirectFor(next))
+          .then(navigate);
+      };
+      if (defer) deferTimeoutId = setTimeout(run, 0);
+      else run();
     };
 
     // 1. Listen for auth state changes (automatically catches hash token / magic link)
@@ -50,7 +75,7 @@ export default function AuthCallbackPage() {
         if (event === "SIGNED_IN") {
           trackFunnelEvent("signup_completed", { path: "/auth/callback" });
         }
-        finish(next);
+        finishSignedIn(session.user?.id, true);
       }
     });
 
@@ -60,10 +85,10 @@ export default function AuthCallbackPage() {
     const handleAuth = async () => {
       // 2. PKCE code exchange
       if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (cancelled || resolved) return;
         if (!error) {
-          finish(next);
+          finishSignedIn(data?.session?.user?.id);
           return;
         }
         console.error("[Auth Callback] exchangeCodeForSession error:", error.message || error);
@@ -78,7 +103,7 @@ export default function AuthCallbackPage() {
       } = await supabase.auth.getSession();
       if (cancelled || resolved) return;
       if (session) {
-        finish(next);
+        finishSignedIn(session.user?.id);
         return;
       }
 
@@ -91,7 +116,7 @@ export default function AuthCallbackPage() {
             if (cancelled || resolved) return;
             const hashSession = data?.session;
             if (hashSession) {
-              finish(next);
+              finishSignedIn(hashSession.user?.id);
             } else {
               finish(`/login?error=${encodeURIComponent("Could not authenticate magic link. Please try again.")}`);
             }
@@ -116,6 +141,7 @@ export default function AuthCallbackPage() {
       resolved = true;
       if (hashTimeoutId !== null) clearTimeout(hashTimeoutId);
       if (fallbackTimeoutId !== null) clearTimeout(fallbackTimeoutId);
+      if (deferTimeoutId !== null) clearTimeout(deferTimeoutId);
       subscription.unsubscribe();
     };
   }, [router]);

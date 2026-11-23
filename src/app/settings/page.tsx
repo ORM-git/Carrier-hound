@@ -217,7 +217,8 @@ function SettingsPageInner() {
 
       const result = await res.json().catch(() => ({}));
 
-      if (!res.ok || !result.success) {
+      // Only an explicit, confirmed full success clears local state and signs out.
+      if (!res.ok || result.success !== true) {
         toast.error(result.error || "Failed to delete account. Please contact support.");
         return;
       }

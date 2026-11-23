@@ -169,7 +169,7 @@ function getSupabaseAdmin() {
  * 2. Refuses deletion if user is banned in `blocked_users` (fail-closed on DB error).
  * 3. Reconciles `active`, `trialing`, and `in_grace_period` subscriptions to `canceled`
  *    and preserves the `subscriptions` rows (FK `ON DELETE SET NULL` on `auth.users`).
- * 4. Soft-deletes (deleted_at, 30-day undo window) or anonymizes user-owned rows;
+ * 4. Hard-deletes `profiles` (no deleted_at), then soft-deletes (deleted_at, 30-day undo window) or anonymizes user-owned rows;
  *    - profile (`candidate_profiles`, `user_preferences`)
  *    - resumes (`resumes`, `tailored_resumes`)
  *    - saved jobs (`saved_jobs`)
@@ -369,6 +369,16 @@ export async function handleAccountDeleteRequest(
       return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
     };
 
+    // public.profiles has no deleted_at column and its FK cascades from auth.users anyway, so remove the
+    // row first: a deletion that stops part-way must not leave onboarding_completed_at (or legacy
+    // full_name/target_roles) behind to mark the surviving identity as already onboarded.
+    {
+      const { error: profileError } = await supabaseAdmin.from("profiles").delete().eq("user_id", userId);
+      if (!isIgnorableDeleteError(profileError)) {
+        errors.push(`profiles: ${profileError?.message || JSON.stringify(profileError)}`);
+      }
+    }
+
     for (const table of ACCOUNT_DELETE_USER_ID_TABLES) {
       const { error: softError } = await supabaseAdmin
         .from(table)
@@ -421,7 +431,11 @@ export async function handleAccountDeleteRequest(
     try {
       const bucketNames = new Set<string>(["resumes"]);
       if (typeof supabaseAdmin.storage?.listBuckets === "function") {
-        const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+        const { data: buckets, error: bucketsErr } = await supabaseAdmin.storage.listBuckets();
+        // Unknown buckets could still hold the user's files: never report success without checking them.
+        if (bucketsErr) {
+          errors.push(`storage.listBuckets: ${bucketsErr.message || String(bucketsErr)}`);
+        }
         if (Array.isArray(buckets)) {
           for (const b of buckets) {
             if (b?.name) bucketNames.add(b.name);
@@ -437,7 +451,10 @@ export async function handleAccountDeleteRequest(
           bucketApi,
           userId
         );
-        if (listErr) continue;
+        if (listErr) {
+          errors.push(`storage.${bucketName}: ${listErr.message || String(listErr)}`);
+          continue;
+        }
 
         if (filePaths.length > 0) {
           for (let i = 0; i < filePaths.length; i += STORAGE_LIST_PAGE_SIZE) {
