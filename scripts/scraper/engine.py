@@ -461,17 +461,18 @@ class SupabaseSetDiffWriter:
                 return
             try:
                 raw_val = resp.json()
-            except Exception as exc:  # noqa: BLE001
-                self.logo_enqueue["status"] = f"invalid: unparseable json ({exc})"
+            except Exception:  # noqa: BLE001
+                self.logo_enqueue["status"] = "invalid: unparseable json"
                 return
             if isinstance(raw_val, bool) or not isinstance(raw_val, int):
-                self.logo_enqueue["status"] = f"invalid: expected integer count, got {type(raw_val).__name__} ({raw_val!r})"
+                val_type = type(raw_val).__name__[:30]
+                self.logo_enqueue["status"] = f"invalid: expected integer count, got {val_type}"
                 return
             if raw_val < 0:
-                self.logo_enqueue["status"] = f"invalid: negative enqueue count ({raw_val})"
+                self.logo_enqueue["status"] = "invalid: negative enqueue count"
                 return
             if raw_val > len(batch):
-                self.logo_enqueue["status"] = f"invalid: count {raw_val} exceeds requested {len(batch)}"
+                self.logo_enqueue["status"] = f"invalid: count exceeds requested ({len(batch)})"
                 return
             self.logo_enqueue["enqueued"] += raw_val
         if ids:
@@ -483,11 +484,45 @@ class SupabaseSetDiffWriter:
                     try:
                         cov_val = cov.json()
                     except Exception:
+                        self.logo_enqueue["coverage"] = "unknown"
                         self.logo_enqueue["status"] = "invalid: unparseable coverage json"
                         return
                     if isinstance(cov_val, bool) or not isinstance(cov_val, dict):
-                        self.logo_enqueue["status"] = f"invalid: unexpected coverage shape ({cov_val!r})"
+                        cov_type = type(cov_val).__name__[:30]
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = f"invalid: unexpected coverage shape (got {cov_type})"
                         return
+
+                    metric_keys = {"total_companies", "with_logo", "coverage_pct", "coverage", "total", "backlog", "orphan"}
+                    matched_metrics = set(cov_val.keys()).intersection(metric_keys)
+                    if not matched_metrics:
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: unexpected coverage keys"
+                        return
+
+                    for k in matched_metrics:
+                        v = cov_val[k]
+                        if k in {"total_companies", "with_logo", "total", "backlog", "orphan"}:
+                            if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+                                self.logo_enqueue["coverage"] = "unknown"
+                                self.logo_enqueue["status"] = f"invalid: coverage {k} must be non-negative integer"
+                                return
+                        elif k in {"coverage_pct", "coverage"}:
+                            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                                self.logo_enqueue["coverage"] = "unknown"
+                                self.logo_enqueue["status"] = f"invalid: coverage {k} must be numeric"
+                                return
+                            if not (0.0 <= float(v) <= 100.0):
+                                self.logo_enqueue["coverage"] = "unknown"
+                                self.logo_enqueue["status"] = f"invalid: coverage {k} out of range [0, 100]"
+                                return
+
+                    if "total_companies" in cov_val and "with_logo" in cov_val:
+                        if cov_val["with_logo"] > cov_val["total_companies"]:
+                            self.logo_enqueue["coverage"] = "unknown"
+                            self.logo_enqueue["status"] = "invalid: coverage with_logo exceeds total_companies"
+                            return
+
                     self.logo_enqueue["coverage"] = cov_val
             except Exception:  # noqa: BLE001 - reporting only, never fatal
                 pass
