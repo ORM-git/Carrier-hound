@@ -1779,7 +1779,7 @@ function JobsPageInner() {
         <main
           id="main-content"
           data-testid="jobs-main-content"
-          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 space-y-4 sm:space-y-3 pb-44 sm:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
+          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 ${selectedJob || detailLoading ? "pb-44" : "pb-4"} sm:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
           {detailLoading ? (
             <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">
@@ -1863,7 +1863,7 @@ function JobsPageInner() {
           ) : (
             <>
               {/* Header Row: Tabs with Count Badges (compact mobile view <640px) */}
-              <div className="space-y-3 sm:hidden max-w-full">
+              <div className="space-y-2 sm:hidden max-w-full">
                 {/* Mobile tabs (<640px) */}
                 <div className="relative max-w-full">
                   <div className="flex items-center gap-1 p-1 pr-8 rounded-xl bg-slate-200/80 border border-slate-300/70 overflow-x-auto scrollbar-thin">
@@ -1931,7 +1931,7 @@ function JobsPageInner() {
                 </div>
               </div>
 
-              <div className="space-y-4 sm:space-y-3 lg:col-start-1">
+              <div className="space-y-2 sm:space-y-3 lg:col-start-1">
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
                 <JobFilterBar
@@ -1977,7 +1977,7 @@ function JobsPageInner() {
               </div>
 
               {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
-              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2 sm:pt-0 lg:col-start-1">
+              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 lg:col-start-1">
                 {/* Left Feed Column: about 973px max on wide desktop, flex-1 */}
                 <div className="w-full lg:max-w-[973px] flex-1 space-y-3 min-w-0">
                   {loadingJobs ? (
@@ -2012,7 +2012,7 @@ function JobsPageInner() {
                     </div>
                   ) : isDegraded ? (
                     /* Degraded / HTTP 503 error state */
-                    <div data-testid="search-degraded-state" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-10 sm:p-14 text-center space-y-3 shadow-none">
+                    <div data-testid="search-degraded-state" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 sm:p-14 text-center space-y-3 shadow-none">
                       <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
                         <AlertCircle className="w-6 h-6" />
                       </div>
@@ -2037,7 +2037,7 @@ function JobsPageInner() {
                     </div>
                   ) : displayedJobs.length === 0 ? (
                     /* Empty state distinguishing no saved vs filtered vs no applied */
-                    <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-10 sm:p-14 text-center space-y-3 shadow-none">
+                    <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 sm:p-14 text-center space-y-3 shadow-none">
                       <div className="w-12 h-12 rounded-full bg-[#F1F5F9] text-[#475569] flex items-center justify-center mx-auto">
                         {activeTab === "saved" || activeTab === "liked" ? (
                           <Heart className="w-6 h-6 text-[#475569]" />
