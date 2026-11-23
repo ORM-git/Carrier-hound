@@ -1,0 +1,119 @@
+name: Python Job Ingestion (every 4 hours)
+
+# Runs the Python master ingestion (scripts/scraper/run_ingestion.py) on a schedule with exactly the manual
+# production command. The TypeScript pipeline (ingest.yml, :17 every 4h) is a separate ingester; this one is
+# offset by 2.5h and shares its concurrency group (ingest-pipeline), so the two never run at the same time.
+#
+# Safety: the runner's own guard is untouched. If any source fails, run_master_ingestion withholds every
+# database write and all expiry, and the CLI exits 1 -> this run is marked failed with a summary.
+on:
+  schedule:
+    # 02:47, 06:47, 10:47, 14:47, 18:47, 22:47 UTC
+    - cron: '47 2-23/4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Shared with ingest.yml (TypeScript ingester): both write and expire jobs in the same DB, so at most one
+  # of them runs at a time. In-progress runs are never cancelled.
+  group: ingest-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    name: Python ingestion (write, production, expire)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/scraper/requirements.txt
+
+      - name: Install scraper requirements
+        run: pip install -r scripts/scraper/requirements.txt
+
+      - name: Run ingestion
+        id: run
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+        run: |
+          mkdir -p reports
+          # Presence check only; secret values are never echoed.
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error title=Missing secrets::Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) in repository Actions secrets."
+            exit 2
+          fi
+          set +e
+          python -m scripts.scraper.run_ingestion --write-to-database --production --expire \
+            > reports/python-ingest-report.json 2> reports/python-ingest-stderr.log
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          # stderr carries only the runner's own (redacted) messages / tracebacks
+          tail -n 40 reports/python-ingest-stderr.log
+          exit $code
+
+      - name: Run summary
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.run.outputs.exit_code }}
+        run: |
+          python - <<'PY'
+          import json, os
+          path, out = "reports/python-ingest-report.json", []
+          code = os.environ.get("EXIT_CODE") or "n/a"
+          try:
+              with open(path, encoding="utf-8") as fh:
+                  r = json.load(fh)
+          except Exception as exc:  # no report: auth refusal, crash or timeout before the runner printed it
+              r = None
+              out.append(f"### Python ingestion: no report (exit {code}): {type(exc).__name__}")
+          if r is not None:
+              db = r.get("db") or {}
+              failed = r.get("failed_sources") or []
+              ok = code == "0"
+              out += [
+                  f"### Python ingestion: {'OK' if ok else 'FAILED'} (exit {code})",
+                  "",
+                  "| metric | value |", "|---|---|",
+                  f"| sources | {len(r.get('sources') or [])} |",
+                  f"| failed sources | {len(failed)} |",
+                  f"| fetched | {r.get('fetched')} |",
+                  f"| inserted | {db.get('inserted')} |",
+                  f"| updated | {db.get('updated')} |",
+                  f"| expired | {db.get('expired')} |",
+                  f"| persistence failed | {db.get('persistence_failed')} |",
+              ]
+              if failed:
+                  out += ["", "**Failed sources (all writes and expiry withheld by the guard):**", ""]
+                  for f in failed:
+                      msg = str(f.get("error") or "")[:300].replace("\n", " ")
+                      out.append(f"- `{f.get('source')}`: {msg}")
+                      print(f"::error title=Ingestion source failed::{f.get('source')}: {msg}")
+              for e in (db.get("write_errors") or [])[:10]:
+                  print(f"::error title=Ingestion write error::{str(e)[:300]}")
+          text = "\n".join(out)
+          print(text)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(text + "\n")
+          PY
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-ingest-report-${{ github.run_id }}
+          path: reports/python-ingest-*
+          if-no-files-found: ignore
+          retention-days: 14
