@@ -222,8 +222,8 @@ export default function OnboardingStep2({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
-        <div className="mb-4 md:mb-6">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-24 md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
+        <div className="mb-2 md:mb-6">
           <button
             type="button"
             onClick={onBack}
@@ -264,7 +264,7 @@ export default function OnboardingStep2({
             ))}
           </div>
         ) : (
-          <div className="space-y-5 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
+          <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
             {/* CARD 1: LinkedIn URL (validated + normalized only; never scraped) */}
             <section data-testid="card-linkedin-mobile" aria-labelledby="linkedin-card-title-mobile" className={mobileCardClass}>
               <div className="flex items-center gap-3">
@@ -395,7 +395,7 @@ export default function OnboardingStep2({
                       const f = e.dataTransfer.files?.[0];
                       if (f) void uploadResume(f);
                     }}
-                    className={`w-full md:flex-1 border-2 border-dashed rounded-2xl p-6 md:p-8 text-center transition md:flex md:flex-col md:items-center md:justify-center md:min-h-[170px] ${
+                    className={`w-full md:flex-1 border-2 border-dashed rounded-2xl p-4 md:p-8 text-center transition md:flex md:flex-col md:items-center md:justify-center md:min-h-[170px] ${
                       isDragging
                         ? "border-[#0082FF] bg-[#E6F2FF]/50 dark:bg-brand-900/30"
                         : "border-zinc-300 dark:border-zinc-700 hover:border-[#0082FF]/80 bg-zinc-50/50 dark:bg-zinc-800/40"
@@ -455,8 +455,8 @@ export default function OnboardingStep2({
           </div>
         )}
 
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 p-4 md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
-          <div className="max-w-lg md:max-w-none mx-auto space-y-3 md:space-y-4">
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+          <div className="max-w-lg md:max-w-none mx-auto space-y-2.5 md:space-y-4">
             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
               <div className="bg-[#0082FF] h-full rounded-full" style={{ width: "100%" }} />
             </div>
@@ -467,7 +467,7 @@ export default function OnboardingStep2({
                 disabled={isSaving || resumeUploading}
                 onClick={handleFinish}
                 data-testid="btn-onboarding-finish-mobile"
-                className="px-6 sm:px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white shadow-md md:hover:shadow-lg transition disabled:opacity-50"
+                className="min-h-[44px] px-6 sm:px-8 md:px-10 py-2.5 md:py-3.5 rounded-full text-sm md:text-base font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white shadow-md md:hover:shadow-lg transition disabled:opacity-50"
               >
                 {isSaving ? "Saving..." : linkedinSaved || resumeName ? "Finish" : "Skip for now & Finish"}
               </button>

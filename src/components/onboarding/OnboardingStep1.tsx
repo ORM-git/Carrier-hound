@@ -112,7 +112,7 @@ export default function OnboardingStep1({
         </div>
 
         {/* Main Form Card */}
-        <div className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-8 shadow-sm md:shadow-md space-y-6 md:space-y-7">
+        <div className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-6 md:p-8 shadow-sm md:shadow-md space-y-4 md:space-y-7">
           {/* 1. Job role (Required) */}
           <div>
             <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
@@ -130,7 +130,7 @@ export default function OnboardingStep1({
                   setActiveJobTrigger(e.currentTarget);
                   setIsBottomSheetOpen(true);
                 }}
-                className="w-full py-3.5 md:py-4 px-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-[#0082FF] dark:hover:border-brand-500 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-[#E6F2FF]/50 dark:hover:bg-brand-900/20 transition group"
+                className="w-full min-h-[44px] py-2.5 md:py-4 px-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-[#0082FF] dark:hover:border-brand-500 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-[#E6F2FF]/50 dark:hover:bg-brand-900/20 transition group"
               >
                 <Plus className="w-4 h-4 text-zinc-500 group-hover:text-[#0020B0] transition" />
                 <span>Add</span>
@@ -176,7 +176,7 @@ export default function OnboardingStep1({
               <span className="text-[#0020B0] dark:text-brand-400 font-bold mr-1">*</span>
               Job Type
             </label>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
               {JOB_TYPE_OPTIONS.map((jt) => {
                 const isChecked = employmentTypes.includes(jt.id) || employmentTypes.includes(jt.label);
                 return (
@@ -185,7 +185,7 @@ export default function OnboardingStep1({
                     type="button"
                     aria-pressed={isChecked}
                     onClick={() => onToggleEmploymentType(jt.id)}
-                    className={`flex items-center gap-3 p-3 md:p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
+                    className={`flex items-center gap-3 min-h-[44px] px-3 py-2 md:p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
                       isChecked
                         ? "bg-[#E6F2FF] border-[#0082FF] text-[#0020B0] dark:text-brand-100 shadow-sm"
                         : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
@@ -208,7 +208,7 @@ export default function OnboardingStep1({
           </div>
 
           {/* 3 & 4. Location & Remote (Two-column layout on desktop) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-start">
             {/* Location / Country */}
             <div>
               <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
@@ -221,7 +221,7 @@ export default function OnboardingStep1({
                   setActiveCountryTrigger(e.currentTarget);
                   setIsCountryPickerOpen(true);
                 }}
-                className="w-full md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-[#0082FF] dark:hover:border-brand-500 transition"
+                className="w-full min-h-[44px] md:h-[52px] flex items-center justify-between px-3.5 py-2.5 md:p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-[#0082FF] dark:hover:border-brand-500 transition"
               >
                 <div className="flex items-center gap-2.5 truncate">
                   <Globe className="w-4 h-4 text-[#0020B0] flex-shrink-0" />
@@ -253,7 +253,7 @@ export default function OnboardingStep1({
 
               {/* Card is a div so the help can be a sibling button (buttons can't nest); mobile looks as on main */}
               <div
-                className={`w-full md:h-[52px] flex items-center justify-between p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
+                className={`w-full min-h-[44px] md:h-[52px] flex items-center justify-between px-3.5 py-2.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
                   openToRemote
                     ? "bg-[#E6F2FF] border-[#0082FF] text-[#0020B0] dark:text-brand-100"
                     : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
@@ -263,7 +263,7 @@ export default function OnboardingStep1({
                 <button
                   type="button"
                   onClick={onToggleOpenToRemote}
-                  className="flex-1 flex items-center gap-3 text-left -my-3.5 -ml-3.5 py-3.5 pl-3.5 md:-my-4 md:-ml-4 md:py-4 md:pl-4 rounded-l-2xl"
+                  className="flex-1 flex items-center gap-3 text-left -my-2.5 -ml-3.5 py-2.5 pl-3.5 md:-my-4 md:-ml-4 md:py-4 md:pl-4 rounded-l-2xl"
                 >
                   <div
                     className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors md:flex-shrink-0 ${
@@ -289,7 +289,7 @@ export default function OnboardingStep1({
 
           {/* 5. Work Authorization / Sponsorship (Required, Never default to Authorized) */}
           <div>
-            <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center justify-between mb-1.5 md:mb-2.5">
               <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                 <span className="text-[#0020B0] dark:text-brand-400 font-bold mr-1">*</span>
                 Work Authorization
@@ -321,7 +321,7 @@ export default function OnboardingStep1({
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => onSelectWorkAuth(opt.label)}
-                    className={`w-full md:h-full flex items-center gap-3 p-3.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
+                    className={`w-full min-h-[44px] md:h-full flex items-center gap-3 px-3.5 py-2.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
                       isSelected
                         ? "bg-[#E6F2FF] border-[#0082FF] text-[#0020B0] dark:text-brand-100 shadow-sm"
                         : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
@@ -345,8 +345,8 @@ export default function OnboardingStep1({
         </div>
 
         {/* Progress Indicator and Next Button (Fixed on mobile, in-flow on desktop) */}
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 p-4 md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
-          <div className="max-w-lg md:max-w-none mx-auto space-y-3 md:space-y-4">
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+          <div className="max-w-lg md:max-w-none mx-auto space-y-2.5 md:space-y-4">
             {/* Progress bar (Step 1 of 2 -> 50%) */}
             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
               <div
@@ -364,7 +364,7 @@ export default function OnboardingStep1({
                 data-testid="btn-onboarding-step1-next-mobile"
                 disabled={!isFormValid}
                 onClick={onNext}
-                className="px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
+                className="min-h-[44px] px-8 md:px-10 py-2.5 md:py-3.5 rounded-full text-sm md:text-base font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition flex items-center justify-center gap-2"
               >
                 <span>Next</span>
               </button>
