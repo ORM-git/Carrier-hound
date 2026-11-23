@@ -261,6 +261,9 @@ export async function fetchRobotsTxt(fetchPage: PageFetcher, sleep: Sleeper, url
   }
 }
 
+/** Same-host about/leadership/news pages fetched after the homepage; bounds every crawl and the planner's request estimate. */
+export const MAX_OFFICIAL_SUBPAGES = 3;
+
 export function officialCandidateUrls(homeHtml: string, origin: string): string[] {
   const originHost = new URL(origin).hostname.toLowerCase().replace(/^www\./, "");
   const urls = new Set<string>();
@@ -271,10 +274,10 @@ export function officialCandidateUrls(homeHtml: string, origin: string): string[
       if (url.protocol === "https:" && host === originHost && /(?:about|leadership|team|management|news|press|stories|blog|reports?)/i.test(url.pathname)) urls.add(url.href);
     } catch {}
   }
-  return Array.from(urls).slice(0, 3);
+  return Array.from(urls).slice(0, MAX_OFFICIAL_SUBPAGES);
 }
 
-export type CrawlOutcome = "no_ats_evidence" | "robots_disallowed" | "not_ats_linked" | "not_verified" | "verified";
+export type CrawlOutcome = "no_ats_evidence" | "robots_disallowed" | "off_domain_redirect" | "not_ats_linked" | "not_verified" | "verified";
 
 export async function crawlOfficialProfile(input: {
   company: CanaryCompany; boards: CompanyAtsEvidence[]; fetchPage: PageFetcher; sleep: Sleeper; now: () => string; record?: (source: Omit<SourceRecord, "company_id">) => void;
@@ -292,6 +295,9 @@ export async function crawlOfficialProfile(input: {
   const { page: robots } = await fetched("robots", `https://${domain}/robots.txt`);
   if (!robotsAllows(robots.text, "/")) return { outcome: "robots_disallowed", extracted: null };
   const { page, fetchedAt } = await fetched("page", `https://${domain}/`);
+  // A homepage that redirects to another site is not this company's official source; never crawl the other host.
+  const site = (url: string) => { try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return null; } };
+  if (site(page.url) !== domain.replace(/^www\./, "")) return { outcome: "off_domain_redirect", extracted: null };
   if (!isAtsEvidenceLinked(domain, page.text, page.url, boards)) return { outcome: "not_ats_linked", extracted: null };
   let extracted = extractOfficialCompanyPage({ html: page.text, pageUrl: page.url, canonicalDomain: domain, companyName: company.name, atsBoards: boards, retrievedAt: fetchedAt });
   const verifiedHomepageContext = extracted.verified ? { verified: true, homepageUrl: page.url, homepageHtml: page.text } : undefined;
@@ -299,6 +305,7 @@ export async function crawlOfficialProfile(input: {
     if (!robotsAllows(robots.text, new URL(candidateUrl).pathname)) continue;
     await sleep(1_000);
     const { page: candidate, fetchedAt: candidateAt } = await fetched("page", candidateUrl);
+    if (site(candidate.url) !== site(page.url)) continue;
     const candidateData = extractOfficialCompanySubpage({ html: candidate.text, pageUrl: candidate.url, canonicalDomain: domain, companyName: company.name, atsBoards: boards, homepageContext: verifiedHomepageContext, retrievedAt: candidateAt });
     if (!candidateData.verified) continue;
     extracted = { verified: true, facts: reconcileCompanyFacts(extracted.facts, candidateData.facts, true), leadership: [...extracted.leadership, ...candidateData.leadership].slice(0, 12), news: [...extracted.news, ...candidateData.news].slice(0, 8) };

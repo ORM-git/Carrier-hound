@@ -4,8 +4,10 @@ A separately reviewable path for enriching **at most 3 explicitly chosen compani
 It is off unless every production flag below is given. The local/staging batch path
 (`--max-rows`, `--after-id`, `isAllowedCompanyProfileWriteTarget`) is unchanged and still refuses production.
 
-> **Status:** schema `20261122a_company_profile_data` is **not applied** to production, no profile
-> data is populated, and this canary has **not been executed**. Nothing here authorizes running it.
+> **Status:** the owner reports the `20261122a_company_profile_data` tables exist in production and are empty.
+> That is owner-reported, not verified: confirm it with the read-only preflight in
+> [company-profile-rollout.md](company-profile-rollout.md) before any plan. No profile data is populated, and this
+> canary has **not been executed**. Nothing here authorizes running it. Candidate selection is in that rollout pack.
 
 ## Who decides what
 
@@ -32,7 +34,8 @@ The plan file contains:
 
 - **Binding:** `target_project`, `company_ids`, `max_companies`, `code_sha`, `schema_version`, `created_at`, `expires_at` (24h by default, `--ttl-hours` up to 72).
 - **Sources:** every official URL fetched, with its final URL, status, fetch time, byte count and sha256.
-- **Per company:** ATS boards, freshness, outcome (`verified`, `cache_hit`, `no_ats_evidence`, `robots_disallowed`, `not_ats_linked`, `not_verified` or `fetch_failed` with a redacted error), proposed facts/leadership/news, and **all current rows** in the four profile tables.
+- **Per company:** ATS boards, freshness, outcome (`verified`, `cache_hit`, `no_ats_evidence`, `robots_disallowed`, `off_domain_redirect`, `not_ats_linked`, `not_verified` or `fetch_failed` with a redacted error), proposed facts/leadership/news, and **all current rows** in the four profile tables.
+- A readable `<plan>.summary.md` is written beside the JSON plan (sources, proposed rows with provenance, zero-yield reasons, actions by table).
 - **Actions:** numbered `insert` / `update` steps with the exact before-image and after-row.
 - `plan_digest`: sha256 of the canonical plan.
 
