@@ -252,7 +252,7 @@ export default function OnboardingStep2({
           <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
             {[
               { title: "LinkedIn profile", icon: <LinkedInIcon className="w-5 h-5 text-[#0077b5]" /> },
-              { title: "Upload resume", icon: <FileText className="w-5 h-5 text-emerald-600" /> },
+              { title: "Upload resume", icon: <FileText className="w-5 h-5 text-[#0020B0]" /> },
             ].map((c) => (
               <div key={c.title} className={`${mobileCardClass} opacity-80 flex items-center gap-3`}>
                 {c.icon}
@@ -308,7 +308,7 @@ export default function OnboardingStep2({
                         setLinkedinSaved(false);
                       }}
                       placeholder="https://www.linkedin.com/in/your-profile"
-                      className="w-full px-4 py-2.5 md:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full px-4 py-2.5 md:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0082FF]"
                     />
                     {linkedinError && (
                       <p
@@ -339,7 +339,7 @@ export default function OnboardingStep2({
             {/* CARD 2: Resume or LinkedIn "Save to PDF" upload (stored privately; text parsed server-side for ranking) */}
             <section data-testid="card-resume-mobile" aria-labelledby="resume-card-title-mobile" className={mobileCardClass}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 flex-shrink-0">
+                <div className="w-10 h-10 rounded-2xl bg-[#E6F2FF] flex items-center justify-center text-[#0020B0] flex-shrink-0">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div className="flex-1 md:min-w-0">
@@ -397,13 +397,13 @@ export default function OnboardingStep2({
                     }}
                     className={`w-full md:flex-1 border-2 border-dashed rounded-2xl p-6 md:p-8 text-center transition md:flex md:flex-col md:items-center md:justify-center md:min-h-[170px] ${
                       isDragging
-                        ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
-                        : "border-zinc-300 dark:border-zinc-700 hover:border-emerald-500/80 bg-zinc-50/50 dark:bg-zinc-800/40"
+                        ? "border-[#0082FF] bg-[#E6F2FF]/50 dark:bg-brand-900/30"
+                        : "border-zinc-300 dark:border-zinc-700 hover:border-[#0082FF]/80 bg-zinc-50/50 dark:bg-zinc-800/40"
                     }`}
                   >
                     {resumeUploading ? (
                       <span className="flex flex-col items-center gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-                        <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" /> Uploading and reading...
+                        <Loader2 className="w-6 h-6 text-[#0020B0] animate-spin" /> Uploading and reading...
                       </span>
                     ) : resumeName ? (
                       <span className="flex flex-col items-center gap-1">
@@ -458,7 +458,7 @@ export default function OnboardingStep2({
         <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 p-4 md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
           <div className="max-w-lg md:max-w-none mx-auto space-y-3 md:space-y-4">
             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full rounded-full" style={{ width: "100%" }} />
+              <div className="bg-[#0082FF] h-full rounded-full" style={{ width: "100%" }} />
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs md:text-sm font-semibold text-zinc-400 dark:text-zinc-500">Step 2 of 2</span>
@@ -467,7 +467,7 @@ export default function OnboardingStep2({
                 disabled={isSaving || resumeUploading}
                 onClick={handleFinish}
                 data-testid="btn-onboarding-finish-mobile"
-                className="px-6 sm:px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md md:hover:shadow-lg transition disabled:opacity-50"
+                className="px-6 sm:px-8 md:px-10 py-3 md:py-3.5 rounded-full text-sm md:text-base font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white shadow-md md:hover:shadow-lg transition disabled:opacity-50"
               >
                 {isSaving ? "Saving..." : linkedinSaved || resumeName ? "Finish" : "Skip for now & Finish"}
               </button>

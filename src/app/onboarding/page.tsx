@@ -301,7 +301,7 @@ function OnboardingPageInner() {
         aria-live="polite"
         className="min-h-screen flex flex-col items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-950 text-zinc-500"
       >
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-600 lg:text-brand-600 mb-3" aria-hidden="true" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#0020B0] lg:text-brand-600 mb-3" aria-hidden="true" />
         <span className="text-sm font-medium">Checking account status...</span>
         <span className="sr-only">Checking account status</span>
       </div>
@@ -391,7 +391,7 @@ export default function OnboardingPage() {
           aria-live="polite"
           className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-500"
         >
-          <Loader2 className="w-8 h-8 animate-spin text-emerald-600 lg:text-brand-600" aria-hidden="true" />
+          <Loader2 className="w-8 h-8 animate-spin text-[#0020B0] lg:text-brand-600" aria-hidden="true" />
           <span className="sr-only">Loading onboarding...</span>
         </div>
       }

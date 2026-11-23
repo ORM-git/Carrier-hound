@@ -173,7 +173,7 @@ export default function CountryPickerModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2">
-            <Globe className="w-5 h-5 text-emerald-600 lg:text-brand-600 dark:text-emerald-400 lg:dark:text-brand-400" />
+            <Globe className="w-5 h-5 text-[#0020B0] lg:text-brand-600 dark:text-brand-400 lg:dark:text-brand-400" />
             <h2
               id="country-picker-title"
               className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
@@ -202,7 +202,7 @@ export default function CountryPickerModal({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search country (e.g. India, United States, Canada)..."
-              className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:focus:ring-brand-500"
+              className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0082FF] lg:focus:ring-brand-500"
             />
             {searchQuery && (
               <button
@@ -236,7 +236,7 @@ export default function CountryPickerModal({
                       onClick={() => handleSelect({ code, name: countryName, label: countryName })}
                       className={`text-xs px-2.5 py-1 rounded-full font-medium transition ${
                         isSelected
-                          ? "bg-emerald-600 lg:bg-brand-600 text-white shadow-sm"
+                          ? "bg-[#0082FF] text-[#0F172A] lg:bg-brand-600 lg:text-white shadow-sm"
                           : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                       }`}
                     >
@@ -267,7 +267,7 @@ export default function CountryPickerModal({
                   onClick={() => handleSelect(c)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition ${
                     isSelected
-                      ? "bg-emerald-50 lg:bg-brand-50 dark:bg-emerald-950/40 lg:dark:bg-brand-900/40 text-emerald-900 lg:text-brand-900 dark:text-emerald-200 lg:dark:text-brand-200 font-semibold"
+                      ? "bg-[#E6F2FF] lg:bg-brand-50 dark:bg-brand-900/40 lg:dark:bg-brand-900/40 text-[#0020B0] lg:text-brand-900 dark:text-brand-200 lg:dark:text-brand-200 font-semibold"
                       : "text-zinc-800 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   }`}
                 >
@@ -277,7 +277,7 @@ export default function CountryPickerModal({
                       {c.code}
                     </span>
                   </div>
-                  {isSelected && <Check className="w-4 h-4 text-emerald-600 lg:text-brand-600 dark:text-emerald-400 lg:dark:text-brand-400" />}
+                  {isSelected && <Check className="w-4 h-4 text-[#0020B0] lg:text-brand-600 dark:text-brand-400 lg:dark:text-brand-400" />}
                 </button>
               );
             })
