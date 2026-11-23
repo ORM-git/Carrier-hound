@@ -281,7 +281,6 @@ export default function OnboardingStep2({
                   <h3 id="linkedin-card-title-mobile" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
                     LinkedIn profile URL
                   </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">e.g. https://www.linkedin.com/in/yourname</p>
                 </div>
                 <div className="md:flex-shrink-0">
                   {linkedinSaved && (
@@ -308,7 +307,7 @@ export default function OnboardingStep2({
                         setLinkedinError(null);
                         setLinkedinSaved(false);
                       }}
-                      placeholder="https://www.linkedin.com/in/your-profile"
+                      placeholder="linkedin.com/in/your-name"
                       className="w-full px-4 py-2.5 md:py-3 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0082FF]"
                     />
                     {linkedinError && (
@@ -336,7 +335,7 @@ export default function OnboardingStep2({
               </form>
             </section>
 
-            {/* CARD 2: Resume or LinkedIn "Save to PDF" upload (stored privately; text parsed server-side for ranking) */}
+            {/* CARD 2: Resume upload (stored privately; text parsed server-side for ranking) */}
             <section data-testid="card-resume-mobile" aria-labelledby="resume-card-title-mobile" className={mobileCardClass}>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-[#E6F2FF] flex items-center justify-center text-[#0020B0] flex-shrink-0">
@@ -344,7 +343,7 @@ export default function OnboardingStep2({
                 </div>
                 <div className="flex-1 md:min-w-0">
                   <h3 id="resume-card-title-mobile" className="text-sm font-bold text-zinc-900 dark:text-zinc-100 md:break-words">
-                    Upload resume or LinkedIn PDF
+                    Upload resume
                   </h3>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">PDF or DOCX, up to 5 MB. Stored privately.</p>
                 </div>
@@ -414,11 +413,6 @@ export default function OnboardingStep2({
                       </span>
                     )}
                   </button>
-                  <p data-testid="resume-linkedin-hint-mobile" className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                    No resume handy? Upload your LinkedIn profile instead: on LinkedIn, open your profile, tap{" "}
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">More</span>, then{" "}
-                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">Save to PDF</span>, and add that file here.
-                  </p>
                   {resumeError && (
                     <p
                       id="resume-error-mobile"

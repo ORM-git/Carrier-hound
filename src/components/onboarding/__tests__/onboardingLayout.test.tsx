@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import OnboardingStep1 from "../OnboardingStep1";
 import OnboardingStep2 from "../OnboardingStep2";
 import JobFunctionBottomSheet from "../JobFunctionBottomSheet";
+import { validateAndNormalizeLinkedInUrl } from "@/lib/onboarding/step2";
 import {
   getFirstJobsMarkerKey,
   setFirstJobsMarker,
@@ -140,6 +141,26 @@ describe("OnboardingStep2 card text", () => {
         expect(desc.textContent).toBe("e.g. https://www.linkedin.com/in/yourname");
       }
     }
+  });
+});
+
+describe("Step 2 phone copy: no example helper or LinkedIn-PDF instruction", () => {
+  it("drops the e.g. line and Save-to-PDF directive but keeps labels, format/size guidance and formats", () => {
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    const linkedinCard = screen.getByTestId("card-linkedin-mobile");
+    const resumeCard = screen.getByTestId("card-resume-mobile");
+    expect(linkedinCard.textContent).not.toMatch(/e\.g\./);
+    expect(resumeCard.textContent).not.toMatch(/Save to PDF|LinkedIn PDF|LinkedIn profile instead/);
+    expect(screen.queryByTestId("resume-linkedin-hint-mobile")).toBeNull();
+    expect(document.getElementById("resume-card-title-mobile")?.textContent?.trim()).toBe("Upload resume");
+    expect(resumeCard.textContent).toContain("PDF or DOCX, up to 5 MB. Stored privately.");
+    // Accessible names and accepted formats are unchanged.
+    const url = screen.getByLabelText("LinkedIn profile URL (mobile)") as HTMLInputElement;
+    expect(screen.getByLabelText("Upload resume file (PDF or DOCX) (mobile)").getAttribute("accept")).toBe(
+      ".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    // The short placeholder is itself a value the existing validator accepts.
+    expect(validateAndNormalizeLinkedInUrl(url.placeholder).valid).toBe(true);
   });
 });
 
