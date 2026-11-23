@@ -57,3 +57,31 @@ Symptom: ingest workflow green but `ingest_runs` shows 0 inserts.
 2. Check Groq/Supabase secrets are still valid (rotation drift).
 3. Dead sources stay listed in SOURCES.md - mark them dead there when
    confirmed.
+
+## 7. Python ingestion cohorts: owner verification (not run by agents)
+
+`python-ingest.yml` runs two independent cohorts, `non-workday` then `workday`, each with its own report
+(`python-ingest-<cohort>-<run_id>` artifact) and its own failed-source write guard. The overall job is green
+only when every cohort is green: one red cohort means DEGRADED, not success. Workday is partial coverage and
+never expires jobs. Scheduled runs keep the old authority (write, production, expire); manual runs default to
+`dry-run`, and a manual write needs `mode=write-production-expire` plus the confirm text
+`WRITE PRODUCTION AND EXPIRE`.
+
+Owner sequence, each step separately approved:
+
+1. Review the exact PR head SHA and its CI (pytest `scripts/scraper/`, including `test_cohorts.py` and the #703
+   Workday deadline/backoff tests).
+2. Merge (separate approval). GitHub cron only runs from the default branch and is best-effort: confirm the
+   workflow is active in Actions, and do not treat a missing scheduled run as proof the code failed.
+3. Optional: manual `dry-run` with `cohort=both`. Check each cohort report: selected / completed / failed
+   sources, fetched vs unique, projected counts. Dry runs never write; projections are not confirmed writes.
+4. Before any write run, record a timestamped "before" reading from the CM site with the established CM test
+   account (or the public `/api/stats`). Anonymous `/api/stats` only returns `jobsToday` and `updatedAt`:
+   a field that is absent is unknown, never zero. Never use a service-role key or a user's session token in a
+   public checker, and never read the production DB directly for this.
+5. Write run (scheduled, or manual with the confirm text). For each cohort record: SHA, start/finish, failed
+   sources, `guard` reason, confirmed inserted / updated / unchanged / expired, persistence failures.
+6. Record a timestamped "after" reading the same way as step 4. Fetched jobs are not new jobs, and a zero net
+   active delta can be real: never force writes to move a number.
+7. If one cohort keeps failing (for example Workday 429 on the runner IP), the other cohort still writes;
+   escalate the failing one through the owner checklist instead of loosening the guard or retrying faster.
