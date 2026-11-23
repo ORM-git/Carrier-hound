@@ -397,8 +397,7 @@ describe("Onboarding phone: no Copilot persona; step 2 Profile layout", () => {
     const createObjectURL = vi.fn(() => "blob:cv");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" onResumeFileSaved={onResumeFileSaved} />);
+    const view = render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" onResumeFileSaved={onResumeFileSaved} />);
 
     const card = screen.getByTestId("card-resume-mobile");
     expect(card.textContent).toContain("PDF or DOCX, up to 5 MB. Stored privately.");
@@ -410,16 +409,18 @@ describe("Onboarding phone: no Copilot persona; step 2 Profile layout", () => {
     expect(screen.getByTestId("resume-saved-badge-mobile")).toBeTruthy();
     expect(onResumeFileSaved).toHaveBeenCalledWith(file);
 
-    fireEvent.click(screen.getByTestId("btn-resume-view-mobile"));
     expect(createObjectURL).toHaveBeenCalledWith(file);
-    expect(openSpy).toHaveBeenCalledWith("blob:cv", "_blank", "noopener,noreferrer");
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    fireEvent.click(screen.getByTestId("btn-resume-download-mobile"));
-    expect(click).toHaveBeenCalledTimes(1);
+    const viewLink = await screen.findByTestId("btn-resume-view-mobile");
+    expect(viewLink.getAttribute("href")).toBe("blob:cv");
+    expect(viewLink.getAttribute("target")).toBe("_blank");
+    const downloadLink = screen.getByTestId("btn-resume-download-mobile");
+    expect(downloadLink.getAttribute("href")).toBe("blob:cv");
+    expect(downloadLink.getAttribute("download")).toBe("cv.pdf");
     // Only the upload request went to the server; View/Download are local.
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    openSpy.mockRestore();
-    click.mockRestore();
+    // The object URL is released when the step unmounts.
+    view.unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:cv");
   });
 
   it("keeps the existing 5 MB limit and its message", async () => {
@@ -431,12 +432,13 @@ describe("Onboarding phone: no Copilot persona; step 2 Profile layout", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("Back keeps the uploaded file so View/Download stay available", () => {
+  it("Back keeps the uploaded file so View/Download stay available", async () => {
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:kept"), revokeObjectURL: vi.fn() }));
     const file = new File(["%PDF-1.4"], "cv.pdf", { type: "application/pdf" });
     render(
       <OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" initialResumeName="cv.pdf" initialResumeFile={file} />
     );
-    expect(screen.getByTestId("btn-resume-view-mobile")).toBeTruthy();
+    expect((await screen.findByTestId("btn-resume-view-mobile")).getAttribute("href")).toBe("blob:kept");
     expect(screen.getByTestId("btn-resume-download-mobile")).toBeTruthy();
   });
 });

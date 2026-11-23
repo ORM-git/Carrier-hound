@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import BrandIcon from "@/components/BrandIcon";
 import { ArrowLeft, FileText, CheckCircle2, AlertCircle, Upload, Loader2, Check, FileCheck, LogOut } from "lucide-react";
 import { toast } from "react-toastify";
@@ -222,20 +222,17 @@ export default function OnboardingStep2({
     if (!resumeUploading) mobileFileInputRef.current?.click();
   };
 
-  // View/Download use the file uploaded in this session (an object URL; nothing is fetched from the server).
-  const openResumeFile = (download: boolean) => {
-    if (!resumeFile) return;
-    const url = URL.createObjectURL(resumeFile);
-    if (download) {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = resumeName || resumeFile.name;
-      a.click();
-    } else {
-      window.open(url, "_blank", "noopener,noreferrer");
+  // View/Download link to the file uploaded in this session (an object URL; nothing is fetched from the server).
+  const [resumeFileUrl, setResumeFileUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!resumeFile) {
+      setResumeFileUrl(null);
+      return;
     }
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  };
+    const url = URL.createObjectURL(resumeFile);
+    setResumeFileUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [resumeFile]);
 
   const handleFinish = () => {
     if (isSaving || resumeUploading) return;
@@ -432,14 +429,14 @@ export default function OnboardingStep2({
                     "Upload resume"
                   )}
                 </button>
-                {resumeName && resumeFile && (
+                {resumeName && resumeFileUrl && (
                   <>
-                    <button type="button" data-testid="btn-resume-view-mobile" onClick={() => openResumeFile(false)} className="w-full min-h-[48px] rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
+                    <a data-testid="btn-resume-view-mobile" href={resumeFileUrl} target="_blank" rel="noopener noreferrer" className="w-full min-h-[48px] inline-flex items-center justify-center rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
                       View
-                    </button>
-                    <button type="button" data-testid="btn-resume-download-mobile" onClick={() => openResumeFile(true)} className="w-full min-h-[48px] rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
+                    </a>
+                    <a data-testid="btn-resume-download-mobile" href={resumeFileUrl} download={resumeName} className="w-full min-h-[48px] inline-flex items-center justify-center rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
                       Download
-                    </button>
+                    </a>
                   </>
                 )}
               </div>
