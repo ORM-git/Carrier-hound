@@ -320,11 +320,13 @@ export default function JobDetailView({
   const companyFacts = companyProfile?.facts || {};
   const rawWebsite = companyFacts.website?.value || null;
   const sanitizedWebsite = sanitizeExternalUrl(rawWebsite);
+  const websiteHost = (() => { try { return sanitizedWebsite ? new URL(sanitizedWebsite).hostname : null; } catch { return null; } })();
   const factLabel: Record<CompanyFactKey, string> = {
     overview: "Overview", website: "Website", headquarters: "Headquarters", founded_year: "Founded",
     employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X",
   };
   const companyFact = (key: CompanyFactKey) => companyFacts[key];
+  const hasCompanyDetails = Object.keys(companyFacts).length > 0 || Boolean(companyProfile?.leadership.length || companyProfile?.news.length);
 
   return (
     <div
@@ -1050,12 +1052,14 @@ export default function JobDetailView({
           )}
 
           {/* 5. Company facts and related listings use the existing card style. */}
+          {/* The global floating back-to-top button would sit over Company content on phones. */}
+          {activeTab === "company" && <style>{`@media (max-width: 767px) { button[aria-label="Back to top"] { display: none; } }`}</style>}
           <div
             id="company-section"
             className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3"
           >
             <h2 className="text-[18px] font-bold text-[#0F172A]">Company</h2>
-            {companyProfile?.freshness && companyProfile.freshness !== "fresh" && <p role="status" className="text-[11px] text-[#64748B]">{companyProfile.freshness === "conflict" ? "Some company details have conflicting sources; the previously verified value is shown." : "Company details may be out of date."}</p>}
+            {companyProfile && !hasCompanyDetails ? <p role="status" className="text-[11px] text-[#64748B]">Company details are not available yet.</p> : companyProfile?.freshness && companyProfile.freshness !== "fresh" && <p role="status" className="text-[11px] text-[#64748B]">{companyProfile.freshness === "conflict" ? "Some company details have conflicting sources; the previously verified value is shown." : "Company details may be out of date."}</p>}
 
             <div className="flex items-start gap-3.5">
               <CompanyLogo
@@ -1093,7 +1097,7 @@ export default function JobDetailView({
                   if (!fact) return null;
                   const value = key === "website" ? sanitizedWebsite : fact.value;
                   if (!value) return null;
-                  return <div key={key} className="space-y-0.5 min-w-0"><div className="text-[#94A3B8]">{factLabel[key]}</div>{key === "website" ? <a href={value} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline break-all block">{value.replace(/^https?:\/\//, "")}</a> : <div className="font-semibold text-[#0F172A] break-words">{value}</div>}<a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Source · {new Date(fact.retrievedAt).toLocaleDateString()}</a>{fact.conflict && <a href={fact.conflict.sourceUrl} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-[#64748B] hover:underline">Conflicting report · {fact.conflict.value}</a>}</div>;
+                  return <div key={key} className="space-y-0.5 min-w-0"><div className="text-[#94A3B8]">{factLabel[key]}</div>{key === "website" ? <a href={value} target="_blank" rel="noopener noreferrer" title={websiteHost || value} className="font-semibold text-[#2563EB] hover:underline truncate block">{websiteHost || value}</a> : <div className="font-semibold text-[#0F172A] break-words">{value}</div>}<a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Source · {new Date(fact.retrievedAt).toLocaleDateString()}</a>{fact.conflict && <a href={fact.conflict.sourceUrl} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-[#64748B] hover:underline">Conflicting report · {fact.conflict.value}</a>}</div>;
                 })}
               </div>
             )}
