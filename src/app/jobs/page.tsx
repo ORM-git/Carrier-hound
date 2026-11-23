@@ -2499,18 +2499,8 @@ function JobsPageInner() {
                                   {job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added"}
                                 </span>
 
+                                {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}
                                 <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleHideJob(e, job.id);
-                                    }}
-                                    aria-label="Hide position"
-                                    className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer"
-                                  >
-                                    <Ban className="w-4 h-4" />
-                                  </button>
 
                                   <button
                                     type="button"

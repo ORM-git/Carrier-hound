@@ -9,6 +9,7 @@ import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scori
 import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
+import { JobCardMenu } from "@/components/jobs/JobCardMenu";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -581,15 +582,8 @@ export default function JobDetailView({
 
             <div className="flex items-center gap-1.5 shrink-0">
               {onHide && (
-                <button
-                  type="button"
-                  onClick={onHide}
-                  aria-label="Hide position"
-                  title="Hide position"
-                  className="w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] transition cursor-pointer"
-                >
-                  <Ban className="w-3.5 h-3.5" />
-                </button>
+                // Hide is a labeled menu action (Remove From List), not a standalone ban icon
+                <JobCardMenu className="-my-1" job={job} onRemoveFromList={() => onHide()} onAlreadyApplied={() => onToggleApplied?.()} />
               )}
 
               <button
