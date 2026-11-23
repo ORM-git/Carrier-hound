@@ -243,6 +243,10 @@ export default function OnboardingStep2({
   const mobileCardClass =
     "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-7 shadow-sm md:shadow-md space-y-4 md:flex md:flex-col md:justify-between md:h-full";
 
+  // Mobile Profile cards (flag ON): compact, centered, like the reference Profile screen.
+  const profileCardClass =
+    "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 shadow-sm space-y-3 text-center";
+
   const cardClass =
     "bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-7 shadow-xs space-y-4 flex flex-col justify-between";
 
@@ -251,7 +255,7 @@ export default function OnboardingStep2({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-24 md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-10 md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
         {/* Profile-style header: back control + title */}
         <div className="relative flex items-center justify-center min-h-[44px] mb-2 md:mb-6">
           <button
@@ -267,7 +271,7 @@ export default function OnboardingStep2({
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Profile</h2>
         </div>
         {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
-        <p className="mb-6 md:mb-8 text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-relaxed">
+        <p className="mb-3 md:mb-8 text-sm md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
           {isFeatureEnabled
             ? "Optional: add your LinkedIn profile and resume. You can skip either one and add them later."
             : "Profile extras are coming soon. Skip ahead to your recommendations."}
@@ -291,9 +295,9 @@ export default function OnboardingStep2({
         ) : (
           <div className="space-y-3">
             {/* CARD 1: LinkedIn URL (validated + normalized only; never scraped) */}
-            <section data-testid="card-linkedin-mobile" aria-labelledby="linkedin-card-title-mobile" className={`${mobileCardClass} text-center`}>
-              <div className="w-20 h-20 mx-auto rounded-full bg-[#E6F2FF] flex items-center justify-center text-[#0020B0]">
-                <LinkedInIcon className="w-10 h-10" />
+            <section data-testid="card-linkedin-mobile" aria-labelledby="linkedin-card-title-mobile" className={profileCardClass}>
+              <div className="w-16 h-16 mx-auto rounded-full bg-[#E6F2FF] flex items-center justify-center text-[#0020B0]">
+                <LinkedInIcon className="w-8 h-8" />
               </div>
               <h3 id="linkedin-card-title-mobile" className="sr-only">
                 LinkedIn profile URL
@@ -345,7 +349,7 @@ export default function OnboardingStep2({
                   {linkedinSaving ? "Saving..." : linkedinEverSaved ? "Update your LinkedIn URL" : "Save LinkedIn URL"}
                 </button>
                 {linkedinSaved && (
-                  <p role="status" className="text-xs text-center text-[#0020B0] dark:text-brand-300">
+                  <p role="status" className="sr-only">
                     Saved
                   </p>
                 )}
@@ -368,13 +372,13 @@ export default function OnboardingStep2({
             </section>
 
             {/* CARD 2: Resume upload (stored privately; text parsed server-side for ranking) */}
-            <section data-testid="card-resume-mobile" aria-labelledby="resume-card-title-mobile" className={`${mobileCardClass} text-center`}>
-              <div className="relative w-20 h-20 mx-auto rounded-full bg-[#E6F2FF] flex items-center justify-center text-[#0020B0]">
-                <FileText className="w-10 h-10" aria-hidden="true" />
+            <section data-testid="card-resume-mobile" aria-labelledby="resume-card-title-mobile" className={profileCardClass}>
+              <div className="relative w-16 h-16 mx-auto rounded-full bg-[#E6F2FF] flex items-center justify-center text-[#0020B0]">
+                <FileText className="w-8 h-8" aria-hidden="true" />
                 {resumeName && (
                   <span
                     data-testid="resume-saved-badge-mobile"
-                    className="absolute bottom-1 right-1 w-6 h-6 rounded-md bg-[#0082FF] text-white flex items-center justify-center"
+                    className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-md bg-[#0082FF] text-white flex items-center justify-center"
                   >
                     <Check className="w-4 h-4" aria-hidden="true" />
                     <span className="sr-only">Saved</span>
@@ -432,10 +436,10 @@ export default function OnboardingStep2({
                 </button>
                 {resumeName && resumeFileUrl && (
                   <>
-                    <a data-testid="btn-resume-view-mobile" href={resumeFileUrl} target="_blank" rel="noopener noreferrer" className="w-full min-h-[48px] inline-flex items-center justify-center rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
+                    <a data-testid="btn-resume-view-mobile" href={resumeFileUrl} target="_blank" rel="noopener noreferrer" className="w-full min-h-[44px] inline-flex items-center justify-center rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
                       View
                     </a>
-                    <a data-testid="btn-resume-download-mobile" href={resumeFileUrl} download={resumeName} className="w-full min-h-[48px] inline-flex items-center justify-center rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
+                    <a data-testid="btn-resume-download-mobile" href={resumeFileUrl} download={resumeName} className="w-full min-h-[44px] inline-flex items-center justify-center rounded-xl text-sm font-bold text-[#0020B0] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-[#0082FF] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]">
                       Download
                     </a>
                   </>

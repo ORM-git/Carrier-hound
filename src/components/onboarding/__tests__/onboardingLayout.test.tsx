@@ -342,6 +342,43 @@ describe("Step 2 Skip Both and Finish", () => {
   });
 });
 
+describe("Step 1 phone: compact edit-mode intro and role row", () => {
+  it("edit mode shows one intro line with the Edit mode tag folded in", () => {
+    const { container } = render(<OnboardingStep1 {...step1Props} roles={["Software Engineer"]} isEditMode />);
+    const mobile = container.querySelector(".lg\\:hidden")!;
+    const intro = mobile.querySelector("p")!;
+    expect(intro.textContent).toBe("Edit modeUpdate your job preferences.");
+    expect(intro.querySelector("span")?.textContent).toBe("Edit mode");
+  });
+
+  it("first-run intro keeps the step question", () => {
+    const { container } = render(<OnboardingStep1 {...step1Props} />);
+    expect(container.querySelector(".lg\\:hidden p")?.textContent).toBe("What type of role are you looking for?");
+  });
+
+  it("'Add more roles' sits in the chip row and still opens the chooser", () => {
+    const { container } = render(<OnboardingStep1 {...step1Props} roles={["Software Engineer", "Data Analyst"]} />);
+    const mobile = container.querySelector(".lg\\:hidden")!;
+    const add = Array.from(mobile.querySelectorAll("button")).find((b) => b.textContent === "Add more roles")!;
+    expect(add.parentElement?.textContent).toContain("Software Engineer");
+    fireEvent.click(add);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+});
+
+describe("Step 2 phone: saved LinkedIn status is announced, not an extra visible line", () => {
+  it("renders the Saved status as screen-reader-only", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ linkedinUrl: "https://www.linkedin.com/in/x-y" }), { status: 200 })));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    fireEvent.change(screen.getByTestId("input-linkedin-url-mobile"), { target: { value: "https://www.linkedin.com/in/x-y" } });
+    fireEvent.click(screen.getByTestId("btn-save-linkedin-mobile"));
+    await waitFor(() => expect(screen.getByTestId("btn-save-linkedin-mobile").textContent).toBe("Update your LinkedIn URL"));
+    const saved = Array.from(screen.getByTestId("card-linkedin-mobile").querySelectorAll('[role="status"]')).find((n) => n.textContent === "Saved")!;
+    expect(saved.className).toContain("sr-only");
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("Onboarding phone: no Copilot persona; step 2 Profile layout", () => {
   const URL_IN = "https://www.linkedin.com/in/test-user";
   let fetchMock: ReturnType<typeof vi.fn>;

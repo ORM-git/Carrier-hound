@@ -84,23 +84,23 @@ export default function OnboardingStep1({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-10 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
         {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
-        <div className="mb-6 md:mb-8">
-          {isEditMode && (
-            <span className="inline-block mb-2 text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-[#E6F2FF] text-[#0020B0]">
-              Edit Mode
-            </span>
+        <p className="mb-3 md:mb-8 text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
+          {isEditMode ? (
+            <>
+              <span className="inline-block align-middle mr-2 text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-[#E6F2FF] text-[#0020B0]">
+                Edit mode
+              </span>
+              Update your job preferences.
+            </>
+          ) : (
+            "What type of role are you looking for?"
           )}
-          <p className="text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-relaxed">
-            {isEditMode
-              ? "Update your job preferences below to tune your recommended jobs feed."
-              : "What type of role are you looking for?"}
-          </p>
-        </div>
+        </p>
 
         {/* Main Form Card */}
-        <div className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 sm:p-6 md:p-8 shadow-sm md:shadow-md space-y-4 md:space-y-7">
+        <div className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-3.5 sm:p-6 md:p-8 shadow-sm md:shadow-md space-y-3 md:space-y-7">
           {/* 1. Job role (Required) */}
           <div>
             <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
@@ -124,12 +124,12 @@ export default function OnboardingStep1({
                 <span>Add</span>
               </button>
             ) : (
-              <div className="space-y-2.5">
-                <div className="flex flex-wrap gap-2 md:gap-2.5">
+              <div>
+                <div className="flex flex-wrap items-center gap-1.5 md:gap-2.5">
                   {roles.map((r) => (
                     <span
                       key={r}
-                      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs md:text-sm font-semibold bg-[#E6F2FF] dark:bg-brand-900/50 text-[#0020B0] dark:text-brand-200 border border-[#0082FF]/30"
+                      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 md:py-1.5 rounded-full text-xs md:text-sm font-semibold bg-[#E6F2FF] dark:bg-brand-900/50 text-[#0020B0] dark:text-brand-200 border border-[#0082FF]/30"
                     >
                       <span>{r}</span>
                       <button
@@ -142,18 +142,18 @@ export default function OnboardingStep1({
                       </button>
                     </span>
                   ))}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setActiveJobTrigger(e.currentTarget);
+                      setIsBottomSheetOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 min-h-[32px] px-1 text-xs md:text-sm font-semibold text-[#0020B0] dark:text-brand-400 hover:underline"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add more roles</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setActiveJobTrigger(e.currentTarget);
-                    setIsBottomSheetOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs md:text-sm font-semibold text-[#0020B0] dark:text-brand-400 hover:underline pt-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add more roles</span>
-                </button>
               </div>
             )}
           </div>
@@ -196,7 +196,7 @@ export default function OnboardingStep1({
           </div>
 
           {/* 3 & 4. Location & Remote (Two-column layout on desktop) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6 items-start">
             {/* Location / Country */}
             <div>
               <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
@@ -300,7 +300,7 @@ export default function OnboardingStep1({
               </p>
             )}
 
-            <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
+            <div className="space-y-1.5 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
               {WORK_AUTH_OPTIONS.map((opt) => {
                 const isSelected = selectedWorkAuth.includes(opt.id as WorkAuthId);
                 return (
@@ -309,7 +309,7 @@ export default function OnboardingStep1({
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => onSelectWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId))}
-                    className={`w-full min-h-[44px] md:h-full flex items-center gap-3 px-3.5 py-2.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
+                    className={`w-full min-h-[44px] md:h-full flex items-center gap-2.5 px-3 py-2 md:gap-3 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
                       isSelected
                         ? "bg-[#E6F2FF] border-[#0082FF] text-[#0020B0] dark:text-brand-100 shadow-sm"
                         : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700/70 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800"
@@ -333,8 +333,8 @@ export default function OnboardingStep1({
         </div>
 
         {/* Progress Indicator and Next Button (Fixed on mobile, in-flow on desktop) */}
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
-          <div className="max-w-lg md:max-w-none mx-auto space-y-2.5 md:space-y-4">
+        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+          <div className="max-w-lg md:max-w-none mx-auto space-y-2 md:space-y-4">
             {/* Progress bar (Step 1 of 2 -> 50%) */}
             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
               <div
