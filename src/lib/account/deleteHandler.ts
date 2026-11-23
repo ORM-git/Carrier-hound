@@ -169,7 +169,7 @@ function getSupabaseAdmin() {
  * 2. Refuses deletion if user is banned in `blocked_users` (fail-closed on DB error).
  * 3. Reconciles `active`, `trialing`, and `in_grace_period` subscriptions to `canceled`
  *    and preserves the `subscriptions` rows (FK `ON DELETE SET NULL` on `auth.users`).
- * 4. Soft-deletes (deleted_at, 30-day undo window) or anonymizes user-owned rows;
+ * 4. Hard-deletes `profiles` (no deleted_at), then soft-deletes (deleted_at, 30-day undo window) or anonymizes user-owned rows;
  *    - profile (`candidate_profiles`, `user_preferences`)
  *    - resumes (`resumes`, `tailored_resumes`)
  *    - saved jobs (`saved_jobs`)
@@ -212,6 +212,141 @@ export async function handleAccountDeleteRequest(
 
     const userId = user.id;
     const normalizedEmail = String(user.email || "").trim().toLowerCase();
+
+    // 1a. Handle explicit cancellation of an interrupted deletion
+    let reqBody: any = null;
+    try {
+      const clone = req.clone();
+      reqBody = await clone.json();
+    } catch {}
+
+    if (reqBody && reqBody.action === "cancel") {
+      const { data: tombstone, error: tombstoneErr } = await supabaseAdmin
+        .from("deleted_account_tombstones")
+        .select("user_id")
+        .eq("user_id", userId)
+        .is("purged_at", null)
+        .maybeSingle();
+
+      const isIgnorableErr = (err: any) => {
+        if (!err) return true;
+        const msg = String(err.message || "").toLowerCase();
+        return (
+          err.code === "PGRST116" ||
+          err.code === "PGRST204" ||
+          err.code === "PGRST205" ||
+          err.code === "42P01" ||
+          msg.includes("does not exist") ||
+          msg.includes("relation")
+        );
+      };
+
+      if (tombstoneErr && !isIgnorableErr(tombstoneErr)) {
+        return NextResponse.json(
+          { success: false, error: `Unable to inspect deletion state: ${tombstoneErr.message || String(tombstoneErr)}` },
+          { status: 503 }
+        );
+      }
+
+      if (!tombstone) {
+        return NextResponse.json(
+          { success: false, error: "No pending deletion request found to cancel." },
+          { status: 400 }
+        );
+      }
+
+      // Explicit idempotent recovery transition:
+      // 1. Reset surviving profiles row (contains onboarding_completed_at, full_name, target_roles).
+      //    Must not allow an old completed profile to survive cancellation and bypass onboarding.
+      const { error: profileResetErr } = await supabaseAdmin
+        .from("profiles")
+        .delete()
+        .eq("user_id", userId);
+      if (profileResetErr && !isIgnorableErr(profileResetErr)) {
+        return NextResponse.json(
+          { success: false, error: `Failed to reset profile during recovery: ${profileResetErr.message || String(profileResetErr)}` },
+          { status: 500 }
+        );
+      }
+
+      // 2. Reset surviving candidate_profiles (contains confirmed_at, skills, resume text).
+      const { error: candResetErr } = await supabaseAdmin
+        .from("candidate_profiles")
+        .delete()
+        .eq("user_id", userId);
+      if (candResetErr && !isIgnorableErr(candResetErr)) {
+        return NextResponse.json(
+          { success: false, error: `Failed to reset candidate profile during recovery: ${candResetErr.message || String(candResetErr)}` },
+          { status: 500 }
+        );
+      }
+
+      // 3. Reset user_preferences row (clears old soft-deleted row so fresh onboarding starts with clean slate).
+      const { error: prefResetErr } = await supabaseAdmin
+        .from("user_preferences")
+        .delete()
+        .eq("user_id", userId);
+      if (prefResetErr && !isIgnorableErr(prefResetErr)) {
+        return NextResponse.json(
+          { success: false, error: `Failed to reset preferences during recovery: ${prefResetErr.message || String(prefResetErr)}` },
+          { status: 500 }
+        );
+      }
+
+      // 4. Reset auth user metadata onboarding completion flag if present. Must not swallow update failures.
+      if (typeof supabaseAdmin.auth?.admin?.updateUserById === "function") {
+        try {
+          const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+            user_metadata: { onboarding_completed: false },
+          });
+          if (metaErr) {
+            return NextResponse.json(
+              { success: false, error: `Failed to reset auth user metadata: ${metaErr.message || String(metaErr)}` },
+              { status: 500 }
+            );
+          }
+        } catch (authMetaErr: any) {
+          return NextResponse.json(
+            { success: false, error: `Failed to reset auth user metadata: ${authMetaErr?.message || String(authMetaErr)}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      // 5. ONLY AFTER all reset operations succeed, release the tombstone record.
+      const { error: cancelError } = await supabaseAdmin
+        .from("deleted_account_tombstones")
+        .delete()
+        .eq("user_id", userId);
+
+      if (cancelError) {
+        if (cancelError.code === "42501") {
+          // If service_role lacks DELETE grant under 20261106h, use UPDATE purged_at fallback
+          const { error: purgeError } = await supabaseAdmin
+            .from("deleted_account_tombstones")
+            .update({ purged_at: new Date().toISOString() })
+            .eq("user_id", userId);
+          if (purgeError) {
+            return NextResponse.json(
+              { success: false, error: `Failed to release deletion tombstone: ${purgeError.message || String(purgeError)}` },
+              { status: 500 }
+            );
+          }
+        } else {
+          return NextResponse.json(
+            { success: false, error: `Failed to cancel deletion request: ${cancelError.message || String(cancelError)}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      log.info("Interrupted deletion cancelled and account reset for fresh setup", { userId });
+      return NextResponse.json({
+        success: true,
+        action: "cancelled",
+        message: "Deletion request cancelled. Account reset for fresh setup.",
+      });
+    }
 
     // 1b. Shared rate limit (per user), same pattern as the public endpoints:
     // durable via the check_rate_limit RPC, in-memory fallback per isolate.
@@ -347,6 +482,54 @@ export async function handleAccountDeleteRequest(
     const errors: string[] = [];
     const nowIso = new Date().toISOString();
 
+    // Persist the recovery marker before deleting any completion source. Missing migration or
+    // write failure stops before destructive work; a surviving identity cannot appear completed.
+    const emailHash = normalizedEmail ? await sha256Hex(normalizedEmail) : "";
+    const hardDeleteAfter = new Date(
+      Date.now() + ACCOUNT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    // Clear/reactivate the marker (purged_at: null) on every new deletion so a previous fallback doesn't leave an inactive tombstone.
+    let { error: tombstoneError } = await supabaseAdmin
+      .from("deleted_account_tombstones")
+      .upsert(
+        {
+          user_id: userId,
+          email_hash: emailHash,
+          deletion_completed_at: nowIso,
+          hard_delete_after: hardDeleteAfter,
+          purged_at: null,
+        },
+        { onConflict: "user_id" }
+      );
+
+    if (
+      tombstoneError &&
+      (tombstoneError.code === "42703" ||
+        tombstoneError.code === "PGRST204" ||
+        String(tombstoneError.message || "").includes("purged_at"))
+    ) {
+      tombstoneError = (
+        await supabaseAdmin
+          .from("deleted_account_tombstones")
+          .upsert(
+            {
+              user_id: userId,
+              email_hash: emailHash,
+              deletion_completed_at: nowIso,
+              hard_delete_after: hardDeleteAfter,
+            },
+            { onConflict: "user_id" }
+          )
+      ).error;
+    }
+
+    if (tombstoneError) {
+      return NextResponse.json(
+        { success: false, error: `Unable to record deletion state: ${tombstoneError.message || String(tombstoneError)}` },
+        { status: 503 }
+      );
+    }
+
     const isIgnorableDeleteError = (err: any) => {
       if (!err) return true;
       if (err.code === "23503") return false;
@@ -368,6 +551,16 @@ export async function handleAccountDeleteRequest(
       const msg = (err.message || "").toLowerCase();
       return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
     };
+
+    // public.profiles has no deleted_at column and its FK cascades from auth.users anyway, so remove the
+    // row first: a deletion that stops part-way must not leave onboarding_completed_at (or legacy
+    // full_name/target_roles) behind to mark the surviving identity as already onboarded.
+    {
+      const { error: profileError } = await supabaseAdmin.from("profiles").delete().eq("user_id", userId);
+      if (!isIgnorableDeleteError(profileError)) {
+        errors.push(`profiles: ${profileError?.message || JSON.stringify(profileError)}`);
+      }
+    }
 
     for (const table of ACCOUNT_DELETE_USER_ID_TABLES) {
       const { error: softError } = await supabaseAdmin
@@ -421,7 +614,11 @@ export async function handleAccountDeleteRequest(
     try {
       const bucketNames = new Set<string>(["resumes"]);
       if (typeof supabaseAdmin.storage?.listBuckets === "function") {
-        const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+        const { data: buckets, error: bucketsErr } = await supabaseAdmin.storage.listBuckets();
+        // Unknown buckets could still hold the user's files: never report success without checking them.
+        if (bucketsErr) {
+          errors.push(`storage.listBuckets: ${bucketsErr.message || String(bucketsErr)}`);
+        }
         if (Array.isArray(buckets)) {
           for (const b of buckets) {
             if (b?.name) bucketNames.add(b.name);
@@ -437,7 +634,10 @@ export async function handleAccountDeleteRequest(
           bucketApi,
           userId
         );
-        if (listErr) continue;
+        if (listErr) {
+          errors.push(`storage.${bucketName}: ${listErr.message || String(listErr)}`);
+          continue;
+        }
 
         if (filePaths.length > 0) {
           for (let i = 0; i < filePaths.length; i += STORAGE_LIST_PAGE_SIZE) {
@@ -466,31 +666,13 @@ export async function handleAccountDeleteRequest(
       );
     }
 
-    // 5b. Write the deletion tombstone (PII-free audit record). Fail-open:
-    // the tombstone table may not exist pre-migration and an audit insert
-    // must never block the deletion itself.
+    // Update tombstone to mark truthful completion timestamp before auth identity removal
     try {
-      const emailHash = normalizedEmail ? await sha256Hex(normalizedEmail) : "";
-      const hardDeleteAfter = new Date(
-        Date.now() + ACCOUNT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000
-      ).toISOString();
-      const { error: tombstoneError } = await supabaseAdmin
+      await supabaseAdmin
         .from("deleted_account_tombstones")
-        .upsert(
-          {
-            user_id: userId,
-            email_hash: emailHash,
-            deletion_completed_at: nowIso,
-            hard_delete_after: hardDeleteAfter,
-          },
-          { onConflict: "user_id" }
-        );
-      if (tombstoneError) {
-        log.warn("Account deletion tombstone write failed (continuing):", { error: tombstoneError });
-      }
-    } catch (tombstoneErr: any) {
-      log.warn("Account deletion tombstone write failed (continuing):", { error: tombstoneErr?.message || tombstoneErr });
-    }
+        .update({ deletion_completed_at: new Date().toISOString() })
+        .eq("user_id", userId);
+    } catch {}
 
     // 6. Delete the Auth User Identity from Supabase Auth (last step)
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);

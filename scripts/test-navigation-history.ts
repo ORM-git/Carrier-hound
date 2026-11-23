@@ -74,7 +74,7 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
   {
     file: "src/app/login/page.tsx",
     expectedCount: 1,
-    requiredSnippets: ["router.replace(next)"],
+    requiredSnippets: ["router.replace(next)", "router.replace(target)"],
   },
   // Unauthenticated mount guard (guest login) and completed-account auto-redirect on `/onboarding` replace protected URL
   {

@@ -83,13 +83,16 @@ function createMockSupabase(state: MockDbState) {
         select: (columns: string) => {
           return {
             eq: (col: string, val: string) => {
-              return {
+              const query = {
+                // Soft-delete filter used by the onboarding check (rows here have no deleted_at).
+                is: (_col: string, _v: null) => query,
                 maybeSingle: async () => {
                   const map = (state as any)[table] as Map<string, any> | undefined;
                   const row = map?.get(val) || null;
                   return { data: row, error: null };
                 },
               };
+              return query;
             },
           };
         },
@@ -197,11 +200,12 @@ async function runOnboardingSuite() {
     true,
     "Existing user with saved profile (full_name) must be treated as completed."
   );
-  // Verify self-healing: onboarding_completed_at was persisted
+  // The check runs during sign-in and must never write completion (no self-healing).
   const healedProfile = dbState.profiles.get("user-legacy-profile");
-  assert.ok(
+  assert.strictEqual(
     healedProfile?.onboarding_completed_at,
-    "Self-healing must stamp profiles.onboarding_completed_at for existing users."
+    null,
+    "The onboarding check must not stamp profiles.onboarding_completed_at during sign-in."
   );
 
   // 1d. Existing user with saved candidate_profiles (resume confirmed)
@@ -217,9 +221,10 @@ async function runOnboardingSuite() {
     "Existing user with confirmed candidate profile must be treated as completed."
   );
   const healedCandidateProfile = dbState.profiles.get("user-candidate");
-  assert.ok(
-    healedCandidateProfile?.onboarding_completed_at,
-    "Self-healing must stamp profiles.onboarding_completed_at for candidate profile users."
+  assert.strictEqual(
+    healedCandidateProfile,
+    undefined,
+    "The onboarding check must not create a profiles completion row during sign-in."
   );
 
   // 1e. User with partial answer in user_preferences (roles saved with onboarding_completed: false)
@@ -278,7 +283,7 @@ async function runOnboardingSuite() {
     "Blank resume text, empty skills, and empty experience in candidate_profiles must NOT count as completed."
   );
 
-  console.log("  ✓ Database logic passed (first login vs repeat login vs existing users vs self-healing vs blank guards).\n");
+  console.log("  ✓ Database logic passed (first login vs repeat login vs existing users vs no write during sign-in vs blank guards).\n");
 
   // ---------------------------------------------------------------------------
   // TEST 2: markAccountOnboardingCompleted Persistence
@@ -321,27 +326,25 @@ async function runOnboardingSuite() {
     `Guest must redirect to /login with returnTo=/onboarding, got: ${guestLoc}`
   );
 
-  // 3b. First login: Authenticated new user accessing /login -> redirected to /onboarding
+  // 3b. First login: Authenticated new user accessing /login -> onboarding with final destination preserved
   const newLoginReq = new NextRequest("http://localhost:3000/login", {
     headers: { cookie: "sb-access-token=user-new;" },
   });
   const newLoginRes = await middleware(newLoginReq);
   assert.strictEqual(newLoginRes.status, 307, "First login on /login must redirect (307).");
-  assert.ok(
-    (newLoginRes.headers.get("location") || "").endsWith("/onboarding"),
-    `First login on /login must redirect to /onboarding, got: ${newLoginRes.headers.get("location")}`
-  );
+  const newLoginUrl = new URL(newLoginRes.headers.get("location") || "http://localhost/");
+  assert.strictEqual(newLoginUrl.pathname, "/onboarding");
+  assert.strictEqual(newLoginUrl.searchParams.get("next"), "/jobs");
 
-  // 3c. First login: Authenticated new user accessing /auth/callback -> redirected to /onboarding
+  // 3c. First login: Authenticated new user accessing /auth/callback -> onboarding with final destination preserved
   const newCallbackReq = new NextRequest("http://localhost:3000/auth/callback", {
     headers: { cookie: "sb-access-token=user-new;" },
   });
   const newCallbackRes = await middleware(newCallbackReq);
   assert.strictEqual(newCallbackRes.status, 307, "First login on /auth/callback must redirect (307).");
-  assert.ok(
-    (newCallbackRes.headers.get("location") || "").endsWith("/onboarding"),
-    `First login on /auth/callback must redirect to /onboarding, got: ${newCallbackRes.headers.get("location")}`
-  );
+  const newCallbackUrl = new URL(newCallbackRes.headers.get("location") || "http://localhost/");
+  assert.strictEqual(newCallbackUrl.pathname, "/onboarding");
+  assert.strictEqual(newCallbackUrl.searchParams.get("next"), "/jobs");
 
   // 3d. First login: Authenticated new user accessing /onboarding -> allowed through (status 200)
   const newOnboardingReq = new NextRequest("http://localhost:3000/onboarding", {

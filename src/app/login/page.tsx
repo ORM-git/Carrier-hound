@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
-import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
+import { getAuthUser } from "@/lib/auth/session";
+import { getValidReturnUrl } from "@/lib/auth/returnTo";
+import { onboardingRedirectFor, resolvePostAuthDestination } from "@/lib/auth/onboarding";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
@@ -68,14 +70,26 @@ export default function LoginPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router]);
 
-  // Auto-redirect if already logged in
+  // Auto-redirect if already logged in: one navigation, same onboarding rule as /auth/callback.
+  // Reads the destination itself so it never navigates with the initial "/jobs" before params load.
   useEffect(() => {
-    getAuthUser().then((user) => {
-      if (user) {
-        router.replace(next);
-      }
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    const destination = getValidReturnUrl(
+      params.get("returnTo") || params.get("return_to") || params.get("next"),
+      "/jobs"
+    );
+    getAuthUser().then(async (user) => {
+      if (cancelled || !user) return;
+      const target = await resolvePostAuthDestination(createClient(), user.id, destination).catch(() =>
+        onboardingRedirectFor(destination)
+      );
+      if (!cancelled) router.replace(target);
     });
-  }, [next, router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   // Resend cooldown timer
   useEffect(() => {
