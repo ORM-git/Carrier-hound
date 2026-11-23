@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createFakeSupabase, seedCompletedAccount } from "@/lib/auth/__tests__/fakeSupabase";
+import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -16,7 +17,17 @@ vi.mock("next/link", () => ({ default: (props: any) => createElement("a", props,
 vi.mock("@/components/GuideHeader", () => ({ default: () => null }));
 vi.mock("@/components/Footer", () => ({ default: () => null }));
 vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({ from: (t: string) => fakeDb.client.from(t), auth: {} }),
+  createClient: () => ({
+    from: (t: string) => fakeDb.client.from(t),
+    auth: {
+      getSession: async () => ({
+        data: {
+          session: currentUser ? { access_token: "mock-login-token", user: currentUser } : null,
+        },
+        error: null,
+      }),
+    },
+  }),
 }));
 vi.mock("@/lib/auth/session", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/session")>("@/lib/auth/session");
@@ -28,8 +39,30 @@ import LoginPage from "../page";
 describe("/login already-signed-in redirect", () => {
   let root: Root | null = null;
   let container: HTMLElement | null = null;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = vi.fn(async (input: any) => {
+      const url = String(input);
+      if (url.includes("/api/account/status")) {
+        const completed = currentUser?.id
+          ? await checkAccountOnboardingCompleted(fakeDb.client, currentUser.id)
+          : false;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            onboardingCompleted: completed,
+            deletionPending: false,
+          }),
+        } as any;
+      }
+      return { ok: false, status: 404 } as any;
+    }) as any;
+  });
 
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     if (root) act(() => root?.unmount());
     root = null;
     container?.remove();
