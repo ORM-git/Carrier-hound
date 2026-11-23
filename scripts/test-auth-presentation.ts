@@ -133,12 +133,12 @@ function run() {
   // -------------------------------------------------------------------------
   const hasLoginHeading =
     loginCode.includes("Sign in for free to") &&
-    loginCode.includes('<span className="font-bold">CareerMonke</span>') &&
+    loginCode.includes('<span className="font-bold whitespace-nowrap">Career Monke</span>') &&
     !loginCode.includes("Sign in to access your dashboard");
 
   const hasSignupHeading =
     signupCode.includes("Sign up for free to") &&
-    signupCode.includes('<span className="font-bold">CareerMonke</span>') &&
+    signupCode.includes('<span className="font-bold whitespace-nowrap">Career Monke</span>') &&
     !signupCode.includes("Create an account to track");
 
   const hasNoInsideBrandLogo =
