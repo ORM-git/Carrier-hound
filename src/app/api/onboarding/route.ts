@@ -308,28 +308,26 @@ export async function POST(req: Request) {
 
     // Explicit column list (object literal): no request field reaches the DB unvetted.
     // Explicitly set deleted_at: null so fresh onboarding after a partial delete clears any tombstone.
-    const upsertPayload: Record<string, any> = {
-      user_id: user.id,
-      roles: sanitizedRoles,
-      categories: mergedCategories,
-      employment_types: sanitizedTypes,
-      locations: mergedLocations,
-      remote_preference: finalRemotePref,
-      work_auth: sanitizedWorkAuth,
-      country: resolvedCountry.name,
-      country_code: resolvedCountry.code,
-      experience_level: experienceLevel,
-      min_salary: minSalary,
-      salary_currency: salaryCurrency,
-      daily_digest_opt_in: dailyDigestOptIn,
-      onboarding_completed: true,
-      deleted_at: null,
-      updated_at: updatedAt,
-    };
-
     let { error: prefError } = await supabaseAdmin
       .from("user_preferences")
-      .upsert(upsertPayload, { onConflict: "user_id" });
+      .upsert({
+        user_id: user.id,
+        roles: sanitizedRoles,
+        categories: mergedCategories,
+        employment_types: sanitizedTypes,
+        locations: mergedLocations,
+        remote_preference: finalRemotePref,
+        work_auth: sanitizedWorkAuth,
+        country: resolvedCountry.name,
+        country_code: resolvedCountry.code,
+        experience_level: experienceLevel,
+        min_salary: minSalary,
+        salary_currency: salaryCurrency,
+        daily_digest_opt_in: dailyDigestOptIn,
+        onboarding_completed: true,
+        deleted_at: null,
+        updated_at: updatedAt,
+      }, { onConflict: "user_id" });
 
     const isMissingSoftDeleteCol = (err: any) => {
       if (!err) return false;
@@ -338,10 +336,25 @@ export async function POST(req: Request) {
     };
 
     if (prefError && isMissingSoftDeleteCol(prefError)) {
-      delete upsertPayload.deleted_at;
       prefError = (await supabaseAdmin
         .from("user_preferences")
-        .upsert(upsertPayload, { onConflict: "user_id" })).error;
+        .upsert({
+          user_id: user.id,
+          roles: sanitizedRoles,
+          categories: mergedCategories,
+          employment_types: sanitizedTypes,
+          locations: mergedLocations,
+          remote_preference: finalRemotePref,
+          work_auth: sanitizedWorkAuth,
+          country: resolvedCountry.name,
+          country_code: resolvedCountry.code,
+          experience_level: experienceLevel,
+          min_salary: minSalary,
+          salary_currency: salaryCurrency,
+          daily_digest_opt_in: dailyDigestOptIn,
+          onboarding_completed: true,
+          updated_at: updatedAt,
+        }, { onConflict: "user_id" })).error;
     }
 
     // No retry without the country columns: a save that drops the country must never report success.

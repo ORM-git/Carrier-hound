@@ -203,7 +203,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
     // Explicit column list (object literal). country / country_code are only written when the
     // caller set them, so a save without a country never blanks a stored one.
     // deleted_at: null ensures active preferences writes clear any soft-delete tombstone.
-    const upsertPayload: Record<string, any> = {
+    let { error: upsertError } = await supabase.from("user_preferences").upsert({
       user_id: userId,
       roles: updatedPrefs.roles || [],
       categories: updatedPrefs.categories || [],
@@ -214,8 +214,6 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       work_auth: updatedPrefs.workAuth || null,
       min_salary: updatedPrefs.minSalary ?? null,
       salary_currency: updatedPrefs.salaryCurrency || null,
-      // Write back the caller's loaded value so a recorded choice is preserved; absent => false,
-      // never the DB default (true). The digest opt-in UI and sending remain disabled.
       daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? false,
       onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
@@ -225,12 +223,28 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       ...(updatedPrefs.countryCode !== undefined
         ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
         : {}),
-    };
-
-    let { error: upsertError } = await supabase.from("user_preferences").upsert(upsertPayload);
+    });
     if (upsertError && isMissingDeletedAtColumnError(upsertError)) {
-      delete upsertPayload.deleted_at;
-      upsertError = (await supabase.from("user_preferences").upsert(upsertPayload)).error;
+      upsertError = (await supabase.from("user_preferences").upsert({
+        user_id: userId,
+        roles: updatedPrefs.roles || [],
+        categories: updatedPrefs.categories || [],
+        experience_level: updatedPrefs.experienceLevel || null,
+        employment_types: updatedPrefs.employmentTypes || [],
+        locations: updatedPrefs.locations || [],
+        remote_preference: updatedPrefs.remotePreference || "any",
+        work_auth: updatedPrefs.workAuth || null,
+        min_salary: updatedPrefs.minSalary ?? null,
+        salary_currency: updatedPrefs.salaryCurrency || null,
+        daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? false,
+        onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
+        eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
+        updated_at: updatedPrefs.updatedAt,
+        ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
+        ...(updatedPrefs.countryCode !== undefined
+          ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
+          : {}),
+      })).error;
     }
 
     if (upsertError) {

@@ -1,16 +1,20 @@
 -- ============================================================================
 -- Migration: 20261123a_grant_tombstone_delete_to_service_role.sql
--- STATUS: NOT APPLIED - apply manually in Supabase SQL editor when rolling out
---   account deletion recovery.
+-- STATUS: NOT APPLIED - apply this standalone statement in autocommit mode,
+-- outside BEGIN/COMMIT, DO blocks, functions or transactional migration runners.
+-- Review docs/ops/account-deletion-preflight.md before applying, then record:
+--   node scripts/record-migration.cjs 20261123a_grant_tombstone_delete_to_service_role
 --
--- What this does:
---   Grants DELETE on public.deleted_account_tombstones to service_role so
---   cancelled deletion recovery requests can remove the tombstone cleanly.
---   Complements 20261106h_soft_delete_tombstones.sql which granted SELECT, INSERT, UPDATE.
+-- Account Deletion Tombstone Permissions:
+-- Grants DELETE on public.deleted_account_tombstones to service_role to support
+-- account deletion cancellation and cleanup.
+--
+-- Rollback: see the commented block at the bottom.
 -- ============================================================================
 
-DO $$ BEGIN
-  IF to_regclass('public.deleted_account_tombstones') IS NOT NULL THEN
-    GRANT DELETE ON public.deleted_account_tombstones TO service_role;
-  END IF;
-END $$;
+GRANT DELETE ON public.deleted_account_tombstones TO service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually as one autocommit statement, never in a transaction):
+--   REVOKE DELETE ON public.deleted_account_tombstones FROM service_role;
+-- ============================================================================
