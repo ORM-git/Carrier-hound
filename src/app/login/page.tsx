@@ -8,6 +8,8 @@ import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { validateEmail, friendlyAuthError } from "@/lib/auth/passwordAuth";
+import PasswordInput from "@/components/auth/PasswordInput";
 import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
 function GoogleIcon() {
@@ -41,7 +43,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
-  const [emailSent, setEmailSent] = useState(false);
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"signin" | "forgot" | "resetSent">("signin");
   const [resendTimer, setResendTimer] = useState(0);
 
   // Read search params via window.location (safe for static export)
@@ -85,48 +88,78 @@ export default function LoginPage() {
     }
   }, [resendTimer]);
 
-  // Real Supabase Email Login (Magic Link / OTP)
+  const callbackUrl = (returnTo: string) => {
+    const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
+    return `${origin}/auth/callback?returnTo=${encodeURIComponent(returnTo)}`;
+  };
+
+  // Auth telemetry for the credential-stuffing monitor (fire-and-forget, never blocks sign-in).
+  const reportAuthEvent = (event: "password_signin" | "password_reset_request", cleanEmail: string) => {
+    fetch("/api/auth/security-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event, email: cleanEmail }),
+      keepalive: true,
+    }).catch(() => {});
+  };
+
+  // Real Supabase email + password sign-in
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim();
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setError("Please enter a valid email address.");
+    const emailError = validateEmail(cleanEmail);
+    if (emailError || !password) {
+      setError(emailError || "Please enter your password.");
       return;
     }
 
     setLoading(true);
     setError("");
+    reportAuthEvent("password_signin", cleanEmail);
 
     try {
       const supabase = createClient();
-      const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
-      const redirectUrl = `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
-      // Auth telemetry for the credential-stuffing monitor (fire-and-forget,
-      // no UI surface, never blocks the sign-in flow).
-      fetch("/api/auth/security-event", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: "otp_request", email: cleanEmail }),
-        keepalive: true,
-      }).catch(() => {});
-
-      const { error: signInError } = await supabase.auth.signInWithOtp({
-        email: cleanEmail,
-        options: {
-          emailRedirectTo: redirectUrl,
-        },
-      });
-
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
       if (signInError) {
-        setError(signInError.message || "Failed to send magic link. Please try again.");
+        setError(friendlyAuthError(signInError, "signin"));
         setLoading(false);
         return;
       }
+      // Same post-auth path as Google: /auth/callback applies the onboarding/returnTo routing.
+      router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`);
+    } catch {
+      setError(friendlyAuthError(null, "signin"));
+      setLoading(false);
+    }
+  };
 
-      setEmailSent(true);
+  // Password recovery: Supabase emails a link that lands on /auth/reset-password via the callback.
+  const handleResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = email.trim();
+    const emailError = validateEmail(cleanEmail);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    reportAuthEvent("password_reset_request", cleanEmail);
+
+    try {
+      const supabase = createClient();
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: callbackUrl("/auth/reset-password"),
+      });
+      if (resetError) {
+        setError(friendlyAuthError(resetError, "reset"));
+        return;
+      }
+      setMode("resetSent");
       setResendTimer(30);
-    } catch (err: any) {
-      setError(err?.message || "Failed to send magic link. Please try again.");
+    } catch {
+      setError(friendlyAuthError(null, "reset"));
     } finally {
       setLoading(false);
     }
@@ -139,8 +172,7 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
-      const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
-      const redirectUrl = `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
+      const redirectUrl = callbackUrl(next);
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -213,7 +245,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          {emailSent ? (
+          {mode === "resetSent" ? (
             <div
               data-testid="auth-email-sent"
               className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-[16px] p-6 text-center space-y-4"
@@ -224,7 +256,7 @@ export default function LoginPage() {
               <div className="space-y-1">
                 <h2 className="font-bold text-[16px] text-[#166534]">Check your inbox</h2>
                 <p className="text-[13px] text-[#15803D] max-w-sm mx-auto">
-                  We sent a verified magic sign-in link to <strong className="text-[#166534]">{email}</strong>. Click the link to complete sign in.
+                  If an account exists for <strong className="text-[#166534]">{email}</strong>, we sent a link to reset your password.
                 </p>
               </div>
 
@@ -232,23 +264,21 @@ export default function LoginPage() {
                 <button
                   type="button"
                   disabled={resendTimer > 0 || loading}
-                  onClick={handleEmailSubmit}
+                  onClick={handleResetRequest}
                   className="min-h-[44px] inline-flex items-center gap-1.5 text-xs font-semibold text-[#166534] hover:text-[#14532D] disabled:opacity-50 cursor-pointer rounded-lg px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-                  <span>
-                    {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend magic link"}
-                  </span>
+                  <span>{resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend reset link"}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setEmailSent(false);
+                    setMode("signin");
                     setError("");
                   }}
                   className="min-h-[44px] text-xs text-[#15803D] hover:underline px-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E] cursor-pointer"
                 >
-                  Use a different email
+                  Back to sign in
                 </button>
               </div>
             </div>
@@ -282,8 +312,13 @@ export default function LoginPage() {
               </div>
 
               {/* Email input: 48px high, #F7F8F9 fill, 8px radius, 14px text, placeholder "Email", accessible sr-only label */}
-              <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <div className="space-y-1">
+              <form onSubmit={mode === "forgot" ? handleResetRequest : handleEmailSubmit} className="space-y-4" noValidate>
+                {mode === "forgot" && (
+                  <p className="text-[13px] text-[#4B5563] text-center">
+                    Enter your email and we&apos;ll send you a link to reset your password.
+                  </p>
+                )}
+                <div className="space-y-3">
                   <label htmlFor="login-email" className="sr-only">
                     Email
                   </label>
@@ -302,6 +337,19 @@ export default function LoginPage() {
                     required
                     className="w-full h-[48px] min-h-[48px] rounded-[8px] border border-[#E5E7EB] bg-[#F7F8F9] px-4 text-[14px] text-[#0F172A] placeholder-[#9CA3AF] transition-all focus:border-[#2563EB] focus:ring-2 focus:ring-[#93C5FD] focus:bg-white focus:outline-none"
                   />
+                  {mode === "signin" && (
+                    <PasswordInput
+                      id="login-password"
+                      value={password}
+                      onChange={(v) => {
+                        setPassword(v);
+                        if (error) setError("");
+                      }}
+                      autoComplete="current-password"
+                      invalid={Boolean(error)}
+                      describedBy={error ? "login-error-msg" : undefined}
+                    />
+                  )}
                 </div>
 
                 {/* Primary button: 48px high, 8px radius, our blue #2563EB, white semibold text */}
@@ -313,12 +361,25 @@ export default function LoginPage() {
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Sending link…</span>
+                      <span>{mode === "forgot" ? "Sending link…" : "Signing in…"}</span>
                     </>
                   ) : (
-                    <span>Email me a sign-in link</span>
+                    <span>{mode === "forgot" ? "Send reset link" : "Sign in"}</span>
                   )}
                 </button>
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode(mode === "forgot" ? "signin" : "forgot");
+                      setError("");
+                    }}
+                    className="min-h-[44px] px-3 text-[13px] font-semibold text-[#2563EB] hover:text-[#1D4ED8] hover:underline rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                  >
+                    {mode === "forgot" ? "Back to sign in" : "Forgot password?"}
+                  </button>
+                </div>
               </form>
 
               {/* Terms and Privacy Policy below primary action */}

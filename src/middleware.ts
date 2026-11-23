@@ -143,7 +143,7 @@ function getAllowedEarlyAccessEmails(): Set<string> {
 }
 
 /**
- * Session rule: Google and email magic-link sign-in are both allowed.
+ * Session rule: Google and email (password or link) sign-in are both allowed.
  * A session is accepted only when user.email_confirmed_at is set.
  */
 function hasConfirmedEmail(user: any): boolean {

@@ -60,12 +60,12 @@ check(
   "Login: Inflight state renders spinning Loader2 icon"
 );
 check(
-  loginSrc.includes("Sending link…") && loginSrc.includes("Connecting to Google…"),
+  loginSrc.includes("Signing in…") && loginSrc.includes("Sending link…") && loginSrc.includes("Connecting to Google…"),
   "Login: Inflight state displays pending labels for email and Google actions"
 );
 check(
-  loginSrc.includes("resendTimer") && loginSrc.includes("Resend magic link"),
-  "Login: Magic link email sent state provides resend affordance"
+  loginSrc.includes("resendTimer") && loginSrc.includes("Resend reset link"),
+  "Login: Password-reset email sent state provides resend affordance"
 );
 
 // 1.2 Signup Page (src/app/signup/page.tsx)
@@ -79,7 +79,7 @@ check(
   "Signup: Inflight state renders spinning Loader2 icon"
 );
 check(
-  signupSrc.includes("Sending link…") && signupSrc.includes("Connecting to Google…"),
+  signupSrc.includes("Creating account…") && signupSrc.includes("Connecting to Google…"),
   "Signup: Inflight state displays pending labels for email and Google actions"
 );
 

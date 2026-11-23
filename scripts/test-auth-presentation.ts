@@ -206,19 +206,23 @@ function run() {
   }
 
   const hasSubmitBtn =
-    loginCode.includes("Email me a sign-in link") &&
+    loginCode.includes("signInWithPassword") &&
+    !loginCode.includes("signInWithOtp") &&
+    loginCode.includes('"Sign in"') &&
     loginCode.includes("rounded-[8px]") &&
     loginCode.includes("h-[48px]") &&
     loginCode.includes("bg-[#2563EB]") &&
-    signupCode.includes("Email me a sign-in link") &&
+    signupCode.includes("auth.signUp(") &&
+    !signupCode.includes("signInWithOtp") &&
+    signupCode.includes("<span>Sign up</span>") &&
     signupCode.includes("rounded-[8px]") &&
     signupCode.includes("h-[48px]") &&
     signupCode.includes("bg-[#2563EB]");
 
   if (!hasSubmitBtn) {
-    failures.push("SUBMIT BTN FAIL: Submit button must be 48px high, 8px radius, #2563EB 'Email me a sign-in link'.");
+    failures.push("SUBMIT BTN FAIL: Submit button must be 48px high, 8px radius, #2563EB, real email/password submit (no magic link).");
   } else {
-    console.log("  [PASS] primary button: 48px high, 8px radius, #2563EB with truthful magic-link text");
+    console.log("  [PASS] primary button: 48px high, 8px radius, #2563EB, email/password submit (no magic-link OTP)");
   }
 
   // -------------------------------------------------------------------------

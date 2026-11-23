@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
+import { validateEmail, validateNewPassword, friendlyAuthError } from "@/lib/auth/passwordAuth";
+import PasswordInput from "@/components/auth/PasswordInput";
 import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 
 function GoogleIcon() {
@@ -42,6 +44,7 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [password, setPassword] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
 
@@ -86,12 +89,18 @@ export default function SignupPage() {
     }
   }, [resendTimer]);
 
-  // Real Supabase Email Signup (Magic Link / OTP)
+  const verifyRedirectUrl = () => {
+    const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
+    return `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
+  };
+
+  // Real Supabase email + password signup (email verification enforced by Supabase + middleware)
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanEmail = email.trim();
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setError("Please enter a valid email address.");
+    const validationError = validateEmail(cleanEmail) || validateNewPassword(password);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -101,25 +110,50 @@ export default function SignupPage() {
 
     try {
       const supabase = createClient();
-      const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : getSiteUrl();
-      const redirectUrl = `${origin}/auth/callback?returnTo=${encodeURIComponent(next)}`;
-      const { error: signInError } = await supabase.auth.signInWithOtp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email: cleanEmail,
-        options: {
-          emailRedirectTo: redirectUrl,
-        },
+        password,
+        options: { emailRedirectTo: verifyRedirectUrl() },
       });
 
-      if (signInError) {
-        setError(signInError.message || "Failed to send magic link. Please try again.");
-        setLoading(false);
+      if (signUpError) {
+        setError(friendlyAuthError(signUpError, "signup"));
         return;
       }
 
+      if (data?.session) {
+        // Project has email confirmation off: continue through the shared post-auth routing.
+        router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`);
+        return;
+      }
+
+      setPassword("");
       setEmailSent(true);
       setResendTimer(30);
-    } catch (err: any) {
-      setError(err?.message || "Failed to send magic link. Please try again.");
+    } catch {
+      setError(friendlyAuthError(null, "signup"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const supabase = createClient();
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: { emailRedirectTo: verifyRedirectUrl() },
+      });
+      if (resendError) {
+        setError(friendlyAuthError(resendError, "signup"));
+        return;
+      }
+      setResendTimer(30);
+    } catch {
+      setError(friendlyAuthError(null, "signup"));
     } finally {
       setLoading(false);
     }
@@ -218,7 +252,7 @@ export default function SignupPage() {
               <div className="space-y-1">
                 <h2 className="font-bold text-[16px] text-[#166534]">Check your inbox</h2>
                 <p className="text-[13px] text-[#15803D] max-w-sm mx-auto">
-                  We sent a verified magic sign-in link to <strong className="text-[#166534]">{email}</strong>. Click the link to complete sign in.
+                  We sent a verification link to <strong className="text-[#166534]">{email}</strong>. Open it to confirm your email and finish signing up.
                 </p>
               </div>
 
@@ -226,12 +260,12 @@ export default function SignupPage() {
                 <button
                   type="button"
                   disabled={resendTimer > 0 || loading}
-                  onClick={handleEmailSubmit}
+                  onClick={handleResend}
                   className="min-h-[44px] inline-flex items-center gap-1.5 text-xs font-semibold text-[#166534] hover:text-[#14532D] disabled:opacity-50 cursor-pointer rounded-lg px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
                   <span>
-                    {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend magic link"}
+                    {resendTimer > 0 ? `Resend link in ${resendTimer}s` : "Resend verification link"}
                   </span>
                 </button>
                 <button
@@ -276,8 +310,8 @@ export default function SignupPage() {
               </div>
 
               {/* Email input: 48px high, #F7F8F9 fill, 8px radius, 14px text, placeholder "Email", accessible sr-only label */}
-              <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <div className="space-y-1">
+              <form onSubmit={handleEmailSubmit} className="space-y-4" noValidate>
+                <div className="space-y-3">
                   <label htmlFor="signup-email" className="sr-only">
                     Email
                   </label>
@@ -296,6 +330,18 @@ export default function SignupPage() {
                     required
                     className="w-full h-[48px] min-h-[48px] rounded-[8px] border border-[#E5E7EB] bg-[#F7F8F9] px-4 text-[14px] text-[#0F172A] placeholder-[#9CA3AF] transition-all focus:border-[#2563EB] focus:ring-2 focus:ring-[#93C5FD] focus:bg-white focus:outline-none"
                   />
+                  <PasswordInput
+                    id="signup-password"
+                    value={password}
+                    onChange={(v) => {
+                      setPassword(v);
+                      if (error) setError("");
+                    }}
+                    autoComplete="new-password"
+                    placeholder="Password (8+ characters)"
+                    invalid={Boolean(error)}
+                    describedBy={error ? "signup-error-msg" : undefined}
+                  />
                 </div>
 
                 {/* Primary button: 48px high, 8px radius, our blue #2563EB, white semibold text */}
@@ -307,10 +353,10 @@ export default function SignupPage() {
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Sending link…</span>
+                      <span>Creating account…</span>
                     </>
                   ) : (
-                    <span>Email me a sign-in link</span>
+                    <span>Sign up</span>
                   )}
                 </button>
               </form>
