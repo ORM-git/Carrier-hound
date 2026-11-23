@@ -262,7 +262,7 @@ export default function ResumePage() {
         {/* ================================================================= */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-1 text-[14px] font-medium text-[#0F172A]">
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center text-xs font-bold shrink-0">
+            <span className="w-6 h-6 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#0039F5] flex items-center justify-center text-xs font-bold shrink-0">
               💬
             </span>
             <span>
@@ -284,9 +284,9 @@ export default function ResumePage() {
             type="button"
             data-testid="upload-resume-button"
             onClick={() => setIsUploadModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0082FF]"
           >
-            <span className="w-4 h-4 rounded bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-bold text-xs">
+            <span className="w-4 h-4 rounded bg-[#EFF6FF] text-[#0039F5] flex items-center justify-center font-bold text-xs">
               +
             </span>
             <span>Add Resume</span>
@@ -324,40 +324,40 @@ export default function ResumePage() {
                       <td className="py-2.5 px-3 sm:px-6 align-middle">
                         <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                           {/* Hexagon/Tile Avatar */}
-                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB] font-bold text-[14px] sm:text-[15px] shrink-0">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#0039F5] font-bold text-[14px] sm:text-[15px] shrink-0">
                             {initialLetter}
                           </div>
 
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2">
-                              <h3 className="text-[14px] sm:text-[15px] font-bold text-[#0F172A] truncate max-w-[130px] sm:max-w-[280px]">
+                              <h3 className="text-[14px] sm:text-[15px] font-bold text-[#0F172A] truncate min-w-0 max-w-full sm:max-w-[280px]">
                                 {resumeTitle}
                               </h3>
 
                               {/* PRIMARY Pill */}
                               <span
                                 title="Primary resume used for match scoring and recommendations"
-                                className="inline-flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] shrink-0 whitespace-nowrap"
+                                className="inline-flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#0039F5] border border-[#BFDBFE] shrink-0 whitespace-nowrap"
                               >
                                 <span>★</span>
                                 <span>PRIMARY</span>
-                                <span className="text-[10px] text-[#2563EB]">ⓘ</span>
+                                <span className="text-[10px] text-[#0039F5]">ⓘ</span>
                               </span>
                             </div>
 
                             <div className="text-[13px] text-[#64748B] flex items-center gap-2 flex-wrap">
                               <span>Uploaded {formattedDate}</span>
                               {candidate.name && (
-                                <>
-                                  <span>•</span>
+                                <span className="inline-flex items-center gap-2 min-w-0">
+                                  <span aria-hidden="true">•</span>
                                   <span className="text-[#475569] truncate max-w-[120px]">{candidate.name}</span>
-                                </>
+                                </span>
                               )}
                               {/* Status Chip */}
                               {isConfirmed ? (
                                 <span
                                   data-testid="resume-status-chip"
-                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] border border-[#BBF7D0] inline-flex items-center"
+                                  className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#0020B0] border border-[#BFDBFE] inline-flex items-center whitespace-nowrap"
                                 >
                                   Confirmed · Analysis Complete
                                 </span>
@@ -404,7 +404,7 @@ export default function ResumePage() {
                             onClick={() => setIsViewDetailsOpen(!isViewDetailsOpen)}
                             title={isViewDetailsOpen ? "Hide preview" : "View details"}
                             aria-label="View resume details"
-                            className="p-1.5 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
+                            className="w-9 h-9 inline-flex items-center justify-center rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
                           >
                             {isViewDetailsOpen ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
@@ -414,7 +414,7 @@ export default function ResumePage() {
                             onClick={handleOpenRename}
                             title="Rename resume"
                             aria-label="Rename resume"
-                            className="p-1.5 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
+                            className="w-9 h-9 inline-flex items-center justify-center rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
@@ -424,7 +424,7 @@ export default function ResumePage() {
                             onClick={handleDeleteProfile}
                             title="Delete resume facts"
                             aria-label="Delete resume"
-                            className="p-1.5 rounded-full text-[#475569] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition cursor-pointer"
+                            className="w-9 h-9 inline-flex items-center justify-center rounded-full text-[#475569] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -435,7 +435,7 @@ export default function ResumePage() {
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
                             aria-label="More options"
                             title="More options"
-                            className="p-1.5 rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
+                            className="w-9 h-9 inline-flex items-center justify-center rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition cursor-pointer"
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
@@ -470,7 +470,7 @@ export default function ResumePage() {
                                 }}
                                 className="w-full px-3.5 py-2 text-[13px] text-[#0F172A] hover:bg-[#F8FAFC] flex items-center gap-2"
                               >
-                                <Download className="w-4 h-4 text-[#2563EB]" />
+                                <Download className="w-4 h-4 text-[#0039F5]" />
                                 <span>Export Word (.docx)</span>
                               </button>
                               <button
@@ -514,7 +514,7 @@ export default function ResumePage() {
                         {candidate.name || "Candidate Profile"}
                       </h4>
                       {candidate.headline && (
-                        <p className="text-[13px] font-medium text-[#2563EB]">
+                        <p className="text-[13px] font-medium text-[#0039F5]">
                           {candidate.headline}
                         </p>
                       )}
@@ -548,7 +548,7 @@ export default function ResumePage() {
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#E2E8F0] hover:bg-[#F1F5F9] text-[#0F172A] text-[12px] font-semibold min-h-[36px] transition cursor-pointer shadow-2xs"
                         title="Export ATS-Friendly Word Document (.docx)"
                       >
-                        <Download className="w-3.5 h-3.5 text-[#2563EB]" />
+                        <Download className="w-3.5 h-3.5 text-[#0039F5]" />
                         <span>Export Word (.docx)</span>
                       </button>
                       <button
@@ -579,7 +579,7 @@ export default function ResumePage() {
                     </div>
                     <div className="p-2.5 rounded-[12px] bg-white border border-[#E2E8F0]">
                       <span className="text-[11px] text-[#475569] font-medium">Status</span>
-                      <p className="text-[14px] font-bold text-[#166534]">Confirmed</p>
+                      <p className="text-[14px] font-bold text-[#0020B0]">Confirmed</p>
                     </div>
                   </div>
 
@@ -618,8 +618,8 @@ export default function ResumePage() {
             data-testid="resume-empty-state"
             className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-12 sm:p-16 text-center space-y-4 max-w-xl mx-auto shadow-none"
           >
-            <div className="w-14 h-14 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] mx-auto flex items-center justify-center">
-              <FileText className="w-7 h-7 text-[#2563EB]" />
+            <div className="w-14 h-14 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#0039F5] mx-auto flex items-center justify-center">
+              <FileText className="w-7 h-7 text-[#0039F5]" />
             </div>
 
             <div className="space-y-1">
@@ -636,7 +636,7 @@ export default function ResumePage() {
                 type="button"
                 data-testid="empty-upload-resume-button"
                 onClick={() => setIsUploadModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-[14px] transition cursor-pointer shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
+                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 min-h-[44px] rounded-full bg-[#0039F5] hover:bg-[#0020B0] active:bg-[#0020B0] text-white font-bold text-[14px] transition cursor-pointer shadow-none focus:outline-none focus:ring-2 focus:ring-[#0082FF] focus:ring-offset-1"
               >
                 <UploadCloud className="w-4 h-4" />
                 <span>Upload resume</span>
@@ -683,7 +683,7 @@ export default function ResumePage() {
                 value={renameInput}
                 onChange={(e) => setRenameInput(e.target.value)}
                 placeholder="e.g. Senior Software Engineer"
-                className="w-full text-[14px] px-4 py-2.5 min-h-[44px] rounded-full border border-[#CBD5E1] bg-[#F1F5F9] focus:bg-white text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] transition-colors"
+                className="w-full text-[14px] px-4 py-2.5 min-h-[44px] rounded-full border border-[#CBD5E1] bg-[#F1F5F9] focus:bg-white text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0082FF] transition-colors"
               />
             </div>
 
@@ -698,7 +698,7 @@ export default function ResumePage() {
               <button
                 type="button"
                 onClick={handleSaveRename}
-                className="px-5 py-2 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-[13px] font-bold min-h-[44px] cursor-pointer"
+                className="px-5 py-2 rounded-full bg-[#0039F5] hover:bg-[#0020B0] active:bg-[#0020B0] text-white text-[13px] font-bold min-h-[44px] cursor-pointer"
               >
                 Save
               </button>
@@ -720,7 +720,7 @@ export default function ResumePage() {
           <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-[0_16px_48px_rgba(15,23,42,0.18)] space-y-4 my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB]">
+                <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#0039F5]">
                   <UploadCloud className="w-4 h-4" />
                 </div>
                 <div>

@@ -391,7 +391,7 @@ export default function ProfileDrawers({
               onClick={handleSave}
               disabled={saving}
               data-testid="drawer-header-update-btn"
-              className="h-10 min-h-[44px] px-5 rounded-full text-[13px] font-semibold bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] disabled:opacity-60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1 inline-flex items-center gap-2 cursor-pointer shadow-xs"
+              className="h-10 min-h-[44px] px-5 rounded-full text-[13px] font-semibold bg-[#0039F5] text-white hover:bg-[#0020B0] active:bg-[#0020B0] disabled:opacity-60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-1 inline-flex items-center gap-2 cursor-pointer shadow-xs"
             >
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>{saving ? "Saving..." : "UPDATE"}</span>
@@ -403,7 +403,7 @@ export default function ProfileDrawers({
               onClick={onClose}
               aria-label="Close drawer"
               data-testid="drawer-close-btn"
-              className="w-11 h-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              className="w-11 h-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
             >
               <X className="w-5 h-5 stroke-[2]" />
             </button>
@@ -440,7 +440,7 @@ export default function ProfileDrawers({
                   value={draft.name || ""}
                   onChange={(e) => handlePersonalChange("name", e.target.value)}
                   placeholder="e.g. Jane Doe"
-                  className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all"
+                  className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all"
                 />
               </div>
 
@@ -454,7 +454,7 @@ export default function ProfileDrawers({
                   value={draft.headline || ""}
                   onChange={(e) => handlePersonalChange("headline", e.target.value)}
                   placeholder="e.g. Senior Full-Stack Engineer"
-                  className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all"
+                  className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all"
                 />
               </div>
 
@@ -468,7 +468,7 @@ export default function ProfileDrawers({
                   value={draft.summary || ""}
                   onChange={(e) => handlePersonalChange("summary", e.target.value)}
                   placeholder="Brief summary of your background, core strengths, and target roles..."
-                  className="w-full min-h-[100px] p-3 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all leading-relaxed"
+                  className="w-full min-h-[100px] p-3 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all leading-relaxed"
                 />
               </div>
 
@@ -483,7 +483,7 @@ export default function ProfileDrawers({
                     value={draft.email || ""}
                     onChange={(e) => handlePersonalChange("email", e.target.value)}
                     placeholder="jane@example.com"
-                    className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all"
+                    className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all"
                   />
                 </div>
 
@@ -497,7 +497,7 @@ export default function ProfileDrawers({
                     value={draft.phone || ""}
                     onChange={(e) => handlePersonalChange("phone", e.target.value)}
                     placeholder="+1 (555) 000-0000"
-                    className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all"
+                    className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all"
                   />
                 </div>
               </div>
@@ -512,7 +512,7 @@ export default function ProfileDrawers({
                   value={draft.location || ""}
                   onChange={(e) => handlePersonalChange("location", e.target.value)}
                   placeholder="e.g. San Francisco, CA or Remote"
-                  className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all"
+                  className="w-full h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all"
                 />
               </div>
             </div>
@@ -530,7 +530,7 @@ export default function ProfileDrawers({
                 <button
                   type="button"
                   onClick={handleAddEducation}
-                  className="inline-flex items-center gap-1.5 h-11 min-h-[44px] px-3.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] hover:bg-[#EFF6FF] rounded-lg transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 h-11 min-h-[44px] px-3.5 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] hover:bg-[#EFF6FF] rounded-lg transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Degree</span>
@@ -573,7 +573,7 @@ export default function ProfileDrawers({
                           value={edu.degree || ""}
                           onChange={(e) => handleUpdateEducation(idx, "degree", e.target.value)}
                           placeholder="e.g. B.S. in Computer Science"
-                          className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                          className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                         />
                       </div>
 
@@ -587,7 +587,7 @@ export default function ProfileDrawers({
                           value={edu.institution || ""}
                           onChange={(e) => handleUpdateEducation(idx, "institution", e.target.value)}
                           placeholder="e.g. University of California, Berkeley"
-                          className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                          className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                         />
                       </div>
 
@@ -602,7 +602,7 @@ export default function ProfileDrawers({
                             value={edu.year || ""}
                             onChange={(e) => handleUpdateEducation(idx, "year", e.target.value)}
                             placeholder="e.g. 2022"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
                         <div>
@@ -615,7 +615,7 @@ export default function ProfileDrawers({
                             value={edu.fieldOfStudy || ""}
                             onChange={(e) => handleUpdateEducation(idx, "fieldOfStudy", e.target.value)}
                             placeholder="e.g. Software Engineering"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
                       </div>
@@ -638,7 +638,7 @@ export default function ProfileDrawers({
                 <button
                   type="button"
                   onClick={handleAddExperience}
-                  className="inline-flex items-center gap-1.5 h-11 min-h-[44px] px-3.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] hover:bg-[#EFF6FF] rounded-lg transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 h-11 min-h-[44px] px-3.5 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] hover:bg-[#EFF6FF] rounded-lg transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Role</span>
@@ -682,7 +682,7 @@ export default function ProfileDrawers({
                             value={exp.role || ""}
                             onChange={(e) => handleUpdateExperience(idx, "role", e.target.value)}
                             placeholder="e.g. Senior Frontend Engineer"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
 
@@ -696,7 +696,7 @@ export default function ProfileDrawers({
                             value={exp.company || ""}
                             onChange={(e) => handleUpdateExperience(idx, "company", e.target.value)}
                             placeholder="e.g. Acme Corp"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
                       </div>
@@ -712,7 +712,7 @@ export default function ProfileDrawers({
                             value={exp.startDate || ""}
                             onChange={(e) => handleUpdateExperience(idx, "startDate", e.target.value)}
                             placeholder="e.g. Jan 2021"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
 
@@ -726,7 +726,7 @@ export default function ProfileDrawers({
                             value={exp.endDate || ""}
                             onChange={(e) => handleUpdateExperience(idx, "endDate", e.target.value)}
                             placeholder="e.g. Present"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
 
@@ -740,7 +740,7 @@ export default function ProfileDrawers({
                             value={exp.location || ""}
                             onChange={(e) => handleUpdateExperience(idx, "location", e.target.value)}
                             placeholder="e.g. Remote"
-                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none"
+                            className="w-full h-11 min-h-[44px] px-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none"
                           />
                         </div>
                       </div>
@@ -760,7 +760,7 @@ export default function ProfileDrawers({
                             handleUpdateExperience(idx, "bullets", lines);
                           }}
                           placeholder="- Spearheaded migration to Next.js&#10;- Reduced bundle size by 40%"
-                          className="w-full min-h-[88px] p-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#93C5FD] focus:outline-none leading-relaxed"
+                          className="w-full min-h-[88px] p-3 rounded-lg border border-[#CBD5E1] bg-white text-[13px] text-[#0F172A] focus:border-[#0082FF] focus:outline-none leading-relaxed"
                         />
                       </div>
                     </div>
@@ -793,12 +793,12 @@ export default function ProfileDrawers({
                       }
                     }}
                     placeholder="e.g. React, PostgreSQL, Docker..."
-                    className="flex-1 h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#93C5FD] focus:ring-2 focus:ring-[#93C5FD] focus:outline-none transition-all"
+                    className="flex-1 h-11 min-h-[44px] px-3.5 rounded-xl border border-[#CBD5E1] bg-white text-[14px] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#0082FF] focus:ring-2 focus:ring-[#0082FF] focus:outline-none transition-all"
                   />
                   <button
                     type="button"
                     onClick={handleAddSkill}
-                    className="h-11 min-h-[44px] px-5 rounded-full text-xs font-semibold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition-colors shrink-0 cursor-pointer"
+                    className="h-11 min-h-[44px] px-5 rounded-full text-xs font-semibold bg-[#0039F5] text-white hover:bg-[#0020B0] transition-colors shrink-0 cursor-pointer"
                   >
                     Add
                   </button>
@@ -821,14 +821,14 @@ export default function ProfileDrawers({
                     {draft.skills.map((skill) => (
                       <span
                         key={skill}
-                        className="inline-flex items-center gap-1.5 bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] text-xs font-medium pl-3 pr-1.5 py-1 rounded-full"
+                        className="inline-flex items-center gap-1.5 bg-[#EFF6FF] text-[#0020B0] border border-[#BFDBFE] text-xs font-medium pl-3 pr-1.5 py-1 rounded-full"
                       >
                         <span>{skill}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveSkill(skill)}
                           aria-label={`Remove skill ${skill}`}
-                          className="w-7 h-7 min-h-[28px] min-w-[28px] sm:min-h-[44px] sm:min-w-[44px] rounded-full inline-flex items-center justify-center text-[#1D4ED8] hover:bg-[#DBEAFE] hover:text-[#1E3A8A] transition-colors"
+                          className="w-7 h-7 min-h-[28px] min-w-[28px] sm:min-h-[44px] sm:min-w-[44px] rounded-full inline-flex items-center justify-center text-[#0020B0] hover:bg-[#DBEAFE] hover:text-[#1E3A8A] transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>

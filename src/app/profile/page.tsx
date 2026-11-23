@@ -239,7 +239,7 @@ export default function ProfilePage() {
                   data-active={isActive ? "true" : "false"}
                   className={`relative h-12 min-h-[44px] px-3 sm:px-4 text-[14px] transition-colors whitespace-nowrap cursor-pointer ${
                     isActive
-                      ? "font-bold text-[#0F172A] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#0F172A]"
+                      ? "font-bold text-[#0039F5] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#0039F5]"
                       : "font-medium text-[#64748B] hover:text-[#0F172A]"
                   }`}
                 >
@@ -269,7 +269,7 @@ export default function ProfilePage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-4">
                   {/* Avatar circle */}
-                  <div className="w-16 h-16 rounded-full bg-[#2563EB] text-white font-bold text-2xl flex items-center justify-center shrink-0 select-none shadow-xs">
+                  <div className="w-16 h-16 rounded-full bg-[#0039F5] text-white font-bold text-2xl flex items-center justify-center shrink-0 select-none shadow-xs">
                     {initial}
                   </div>
 
@@ -291,7 +291,7 @@ export default function ProfilePage() {
                   onClick={(e) => handleOpenDrawer("personal", e)}
                   aria-label="Edit personal details"
                   data-testid="edit-header-btn"
-                  className="self-start sm:self-center w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl border border-[#E2E8F0] hover:border-[#93C5FD] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                  className="self-start sm:self-center w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl border border-[#E2E8F0] hover:border-[#0082FF] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0039F5] flex items-center justify-center transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -333,14 +333,14 @@ export default function ProfilePage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <UserIcon className="w-5 h-5 text-[#2563EB]" />
+                  <UserIcon className="w-5 h-5 text-[#0039F5]" />
                   <h3 className="text-[16px] font-bold text-[#0F172A]">About & Summary</h3>
                 </div>
                 <button
                   type="button"
                   onClick={(e) => handleOpenDrawer("personal", e)}
                   aria-label="Edit summary"
-                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#0039F5] flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -356,7 +356,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={(e) => handleOpenDrawer("personal", e)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer min-h-[44px]"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] cursor-pointer min-h-[44px]"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add summary</span>
@@ -366,7 +366,7 @@ export default function ProfilePage() {
             </section>
 
             {/* ------------------------------------------------------------- */}
-            {/* SECTION: EDUCATION (Timeline track #BFDBFE, dots #2563EB)     */}
+            {/* SECTION: EDUCATION (Timeline track #BFDBFE, dots #0039F5)     */}
             {/* ------------------------------------------------------------- */}
             <section
               id="section-education"
@@ -376,7 +376,7 @@ export default function ProfilePage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <GraduationCap className="w-5 h-5 text-[#2563EB]" />
+                  <GraduationCap className="w-5 h-5 text-[#0039F5]" />
                   <h3 className="text-[16px] font-bold text-[#0F172A]">
                     Education
                     {candidate?.education?.length ? ` (${candidate.education.length})` : ""}
@@ -386,7 +386,7 @@ export default function ProfilePage() {
                   type="button"
                   onClick={(e) => handleOpenDrawer("education", e)}
                   aria-label="Edit education"
-                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#0039F5] flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -396,8 +396,8 @@ export default function ProfilePage() {
                 <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#BFDBFE]">
                   {candidate.education.map((edu, idx) => (
                     <div key={edu.id || `edu-${idx}`} className="relative space-y-1">
-                      {/* Timeline dot #2563EB */}
-                      <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#2563EB] border-2 border-white ring-2 ring-[#EFF6FF]" />
+                      {/* Timeline dot #0039F5 */}
+                      <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#0039F5] border-2 border-white ring-2 ring-[#EFF6FF]" />
 
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <h4 className="text-[15px] font-bold text-[#0F172A]">
@@ -421,7 +421,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={(e) => handleOpenDrawer("education", e)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer min-h-[44px]"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] cursor-pointer min-h-[44px]"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add education</span>
@@ -431,7 +431,7 @@ export default function ProfilePage() {
             </section>
 
             {/* ------------------------------------------------------------- */}
-            {/* SECTION: WORK EXPERIENCE (Timeline track #BFDBFE, dots #2563EB) */}
+            {/* SECTION: WORK EXPERIENCE (Timeline track #BFDBFE, dots #0039F5) */}
             {/* ------------------------------------------------------------- */}
             <section
               id="section-experience"
@@ -441,7 +441,7 @@ export default function ProfilePage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Briefcase className="w-5 h-5 text-[#2563EB]" />
+                  <Briefcase className="w-5 h-5 text-[#0039F5]" />
                   <h3 className="text-[16px] font-bold text-[#0F172A]">
                     Work Experience
                     {candidate?.experience?.length ? ` (${candidate.experience.length})` : ""}
@@ -451,7 +451,7 @@ export default function ProfilePage() {
                   type="button"
                   onClick={(e) => handleOpenDrawer("experience", e)}
                   aria-label="Edit work experience"
-                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#0039F5] flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -461,8 +461,8 @@ export default function ProfilePage() {
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#BFDBFE]">
                   {candidate.experience.map((exp, idx) => (
                     <div key={exp.id || `exp-${idx}`} className="relative space-y-1.5">
-                      {/* Timeline dot #2563EB */}
-                      <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#2563EB] border-2 border-white ring-2 ring-[#EFF6FF]" />
+                      {/* Timeline dot #0039F5 */}
+                      <span className="absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#0039F5] border-2 border-white ring-2 ring-[#EFF6FF]" />
 
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <h4 className="text-[15px] font-bold text-[#0F172A]">
@@ -502,7 +502,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={(e) => handleOpenDrawer("experience", e)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer min-h-[44px]"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] cursor-pointer min-h-[44px]"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add work experience</span>
@@ -522,7 +522,7 @@ export default function ProfilePage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#2563EB]" />
+                  <Sparkles className="w-5 h-5 text-[#0039F5]" />
                   <h3 className="text-[16px] font-bold text-[#0F172A]">
                     Skills{candidate?.skills?.length ? ` (${candidate.skills.length})` : ""}
                   </h3>
@@ -531,7 +531,7 @@ export default function ProfilePage() {
                   type="button"
                   onClick={(e) => handleOpenDrawer("skills", e)}
                   aria-label="Edit skills"
-                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-11 h-11 min-h-[44px] min-w-[44px] rounded-xl hover:bg-[#F1F5F9] text-[#64748B] hover:text-[#0039F5] flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -542,7 +542,7 @@ export default function ProfilePage() {
                   {candidate.skills.map((skill) => (
                     <span
                       key={skill}
-                      className="bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] text-xs font-medium px-3 py-1.5 rounded-full"
+                      className="bg-[#EFF6FF] text-[#0020B0] border border-[#BFDBFE] text-xs font-medium px-3 py-1.5 rounded-full"
                     >
                       {skill}
                     </span>
@@ -554,7 +554,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={(e) => handleOpenDrawer("skills", e)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer min-h-[44px]"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] cursor-pointer min-h-[44px]"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add skills</span>
@@ -576,7 +576,7 @@ export default function ProfilePage() {
             <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 sm:p-5 space-y-4 sm:space-y-3 shadow-none">
               <div className="flex items-center justify-between">
                 <h4 className="text-[15px] font-bold text-[#0F172A]">Profile Strength</h4>
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB]">
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#0039F5]">
                   {completionPercentage}%
                 </span>
               </div>
@@ -584,9 +584,7 @@ export default function ProfilePage() {
               {/* Progress track */}
               <div className="w-full h-2 rounded-full bg-[#E2E8F0] overflow-hidden">
                 <div
-                  className={`h-full transition-all duration-300 ${
-                    completionPercentage === 100 ? "bg-[#16A34A]" : "bg-[#2563EB]"
-                  }`}
+                  className="h-full transition-all duration-300 bg-[#0039F5]"
                   style={{ width: `${completionPercentage}%` }}
                 />
               </div>
@@ -607,7 +605,7 @@ export default function ProfilePage() {
                         <div className="flex items-center gap-2">
                           <CheckCircle2
                             className={`w-4 h-4 ${
-                              item.done ? "text-[#166534]" : "text-[#CBD5E1]"
+                              item.done ? "text-[#0039F5]" : "text-[#CBD5E1]"
                             }`}
                           />
                           <span
@@ -622,7 +620,7 @@ export default function ProfilePage() {
                           <button
                             type="button"
                             onClick={(e) => handleOpenDrawer(item.id, e)}
-                            className="text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] hover:underline cursor-pointer min-h-[44px] flex items-center"
+                            className="text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] hover:underline cursor-pointer min-h-[44px] flex items-center"
                           >
                             Add
                           </button>
@@ -632,7 +630,7 @@ export default function ProfilePage() {
                   </ul>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-xs text-[#166534] bg-[#DCFCE7] p-3 rounded-xl border border-[#BBF7D0]">
+                <div className="flex items-center gap-2 text-xs text-[#0020B0] bg-[#EFF6FF] p-3 rounded-xl border border-[#BFDBFE]">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span className="font-medium">All core profile sections are completed.</span>
                 </div>
@@ -648,7 +646,7 @@ export default function ProfilePage() {
                   className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] transition-colors group min-h-[44px]"
                 >
                   <div className="flex items-center gap-3">
-                    <FileText className="w-4 h-4 text-[#2563EB]" />
+                    <FileText className="w-4 h-4 text-[#0039F5]" />
                     <span className="text-xs font-medium">Manage Resumes</span>
                   </div>
                   <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
@@ -659,7 +657,7 @@ export default function ProfilePage() {
                   className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] transition-colors group min-h-[44px]"
                 >
                   <div className="flex items-center gap-3">
-                    <CheckSquare className="w-4 h-4 text-[#2563EB]" />
+                    <CheckSquare className="w-4 h-4 text-[#0039F5]" />
                     <span className="text-xs font-medium">Application Tracker</span>
                   </div>
                   <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
@@ -670,7 +668,7 @@ export default function ProfilePage() {
                   className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] transition-colors group min-h-[44px]"
                 >
                   <div className="flex items-center gap-3">
-                    <Briefcase className="w-4 h-4 text-[#2563EB]" />
+                    <Briefcase className="w-4 h-4 text-[#0039F5]" />
                     <span className="text-xs font-medium">Explore Jobs</span>
                   </div>
                   <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
@@ -681,7 +679,7 @@ export default function ProfilePage() {
                   className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] transition-colors group min-h-[44px]"
                 >
                   <div className="flex items-center gap-3">
-                    <Settings className="w-4 h-4 text-[#2563EB]" />
+                    <Settings className="w-4 h-4 text-[#0039F5]" />
                     <span className="text-xs font-medium">Account Settings</span>
                   </div>
                   <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#0F172A] group-hover:translate-x-0.5 transition-all" />
