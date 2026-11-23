@@ -5,6 +5,8 @@ Features:
 - `--source` filtering (`all`, `layer1`, `layer2`, `layer3`, `greenhouse`, `lever`,
   `ashby`, `smartrecruiters`, `workday`, `amazon`, `microsoft`, `jobspy`,
   `arbeitnow`, `adzuna`, or a specific company slug).
+- `--cohort workday|non-workday`: independent runs that partition every planned source by type (no
+  overlap, no omission); unknown filters, unknown cohorts and empty selections are refused.
 - Strict per-source error isolation (one failing board never crashes the batch).
 - Tracks per-source completeness and failures in the run report.
 - Expiry is disabled by default. Explicit --expire enables it for uncapped write runs;
@@ -17,6 +19,7 @@ import argparse
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Awaitable, Callable
@@ -143,6 +146,67 @@ def _matches_source_filter(source_filter: set[str], *candidates: str) -> bool:
     return bool(source_filter & lower_candidates)
 
 
+class SourceSelectionError(ValueError):
+    """Unknown, empty or contradictory source/cohort selection: refuse instead of guessing."""
+
+
+# Independent execution cohorts. Membership is decided by source_type only (never by slug/alias), so the
+# two cohorts partition every planned source exactly: no overlap, no omission, new sources land somewhere.
+COHORTS: dict[str, Callable[[str], bool]] = {
+    "workday": lambda source_type: source_type == "workday",
+    "non-workday": lambda source_type: source_type != "workday",
+}
+
+
+def plan_sources(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every source this seed config can schedule, with the filter aliases that select it."""
+    plan: list[dict[str, Any]] = []
+    for s in config.get("layer1_public_ats") or []:
+        ats = str(s.get("ats") or "").lower()
+        slug = str(s.get("slug") or "").lower()
+        board_id = f"{ats}:{slug}"
+        plan.append({"id": board_id, "type": ats, "full": ats != "smartrecruiters", "kind": "layer1",
+                     "seed": s, "aliases": {"layer1", ats, slug, board_id}})
+    layer2_cfg = config.get("layer2_enterprise_json") or {}
+    for wd in layer2_cfg.get("workday_cxs") or []:
+        slug = str(wd.get("slug") or "").lower()
+        board_id = f"workday:{slug}"
+        plan.append({"id": board_id, "type": "workday", "full": False, "kind": "workday",
+                     "seed": wd, "aliases": {"layer2", "workday", slug, board_id}})
+    for name in ("amazon", "microsoft"):
+        if name in layer2_cfg:
+            plan.append({"id": name, "type": name, "full": False, "kind": name,
+                         "seed": layer2_cfg[name], "aliases": {"layer2", name}})
+    plan.append({"id": "jobspy:india", "type": "jobspy", "full": False, "kind": "jobspy",
+                 "seed": None, "aliases": {"layer3", "jobspy", "india"}})
+    plan.append({"id": "arbeitnow", "type": "arbeitnow", "full": False, "kind": "arbeitnow",
+                 "seed": None, "aliases": {"layer3", "arbeitnow"}})
+    plan.append({"id": "adzuna:in", "type": "adzuna", "full": False, "kind": "adzuna",
+                 "seed": None, "aliases": {"layer3", "adzuna"}})
+    return plan
+
+
+def select_sources(plan: list[dict[str, Any]], source_filter: set[str], cohort: str | None) -> list[dict[str, Any]]:
+    """Validated, deterministic selection. Unknown tokens, unknown cohorts and empty results are errors."""
+    known = {"all"}.union(*(p["aliases"] for p in plan)) if plan else {"all"}
+    unknown = sorted(source_filter - known)
+    if unknown:
+        raise SourceSelectionError(f"unknown source filter(s): {', '.join(unknown)}")
+    if cohort is not None:
+        if cohort not in COHORTS:
+            raise SourceSelectionError(f"unknown cohort {cohort!r}; expected one of: {', '.join(sorted(COHORTS))}")
+        if source_filter != {"all"}:
+            raise SourceSelectionError("--cohort cannot be combined with --source")
+    selected = [
+        p for p in plan
+        if ("all" in source_filter or source_filter & p["aliases"])
+        and (cohort is None or COHORTS[cohort](p["type"]))
+    ]
+    if not selected:
+        raise SourceSelectionError("source selection is empty; refusing a run that would cover nothing")
+    return selected
+
+
 async def run_master_ingestion(
     *,
     sources: list[str] | None = None,
@@ -156,6 +220,7 @@ async def run_master_ingestion(
     expire_stale_hours: int = 72,
     transport: httpx.AsyncBaseTransport | None = None,
     jobspy_scrape_fn: Callable[..., Any] | None = None,
+    cohort: str | None = None,
 ) -> dict[str, Any]:
     """
     Runs selected ingestion layers/sources with per-source error isolation,
@@ -180,8 +245,8 @@ async def run_master_ingestion(
     )
 
     layer1_seeds = list(config.get("layer1_public_ats") or [])
-    layer2_cfg = config.get("layer2_enterprise_json") or {}
-    workday_seeds = list(layer2_cfg.get("workday_cxs") or [])
+    selected_plan = select_sources(plan_sources(config), source_filter, cohort)
+    started_at = datetime.now(timezone.utc).isoformat()
 
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(25.0),
@@ -189,104 +254,28 @@ async def run_master_ingestion(
         transport=transport,
         headers={"User-Agent": "CareerHound-HighVolumeIngest/1.0"},
     ) as client:
-        scheduled_tasks: list[asyncio.Task[dict[str, Any]]] = []
+        def factory(p: dict[str, Any]) -> Callable[[], Awaitable[Any]]:
+            kind, seed = p["kind"], p["seed"]
+            if kind == "layer1":
+                return lambda: fetch_layer1_seed(client, limiter, seed)
+            if kind == "workday":  # partial coverage, max_pages=1
+                return lambda: fetch_workday_cxs(client, limiter, seed, max_pages=1)
+            if kind == "amazon":
+                return lambda: fetch_amazon_jobs(client, limiter, seed, max_pages=1)
+            if kind == "microsoft":
+                return lambda: fetch_microsoft_jobs(client, limiter, seed, max_pages=1)
+            if kind == "jobspy":
+                return lambda: fetch_jobspy_india()
+            if kind == "arbeitnow":
+                return lambda: fetch_arbeitnow(client, limiter, max_pages=1)
+            if kind == "adzuna":
+                return lambda: fetch_adzuna(client, limiter)
+            raise SourceSelectionError(f"no fetcher for source kind {kind!r}")
 
-        # Layer 1: Public ATS APIs (Greenhouse, Lever, Ashby full coverage; SmartRecruiters single page = partial)
-        for s in layer1_seeds:
-            ats = str(s.get("ats") or "").lower()
-            slug = str(s.get("slug") or "").lower()
-            board_id = f"{ats}:{slug}"
-            is_full = False if ats == "smartrecruiters" else True
-            if _matches_source_filter(source_filter, "layer1", ats, slug, board_id):
-                scheduled_tasks.append(
-                    asyncio.create_task(
-                        run_isolated_source(
-                            board_id,
-                            ats,
-                            lambda seed=s: fetch_layer1_seed(client, limiter, seed),
-                            is_full_coverage=is_full,
-                        )
-                    )
-                )
-
-        # Layer 2: Enterprise & Big Tech JSON APIs (Partial coverage, max_pages=1)
-        for wd in workday_seeds:
-            slug = str(wd.get("slug") or "").lower()
-            board_id = f"workday:{slug}"
-            if _matches_source_filter(source_filter, "layer2", "workday", slug, board_id):
-                scheduled_tasks.append(
-                    asyncio.create_task(
-                        run_isolated_source(
-                            board_id,
-                            "workday",
-                            lambda seed=wd: fetch_workday_cxs(client, limiter, seed, max_pages=1),
-                            is_full_coverage=False,
-                        )
-                    )
-                )
-
-        if "amazon" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "amazon"):
-            amz_seed = layer2_cfg["amazon"]
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "amazon",
-                        "amazon",
-                        lambda: fetch_amazon_jobs(client, limiter, amz_seed, max_pages=1),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        if "microsoft" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "microsoft"):
-            ms_seed = layer2_cfg["microsoft"]
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "microsoft",
-                        "microsoft",
-                        lambda: fetch_microsoft_jobs(client, limiter, ms_seed, max_pages=1),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        # Layer 3: Scheduled India Batch (JobSpy) & Public JSON Aggregators
-        if _matches_source_filter(source_filter, "layer3", "jobspy", "india"):
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "jobspy:india",
-                        "jobspy",
-                        lambda: fetch_jobspy_india(),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        if _matches_source_filter(source_filter, "layer3", "arbeitnow"):
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "arbeitnow",
-                        "arbeitnow",
-                        lambda: fetch_arbeitnow(client, limiter, max_pages=1),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        if _matches_source_filter(source_filter, "layer3", "adzuna"):
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "adzuna:in",
-                        "adzuna",
-                        lambda: fetch_adzuna(client, limiter),
-                        is_full_coverage=False,
-                    )
-                )
-            )
+        scheduled_tasks = [
+            asyncio.create_task(run_isolated_source(p["id"], p["type"], factory(p), is_full_coverage=p["full"]))
+            for p in selected_plan
+        ]
 
         task_reports = await asyncio.gather(*scheduled_tasks)
 
@@ -535,7 +524,26 @@ async def run_master_ingestion(
             ],
         }
 
+        if dry_run:
+            guard_block_reason = "dry_run: projections only, nothing was written or expired"
+        elif failed_sources:
+            guard_block_reason = (
+                f"write_withheld: {len(failed_sources)} failed source(s) in this run; "
+                "no inserts, updates, company sync or expiry"
+            )
+        elif db_stats.get("persistence_failed"):
+            guard_block_reason = "persistence_failed: writes stopped and expiry vetoed"
+        else:
+            guard_block_reason = None
+        failed_ids = {f["source"] for f in failed_sources}
         return {
+            "cohort": cohort or ("all" if source_filter == {"all"} else "custom"),
+            "git_sha": os.environ.get("GITHUB_SHA") or None,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "selected_sources": [p["id"] for p in selected_plan],
+            "completed_sources": [r["source"] for r in source_reports if r["source"] not in failed_ids],
+            "guard_block_reason": guard_block_reason,
             "dry_run": dry_run,
             "fetched": fetched_count,
             "selected": len(all_jobs),
@@ -566,6 +574,12 @@ def main() -> None:
         default=None,
         help="Source filter: all, layer1, layer2, layer3, greenhouse, lever, ashby, smartrecruiters, workday, amazon, microsoft, jobspy, arbeitnow, adzuna, or slug",
     )
+    parser.add_argument(
+        "--cohort",
+        choices=sorted(COHORTS),
+        default=None,
+        help="Independent cohort: workday or non-workday (exact partition by source type; not combinable with --source)",
+    )
     add_write_mode_arguments(parser)
     parser.add_argument("--baseline-count", type=int, default=0, help="Baseline active job count for 50%% drop guard")
     args = parser.parse_args()
@@ -585,9 +599,10 @@ def main() -> None:
                 allow_uncapped=args.production,
                 allow_expire=not args.no_expire,
                 baseline_active_count=args.baseline_count,
+                cohort=args.cohort,
             )
         )
-    except WriteAuthorizationError as exc:
+    except (WriteAuthorizationError, SourceSelectionError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)
     print(json.dumps(report, indent=2))
