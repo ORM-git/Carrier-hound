@@ -34,7 +34,10 @@ describe("Company section", () => {
     renderDetail();
     expect(screen.getByText("Acme builds software for teams.")).toBeTruthy();
     expect(screen.getAllByText("Boston, US")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: /acme.example\/a\/very/ }).getAttribute("href")).toBe("https://acme.example/a/very/long/company/path");
+    const website = screen.getByRole("link", { name: "acme.example" });
+    expect(website.getAttribute("href")).toBe("https://acme.example/a/very/long/company/path");
+    expect(website.className).toContain("break-words");
+    expect(website.className).not.toContain("break-all");
     expect(screen.getByText(/Alex Example/)).toBeTruthy();
     expect(screen.getByText("Acme announces a product")).toBeTruthy();
     expect(screen.getByText("Design Engineer")).toBeTruthy();
@@ -65,6 +68,22 @@ describe("Company section", () => {
     cleanup();
     renderDetail({ ...baseJob(), companyProfile: { ...baseJob().companyProfile!, freshness: "stale" } });
     expect(screen.getByText(/may be out of date/)).toBeTruthy();
+    expect(screen.queryByText(/not available yet/)).toBeNull();
+  });
+
+  it("says details are not available yet for a never-enriched company", () => {
+    renderDetail({ ...baseJob(), companyProfile: { companyId: "company-1", facts: {}, leadership: [], news: [], jobs: { status: "ready", jobs: [] }, freshness: "stale" } });
+    expect(screen.getByText("Company details are not available yet.")).toBeTruthy();
+    expect(screen.queryByText(/may be out of date/)).toBeNull();
+  });
+
+  it("hides the floating back-to-top button on phones only while the Company tab is open", () => {
+    const { container } = renderDetail();
+    expect(container.querySelector("style")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "Company" })[0]);
+    expect(container.querySelector("style")?.textContent).toContain('@media (max-width: 767px) { button[aria-label="Back to top"] { display: none; } }');
+    fireEvent.click(screen.getAllByRole("button", { name: "Overview" })[0]);
+    expect(container.querySelector("style")).toBeNull();
   });
 
   it("scrolls the Company heading below the measured sticky header", async () => {
