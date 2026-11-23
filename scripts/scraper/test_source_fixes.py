@@ -235,6 +235,7 @@ class TestWorkdaySharedBudget(unittest.TestCase):
         from scripts.scraper import fetchers
         self.fetchers = fetchers
         fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_TENANT_NEXT.clear()
         self.clock = _Sleeps()
         self.requests: list[str] = []
         self.limiter_calls: list[str] = []
@@ -298,6 +299,52 @@ class TestWorkdaySharedBudget(unittest.TestCase):
         self.assertEqual(len(self.requests), self.fetchers.WORKDAY_MAX_RETRIES + 1)
         self.assertNotIn("curl_cffi", pathlib_text(self.fetchers.__file__))
 
+    def test_run_45102410588_retry_after_8s_is_retried_until_success(self) -> None:
+        import httpx
+        seed = {"slug": "nvidia", "tenant": "t1", "site": "s1", "name": "A"}
+
+        def handler(n):
+            if n <= 3:  # the GitHub runner saw three 429s with Retry-After 8 and gave up
+                return httpx.Response(429, headers={"Retry-After": "8"})
+            return httpx.Response(200, json={"jobPostings": [{"title": "Engineer", "externalPath": "/job/1", "bulletFields": ["R1"]}]})
+
+        out = self._run(handler, [seed])
+        self.assertEqual(len(out[0]), 1, out)
+        self.assertEqual(len(self.requests), 4)
+        self.assertGreaterEqual(sum(self.clock.calls), 24.0)
+
+    def test_short_retry_afters_stop_at_the_page_backoff_budget(self) -> None:
+        import httpx
+        seed = {"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}
+        out = self._run(lambda n: httpx.Response(429, headers={"Retry-After": "25"}), [seed])
+        self.assertIsInstance(out[0], self.fetchers.WorkdayRateLimited)
+        self.assertEqual(len(self.requests), 3, "25s + 25s + 25s exceeds the 60s page budget on the third 429")
+        self.assertLessEqual(sum(self.clock.calls), self.fetchers.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS)
+
+    def test_requests_are_spaced_per_tenant_not_across_tenants(self) -> None:
+        import httpx
+        sent: list[tuple[str, float]] = []
+
+        def record(request: httpx.Request) -> httpx.Response:
+            sent.append((request.url.host, self.clock.offset))
+            return httpx.Response(200, json={"jobPostings": []})
+
+        class Limiter:
+            async def acquire(self, url: str) -> None:
+                return None
+
+        async def _go():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+                for url in ("https://t1.wd5.myworkdayjobs.com/x", "https://t2.wd5.myworkdayjobs.com/x", "https://t1.wd5.myworkdayjobs.com/x"):
+                    await self.fetchers._workday_post(client, Limiter(), url, {}, {})
+
+        with patch.object(self.fetchers.asyncio, "sleep", self.clock.sleep), \
+                patch.object(self.fetchers.time, "monotonic", self.clock.monotonic):
+            asyncio.run(_go())
+        self.assertEqual(sent[0][1], 0.0)
+        self.assertEqual(sent[1][1], 0.0, "a different tenant is not delayed by t1's spacing")
+        self.assertGreaterEqual(sent[2][1] - sent[0][1], self.fetchers.WORKDAY_TENANT_SPACING_SECONDS)
+
 
 def pathlib_text(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
@@ -312,6 +359,7 @@ class TestMixedSuccessZeroWriteVeto(unittest.TestCase):
         from scripts.scraper import fetchers, rate_limiter, run_ingestion
 
         fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_TENANT_NEXT.clear()
         env = {
             "NEXT_PUBLIC_SUPABASE_URL": "https://unit-test-project.supabase.co",
             "SUPABASE_SERVICE_ROLE_KEY": "fake-service-role-key-for-tests-0123456789",
