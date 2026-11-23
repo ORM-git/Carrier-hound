@@ -326,27 +326,25 @@ async function runOnboardingSuite() {
     `Guest must redirect to /login with returnTo=/onboarding, got: ${guestLoc}`
   );
 
-  // 3b. First login: Authenticated new user accessing /login -> redirected to /onboarding
+  // 3b. First login: Authenticated new user accessing /login -> onboarding with final destination preserved
   const newLoginReq = new NextRequest("http://localhost:3000/login", {
     headers: { cookie: "sb-access-token=user-new;" },
   });
   const newLoginRes = await middleware(newLoginReq);
   assert.strictEqual(newLoginRes.status, 307, "First login on /login must redirect (307).");
-  assert.ok(
-    (newLoginRes.headers.get("location") || "").endsWith("/onboarding"),
-    `First login on /login must redirect to /onboarding, got: ${newLoginRes.headers.get("location")}`
-  );
+  const newLoginUrl = new URL(newLoginRes.headers.get("location") || "http://localhost/");
+  assert.strictEqual(newLoginUrl.pathname, "/onboarding");
+  assert.strictEqual(newLoginUrl.searchParams.get("next"), "/jobs");
 
-  // 3c. First login: Authenticated new user accessing /auth/callback -> redirected to /onboarding
+  // 3c. First login: Authenticated new user accessing /auth/callback -> onboarding with final destination preserved
   const newCallbackReq = new NextRequest("http://localhost:3000/auth/callback", {
     headers: { cookie: "sb-access-token=user-new;" },
   });
   const newCallbackRes = await middleware(newCallbackReq);
   assert.strictEqual(newCallbackRes.status, 307, "First login on /auth/callback must redirect (307).");
-  assert.ok(
-    (newCallbackRes.headers.get("location") || "").endsWith("/onboarding"),
-    `First login on /auth/callback must redirect to /onboarding, got: ${newCallbackRes.headers.get("location")}`
-  );
+  const newCallbackUrl = new URL(newCallbackRes.headers.get("location") || "http://localhost/");
+  assert.strictEqual(newCallbackUrl.pathname, "/onboarding");
+  assert.strictEqual(newCallbackUrl.searchParams.get("next"), "/jobs");
 
   // 3d. First login: Authenticated new user accessing /onboarding -> allowed through (status 200)
   const newOnboardingReq = new NextRequest("http://localhost:3000/onboarding", {
