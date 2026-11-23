@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Plus, X, Globe, Check, HelpCircle, LogOut } from "lucide-react";
-import BrandIcon from "@/components/BrandIcon";
+import { BrandWordmark } from "@/components/brand/AppBrand";
 import JobFunctionBottomSheet from "./JobFunctionBottomSheet";
 import CountryPickerModal from "./CountryPickerModal";
 import { JOB_TYPE_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
@@ -83,32 +83,18 @@ export default function OnboardingStep1({
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
       <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
-        {/* Copilot Greeting Header */}
-        <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
-          <div className="relative flex-shrink-0">
-            <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
-              <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
-            </div>
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"
-              title="Copilot Online"
-            />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm md:text-base font-bold text-zinc-900 dark:text-zinc-100">
-                CareerMonke Copilot
-              </span>
-              <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
-                {isEditMode ? "Edit Mode" : "AI"}
-              </span>
-            </div>
-            <div className="p-3.5 md:p-4 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm md:text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed">
-              {isEditMode
-                ? "Update your job preferences below to tune your recommended jobs feed."
-                : "Hi, I'm your CareerMonke Copilot. What type of role are you looking for?"}
-            </div>
-          </div>
+        {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
+        <div className="mb-6 md:mb-8">
+          {isEditMode && (
+            <span className="inline-block mb-2 text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-[#E6F2FF] text-[#0020B0]">
+              Edit Mode
+            </span>
+          )}
+          <p className="text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-relaxed">
+            {isEditMode
+              ? "Update your job preferences below to tune your recommended jobs feed."
+              : "What type of role are you looking for?"}
+          </p>
         </div>
 
         {/* Main Form Card */}
@@ -381,18 +367,14 @@ export default function OnboardingStep1({
         <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-brand-50/90 via-brand-50/70 to-brand-100/50 dark:from-zinc-950 dark:via-brand-900/20 dark:to-zinc-900 border-r border-brand-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
           {/* Brand Bar */}
           <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-brand-500/20 shadow-xs flex items-center justify-center p-2 text-brand-600">
-                <BrandIcon className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
-                  CareerMonke
-                </span>
+            <div className="flex flex-col items-start gap-2">
+              {/* App wordmark on a white chip: the interim asset is opaque, so it never sits on the tinted panel. */}
+              <span className="inline-flex rounded-xl bg-white px-3 py-2 border border-brand-500/20 shadow-xs">
+                <BrandWordmark placement="header" />
+              </span>
                 <span className="block text-[11px] font-semibold text-brand-700 dark:text-brand-400">
                   {isEditMode ? "Preferences Editor" : "Job Discovery"}
                 </span>
-              </div>
             </div>
           </div>
 

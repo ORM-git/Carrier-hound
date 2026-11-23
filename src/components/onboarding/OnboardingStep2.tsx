@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import BrandIcon from "@/components/BrandIcon";
+import { BrandWordmark } from "@/components/brand/AppBrand";
 import { ArrowLeft, FileText, CheckCircle2, AlertCircle, Upload, Loader2, Check, FileCheck, LogOut } from "lucide-react";
 import { toast } from "react-toastify";
 import { isOnboardingStep2EnabledClient } from "@/config/onboarding";
@@ -234,19 +234,12 @@ export default function OnboardingStep2({
             <span>Back to preferences</span>
           </button>
         </div>
-        <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
-          <div className="w-11 h-11 md:w-12 md:h-12 flex-shrink-0 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
-            <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
-          </div>
-          <div className="flex-1">
-            <span className="block text-sm md:text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">CareerMonke Copilot</span>
-            <div className="p-3.5 md:p-4 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm text-sm md:text-[15px] text-zinc-800 dark:text-zinc-200 leading-relaxed">
-              {isFeatureEnabled
-                ? "Optional: add your LinkedIn profile and resume. You can skip either one and add them later."
-                : "Profile extras are coming soon. Skip ahead to your recommendations."}
-            </div>
-          </div>
-        </div>
+        {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
+        <p className="mb-6 md:mb-8 text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-relaxed">
+          {isFeatureEnabled
+            ? "Optional: add your LinkedIn profile and resume. You can skip either one and add them later."
+            : "Profile extras are coming soon. Skip ahead to your recommendations."}
+        </p>
 
         {!isFeatureEnabled ? (
           <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 md:items-stretch">
@@ -483,18 +476,14 @@ export default function OnboardingStep2({
         {/* 1. LEFT WELCOME PANEL (Consistent split shell with Step 1) */}
         <aside className="w-[42%] xl:w-[40%] bg-gradient-to-br from-brand-50/90 via-brand-50/70 to-brand-100/50 dark:from-zinc-950 dark:via-brand-900/20 dark:to-zinc-900 border-r border-brand-100/80 dark:border-zinc-800/80 flex flex-col justify-between p-12 sticky top-0 h-screen flex-shrink-0">
           <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-zinc-800 border border-brand-500/20 shadow-xs flex items-center justify-center p-2 text-brand-600">
-                <BrandIcon className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
-                  CareerMonke
-                </span>
+            <div className="flex flex-col items-start gap-2">
+              {/* App wordmark on a white chip: the interim asset is opaque, so it never sits on the tinted panel. */}
+              <span className="inline-flex rounded-xl bg-white px-3 py-2 border border-brand-500/20 shadow-xs">
+                <BrandWordmark placement="header" />
+              </span>
                 <span className="block text-[11px] font-semibold text-brand-700 dark:text-brand-400">
                   Profile & Resume
                 </span>
-              </div>
             </div>
           </div>
 

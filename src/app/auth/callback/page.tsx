@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl } from "@/lib/auth/session";
 import { clearCandidateProfileMemoryCache } from "@/lib/resume/storage";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
-import BrandIcon from "@/components/BrandIcon";
+import { BrandWordmark } from "@/components/brand/AppBrand";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
@@ -130,8 +130,8 @@ export default function AuthCallbackPage() {
         variant="surface"
         className="w-full max-w-sm p-8 text-center space-y-4 shadow-tk-sm border border-line"
       >
-        <div className="w-14 h-14 rounded-tk-xl bg-surface-muted border border-line flex items-center justify-center mx-auto p-2">
-          <BrandIcon className="w-10 h-10" />
+        <div className="flex justify-center">
+          <BrandWordmark placement="loading" priority />
         </div>
         <div className="space-y-1.5" role="status" aria-label="Signing you in">
           <Loader2 aria-hidden="true" className="w-6 h-6 text-brand-600 animate-spin mx-auto" />

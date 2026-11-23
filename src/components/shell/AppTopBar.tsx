@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Search, Menu, X, LogOut, Settings, User as UserIcon, ChevronDown } from "lucide-react";
-import BrandIcon from "@/components/BrandIcon";
+import { BrandWordmark } from "@/components/brand/AppBrand";
+import { useSidebarMode } from "@/lib/sidebar";
 import { NAV_ITEMS } from "./AppIconRail";
 import { signOutUser } from "@/lib/auth/session";
 import type { User } from "@supabase/supabase-js";
@@ -41,6 +42,7 @@ export default function AppTopBar({
   hidePlanPill = false,
 }: AppTopBarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { isExpanded: railExpanded } = useSidebarMode();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -148,10 +150,21 @@ export default function AppTopBar({
               aria-label="Open navigation menu"
               aria-expanded={drawerOpen}
               aria-controls="mobile-nav-drawer"
-              className="md:hidden inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] -ml-2 rounded-full text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              className="md:hidden inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] -ml-2 rounded-full text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
             >
               <Menu className="w-5 h-5" />
             </button>
+
+            {/* Desktop: the 72px collapsed rail cannot hold the wordmark, so the brand link sits here instead. */}
+            {!railExpanded && (
+              <Link
+                href="/jobs"
+                aria-label="CareerMonke Jobs"
+                className="hidden md:flex items-center shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2"
+              >
+                <BrandWordmark placement="header" />
+              </Link>
+            )}
 
             {/* Page Label (bold 18px uppercase) */}
             <h1 className="font-bold text-[18px] uppercase tracking-wider text-[#0F172A] shrink-0 leading-none">
@@ -173,7 +186,7 @@ export default function AppTopBar({
                     key={tab.id}
                     type="button"
                     onClick={tab.onClick}
-                    className={`relative h-14 min-h-[44px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 text-[14px] cursor-pointer whitespace-nowrap transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                    className={`relative h-14 min-h-[44px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 text-[14px] cursor-pointer whitespace-nowrap transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] ${
                       tab.active
                         ? "font-bold text-[#0F172A] after:absolute after:bottom-0 after:left-2 after:right-2 after:h-[2px] after:bg-[#0F172A]"
                         : "font-medium text-[#475569] hover:text-[#0F172A]"
@@ -204,14 +217,14 @@ export default function AppTopBar({
                   value={searchValue || ""}
                   onChange={(e) => onSearchChange(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full h-9 pl-9 pr-8 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
+                  className="w-full h-9 pl-9 pr-8 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#0082FF] focus:bg-white focus:outline-none transition-all duration-200"
                 />
                 {searchValue && (
                   <button
                     type="button"
                     onClick={() => onSearchChange("")}
                     aria-label="Clear search text"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] p-0.5 rounded-full hover:bg-slate-200 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] p-0.5 rounded-full hover:bg-slate-200 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -232,9 +245,9 @@ export default function AppTopBar({
                   aria-label="Upgrade to Pro"
                   className="hidden xl:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:border-blue-300 transition-colors shadow-2xs shrink-0"
                 >
-                  <span className="w-4 h-4 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[10px]">⚡</span>
+                  <span className="w-4 h-4 rounded-full bg-[#0082FF] text-[#0F172A] flex items-center justify-center text-[10px]">⚡</span>
                   <span>Upgrade to Pro</span>
-                  <span className="text-[#2563EB] font-bold">›</span>
+                  <span className="text-[#0020B0] font-bold">›</span>
                 </Link>
               )}
 
@@ -244,13 +257,13 @@ export default function AppTopBar({
                   type="button"
                   onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
                   aria-label="Toggle search input"
-                  className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                  className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
                 >
                   <Search className="w-4 h-4" />
                 </button>
               )}
 
-              {/* Circular avatar with user's initial on #2563EB + full name bold 13px + Dropdown */}
+              {/* Circular avatar with user's initial on brand Electric + full name bold 13px + Dropdown */}
               <div className="relative">
                 <button
                   type="button"
@@ -258,9 +271,9 @@ export default function AppTopBar({
                   aria-label="User avatar menu"
                   aria-haspopup="true"
                   aria-expanded={avatarMenuOpen}
-                  className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] rounded-full cursor-pointer"
+                  className="flex items-center justify-center gap-2 min-h-[44px] min-w-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] rounded-full cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  <div className="w-8 h-8 rounded-full bg-[#0082FF] text-[#0F172A] font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
                     {userInitial}
                   </div>
                   {pathname !== "/jobs" && (
@@ -288,7 +301,7 @@ export default function AppTopBar({
                         <Link
                           href="/profile"
                           onClick={() => setAvatarMenuOpen(false)}
-                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#E6F2FF] hover:text-[#0020B0] rounded-lg transition-colors font-medium"
                         >
                           <UserIcon className="w-4 h-4 text-[#475569]" />
                           <span>Profile</span>
@@ -296,7 +309,7 @@ export default function AppTopBar({
                         <Link
                           href="/settings"
                           onClick={() => setAvatarMenuOpen(false)}
-                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#EFF6FF] hover:text-[#2563EB] rounded-lg transition-colors font-medium"
+                          className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#0F172A] hover:bg-[#E6F2FF] hover:text-[#0020B0] rounded-lg transition-colors font-medium"
                         >
                           <Settings className="w-4 h-4 text-[#475569]" />
                           <span>Settings</span>
@@ -335,7 +348,7 @@ export default function AppTopBar({
                   type="button"
                   onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
                   aria-label="Toggle search input"
-                  className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                  className="md:hidden w-10 h-10 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
                 >
                   <Search className="w-4 h-4" />
                 </button>
@@ -344,13 +357,13 @@ export default function AppTopBar({
               {/* Guest Action Buttons: Log in + Get started */}
               <Link
                 href="/login"
-                className="inline-flex items-center justify-center h-9 px-3.5 sm:px-4 rounded-full text-[13px] font-medium text-[#0F172A] hover:bg-[#F1F5F9] transition-all duration-200 min-h-[44px] sm:min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                className="inline-flex items-center justify-center h-9 px-3.5 sm:px-4 rounded-full text-[13px] font-medium text-[#0F172A] hover:bg-[#F1F5F9] transition-all duration-200 min-h-[44px] sm:min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
               >
                 Log in
               </Link>
               <Link
                 href="/signup"
-                className="inline-flex items-center justify-center h-9 px-4 sm:px-5 rounded-full text-[13px] font-medium bg-[#2563EB] text-white hover:bg-[#1D4ED8] active:bg-[#1E40AF] transition-all duration-200 min-h-[44px] sm:min-h-[36px] shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] focus-visible:ring-offset-1"
+                className="inline-flex items-center justify-center h-9 px-4 sm:px-5 rounded-full text-[13px] font-medium bg-[#0082FF] text-[#0F172A] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white transition-all duration-200 min-h-[44px] sm:min-h-[36px] shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-1"
               >
                 Get started
               </Link>
@@ -370,14 +383,14 @@ export default function AppTopBar({
                 value={searchValue || ""}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full h-11 pl-10 pr-12 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#93C5FD] focus:bg-white focus:outline-none transition-all duration-200"
+                className="w-full h-11 pl-10 pr-12 rounded-full bg-[#F1F5F9] text-[13px] text-[#0F172A] placeholder-[#475569] border border-transparent focus:border-[#0082FF] focus:bg-white focus:outline-none transition-all duration-200"
               />
               {searchValue && (
                 <button
                   type="button"
                   onClick={() => onSearchChange("")}
                   aria-label="Clear search text"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-[#475569] hover:text-[#0F172A] rounded-full hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-[#475569] hover:text-[#0F172A] rounded-full hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -422,9 +435,9 @@ export default function AppTopBar({
               href="/jobs"
               onClick={() => setDrawerOpen(false)}
               aria-label="CareerMonke Jobs"
-              className="flex items-center min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              className="flex items-center min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
             >
-              <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />
+              <BrandWordmark placement="drawer" />
             </Link>
             <button
               ref={closeButtonRef}
@@ -434,7 +447,7 @@ export default function AppTopBar({
                 menuButtonRef.current?.focus();
               }}
               aria-label="Close navigation menu"
-              className="inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+              className="inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] rounded-full text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
             >
               <X className="w-5 h-5" />
             </button>
@@ -451,9 +464,9 @@ export default function AppTopBar({
                   href={item.href}
                   onClick={() => setDrawerOpen(false)}
                   aria-current={active ? "page" : undefined}
-                  className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-xl text-[14px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+                  className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-xl text-[14px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] ${
                     active
-                      ? "bg-[#EFF6FF] text-[#2563EB] font-bold"
+                      ? "bg-[#E6F2FF] text-[#0020B0] font-bold"
                       : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F8FAFC] font-medium"
                   }`}
                 >
@@ -468,9 +481,9 @@ export default function AppTopBar({
               href="/settings"
               onClick={() => setDrawerOpen(false)}
               aria-current={pathname === "/settings" ? "page" : undefined}
-              className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-xl text-[14px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
+              className={`flex items-center gap-3 px-3 py-2 min-h-[44px] rounded-xl text-[14px] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] ${
                 pathname === "/settings"
-                  ? "bg-[#EFF6FF] text-[#2563EB] font-bold"
+                  ? "bg-[#E6F2FF] text-[#0020B0] font-bold"
                   : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F8FAFC] font-medium"
               }`}
             >
@@ -485,7 +498,7 @@ export default function AppTopBar({
           {user ? (
             <>
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                <div className="w-9 h-9 rounded-full bg-[#0082FF] text-[#0F172A] font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
                   {userInitial}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -522,7 +535,7 @@ export default function AppTopBar({
               <Link
                 href="/signup"
                 onClick={() => setDrawerOpen(false)}
-                className="w-full min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white flex items-center justify-center font-medium text-[14px] shadow-sm transition-colors"
+                className="w-full min-h-[44px] rounded-full bg-[#0082FF] text-[#0F172A] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white flex items-center justify-center font-medium text-[14px] shadow-sm transition-colors"
               >
                 Get started
               </Link>
