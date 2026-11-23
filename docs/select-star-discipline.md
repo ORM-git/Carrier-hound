@@ -21,7 +21,7 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | --- | --- | --- |
 | `src/lib/account/exportHandler.ts:163` | per-table loop | Data-export handler: the whole point is returning every column of the user's rows. A column list would silently drop fields added later. |
 | `src/lib/account/exportHandler.ts:177` | per-table loop | Same export path, email-keyed tables. |
-| `src/lib/account/deleteHandler.ts:283` | subscriptions | Reads the full row immediately before deletion so the audit record captures what was removed. |
+| `src/lib/account/deleteHandler.ts:418` | subscriptions | Reads the full row immediately before deletion so the audit record captures what was removed. |
 | `src/lib/resume/storage.ts:155` | candidate_profiles | The fetched profile is returned whole to the caller. |
 | `src/lib/tracker/storage.ts:133` | applications | The application rows are returned whole to the caller (tracker list). |
 

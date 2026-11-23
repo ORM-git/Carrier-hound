@@ -94,7 +94,7 @@ export async function getUserPreferences(userId?: string, clientOverride?: any):
     try {
       let { data, error } = await supabase
         .from("user_preferences")
-        .select(`${PREFS_COLUMNS_WITH_COUNTRY}, deleted_at`)
+        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at, country, country_code, deleted_at")
         .eq("user_id", userId)
         .is("deleted_at", null)
         .maybeSingle();
