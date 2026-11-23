@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json
 import os
 import tempfile
@@ -252,7 +253,7 @@ class ReportAggregationTests(unittest.TestCase):
             report = {"dry_run": False, "fetched": 3, "selected": 2, "persisted_counts": {"inserted": 1, "updated": 1, "unchanged": 0},
                       "db": {"expired": 0}, "failed_sources": [], "selected_sources": ["a"], "completed_sources": ["a"]}
             Path(d, "r.json").write_text(json.dumps(report), encoding="utf-8")
-            with contextlib.redirect_stdout(open(os.devnull, "w")):
+            with contextlib.redirect_stdout(io.StringIO()):
                 ingest_report.main(["cohort", "--cohort", "non-workday", "--report", str(Path(d, "r.json")),
                                     "--exit-code", "0", "--out", str(Path(d, "python-ingest-summary-non-workday.json"))])
                 ingest_report.main(["cohort", "--cohort", "workday", "--report", str(Path(d, "missing.json")),
@@ -261,6 +262,106 @@ class ReportAggregationTests(unittest.TestCase):
                 self.assertEqual(ingest_report.main(["aggregate", "--dir", d, "--expect", "non-workday,workday"]), 1)
             s = json.loads(Path(d, "python-ingest-summary-non-workday.json").read_text(encoding="utf-8"))
             self.assertEqual(s["confirmed_writes"], {"inserted": 1, "updated": 1, "unchanged": 0, "expired": 0})
+
+
+class WorkdayPacingTests(unittest.TestCase):
+    def test_tenant_spacing_default_and_clamping(self):
+        from scripts.scraper import fetchers
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(fetchers.get_workday_tenant_spacing_seconds(), 60.0)
+        with patch.dict(os.environ, {"WORKDAY_TENANT_SPACING_SECONDS": "90"}):
+            self.assertEqual(fetchers.get_workday_tenant_spacing_seconds(), 90.0)
+        with patch.dict(os.environ, {"WORKDAY_TENANT_SPACING_SECONDS": "20"}):
+            self.assertEqual(fetchers.get_workday_tenant_spacing_seconds(), 60.0, "clamped to min 60s")
+        with patch.dict(os.environ, {"WORKDAY_TENANT_SPACING_SECONDS": "200"}):
+            self.assertEqual(fetchers.get_workday_tenant_spacing_seconds(), 120.0, "clamped to max 120s")
+
+    def test_parse_retry_after_seconds_and_http_date(self):
+        from datetime import datetime, timezone
+        from scripts.scraper import rate_limiter
+        # Seconds
+        self.assertEqual(rate_limiter.parse_retry_after("45"), 45.0)
+        self.assertEqual(rate_limiter.parse_retry_after("150"), 150.0, "longer delay is not shortened")
+
+        # HTTP-date
+        future = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() + 80, timezone.utc)
+        date_str = future.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        parsed = rate_limiter.parse_retry_after(date_str)
+        self.assertGreaterEqual(parsed, 75.0)
+        self.assertLessEqual(parsed, 85.0)
+
+    def test_workday_cooldown_exceeding_page_budget_raises(self):
+        from scripts.scraper import fetchers
+        limiter = rate_limiter.PerHostRateLimiter(default_rps=4.0)
+
+        def mock_handle(req: httpx.Request):
+            return httpx.Response(429, headers={"Retry-After": "45"})
+
+        transport = httpx.MockTransport(mock_handle)
+        async def run():
+            async with httpx.AsyncClient(transport=transport) as client:
+                await fetchers._workday_post(
+                    client, limiter, "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/jobs", {}, {}
+                )
+
+        with self.assertRaises(fetchers.WorkdayRateLimited):
+            asyncio.run(run())
+
+
+class LogoContractTests(unittest.TestCase):
+    def test_existing_logo_is_not_modified_by_sync_companies(self):
+        writer = engine.SupabaseSetDiffWriter(
+            supabase_url="https://fake.supabase.co",
+            service_key="fake-key",
+        )
+        fake_company = {
+            "id": "comp-123",
+            "slug": "acme",
+            "name": "Acme Inc",
+            "logo_url": "https://held.logo/original.png",
+            "canonical_domain": "acme.com",
+            "category": "MNC_BIGTECH",
+            "ats_type": "workday",
+        }
+
+        patch_calls: list[dict[str, Any]] = []
+        rpc_calls: list[dict[str, Any]] = []
+
+        def mock_handle(req: httpx.Request):
+            if req.method == "GET" and "/companies" in str(req.url):
+                return httpx.Response(200, json=[fake_company])
+            if req.method == "PATCH" and "/companies" in str(req.url):
+                patch_calls.append(json.loads(req.content.decode("utf-8")))
+                return httpx.Response(200, json=[])
+            if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                rpc_calls.append(json.loads(req.content.decode("utf-8")))
+                return httpx.Response(200, json=1)
+            if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
+                return httpx.Response(200, json={"coverage": 1.0})
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(mock_handle)
+        async def run():
+            async with httpx.AsyncClient(transport=transport) as client:
+                jobs = [{
+                    "company_slug": "acme",
+                    "company": "Acme Inc",
+                    "canonical_domain": "acme.com",
+                    "company_category": "MNC_BIGTECH",
+                    "logo_url": "https://new.aggregator/logo.png",
+                    "source": "greenhouse",
+                    "source_priority": 1,
+                }]
+                await writer.sync_companies(client, jobs)
+
+        asyncio.run(run())
+        self.assertFalse(writer.persistence_failed)
+        # Verify no logo_url was patched on existing company
+        for p in patch_calls:
+            self.assertNotIn("logo_url", p, "existing company logo must NEVER be updated by sync_companies")
+        # Verify enqueue_company_logos RPC was invoked
+        self.assertEqual(len(rpc_calls), 1)
+        self.assertEqual(rpc_calls[0]["p_ids"], ["comp-123"])
 
 
 if __name__ == "__main__":

@@ -677,8 +677,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             if request.method == "GET":
                 return httpx.Response(200, json=[{
                     "id": "company-existing", "slug": "existing", "name": "Existing",
-                    "logo_url": None, "domain": "old.example", "canonical_domain": "old.example",
-                    "category": "MNC_BIGTECH", "ats_type": "greenhouse",
+                    "logo_url": None, "domain": None, "canonical_domain": None,
+                    "category": "OTHER_STARTUPS", "ats_type": "greenhouse",
                 }])
             if request.method == "PATCH":
                 return httpx.Response(503, json={"error": "temporarily unavailable"})
