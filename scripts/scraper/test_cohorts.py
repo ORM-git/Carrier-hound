@@ -515,7 +515,7 @@ class LogoContractTests(unittest.TestCase):
 
     def test_enqueue_company_logos_invalid_response_shapes_fail_open(self):
         invalid_payloads = [
-            ({"unexpected": "shape"}, "unexpected shape dict"),
+            ({"unexpected": "shape_secret_payload"}, "unexpected shape dict"),
             (True, "boolean True"),
             (False, "boolean False"),
             (-5, "negative integer"),
@@ -542,10 +542,60 @@ class LogoContractTests(unittest.TestCase):
 
                 asyncio.run(run())
                 self.assertFalse(writer.persistence_failed, "job persistence must never be blocked by invalid logo response")
-                self.assertTrue(writer.logo_enqueue["status"].startswith("invalid:"), f"status must be invalid for {desc}, got {writer.logo_enqueue['status']!r}")
-                self.assertNotEqual(writer.logo_enqueue["status"], "ok")
+                status = writer.logo_enqueue["status"]
+                self.assertTrue(status.startswith("invalid:"), f"status must be invalid for {desc}, got {status!r}")
+                self.assertNotEqual(status, "ok")
+                # Bounded shape-only message: raw content or repr must never leak into diagnostic
+                self.assertNotIn("shape_secret_payload", status)
+                if desc == "negative integer":
+                    self.assertEqual(status, "invalid: negative enqueue count")
+                elif desc == "count larger than requested":
+                    self.assertEqual(status, "invalid: count exceeds requested (1)")
+                elif isinstance(payload, dict):
+                    self.assertEqual(status, "invalid: expected integer count, got dict")
+                elif isinstance(payload, bool):
+                    self.assertEqual(status, "invalid: expected integer count, got bool")
 
     def test_enqueue_company_logos_invalid_coverage_shape_fails_open(self):
+        cases = [
+            ("invalid-string-shape", "string shape"),
+            ({"unexpected_only_key": "raw_sensitive_token"}, "unexpected keys only"),
+            ({"total_companies": True, "with_logo": 0}, "boolean count"),
+            ({"total_companies": -5, "with_logo": 0}, "negative total"),
+            ({"total_companies": 10, "with_logo": 15}, "with_logo exceeds total"),
+            ({"coverage_pct": 150.0}, "pct > 100"),
+            ({"coverage_pct": -2.0}, "negative pct"),
+        ]
+        for payload, desc in cases:
+            with self.subTest(case=desc):
+                writer = engine.SupabaseSetDiffWriter(
+                    supabase_url="https://fake.supabase.co",
+                    service_key="fake-key",
+                )
+                def mock_handle(req: httpx.Request):
+                    if req.method == "GET" and "/companies" in str(req.url):
+                        return httpx.Response(200, json=[{"id": "comp-1", "slug": "co1"}])
+                    if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                        return httpx.Response(200, json=1)
+                    if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
+                        return httpx.Response(200, json=payload)
+                    return httpx.Response(404)
+
+                transport = httpx.MockTransport(mock_handle)
+                async def run():
+                    async with httpx.AsyncClient(transport=transport) as client:
+                        jobs = [{"company_slug": "co1", "company": "Co1", "source": "greenhouse"}]
+                        await writer.sync_companies(client, jobs)
+
+                asyncio.run(run())
+                self.assertFalse(writer.persistence_failed, "job persistence must never be blocked by invalid coverage response")
+                self.assertEqual(writer.logo_enqueue["coverage"], "unknown")
+                status = writer.logo_enqueue["status"]
+                self.assertTrue(status.startswith("invalid:"), f"status must be invalid for {desc}, got {status!r}")
+                self.assertNotEqual(status, "ok")
+                self.assertNotIn("raw_sensitive_token", status)
+
+    def test_enqueue_company_logos_valid_coverage_shape_accepted(self):
         writer = engine.SupabaseSetDiffWriter(
             supabase_url="https://fake.supabase.co",
             service_key="fake-key",
@@ -556,7 +606,7 @@ class LogoContractTests(unittest.TestCase):
             if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
                 return httpx.Response(200, json=1)
             if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
-                return httpx.Response(200, json="invalid-string-shape")
+                return httpx.Response(200, json={"total_companies": 10, "with_logo": 8, "coverage_pct": 80.0})
             return httpx.Response(404)
 
         transport = httpx.MockTransport(mock_handle)
@@ -566,9 +616,9 @@ class LogoContractTests(unittest.TestCase):
                 await writer.sync_companies(client, jobs)
 
         asyncio.run(run())
-        self.assertFalse(writer.persistence_failed, "job persistence must never be blocked by invalid coverage response")
-        self.assertTrue(writer.logo_enqueue["status"].startswith("invalid: unexpected coverage shape"))
-        self.assertNotEqual(writer.logo_enqueue["status"], "ok")
+        self.assertFalse(writer.persistence_failed)
+        self.assertEqual(writer.logo_enqueue["status"], "ok")
+        self.assertEqual(writer.logo_enqueue["coverage"], {"total_companies": 10, "with_logo": 8, "coverage_pct": 80.0})
 
     def test_cohort_report_serializes_and_renders_logo_enqueue(self):
         report = {
