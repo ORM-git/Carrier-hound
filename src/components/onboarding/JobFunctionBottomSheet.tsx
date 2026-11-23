@@ -193,7 +193,7 @@ export default function JobFunctionBottomSheet({
               id="job-function-dialog-title"
               className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
             >
-              Job Function
+              Job roles
             </h2>
             <span className="text-xs text-zinc-500 dark:text-zinc-400 hidden sm:inline">
               (Choose roles matching your expertise)
@@ -216,10 +216,10 @@ export default function JobFunctionBottomSheet({
             <input
               ref={searchInputRef}
               type="text"
-              aria-label="Search expected job function or role"
+              aria-label="Search job roles"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Please select/enter your expected job function"
+              placeholder="Search job roles"
               className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:focus:ring-brand-500"
             />
             {searchQuery && (
@@ -306,7 +306,7 @@ export default function JobFunctionBottomSheet({
                 ))
               ) : (
                 <div className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                  No matching job functions found for &ldquo;{searchQuery}&rdquo;.
+                  No matching job roles found for &ldquo;{searchQuery}&rdquo;.
                 </div>
               )}
             </div>

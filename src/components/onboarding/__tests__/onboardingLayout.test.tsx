@@ -155,7 +155,7 @@ describe("Two-pane JobFunctionBottomSheet: navigation, search, selection and foc
       />
     );
 
-    const searchInput = screen.getByLabelText("Search expected job function or role");
+    const searchInput = screen.getByLabelText("Search job roles");
     fireEvent.change(searchInput, { target: { value: "Full-Stack" } });
 
     // Finds matching role from Software Engineering

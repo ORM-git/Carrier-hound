@@ -113,11 +113,11 @@ export default function OnboardingStep1({
 
         {/* Main Form Card */}
         <div className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-6 md:p-8 shadow-sm md:shadow-md space-y-6 md:space-y-7">
-          {/* 1. Job Function (Required) */}
+          {/* 1. Job role (Required) */}
           <div>
             <label className="block text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">
               <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-1">*</span>
-              Job Function{" "}
+              Job role{" "}
               <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
                 (select from categories for best results)
               </span>
@@ -412,8 +412,8 @@ export default function OnboardingStep1({
 
             <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
               {isEditMode
-                ? "Update your preferred functions, employment agreements, and locations to refresh your recommendations."
-                : "Tell us your target function, employment terms, and location preferences to receive tailored job matches."}
+                ? "Update your preferred job roles, employment agreements, and locations to refresh your recommendations."
+                : "Tell us your target job roles, employment terms, and location preferences to receive tailored job matches."}
             </p>
           </div>
 
@@ -445,11 +445,11 @@ export default function OnboardingStep1({
 
             {/* Main Form Fields Container */}
             <div className="max-w-xl w-full mx-auto px-8 py-6 space-y-7">
-              {/* 1. Job Function (Required) */}
+              {/* 1. Job role (Required) */}
               <div className="space-y-2">
                 <div className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
                   <span className="text-red-500 dark:text-red-400 font-bold mr-1">*</span>
-                  Job Function
+                  Job role
                   <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400 ml-1.5">
                     (select from categories for best results)
                   </span>
@@ -464,7 +464,7 @@ export default function OnboardingStep1({
                     }}
                     className="w-full py-3.5 px-4 border border-zinc-200 dark:border-zinc-800 hover:border-brand-500 dark:hover:border-brand-500 rounded-2xl flex items-center justify-between text-left text-sm text-zinc-400 dark:text-zinc-500 bg-zinc-50/50 dark:bg-zinc-900/50 hover:bg-brand-50/30 transition group"
                   >
-                    <span>Please select/enter your expected job function</span>
+                    <span>Select your job roles</span>
                     <Plus className="w-4 h-4 text-zinc-400 group-hover:text-brand-600 transition" />
                   </button>
                 ) : (
