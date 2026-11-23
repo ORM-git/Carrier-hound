@@ -402,6 +402,52 @@ describe("delete -> fresh sign-up with the same email (stateful local stub)", ()
     }
   });
 
+  it("browser status lookup fails closed to /onboarding when status fetch throws (completed profile + hidden tombstone via 42501)", async () => {
+    const originalWindow = (globalThis as any).window;
+    const originalFetch = globalThis.fetch;
+    try {
+      (globalThis as any).window = {};
+      // Status fetch throws (network error, DNS failure, etc.)
+      globalThis.fetch = (async () => {
+        throw new Error("Network connection reset");
+      }) as any;
+
+      // Authenticated role client: lacks SELECT grant on deleted_account_tombstones (42501)
+      const db = createFakeSupabase({ role: "authenticated" });
+      const user = db.signUp("hidden-tombstone@example.test");
+      seedCompletedAccount(db, user.id);
+      db.insert("deleted_account_tombstones", {
+        user_id: user.id,
+        email_hash: "hash",
+        deletion_completed_at: new Date().toISOString(),
+        hard_delete_after: new Date(Date.now() + 86400000).toISOString(),
+        purged_at: null,
+      });
+
+      const client = {
+        ...db.client,
+        auth: {
+          ...db.client.auth,
+          getSession: async () => ({
+            data: { session: { access_token: "browser-valid-token", user: { id: user.id } } },
+            error: null,
+          }),
+        },
+      };
+
+      // Completed profile + pending tombstone hidden by 42501 + status fetch throws => must return /onboarding, not /jobs
+      const dest = await resolvePostAuthDestination(client as any, user.id, "/jobs");
+      expect(dest).toBe("/onboarding?next=%2Fjobs");
+    } finally {
+      if (originalWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = originalWindow;
+      }
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("duplicate / retry deletion safely cleans up after previous partial failure", async () => {
     const db = createFakeSupabase();
     const user = db.signUp("retry-user@example.test");

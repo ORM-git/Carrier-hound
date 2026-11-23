@@ -192,31 +192,25 @@ export async function resolvePostAuthDestination(
     try {
       const sessionRes = await supabase?.auth?.getSession?.();
       const token = sessionRes?.data?.session?.access_token;
-      if (sessionRes && (!sessionRes.data || !sessionRes.data.session?.access_token)) {
-        // getSession completed and returned no active session/token.
-        // Fail closed to onboarding rather than falling back to an RLS-blind direct check.
+      if (!token) {
         log.warn("No session token available for browser status lookup; failing closed to onboarding");
         return onboardingRedirectFor(safeDestination);
       }
-      if (token) {
-        const res = await fetch("/api/account/status", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const status = await res.json();
-          if (status.deletionPending) {
-            return "/settings?tab=privacy&state=deletion_pending";
-          }
-          return status.onboardingCompleted ? safeDestination : onboardingRedirectFor(safeDestination);
-        } else {
-          // If status endpoint returns an error (e.g. 500/503), fail closed to onboarding.
-          // Never fall back to unprivileged client-side check which is blinded by RLS 42501 on tombstones.
-          log.warn("Server status check returned non-200 in browser; failing closed to onboarding", { status: res.status });
-          return onboardingRedirectFor(safeDestination);
+      const res = await fetch("/api/account/status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const status = await res.json();
+        if (status.deletionPending) {
+          return "/settings?tab=privacy&state=deletion_pending";
         }
+        return status.onboardingCompleted ? safeDestination : onboardingRedirectFor(safeDestination);
       }
+      log.warn("Server status check returned non-200 in browser; failing closed to onboarding", { status: res.status });
+      return onboardingRedirectFor(safeDestination);
     } catch (err) {
-      log.warn("Failed to query /api/account/status in browser, falling back to direct check", { error: err });
+      log.warn("Browser status lookup failed or threw; failing closed to onboarding", { error: err });
+      return onboardingRedirectFor(safeDestination);
     }
   }
 

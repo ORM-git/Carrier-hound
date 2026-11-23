@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createFakeSupabase, seedCompletedAccount } from "@/lib/auth/__tests__/fakeSupabase";
+import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -18,9 +19,17 @@ const mockReplace = vi.fn();
 const mockUnsubscribe = vi.fn();
 const mockGetSession = vi.fn();
 const mockExchangeCodeForSession = vi.fn();
-const mockOnAuthStateChange = vi.fn(() => ({
-  data: { subscription: { unsubscribe: mockUnsubscribe } },
-}));
+let activeSession: any = null;
+const mockOnAuthStateChange = vi.fn((cb: any) => {
+  const wrappedCb = (event: any, session: any) => {
+    if (session) activeSession = session;
+    return cb(event, session);
+  };
+  return {
+    data: { subscription: { unsubscribe: mockUnsubscribe } },
+    _listener: wrappedCb,
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
@@ -32,9 +41,31 @@ let fakeDb = createFakeSupabase();
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     auth: {
-      onAuthStateChange: mockOnAuthStateChange,
-      getSession: mockGetSession,
-      exchangeCodeForSession: mockExchangeCodeForSession,
+      onAuthStateChange: (cb: any) => {
+        const sub = mockOnAuthStateChange(cb);
+        return {
+          data: {
+            subscription: {
+              unsubscribe: mockUnsubscribe,
+            },
+          },
+        };
+      },
+      getSession: async (...args: any[]) => {
+        try {
+          const res = await mockGetSession(...args);
+          if (res?.data?.session) activeSession = res.data.session;
+          if (res !== undefined) return res;
+        } catch (err) {
+          throw err;
+        }
+        return { data: { session: activeSession }, error: null };
+      },
+      exchangeCodeForSession: async (...args: any[]) => {
+        const res = await mockExchangeCodeForSession(...args);
+        if (res?.data?.session) activeSession = res.data.session;
+        return res;
+      },
     },
     from: (table: string) => fakeDb.client.from(table),
   }),
@@ -66,7 +97,31 @@ describe("AuthCallbackPage unmount while getSession is pending", () => {
   let root: Root | null = null;
   let container: HTMLElement | null = null;
 
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    activeSession = null;
+    globalThis.fetch = vi.fn(async (input: any) => {
+      const url = String(input);
+      if (url.includes("/api/account/status")) {
+        const userId = activeSession?.user?.id;
+        const completed = userId ? await checkAccountOnboardingCompleted(fakeDb.client, userId) : false;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            onboardingCompleted: completed,
+            deletionPending: false,
+          }),
+        } as any;
+      }
+      return { ok: false, status: 404 } as any;
+    }) as any;
+  });
+
   afterEach(() => {
+    globalThis.fetch = originalFetch;
+    activeSession = null;
     if (root) {
       act(() => {
         root?.unmount();
@@ -168,8 +223,31 @@ describe("AuthCallbackPage unmount while getSession is pending", () => {
 describe("AuthCallbackPage completion-aware redirect (email + Google, every success branch)", () => {
   let root: Root | null = null;
   let container: HTMLElement | null = null;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    activeSession = null;
+    globalThis.fetch = vi.fn(async (input: any) => {
+      const url = String(input);
+      if (url.includes("/api/account/status")) {
+        const userId = activeSession?.user?.id;
+        const completed = userId ? await checkAccountOnboardingCompleted(fakeDb.client, userId) : false;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            onboardingCompleted: completed,
+            deletionPending: false,
+          }),
+        } as any;
+      }
+      return { ok: false, status: 404 } as any;
+    }) as any;
+  });
 
   afterEach(() => {
+    globalThis.fetch = originalFetch;
+    activeSession = null;
     if (root) {
       act(() => {
         root?.unmount();
