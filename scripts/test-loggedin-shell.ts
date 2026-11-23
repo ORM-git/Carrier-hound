@@ -40,12 +40,12 @@ function run() {
     railCode = railCode.replace(/w-\[240px\]/g, "w-[600px]");
     railCode = railCode.replace(/Expand sidebar/g, "");
     railCode = railCode.replace(/Collapse sidebar/g, "");
-    railCode = railCode.replace(/bg-\[#EFF6FF\]/g, "");
-    railCode = railCode.replace(/hover:text-\[#2563EB\]/g, "hover:text-green-500");
+    railCode = railCode.replace(/bg-\[#E6F2FF\]/g, "");
+    railCode = railCode.replace(/hover:text-\[#0020B0\]/g, "hover:text-green-500");
     railCode = railCode.replace(/hidden md:flex/g, "flex");
     topBarCode = topBarCode.replace(/h-14/g, "h-20");
     topBarCode = topBarCode.replace(/Search by title or company/g, "");
-    topBarCode = topBarCode.replace(/bg-\[#2563EB\]/g, "");
+    topBarCode = topBarCode.replace(/bg-\[#0082FF\]/g, "");
     topBarCode = topBarCode.replace(/Open navigation menu/g, "");
     topBarCode = topBarCode.replace(/z-\[60\]/g, "z-50");
     topBarCode = topBarCode.replace(/z-\[61\]/g, "z-50");
@@ -75,11 +75,11 @@ function run() {
   }
 
   // 1b. CareerMonke logo mark at the top
-  const hasBrandIcon = railCode.includes("BrandIcon") && railCode.includes("CareerMonke");
+  const hasBrandIcon = railCode.includes("BrandWordmark") && railCode.includes("CareerMonke");
   if (!hasBrandIcon) {
     failures.push("RAIL FAIL: Rail must have CareerMonke logo mark at the top.");
   } else {
-    console.log("  [PASS] rail branding: small CareerMonke logo mark at top");
+    console.log("  [PASS] rail branding: app wordmark at top (expanded); top bar while collapsed");
   }
 
   // 1c. Vertical nav items: Jobs, Resume, Profile, Tracker, Radar (Dashboard was retired; Jobs is home)
@@ -135,27 +135,27 @@ function run() {
   // -------------------------------------------------------------------------
   // 2. COACHING-STYLE HOVER & KEYBOARD FOCUS TREATMENT (CareerMonke Blue Branding)
   // -------------------------------------------------------------------------
-  // 2a. Inactive hover: soft light-blue tint background #F0F7FF, vibrant blue text #2563EB
+  // 2a. Inactive hover: soft light-blue tint background #F0F7FF, vibrant Deep Blue text #0020B0
   const hasCoachingHoverBg = railCode.includes("hover:bg-[#F0F7FF]");
-  const hasCoachingHoverText = railCode.includes("hover:text-[#2563EB]");
+  const hasCoachingHoverText = railCode.includes("hover:text-[#0020B0]");
   if (!hasCoachingHoverBg || !hasCoachingHoverText) {
-    failures.push("HOVER TREATMENT FAIL: Inactive nav items must feature coaching-style light-blue hover background (hover:bg-[#F0F7FF]) and vibrant blue text (hover:text-[#2563EB]).");
+    failures.push("HOVER TREATMENT FAIL: Inactive nav items must feature coaching-style light-blue hover background (hover:bg-[#F0F7FF]) and vibrant blue text (hover:text-[#0020B0]).");
   } else {
-    console.log("  [PASS] coaching-style hover: soft light-blue background (#F0F7FF) and blue text (#2563EB) on hover");
+    console.log("  [PASS] coaching-style hover: soft light-blue background (#F0F7FF) and Deep Blue text (#0020B0) on hover");
   }
 
   // 2b. Persistent active route state distinct from hover
-  const hasDistinctActive = railCode.includes("bg-[#EFF6FF]") && railCode.includes("aria-current");
+  const hasDistinctActive = railCode.includes("bg-[#E6F2FF]") && railCode.includes("aria-current");
   if (!hasDistinctActive) {
-    failures.push("ACTIVE ROUTE FAIL: Persistent active route state must use #EFF6FF background and aria-current, distinct from hover.");
+    failures.push("ACTIVE ROUTE FAIL: Persistent active route state must use #E6F2FF (brand selected) background and aria-current, distinct from hover.");
   } else {
-    console.log("  [PASS] persistent active route: distinct active route state with #EFF6FF background and aria-current");
+    console.log("  [PASS] persistent active route: distinct active route state with #E6F2FF (brand selected) background and aria-current");
   }
 
   // 2c. Keyboard focus indicators matching WCAG 2.1
-  const hasKeyboardFocus = railCode.includes("focus-visible:ring-2") && railCode.includes("focus-visible:ring-[#2563EB]");
+  const hasKeyboardFocus = railCode.includes("focus-visible:ring-2") && railCode.includes("focus-visible:ring-[#0082FF]");
   if (!hasKeyboardFocus) {
-    failures.push("FOCUS TREATMENT FAIL: Nav items must provide accessible keyboard focus indicators (focus-visible:ring-2 focus-visible:ring-[#2563EB]).");
+    failures.push("FOCUS TREATMENT FAIL: Nav items must provide accessible keyboard focus indicators (focus-visible:ring-2 focus-visible:ring-[#0082FF]).");
   } else {
     console.log("  [PASS] keyboard focus: accessible WCAG 2.1 focus indicators on all nav items");
   }
@@ -183,7 +183,7 @@ function run() {
   }
 
   // 3c. Top bar right-aligned user controls: circular avatar with user initial, bold 13px full name, plan pill
-  const hasAvatarInitial = topBarCode.includes("userInitial") && topBarCode.includes("bg-[#2563EB]");
+  const hasAvatarInitial = topBarCode.includes("userInitial") && topBarCode.includes("bg-[#0082FF]");
   const hasDisplayName = topBarCode.includes("displayName") && topBarCode.includes("text-[13px]");
   const hasPlanPill = topBarCode.includes("Free") && topBarCode.includes("Pro");
   if (!hasAvatarInitial || !hasDisplayName || !hasPlanPill) {

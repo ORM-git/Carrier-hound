@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AppIconRail from "./AppIconRail";
 import AppTopBar, { TopBarTab } from "./AppTopBar";
 import Footer from "@/components/Footer";
+import { APP_BRAND_VARS } from "@/components/brand/AppBrand";
 import { useSidebarMode } from "@/lib/sidebar";
 import type { User } from "@supabase/supabase-js";
 
@@ -53,7 +54,8 @@ export default function LoggedInAppShell({
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+    // App-scoped brand tokens (--cm-app-*): defined only on this wrapper, never globally, so the landing is unaffected.
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans" style={APP_BRAND_VARS}>
       {/* Left Icon Rail / Sidebar (dual-mode 72px / 240px on desktop, hidden on mobile) */}
       <AppIconRail />
 

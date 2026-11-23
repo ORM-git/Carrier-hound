@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import BrandIcon from "@/components/BrandIcon";
+import { BrandWordmark } from "@/components/brand/AppBrand";
 import { useSidebarMode } from "@/lib/sidebar";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import {
@@ -108,19 +108,14 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
           {/* SIDEBAR HEADER: LOGO + ACCESSIBLE EXPAND / COLLAPSE TOGGLE         */}
           {/* =================================================================== */}
           {isExpanded ? (
-            /* Expanded Mode Header: Brand Mark + CareerMonke Text + Collapse Button */
+            /* Expanded Mode Header: app wordmark + Collapse Button */
             <div className="flex items-center justify-between w-full pb-3 border-b border-[#E2E8F0] px-1">
               <Link
                 href="/jobs"
                 aria-label="CareerMonke Jobs"
-                className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                className="flex items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2"
               >
-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
-                  <BrandIcon className="w-6 h-6" />
-                </div>
-                <span className="text-[17px] font-bold text-[#090E34] tracking-tight truncate">
-                  Career<span className="text-[#2563EB]">Monke</span>
-                </span>
+                <BrandWordmark placement="rail" />
               </Link>
 
               <button
@@ -128,30 +123,22 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
                 onClick={toggle}
                 aria-label="Collapse sidebar"
                 aria-expanded={true}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-[#090E34] hover:text-[#2563EB] hover:bg-[#EFF6FF] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-[#090E34] hover:text-[#0020B0] hover:bg-[#E6F2FF] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
               >
                 <ChevronLeft className="w-5 h-5 stroke-[2]" />
               </button>
             </div>
           ) : (
-            /* Narrow Mode Header: Logo Mark + Expand Button */
+            /* Narrow Mode Header: Expand Button only. No approved compact mark exists (docs/brand-audit.md), so the
+               brand link moves to the top bar while collapsed; the wordmark is never squeezed into 72px. */
             <div className="flex flex-col items-center gap-2 w-full">
-              <Link
-                href="/jobs"
-                aria-label="CareerMonke Jobs"
-                className="w-[48px] h-[48px] flex items-center justify-center rounded-xl hover:bg-[#F8FAFC] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-              >
-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
-                  <BrandIcon className="w-6 h-6" />
-                </div>
-              </Link>
 
               <button
                 type="button"
                 onClick={toggle}
                 aria-label="Expand sidebar"
                 aria-expanded={false}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#090E34] hover:text-[#2563EB] hover:bg-[#EFF6FF] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#090E34] hover:text-[#0020B0] hover:bg-[#E6F2FF] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF]"
               >
                 <ChevronRight className="w-4 h-4 stroke-[2]" />
               </button>
@@ -181,14 +168,14 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
                     href={item.href}
                     aria-label={item.label}
                     aria-current={active ? "page" : undefined}
-                    className={`w-full h-[46px] flex items-center gap-3 px-3 rounded-[12px] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 relative group ${
+                    className={`w-full h-[46px] flex items-center gap-3 px-3 rounded-[12px] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2 relative group ${
                       active
-                        ? "bg-[#EFF6FF] text-[#2563EB] font-bold border-l-[3px] border-[#2563EB] shadow-xs hover:bg-[#DBEAFE]"
-                        : "text-[#090E34] font-medium border-l-[3px] border-transparent hover:text-[#2563EB] hover:bg-[#F0F7FF] hover:border-[#93C5FD] hover:ring-1 hover:ring-[#BFDBFE]/50"
+                        ? "bg-[#E6F2FF] text-[#0020B0] font-bold border-l-[3px] border-[#0082FF] shadow-xs hover:bg-[#E6F2FF]"
+                        : "text-[#090E34] font-medium border-l-[3px] border-transparent hover:text-[#0020B0] hover:bg-[#F0F7FF] hover:border-[#0082FF] hover:ring-1 hover:ring-[#A6D3FF]"
                     }`}
                   >
                     <Icon className={`w-5 h-5 stroke-[1.75] shrink-0 transition-colors ${
-                      active ? "text-[#2563EB]" : "text-[#090E34] group-hover:text-[#2563EB]"
+                      active ? "text-[#0020B0]" : "text-[#090E34] group-hover:text-[#0020B0]"
                     }`} />
                     <span className="text-[14px] leading-none tracking-tight">
                       {item.label}
@@ -204,17 +191,17 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
                   href={item.href}
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
-                  className={`w-[56px] h-[56px] flex flex-col items-center justify-center rounded-[12px] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 relative group ${
+                  className={`w-[56px] h-[56px] flex flex-col items-center justify-center rounded-[12px] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2 relative group ${
                     active
-                      ? "bg-[#EFF6FF] text-[#2563EB] font-bold shadow-xs hover:bg-[#DBEAFE] ring-1 ring-[#93C5FD] border border-[#BFDBFE]"
-                      : "text-[#090E34] font-medium hover:text-[#2563EB] hover:bg-[#F0F7FF] hover:ring-1 hover:ring-[#BFDBFE]/60"
+                      ? "bg-[#E6F2FF] text-[#0020B0] font-bold shadow-xs hover:bg-[#E6F2FF] ring-1 ring-[#0082FF] border border-[#A6D3FF]"
+                      : "text-[#090E34] font-medium hover:text-[#0020B0] hover:bg-[#F0F7FF] hover:ring-1 hover:ring-[#A6D3FF]"
                   }`}
                 >
                   <Icon className={`w-6 h-6 stroke-[1.75] transition-colors ${
-                    active ? "text-[#2563EB]" : "text-[#090E34] group-hover:text-[#2563EB]"
+                    active ? "text-[#0020B0]" : "text-[#090E34] group-hover:text-[#0020B0]"
                   }`} />
                   <span className={`text-[11px] leading-none mt-1 tracking-tight ${
-                    active ? "font-bold text-[#1D4ED8]" : "font-medium text-[#090E34]"
+                    active ? "font-bold text-[#0020B0]" : "font-medium text-[#090E34]"
                   }`}>
                     {item.label}
                   </span>
@@ -239,14 +226,14 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
               href="/settings"
               aria-label="Settings"
               aria-current={pathname === "/settings" ? "page" : undefined}
-              className={`w-full h-[46px] flex items-center gap-3 px-3 rounded-[12px] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 relative group ${
+              className={`w-full h-[46px] flex items-center gap-3 px-3 rounded-[12px] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2 relative group ${
                 pathname === "/settings"
-                  ? "bg-[#EFF6FF] text-[#2563EB] font-bold border-l-[3px] border-[#2563EB] shadow-xs hover:bg-[#DBEAFE]"
-                  : "text-[#090E34] font-medium border-l-[3px] border-transparent hover:text-[#2563EB] hover:bg-[#F0F7FF] hover:border-[#93C5FD] hover:ring-1 hover:ring-[#BFDBFE]/50"
+                  ? "bg-[#E6F2FF] text-[#0020B0] font-bold border-l-[3px] border-[#0082FF] shadow-xs hover:bg-[#E6F2FF]"
+                  : "text-[#090E34] font-medium border-l-[3px] border-transparent hover:text-[#0020B0] hover:bg-[#F0F7FF] hover:border-[#0082FF] hover:ring-1 hover:ring-[#A6D3FF]"
               }`}
             >
               <Settings className={`w-5 h-5 stroke-[1.75] shrink-0 transition-colors ${
-                pathname === "/settings" ? "text-[#2563EB]" : "text-[#090E34] group-hover:text-[#2563EB]"
+                pathname === "/settings" ? "text-[#0020B0]" : "text-[#090E34] group-hover:text-[#0020B0]"
               }`} />
               <span className="text-[14px] leading-none tracking-tight">Settings</span>
             </Link>
@@ -255,13 +242,13 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
               href="/settings"
               aria-label="Settings"
               aria-current={pathname === "/settings" ? "page" : undefined}
-              className={`w-[56px] h-[56px] flex items-center justify-center rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2 group ${
+              className={`w-[56px] h-[56px] flex items-center justify-center rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2 group ${
                 pathname === "/settings"
-                  ? "bg-[#EFF6FF] text-[#2563EB] shadow-xs hover:bg-[#DBEAFE] ring-1 ring-[#93C5FD] border border-[#BFDBFE]"
-                  : "text-[#090E34] hover:text-[#2563EB] hover:bg-[#F0F7FF] hover:ring-1 hover:ring-[#BFDBFE]/60"
+                  ? "bg-[#E6F2FF] text-[#0020B0] shadow-xs hover:bg-[#E6F2FF] ring-1 ring-[#0082FF] border border-[#A6D3FF]"
+                  : "text-[#090E34] hover:text-[#0020B0] hover:bg-[#F0F7FF] hover:ring-1 hover:ring-[#A6D3FF]"
               }`}
             >
-              <Settings className="w-5 h-5 stroke-[1.75] text-[#090E34] group-hover:text-[#2563EB] transition-colors" />
+              <Settings className="w-5 h-5 stroke-[1.75] text-[#090E34] group-hover:text-[#0020B0] transition-colors" />
             </Link>
           )}
         </div>
@@ -292,13 +279,13 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
               aria-current={active ? "page" : undefined}
               className={`flex-1 min-h-[44px] min-w-[44px] flex flex-col items-center justify-center py-1 rounded-[12px] transition-all duration-200 ${
                 active
-                  ? "bg-[#EFF6FF] text-[#2563EB] font-bold ring-1 ring-[#93C5FD]/60"
-                  : "text-[#090E34] hover:text-[#2563EB]"
+                  ? "bg-[#E6F2FF] text-[#0020B0] font-bold ring-1 ring-[#0082FF]"
+                  : "text-[#090E34] hover:text-[#0020B0]"
               }`}
             >
               <Icon className="w-6 h-6 stroke-[1.75]" />
               <span className={`text-[11px] font-medium leading-none mt-1 tracking-tight ${
-                active ? "font-bold text-[#1D4ED8]" : "font-medium text-[#090E34]"
+                active ? "font-bold text-[#0020B0]" : "font-medium text-[#090E34]"
               }`}>
                 {item.label}
               </span>
