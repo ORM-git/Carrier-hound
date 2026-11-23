@@ -60,6 +60,8 @@ Symptom: ingest workflow green but `ingest_runs` shows 0 inserts.
 
 ## 7. Python ingestion cohorts: owner verification (not run by agents)
 
+Symptom: Python ingestion workflow failure or degraded cohort status reported in Actions.
+
 `python-ingest.yml` runs two independent cohorts, `non-workday` then `workday`, each with its own report
 (`python-ingest-<cohort>-<run_id>` artifact) and its own failed-source write guard. The overall job is green
 only when every cohort is green: one red cohort means DEGRADED, not success. Workday is partial coverage and

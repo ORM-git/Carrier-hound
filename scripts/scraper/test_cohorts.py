@@ -513,6 +513,63 @@ class LogoContractTests(unittest.TestCase):
                 self.assertFalse(writer.persistence_failed, "persistence must remain unfailed on missing RPC")
                 self.assertEqual(writer.logo_enqueue["status"], "not-migrated")
 
+    def test_enqueue_company_logos_invalid_response_shapes_fail_open(self):
+        invalid_payloads = [
+            ({"unexpected": "shape"}, "unexpected shape dict"),
+            (True, "boolean True"),
+            (False, "boolean False"),
+            (-5, "negative integer"),
+            (99, "count larger than requested"),
+        ]
+        for payload, desc in invalid_payloads:
+            with self.subTest(payload=desc):
+                writer = engine.SupabaseSetDiffWriter(
+                    supabase_url="https://fake.supabase.co",
+                    service_key="fake-key",
+                )
+                def mock_handle(req: httpx.Request):
+                    if req.method == "GET" and "/companies" in str(req.url):
+                        return httpx.Response(200, json=[{"id": "comp-1", "slug": "co1"}])
+                    if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                        return httpx.Response(200, json=payload)
+                    return httpx.Response(404)
+
+                transport = httpx.MockTransport(mock_handle)
+                async def run():
+                    async with httpx.AsyncClient(transport=transport) as client:
+                        jobs = [{"company_slug": "co1", "company": "Co1", "source": "greenhouse"}]
+                        await writer.sync_companies(client, jobs)
+
+                asyncio.run(run())
+                self.assertFalse(writer.persistence_failed, "job persistence must never be blocked by invalid logo response")
+                self.assertTrue(writer.logo_enqueue["status"].startswith("invalid:"), f"status must be invalid for {desc}, got {writer.logo_enqueue['status']!r}")
+                self.assertNotEqual(writer.logo_enqueue["status"], "ok")
+
+    def test_enqueue_company_logos_invalid_coverage_shape_fails_open(self):
+        writer = engine.SupabaseSetDiffWriter(
+            supabase_url="https://fake.supabase.co",
+            service_key="fake-key",
+        )
+        def mock_handle(req: httpx.Request):
+            if req.method == "GET" and "/companies" in str(req.url):
+                return httpx.Response(200, json=[{"id": "comp-1", "slug": "co1"}])
+            if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                return httpx.Response(200, json=1)
+            if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
+                return httpx.Response(200, json="invalid-string-shape")
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(mock_handle)
+        async def run():
+            async with httpx.AsyncClient(transport=transport) as client:
+                jobs = [{"company_slug": "co1", "company": "Co1", "source": "greenhouse"}]
+                await writer.sync_companies(client, jobs)
+
+        asyncio.run(run())
+        self.assertFalse(writer.persistence_failed, "job persistence must never be blocked by invalid coverage response")
+        self.assertTrue(writer.logo_enqueue["status"].startswith("invalid: unexpected coverage shape"))
+        self.assertNotEqual(writer.logo_enqueue["status"], "ok")
+
     def test_cohort_report_serializes_and_renders_logo_enqueue(self):
         report = {
             "cohort": "workday",

@@ -443,11 +443,12 @@ class SupabaseSetDiffWriter:
         self.logo_enqueue = {"requested": len(ids), "enqueued": 0, "status": "skipped" if not ids else "pending",
                              "company_ids": ids[:200], "coverage": None}
         for start in range(0, len(ids), 500):
+            batch = ids[start:start + 500]
             try:
                 resp = await client.post(
                     f"{self.base_url}/rpc/enqueue_company_logos",
                     headers=self.headers,
-                    json={"p_ids": ids[start:start + 500], "p_origin": origin},
+                    json={"p_ids": batch, "p_origin": origin},
                 )
             except Exception as exc:  # noqa: BLE001 - fail-open by design
                 self.logo_enqueue["status"] = f"error: {redact_sensitive_params(str(exc))}"
@@ -459,16 +460,35 @@ class SupabaseSetDiffWriter:
                 self.logo_enqueue["status"] = f"error: HTTP {resp.status_code}"
                 return
             try:
-                self.logo_enqueue["enqueued"] += int(resp.json())
-            except (ValueError, TypeError):
-                pass
+                raw_val = resp.json()
+            except Exception as exc:  # noqa: BLE001
+                self.logo_enqueue["status"] = f"invalid: unparseable json ({exc})"
+                return
+            if isinstance(raw_val, bool) or not isinstance(raw_val, int):
+                self.logo_enqueue["status"] = f"invalid: expected integer count, got {type(raw_val).__name__} ({raw_val!r})"
+                return
+            if raw_val < 0:
+                self.logo_enqueue["status"] = f"invalid: negative enqueue count ({raw_val})"
+                return
+            if raw_val > len(batch):
+                self.logo_enqueue["status"] = f"invalid: count {raw_val} exceeds requested {len(batch)}"
+                return
+            self.logo_enqueue["enqueued"] += raw_val
         if ids:
             self.logo_enqueue["status"] = "ok"
             # Same coverage / backlog / orphan counts as the TS ingest and the sweep summary.
             try:
                 cov = await client.post(f"{self.base_url}/rpc/company_logo_coverage", headers=self.headers, json={"p_origin": origin})
                 if cov.status_code < 400:
-                    self.logo_enqueue["coverage"] = cov.json()
+                    try:
+                        cov_val = cov.json()
+                    except Exception:
+                        self.logo_enqueue["status"] = "invalid: unparseable coverage json"
+                        return
+                    if isinstance(cov_val, bool) or not isinstance(cov_val, dict):
+                        self.logo_enqueue["status"] = f"invalid: unexpected coverage shape ({cov_val!r})"
+                        return
+                    self.logo_enqueue["coverage"] = cov_val
             except Exception:  # noqa: BLE001 - reporting only, never fatal
                 pass
 
