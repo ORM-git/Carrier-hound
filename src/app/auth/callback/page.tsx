@@ -3,7 +3,7 @@
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { getValidReturnUrl } from "@/lib/auth/session";
+import { getValidReturnUrl } from "@/lib/auth/returnTo";
 import { onboardingRedirectFor, resolvePostAuthDestination } from "@/lib/auth/onboarding";
 import { clearCandidateProfileMemoryCache } from "@/lib/resume/storage";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";

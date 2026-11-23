@@ -347,6 +347,25 @@ export async function handleAccountDeleteRequest(
     const errors: string[] = [];
     const nowIso = new Date().toISOString();
 
+    // Persist the recovery marker before deleting any completion source. Missing migration or
+    // write failure stops before destructive work; a surviving identity cannot appear completed.
+    const emailHash = normalizedEmail ? await sha256Hex(normalizedEmail) : "";
+    const hardDeleteAfter = new Date(
+      Date.now() + ACCOUNT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { error: tombstoneError } = await supabaseAdmin
+      .from("deleted_account_tombstones")
+      .upsert(
+        { user_id: userId, email_hash: emailHash, deletion_completed_at: nowIso, hard_delete_after: hardDeleteAfter },
+        { onConflict: "user_id" }
+      );
+    if (tombstoneError) {
+      return NextResponse.json(
+        { success: false, error: `Unable to record deletion state: ${tombstoneError.message || String(tombstoneError)}` },
+        { status: 503 }
+      );
+    }
+
     const isIgnorableDeleteError = (err: any) => {
       if (!err) return true;
       if (err.code === "23503") return false;
@@ -481,32 +500,6 @@ export async function handleAccountDeleteRequest(
         },
         { status: 500 }
       );
-    }
-
-    // 5b. Write the deletion tombstone (PII-free audit record). Fail-open:
-    // the tombstone table may not exist pre-migration and an audit insert
-    // must never block the deletion itself.
-    try {
-      const emailHash = normalizedEmail ? await sha256Hex(normalizedEmail) : "";
-      const hardDeleteAfter = new Date(
-        Date.now() + ACCOUNT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000
-      ).toISOString();
-      const { error: tombstoneError } = await supabaseAdmin
-        .from("deleted_account_tombstones")
-        .upsert(
-          {
-            user_id: userId,
-            email_hash: emailHash,
-            deletion_completed_at: nowIso,
-            hard_delete_after: hardDeleteAfter,
-          },
-          { onConflict: "user_id" }
-        );
-      if (tombstoneError) {
-        log.warn("Account deletion tombstone write failed (continuing):", { error: tombstoneError });
-      }
-    } catch (tombstoneErr: any) {
-      log.warn("Account deletion tombstone write failed (continuing):", { error: tombstoneErr?.message || tombstoneErr });
     }
 
     // 6. Delete the Auth User Identity from Supabase Auth (last step)

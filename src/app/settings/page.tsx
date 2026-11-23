@@ -225,9 +225,6 @@ function SettingsPageInner() {
 
       // Success: clean local state and sign out
       await deleteCandidateProfile();
-      if (typeof window !== "undefined") {
-        localStorage.clear();
-      }
       await signOutUser();
       router.push("/");
       toast.info("Account and all personal data permanently deleted.");

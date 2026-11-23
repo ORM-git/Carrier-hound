@@ -23,6 +23,24 @@ describe("checkAccountOnboardingCompleted", () => {
     expect(await checkAccountOnboardingCompleted(db.client, "u-new")).toBe(false);
   });
 
+  it("pending or completed deletion tombstone always keeps the old identity out of completed state", async () => {
+    const db = createFakeSupabase();
+    seedCompletedAccount(db, "u-delete-pending");
+    db.insert("deleted_account_tombstones", { user_id: "u-delete-pending" });
+    expect(await checkAccountOnboardingCompleted(db.client, "u-delete-pending")).toBe(false);
+    expect(await resolvePostAuthDestination(db.client, "u-delete-pending", "/jobs?q=remote")).toBe(
+      "/onboarding?next=%2Fjobs%3Fq%3Dremote"
+    );
+  });
+
+  it("older deployments without the optional tombstone table preserve ordinary completion", async () => {
+    const db = createFakeSupabase({
+      failTables: { deleted_account_tombstones: { code: "42P01", message: "relation deleted_account_tombstones does not exist" } },
+    });
+    seedCompletedAccount(db, "u-legacy");
+    expect(await checkAccountOnboardingCompleted(db.client, "u-legacy")).toBe(true);
+  });
+
   it("partial answers (preferences saved, onboarding_completed=false) -> false", async () => {
     const db = createFakeSupabase();
     db.insert("user_preferences", { user_id: "u2", onboarding_completed: false, roles: ["PM"], deleted_at: null });

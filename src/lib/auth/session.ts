@@ -1,6 +1,7 @@
 import { createClient } from "../supabase/client";
 import { UserPreferences, emptyUserPreferences } from "./types";
 import { COUNTRY_MIGRATION, isMissingCountryColumnError } from "./countryColumns";
+export { getValidReturnUrl } from "./returnTo";
 import { markAccountOnboardingCompleted } from "./onboarding";
 import { clearCandidateProfileMemoryCache } from "../resume/storage";
 import { clearTrackerMemoryState } from "../tracker/storage";
@@ -14,72 +15,6 @@ const PREFS_STORAGE_KEY = "careermonke_preferences";
 const USER_EMAIL_KEY = "careermonke_user_email";
 const USER_PRO_KEY = "careermonke_pro_active";
 const CANDIDATE_PROFILE_KEY = "careermonke_candidate_profile";
-
-/**
- * Validates a return URL to ensure it is a safe relative same-site path.
- * Disallows absolute URLs, protocol-relative '//', backslashes, encoded exploits,
- * or loop-inducing auth paths (/login, /signup, /auth).
- * Retired Dashboard destinations (/dashboard, /dashboard/*) normalize to /jobs, the signed-in home.
- */
-export function getValidReturnUrl(targetUrl: string | null | undefined, fallback: string = "/jobs"): string {
-  if (!targetUrl) return fallback;
-  const trimmed = targetUrl.trim();
-  
-  // Must start with a single '/' and not contain backslashes
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("\\")) {
-    return fallback;
-  }
-
-  // Reject ASCII control characters (codes 0 to 31 and 127) in raw string
-  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
-    return fallback;
-  }
-
-  // Check for encoded backslashes (%5C, %5c) or encoded double slashes (%2F, %2f)
-  // or encoded ASCII control characters (e.g. /%09/evil.com, /%00/evil.com, /%1f/evil.com, /%7f/evil.com)
-  try {
-    const decoded = decodeURIComponent(trimmed);
-    if (decoded.startsWith("//") || decoded.includes("\\") || /[\x00-\x1F\x7F]/.test(decoded)) {
-      return fallback;
-    }
-    // Also guard against double-encoded control characters or slashes
-    if (decoded.includes("%")) {
-      try {
-        const doubleDecoded = decodeURIComponent(decoded);
-        if (doubleDecoded.startsWith("//") || doubleDecoded.includes("\\") || /[\x00-\x1F\x7F]/.test(doubleDecoded)) {
-          return fallback;
-        }
-      } catch {
-        // Ignore secondary decode error
-      }
-    }
-  } catch {
-    return fallback;
-  }
-
-  // Prevent redirect loops back to authentication screens
-  const pathOnly = trimmed.split(/[?#]/)[0].toLowerCase();
-  if (
-    pathOnly === "/login" ||
-    pathOnly === "/signup" ||
-    pathOnly.startsWith("/auth")
-  ) {
-    return fallback;
-  }
-
-  if (pathOnly === "/dashboard" || pathOnly.startsWith("/dashboard/")) {
-    return "/jobs";
-  }
-
-  if (
-    pathOnly.includes("/interview-pack") ||
-    pathOnly.includes("/skill-what-if")
-  ) {
-    return "/jobs";
-  }
-
-  return trimmed;
-}
 
 /**
  * Retrieves the current authenticated user session strictly from Supabase.
@@ -158,21 +93,33 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
     try {
       let { data, error } = await supabase
         .from("user_preferences")
-        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at, country, country_code")
+        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, daily_digest_opt_in, onboarding_completed, eligibility_filter, updated_at, country, country_code, deleted_at")
         .eq("user_id", userId)
+        .is("deleted_at", null)
         .maybeSingle();
 
-      if (error && isMissingCountryColumnError(error)) {
+      if (error && (isMissingCountryColumnError(error) || isMissingDeletedAtColumnError(error))) {
         // Migration not applied yet: read everything else, the country stays unknown.
-        log.warn("user_preferences country columns missing; reading without them", { migration: COUNTRY_MIGRATION });
-        ({ data, error } = await supabase
-          .from("user_preferences")
-          .select(PREFS_COLUMNS_WITHOUT_COUNTRY)
-          .eq("user_id", userId)
-          .maybeSingle());
+        if (isMissingCountryColumnError(error)) {
+          log.warn("user_preferences country columns missing; reading without them", { migration: COUNTRY_MIGRATION });
+          ({ data, error } = await supabase
+            .from("user_preferences")
+            .select(`${PREFS_COLUMNS_WITHOUT_COUNTRY}, deleted_at`)
+            .eq("user_id", userId)
+            .is("deleted_at", null)
+            .maybeSingle());
+        }
+        if (error && isMissingDeletedAtColumnError(error)) {
+          ({ data, error } = await supabase
+            .from("user_preferences")
+            .select(PREFS_COLUMNS_WITHOUT_COUNTRY)
+            .eq("user_id", userId)
+            .maybeSingle());
+        }
       }
 
       if (data && !error) {
+        if (data.deleted_at) return emptyUserPreferences();
         const prefs: UserPreferences = {
           roles: data.roles || [],
           categories: data.categories || [],
@@ -196,12 +143,14 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
         return prefs;
       }
 
-      // No row yet: blank preferences, nothing written to the DB.
+      // No row yet or a failed read: do not let the shared local cache restore another identity.
       if (!error && !data) {
         return emptyUserPreferences();
       }
+      if (error) return emptyUserPreferences();
     } catch (_) {
-      // Graceful fallback to local storage / blank preferences
+      // Authenticated reads never use the shared, unscoped cache as an error fallback.
+      return emptyUserPreferences();
     }
   }
 
@@ -217,6 +166,11 @@ export async function getUserPreferences(userId?: string): Promise<UserPreferenc
   }
 
   return emptyUserPreferences();
+}
+
+function isMissingDeletedAtColumnError(error: any): boolean {
+  const message = String(error?.message || "").toLowerCase();
+  return (error?.code === "42703" || error?.code === "PGRST204") && message.includes("deleted_at");
 }
 
 /**

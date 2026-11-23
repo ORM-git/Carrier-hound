@@ -28,6 +28,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createLogger } from "@/lib/observability/logger";
+import { getValidReturnUrl } from "./returnTo";
 
 const log = createLogger({ context: { module: "auth/onboarding" } });
 
@@ -72,6 +73,24 @@ export async function checkAccountOnboardingCompleted(
   userId: string
 ): Promise<boolean> {
   if (!supabase || !userId || typeof userId !== "string") {
+    return false;
+  }
+
+  // A deletion attempt is a durable recovery marker. Keep the surviving identity out of the
+  // ordinary completed-account flow until its owner resolves the interrupted deletion.
+  try {
+    const { data: tombstone, error } = await supabase
+      .from("deleted_account_tombstones")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error && !isMissingTombstoneTable(error)) {
+      log.warn("Unable to verify account deletion state", { code: error.code });
+      return false;
+    }
+    if (!error && tombstone) return false;
+  } catch (err) {
+    log.warn("Unable to verify account deletion state", { error: err });
     return false;
   }
 
@@ -135,10 +154,16 @@ export async function checkAccountOnboardingCompleted(
   return false;
 }
 
+function isMissingTombstoneTable(error: any): boolean {
+  const message = String(error?.message || "").toLowerCase();
+  return (error?.code === "42P01" || error?.code === "PGRST205") && message.includes("deleted_account_tombstones");
+}
+
 /** Onboarding URL that carries an already-validated destination for afterwards. */
 export function onboardingRedirectFor(destination: string): string {
-  if (destination === "/onboarding" || destination.startsWith("/onboarding?")) return destination;
-  return `/onboarding?next=${encodeURIComponent(destination)}`;
+  const safeDestination = getValidReturnUrl(destination);
+  if (safeDestination === "/onboarding" || safeDestination.startsWith("/onboarding?")) return safeDestination;
+  return `/onboarding?next=${encodeURIComponent(safeDestination)}`;
 }
 
 /**
@@ -150,8 +175,9 @@ export async function resolvePostAuthDestination(
   userId: string | null | undefined,
   destination: string
 ): Promise<string> {
+  const safeDestination = getValidReturnUrl(destination);
   const completed = userId ? await checkAccountOnboardingCompleted(supabase, userId) : false;
-  return completed ? destination : onboardingRedirectFor(destination);
+  return completed ? safeDestination : onboardingRedirectFor(safeDestination);
 }
 
 /**

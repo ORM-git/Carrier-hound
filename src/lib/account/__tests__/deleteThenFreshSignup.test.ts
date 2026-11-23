@@ -48,6 +48,7 @@ describe("account deletion contract", () => {
     expect(body.success).toBe(false);
     expect(db.calls).not.toContain("auth.deleteUser");
     expect(db.hasUser(user.id)).toBe(true);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
     expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
   });
 
@@ -59,6 +60,7 @@ describe("account deletion contract", () => {
     expect(status).toBe(500);
     expect(body.error).toContain("profiles");
     expect(db.calls).not.toContain("auth.deleteUser");
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
   });
 
   it("storage listing failure (previously skipped silently) blocks success", async () => {
@@ -73,6 +75,58 @@ describe("account deletion contract", () => {
     expect(body.success).toBe(false);
     expect(body.error).toContain("storage.resumes");
     expect(db.calls).not.toContain("auth.deleteUser");
+    expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
+    expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
+  });
+
+  it("billing reconciliation failure stops before tombstoning or deleting account data", async () => {
+    const db = createFakeSupabase({ failTables: { subscriptions: { code: "XX000", message: "billing unavailable" } } });
+    const user = db.signUp("billing@example.test");
+    seedCompletedAccount(db, user.id);
+    const result = await deleteAccount(db, user.id);
+    expect(result.status).toBe(500);
+    expect(result.body.success).toBe(false);
+    expect(db.rowsOf("deleted_account_tombstones")).toEqual([]);
+    expect(db.hasUser(user.id)).toBe(true);
+    expect(db.rowsOf("profiles")).toHaveLength(1);
+  });
+
+  it("tombstone write failure stops before any destructive cleanup", async () => {
+    const db = createFakeSupabase({ failTables: { deleted_account_tombstones: { code: "42P01", message: "tombstone migration unavailable" } } });
+    const user = db.signUp("tombstone@example.test");
+    seedCompletedAccount(db, user.id);
+    const result = await deleteAccount(db, user.id);
+    expect(result.status).toBe(503);
+    expect(result.body.success).toBe(false);
+    expect(db.rowsOf("profiles")).toHaveLength(1);
+    expect(db.calls).not.toContain("delete:profiles");
+    expect(db.calls).not.toContain("auth.deleteUser");
+  });
+
+  for (const table of ["candidate_profiles", "user_preferences"]) {
+    it(`${table} cleanup failure leaves a recoverable tombstone and cannot sign in as completed`, async () => {
+      const db = createFakeSupabase();
+      const user = db.signUp(`${table}@example.test`);
+      seedCompletedAccount(db, user.id);
+      db.setFailTable(table, { code: "XX000", message: "cleanup failed" });
+      const result = await deleteAccount(db, user.id);
+      expect(result.status).toBe(500);
+      expect(result.body.success).toBe(false);
+      expect(db.hasUser(user.id)).toBe(true);
+      expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+      expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
+    });
+  }
+
+  it("a failed retry can be repeated after the cleanup dependency recovers", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("retry@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "temporary failure" });
+    expect((await deleteAccount(db, user.id)).status).toBe(500);
+    db.setFailTable("resumes", null);
+    expect((await deleteAccount(db, user.id)).body.success).toBe(true);
+    expect(db.hasUser(user.id)).toBe(false);
   });
 
   it("bucket listing failure (previously ignored) blocks success", async () => {
@@ -95,6 +149,7 @@ describe("account deletion contract", () => {
     expect(body.success).toBe(false);
     expect(body.error).toContain("Failed to delete auth identity");
     expect(db.hasUser(user.id)).toBe(true);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
     // Same identity signs in again: no profiles marker, soft-deleted rows ignored, nothing written.
     expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
     expect(db.rowsOf("profiles")).toEqual([]);
