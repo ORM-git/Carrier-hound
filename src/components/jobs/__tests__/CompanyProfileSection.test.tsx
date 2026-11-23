@@ -36,7 +36,8 @@ describe("Company section", () => {
     expect(screen.getAllByText("Boston, US")).toHaveLength(2);
     const website = screen.getByRole("link", { name: "acme.example" });
     expect(website.getAttribute("href")).toBe("https://acme.example/a/very/long/company/path");
-    expect(website.className).toContain("truncate");
+    expect(website.className).toContain("break-words");
+    expect(website.className).not.toContain("break-all");
     expect(screen.getByText(/Alex Example/)).toBeTruthy();
     expect(screen.getByText("Acme announces a product")).toBeTruthy();
     expect(screen.getByText("Design Engineer")).toBeTruthy();
