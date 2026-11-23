@@ -19,6 +19,7 @@
 import crypto from "node:crypto";
 import sharp from "sharp";
 import { eligibleLogoUrl, hostedLogoPublicUrl, logoObjectKey } from "./logoEligibility";
+import { LOGO_SAMPLE_PX, logoVisibility } from "./logoVisibility";
 import { fetchWithTimeout, getCleanImageMeta, type CompanyRecord, type FetchWithTimeoutOptions, type JobUrlInfo, type ResolveLogoOptions, type ResolvedLogoResult } from "./logoResolver";
 
 /**
@@ -55,6 +56,38 @@ export async function decodesAsRaster(buf: Buffer): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Readable on every light tile we render (see logoVisibility.ts)? null when it is, otherwise the reason.
+ * Measured on the image contain-fitted into the same LOGO_SAMPLE_PX square the browser check uses.
+ */
+export async function logoInvisibleReason(buf: Buffer): Promise<string | null> {
+  try {
+    const { data, info } = await sharp(buf, { failOn: "error", limitInputPixels: MAX_DECODE_PIXELS, pages: 1 })
+      .ensureAlpha()
+      .resize(LOGO_SAMPLE_PX, LOGO_SAMPLE_PX, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const v = logoVisibility(data, info.width, info.height);
+    return v.ok ? null : v.reason;
+  } catch {
+    return "does-not-decode";
+  }
+}
+
+/**
+ * Why a candidate image may never become this company's logo, or null if it may: vendor/default mark,
+ * a hash the owner rejected for this company (whatever source returned it), not a real raster, or not
+ * readable on the tile. Used inside the resolver chain (so the next tier still runs) and before upload.
+ */
+export async function candidateRejection(buf: Buffer, defaults: ReadonlySet<string>, rejected: ReadonlySet<string>): Promise<string | null> {
+  const sha = sha256Hex(buf);
+  if (defaults.has(sha)) return "default-branding";
+  if (rejected.has(sha)) return "rejected-image";
+  if (!(await decodesAsRaster(buf))) return "corrupt-image";
+  const invisible = await logoInvisibleReason(buf);
+  return invisible ? `invisible-logo: ${invisible}` : null;
 }
 
 /**
@@ -111,6 +144,8 @@ export interface LogoRepairDeps {
   jobsFor(companyId: string): Promise<JobUrlInfo[]>;
   /** sha256 hex digests of vendor/default images (e.g. favicon-service "unknown domain" globes). */
   knownDefaultHashes: ReadonlySet<string>;
+  /** Image hashes the owner rejected for this company (company_logo_rejected_hashes); never re-selected. */
+  rejectedHashes(companyId: string): Promise<ReadonlySet<string>>;
   /** Number of OTHER companies whose committed logo has this content hash. */
   companiesSharingHash(sha256: string, excludeId: string): Promise<number>;
   /** Uploads with no overwrite; "exists" when the content-hashed key is already present. */
@@ -154,14 +189,16 @@ export async function repairCompanyLogo(company: ClaimedCompany, deps: LogoRepai
   };
 
   let resolved: ResolvedLogoResult | null;
+  let rejected: ReadonlySet<string>;
   try {
+    rejected = await deps.rejectedHashes(company.id);
     const jobs = await deps.jobsFor(company.id);
     // logo_url is withheld so the resolver never short-circuits on a stored (possibly broken) value.
     resolved = await deps.resolve(
       { id: company.id, name: company.name, slug: company.slug, domain: company.domain, careers_url: company.careers_url, ats_type: company.ats_type, logo_url: null },
       jobs,
-      // Default/vendor images are skipped inside the chain, so the next tier (homepage, free resolver) still runs.
-      { isRejected: async (buf) => deps.knownDefaultHashes.has(sha256Hex(buf)) || !(await decodesAsRaster(buf)) }
+      // Default/vendor, owner-rejected and unreadable images are skipped inside the chain, so the next tier still runs.
+      { isRejected: async (buf) => (await candidateRejection(buf, deps.knownDefaultHashes, rejected)) !== null }
     );
   } catch (e) {
     return fail(`resolver-error: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
@@ -171,9 +208,9 @@ export async function repairCompanyLogo(company: ClaimedCompany, deps: LogoRepai
   if (resolved.width > MAX_LOGO_SIDE_PX || resolved.height > MAX_LOGO_SIDE_PX) {
     return fail(`not-a-logo: ${resolved.width}x${resolved.height} image from ${resolved.source} is a banner/photo, not an icon`, false);
   }
-  if (!(await decodesAsRaster(resolved.buffer))) return fail(`corrupt-image: ${resolved.source} bytes do not decode`, false);
+  const rejection = await candidateRejection(resolved.buffer, deps.knownDefaultHashes, rejected);
+  if (rejection) return fail(`${rejection} (${resolved.serviceName || resolved.source})`, false);
   const sha256 = sha256Hex(resolved.buffer);
-  if (deps.knownDefaultHashes.has(sha256)) return fail(`default-branding: ${resolved.serviceName || resolved.source} returned its default image`, false);
   if ((await deps.companiesSharingHash(sha256, company.id)) >= SHARED_HASH_LIMIT) return fail("shared-image: identical bytes already used by another company (vendor/default mark)", false);
 
   let key: string;

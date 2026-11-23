@@ -1134,7 +1134,9 @@ class CompanyLogoContractTests(unittest.TestCase):
             if path.endswith("/companies") and method in ("POST", "PATCH"):
                 rows = body if isinstance(body, list) else [body]
                 for row in rows:
-                    self.assertNotIn("logo_url", row, f"{method} {path} must never write logo_url")
+                    # No logo state at all: holds, keep-initials and rejected hashes (20261123) live in SQL,
+                    # which the Python path only reaches through enqueue_company_logos.
+                    self.assertEqual([k for k in row if k.startswith("logo_")], [], f"{method} {path} must never write logo columns")
         # Every company seen is handed over with this project's origin; SQL keeps only ineligible ones.
         enqueue = [b for m, p, b in sent if p.endswith("/rpc/enqueue_company_logos")]
         self.assertEqual(enqueue, [{"p_ids": ["id-favicon", "id-hosted", "id-new"], "p_origin": "https://unit-test-project.supabase.co"}])

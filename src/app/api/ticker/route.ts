@@ -67,7 +67,7 @@ function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: st
  * Cache 60s, no-store and 503 on error.
  * Drops rows without posted_at or created_at.
  * Clamps future-dated timestamps within 5 minutes; drops rows further in the future.
- * Matches companies by company_id where available, with case-insensitive name fallback.
+ * Matches companies by stable company_id only (never by name: another company could share it).
  * Returns logo_url only if it points to the project storage host under /company-logos/.
  */
 async function getHandler(req: Request) {
@@ -213,7 +213,7 @@ async function getHandler(req: Request) {
       offset += pageRows.length;
     }
 
-    // 2. Collect company_ids and distinct company names for the selected rows
+    // 2. Logos are matched by stable company_id only: a name match could attach another company's logo.
     const companyIds = Array.from(
       new Set(
         selectedRows
@@ -222,18 +222,9 @@ async function getHandler(req: Request) {
       )
     );
 
-    const distinctCompanyNames = Array.from(
-      new Set(
-        selectedRows
-          .map((r) => r.cleanCompany)
-          .filter(Boolean)
-      )
-    );
 
     const idToLogo = new Map<string, string>();
-    const nameToLogo = new Map<string, string>();
 
-    // 2a. Match by company_id where available
     if (companyIds.length > 0) {
       const { data: idData, error: idError } = await supabase
         .from("companies")
@@ -257,51 +248,6 @@ async function getHandler(req: Request) {
           const validLogo = sanitizeLogoUrl(c.logo_url, supabaseUrl);
           if (validLogo) {
             idToLogo.set(String(c.id), validLogo);
-            if (c.name) {
-              nameToLogo.set(String(c.name).trim().toLowerCase(), validLogo);
-            }
-          }
-        }
-      }
-    }
-
-    // 2b. Match by name case variants for companies without company_id or not yet matched
-    if (distinctCompanyNames.length > 0) {
-      const searchNames = new Set<string>();
-      for (const name of distinctCompanyNames) {
-        searchNames.add(name);
-        searchNames.add(name.toLowerCase());
-        searchNames.add(name.toUpperCase());
-        searchNames.add(name.charAt(0).toUpperCase() + name.slice(1).toLowerCase());
-      }
-
-      const { data: nameData, error: nameError } = await supabase
-        .from("companies")
-        .select("id, name, logo_url")
-        .in("name", Array.from(searchNames));
-
-      if (nameError) {
-        return NextResponse.json(
-          { error: "Service unavailable" },
-          {
-            status: 503,
-            headers: {
-              "Cache-Control": "no-store",
-            },
-          }
-        );
-      }
-
-      if (nameData) {
-        for (const c of nameData) {
-          const validLogo = sanitizeLogoUrl(c.logo_url, supabaseUrl);
-          if (validLogo) {
-            if (c.id && !idToLogo.has(String(c.id))) {
-              idToLogo.set(String(c.id), validLogo);
-            }
-            if (c.name) {
-              nameToLogo.set(String(c.name).trim().toLowerCase(), validLogo);
-            }
           }
         }
       }
@@ -316,8 +262,6 @@ async function getHandler(req: Request) {
       let resolvedLogo: string | null = null;
       if (compId && idToLogo.has(compId)) {
         resolvedLogo = idToLogo.get(compId)!;
-      } else if (cleanCompany && nameToLogo.has(cleanCompany.toLowerCase())) {
-        resolvedLogo = nameToLogo.get(cleanCompany.toLowerCase())!;
       }
 
       tickerItems.push({

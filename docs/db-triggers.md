@@ -29,6 +29,7 @@ Measured 7 Nov 2026: 7 triggers across 4 migration files. Updated 7 Nov 2026 for
 | `trg_touch_updated_at_resumes` | `resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `trg_touch_updated_at_tailored_resumes` | `tailored_resumes` | BEFORE UPDATE | `touch_updated_at()` | Sets updated_at = now() when the UPDATE did not change it (20261107g, not applied). Never rejects a write. |
 | `jobs_touch_last_seen` | `jobs` | BEFORE UPDATE | `touch_job_last_seen()` | Preserves last_seen_at during metadata updates; updates only on explicit caller timestamp or scraper refresh session. |
+| `companies_logo_review_guard` | `companies` | BEFORE UPDATE OF logo_url, logo_hash, logo_status | `companies_logo_review_guard()` | Refuses a logo change on a company the owner put on hold / keep-initials, or one pointing at an owner-rejected image hash (20261123, not applied). Rejects the write by design; leases and other columns are unaffected. |
 
 
 <!-- guard-entries: one per line, parsed by dbTriggersDoc.test.ts -->
@@ -50,4 +51,5 @@ trigger: trg_touch_updated_at_user_preferences | 20261107g_touch_updated_at_trig
 trigger: trg_touch_updated_at_resumes | 20261107g_touch_updated_at_triggers.sql | resumes
 trigger: trg_touch_updated_at_tailored_resumes | 20261107g_touch_updated_at_triggers.sql | tailored_resumes
 trigger: jobs_touch_last_seen | 20261116d_repair_642_identity_and_similarity_safety.sql | jobs
+trigger: companies_logo_review_guard | 20261123_company_logo_review_state.sql | companies
 ```
