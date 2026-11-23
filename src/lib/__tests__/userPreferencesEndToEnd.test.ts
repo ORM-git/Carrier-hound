@@ -205,7 +205,8 @@ describe("user preferences end to end (migration 20261117 applied)", () => {
     expect(fromDb).toEqual(JSON.parse(JSON.stringify(fromApi)));
     expect(prefs.country).toBe("India");
     expect(prefs.countryCode).toBe("IN");
-    expect(prefs.workAuth).toBe("Requires visa sponsorship (e.g. H1B)");
+    // The API accepts the legacy label and stores the current first-person wording.
+    expect(prefs.workAuth).toBe("I need visa sponsorship.");
     expect(prefs.salaryCurrency).toBeUndefined();
   });
 

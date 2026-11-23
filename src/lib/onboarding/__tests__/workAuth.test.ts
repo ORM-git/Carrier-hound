@@ -48,6 +48,23 @@ describe("work authorization sets", () => {
     expect(isWorkAuthComplete("")).toBe(false);
   });
 
+  it("parses labels saved before the first-person copy change", () => {
+    expect(parseWorkAuth("Authorized to work (No sponsorship required)")).toEqual([A]);
+    expect(parseWorkAuth("Requires visa sponsorship (e.g. H1B)")).toEqual([S]);
+    expect(parseWorkAuth("Other / Work Permit")).toEqual([O]);
+    expect(parseWorkAuth("Requires visa sponsorship (e.g. H1B) + Other / Work Permit")).toEqual([S, O]);
+    expect(parseWorkAuth("Authorized to work (No sponsorship required) + Other / Work Permit")).toBeNull();
+    // Re-saving a legacy value writes the current wording.
+    expect(serializeWorkAuth(parseWorkAuth("Requires visa sponsorship (e.g. H1B)")!)).toBe("I need visa sponsorship.");
+  });
+
+  it("uses the first-person labels, kept separate from the stable ids", () => {
+    expect(serializeWorkAuth([A])).toBe("I am authorized to work without sponsorship.");
+    expect(serializeWorkAuth([S])).toBe("I need visa sponsorship.");
+    expect(serializeWorkAuth([O])).toBe("I have another work permit or authorization.");
+    expect(serializeWorkAuth([S, O])).toBe("I need visa sponsorship. + I have another work permit or authorization.");
+  });
+
   it("parses legacy single values stored as ids or current labels", () => {
     expect(parseWorkAuth("authorized")).toEqual([A]);
     expect(parseWorkAuth("requires_sponsorship")).toEqual([S]);

@@ -15,7 +15,11 @@ const ORDER: WorkAuthId[] = ["authorized", "requires_sponsorship", "other"];
 const SEPARATOR = " + ";
 
 /** Earlier display labels for the same options. Add the old label here whenever a label's copy changes. */
-const LEGACY_LABELS: Record<string, WorkAuthId> = {};
+const LEGACY_LABELS: Record<string, WorkAuthId> = {
+  "Authorized to work (No sponsorship required)": "authorized",
+  "Requires visa sponsorship (e.g. H1B)": "requires_sponsorship",
+  "Other / Work Permit": "other",
+};
 
 // Exact match only: e.g. the legacy seeded "Authorized" must not be read as the "authorized" option.
 function idFor(token: string): WorkAuthId | null {

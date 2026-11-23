@@ -171,9 +171,9 @@ describe("POST /api/onboarding", () => {
     expect(json.error).toContain("Work authorization status is required");
   });
 
-  const authorized = "Authorized to work (No sponsorship required)";
-  const sponsorship = "Requires visa sponsorship (e.g. H1B)";
-  const other = "Other / Work Permit";
+  const authorized = "I am authorized to work without sponsorship.";
+  const sponsorship = "I need visa sponsorship.";
+  const other = "I have another work permit or authorization.";
   const postWorkAuth = (workAuth: unknown) =>
     POST(
       makeReq(
@@ -225,7 +225,8 @@ describe("POST /api/onboarding", () => {
     expect(json.success).toBe(true);
     expect(json.preferences.country).toBe("United States");
     expect(json.preferences.countryCode).toBe("US");
-    expect(json.preferences.workAuth).toBe("Requires visa sponsorship (e.g. H1B)");
+    // Legacy label input is accepted and stored with the current first-person label.
+    expect(json.preferences.workAuth).toBe("I need visa sponsorship.");
     expect(json.preferences.locations).toEqual(["United States"]);
     expect(json.preferences.experienceLevel).toBeUndefined();
     expect(json.preferences.salaryCurrency).toBeUndefined();
@@ -234,7 +235,7 @@ describe("POST /api/onboarding", () => {
     const saved = mockDb.user_preferences.get("user-123");
     expect(saved.country).toBe("United States");
     expect(saved.country_code).toBe("US");
-    expect(saved.work_auth).toBe("Requires visa sponsorship (e.g. H1B)");
+    expect(saved.work_auth).toBe("I need visa sponsorship.");
     // Written as explicit nulls so column defaults (salary_currency 'USD') never apply.
     expect(saved.experience_level).toBeNull();
     expect(saved.min_salary).toBeNull();

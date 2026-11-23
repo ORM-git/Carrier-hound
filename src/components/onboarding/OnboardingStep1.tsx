@@ -310,7 +310,7 @@ export default function OnboardingStep1({
 
             {showWorkAuthHelp && (
               <p id="work-auth-help" className="mb-2.5 px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50">
-                Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
+                Choose what applies to you in the country you selected. You can pick both sponsorship and another permit; the first option stands alone.
               </p>
             )}
 
@@ -641,7 +641,7 @@ export default function OnboardingStep1({
                     id="work-auth-help-desktop"
                     className="px-2 text-xs text-zinc-500 dark:text-zinc-400 animate-in fade-in-50"
                   >
-                    Indicate whether you require visa sponsorship (e.g. H1B) or are legally authorized to work in your target country.
+                    Choose what applies to you in the country you selected. You can pick both sponsorship and another permit; the first option stands alone.
                   </p>
                 )}
 

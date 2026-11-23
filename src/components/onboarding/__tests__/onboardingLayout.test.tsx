@@ -78,9 +78,9 @@ describe("OnboardingStep1 help controls", () => {
 });
 
 describe("OnboardingStep1 work authorization: {1}, {2}, {3}, {2,3}", () => {
-  const A = "Authorized to work (No sponsorship required)";
-  const S = "Requires visa sponsorship (e.g. H1B)";
-  const O = "Other / Work Permit";
+  const A = "I am authorized to work without sponsorship.";
+  const S = "I need visa sponsorship.";
+  const O = "I have another work permit or authorization.";
   const filled = { ...step1Props, roles: ["Software Engineer"], employmentTypes: ["full-time"], country: "India" };
 
   // Stateful wrapper so taps accumulate like on the real page.
@@ -458,7 +458,7 @@ describe("OnboardingStep1 in Edit Mode", () => {
     expect(screen.getAllByText("United States").length).toBeGreaterThan(0);
 
     // Work auth selected
-    for (const workAuthBtn of screen.getAllByRole("button", { name: /Authorized to work/ })) {
+    for (const workAuthBtn of screen.getAllByRole("button", { name: /I am authorized to work without sponsorship/ })) {
       expect(workAuthBtn.getAttribute("aria-pressed")).toBe("true");
     }
 
