@@ -316,6 +316,23 @@ async function runAuthGuardSuite() {
     assert.strictEqual(magicLoginRes.status, 307, `Magic-link session on /login must redirect (307), got ${magicLoginRes.status}`);
     console.log("  -> [PASS-LOCAL] Magic-link session allowed on protected pages");
 
+    // 2c. Signed-in browser opening a password-recovery link reaches /auth/reset-password; nothing else is exempt.
+    const signedIn = { headers: { cookie: "sb-access-token=non-google-auth-token;" } };
+    const recoveryRes = await middleware(
+      new NextRequest("http://localhost:3000/auth/callback?code=abc&returnTo=%2Fauth%2Freset-password", signedIn)
+    );
+    assert.strictEqual(recoveryRes.headers.get("location"), null, "Recovery callback must not redirect a signed-in browser");
+    for (const url of [
+      "/auth/callback?returnTo=%2Fauth%2Freset-password", // no code
+      "/auth/callback?code=abc&returnTo=%2Fjobs", // not the reset route
+      "/auth/callback?code=abc&next=%2Fauth%2Freset-password", // only returnTo is honoured
+      "/login?returnTo=%2Fauth%2Freset-password",
+    ]) {
+      const res = await middleware(new NextRequest(`http://localhost:3000${url}`, signedIn));
+      assert.strictEqual(res.status, 307, `Signed-in ${url} must still redirect (307), got ${res.status}`);
+    }
+    console.log("  -> [PASS-LOCAL] Only the password-recovery callback is exempt from the signed-in redirect");
+
     // 3. Google session hitting protected pages (/dashboard, /resume, /tracker, /settings)
     // Must pass through (status 200, no redirect)
     for (const testPage of protectedPagesToTest) {

@@ -606,9 +606,14 @@ async function middlewareImpl(request: NextRequest) {
 
   // 4. Guest-facing public routes (/, /remote, /login, /signup, /pricing, legal pages, etc.)
   if (!isProtectedRoute(pathname)) {
+    // Password-recovery links must reach /auth/reset-password even for an already signed-in browser.
+    const isPasswordRecoveryCallback =
+      pathname === "/auth/callback" &&
+      request.nextUrl.searchParams.has("code") &&
+      request.nextUrl.searchParams.get("returnTo") === "/auth/reset-password";
     if (
-      pathname === "/login" ||
-      pathname === "/auth/callback"
+      (pathname === "/login" || pathname === "/auth/callback") &&
+      !isPasswordRecoveryCallback
     ) {
       const { hasValidSession, signedOutNonAllowedUser, response: authResponse, userId } =
         await verifyAuthenticatedRequest(request);
