@@ -70,13 +70,94 @@ class SelectorTests(unittest.TestCase):
         self.assertEqual(layer2, {"workday", "amazon", "microsoft"})
 
     def test_cli_rejects_unknown_cohort_and_cohort_with_source(self):
-        for argv in (["--cohort", "bogus"], ["--cohort", "workday", "--source", "greenhouse"]):
+        for argv in (
+            ["--cohort", "bogus"],
+            ["--cohort", "workday", "--source", "greenhouse"],
+            ["--cohort", "workday", "--source", ""],
+            ["--source", ""],
+            ["--source", "   "],
+            ["--source", ","],
+            ["--source", ",greenhouse"],
+            ["--source", "greenhouse,"],
+        ):
             with self.subTest(argv=argv), patch("sys.argv", ["prog", *argv]), \
                     contextlib.redirect_stderr(open(os.devnull, "w")), contextlib.redirect_stdout(open(os.devnull, "w")), \
                     patch.object(run_ingestion, "load_dotenv_into_env", lambda: None):
                 with self.assertRaises(SystemExit) as ctx:
                     run_ingestion.main()
                 self.assertEqual(ctx.exception.code, 2)
+
+    def test_normalize_source_filter_omission_defaults_to_all(self):
+        self.assertEqual(run_ingestion.normalize_source_filter(None), {"all"})
+
+    def test_normalize_source_filter_rejects_empty_and_malformed(self):
+        cases = [
+            [],
+            set(),
+            (),
+            [""],
+            ["   "],
+            [","],
+            [",,"],
+            ["greenhouse", ""],
+            ["", "greenhouse"],
+            ["greenhouse,"],
+            [",greenhouse"],
+            ["greenhouse,,lever"],
+        ]
+        for c in cases:
+            with self.subTest(sources=c), self.assertRaises(run_ingestion.SourceSelectionError):
+                run_ingestion.normalize_source_filter(c)
+
+    def test_normalize_source_filter_rejects_cohort_with_source(self):
+        cases = [
+            ([""], "workday"),
+            (["   "], "workday"),
+            (["greenhouse"], "workday"),
+            ([], "non-workday"),
+            ([","], "non-workday"),
+        ]
+        for sources, cohort in cases:
+            with self.subTest(sources=sources, cohort=cohort), self.assertRaises(run_ingestion.SourceSelectionError):
+                run_ingestion.normalize_source_filter(sources, cohort)
+
+    def test_run_master_ingestion_rejects_empty_source_before_fetch_or_sync(self):
+        client_calls: list[str] = []
+
+        def mock_handle(req: httpx.Request):
+            client_calls.append(str(req.url))
+            return httpx.Response(200, json={})
+
+        transport = httpx.MockTransport(mock_handle)
+
+        async def run_cases():
+            invalid_cases = [
+                [""],
+                ["   "],
+                [","],
+                ["greenhouse", ""],
+                [],
+            ]
+            for sources in invalid_cases:
+                with self.assertRaises(run_ingestion.SourceSelectionError):
+                    await run_ingestion.run_master_ingestion(
+                        sources=sources,
+                        seeds_path=run_ingestion.DEFAULT_SEEDS_PATH,
+                        dry_run=True,
+                        transport=transport,
+                    )
+            # And cohort combined with empty source:
+            with self.assertRaises(run_ingestion.SourceSelectionError):
+                await run_ingestion.run_master_ingestion(
+                    sources=[""],
+                    cohort="workday",
+                    seeds_path=run_ingestion.DEFAULT_SEEDS_PATH,
+                    dry_run=True,
+                    transport=transport,
+                )
+
+        asyncio.run(run_cases())
+        self.assertEqual(len(client_calls), 0, "No network request should have occurred")
 
 
 class CohortRunTests(unittest.TestCase):
@@ -362,6 +443,108 @@ class LogoContractTests(unittest.TestCase):
         # Verify enqueue_company_logos RPC was invoked
         self.assertEqual(len(rpc_calls), 1)
         self.assertEqual(rpc_calls[0]["p_ids"], ["comp-123"])
+
+    def test_new_company_insert_never_writes_logo_url_and_enqueues_all_seen(self):
+        writer = engine.SupabaseSetDiffWriter(
+            supabase_url="https://fake.supabase.co",
+            service_key="fake-key",
+        )
+        post_calls: list[dict[str, Any]] = []
+        rpc_calls: list[dict[str, Any]] = []
+
+        def mock_handle(req: httpx.Request):
+            if req.method == "GET" and "/companies" in str(req.url):
+                return httpx.Response(200, json=[])
+            if req.method == "POST" and "/companies" in str(req.url):
+                body = json.loads(req.content.decode("utf-8"))
+                post_calls.extend(body)
+                return httpx.Response(201, json=[{"id": "comp-new-1", "slug": "newco"}])
+            if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                rpc_calls.append(json.loads(req.content.decode("utf-8")))
+                return httpx.Response(200, json=1)
+            if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
+                return httpx.Response(200, json={"coverage": 1.0})
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(mock_handle)
+        async def run():
+            async with httpx.AsyncClient(transport=transport) as client:
+                jobs = [{
+                    "company_slug": "newco",
+                    "company": "NewCo Inc",
+                    "canonical_domain": "newco.com",
+                    "company_category": "HIGH_PRODUCT_YC",
+                    "logo_url": "https://unverified.aggregator/raw-logo.png",
+                    "source": "greenhouse",
+                    "source_priority": 1,
+                }]
+                await writer.sync_companies(client, jobs)
+
+        asyncio.run(run())
+        self.assertFalse(writer.persistence_failed)
+        self.assertEqual(len(post_calls), 1)
+        self.assertIsNone(post_calls[0].get("logo_url"), "new company logo_url must be None/omitted on insert")
+        self.assertEqual(len(rpc_calls), 1)
+        self.assertEqual(rpc_calls[0]["p_ids"], ["comp-new-1"])
+        self.assertEqual(writer.logo_enqueue["status"], "ok")
+        self.assertEqual(writer.logo_enqueue["enqueued"], 1)
+
+    def test_enqueue_company_logos_missing_rpc_reports_not_migrated_and_does_not_fail_persistence(self):
+        for status_code, body in [(404, {}), (400, {"code": "PGRST202", "message": "Could not find function public.enqueue_company_logos"})]:
+            with self.subTest(status=status_code):
+                writer = engine.SupabaseSetDiffWriter(
+                    supabase_url="https://fake.supabase.co",
+                    service_key="fake-key",
+                )
+                def mock_handle(req: httpx.Request):
+                    if req.method == "GET" and "/companies" in str(req.url):
+                        return httpx.Response(200, json=[{"id": "comp-1", "slug": "co1"}])
+                    if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                        return httpx.Response(status_code, json=body if isinstance(body, dict) else body)
+                    return httpx.Response(404)
+
+                transport = httpx.MockTransport(mock_handle)
+                async def run():
+                    async with httpx.AsyncClient(transport=transport) as client:
+                        jobs = [{"company_slug": "co1", "company": "Co1", "source": "greenhouse"}]
+                        await writer.sync_companies(client, jobs)
+
+                asyncio.run(run())
+                self.assertFalse(writer.persistence_failed, "persistence must remain unfailed on missing RPC")
+                self.assertEqual(writer.logo_enqueue["status"], "not-migrated")
+
+    def test_cohort_report_serializes_and_renders_logo_enqueue(self):
+        report = {
+            "cohort": "workday",
+            "git_sha": "abc1234",
+            "started_at": "2026-11-23T20:00:00Z",
+            "finished_at": "2026-11-23T20:01:00Z",
+            "selected_sources": ["workday:nvidia"],
+            "completed_sources": ["workday:nvidia"],
+            "failed_sources": [],
+            "dry_run": False,
+            "fetched": 10,
+            "selected": 10,
+            "persisted_counts": {"inserted": 10, "updated": 0, "unchanged": 0},
+            "db": {"persistence_failed": False, "expired": 0},
+            "logo_enqueue": {
+                "requested": 5,
+                "enqueued": 4,
+                "status": "ok",
+                "coverage": {"total_companies": 5, "with_logo": 4, "coverage_pct": 80.0},
+            },
+        }
+        summary = ingest_report.cohort_summary(report, exit_code=0, cohort="workday")
+        self.assertEqual(summary["logo_enqueue"]["requested"], 5)
+        self.assertEqual(summary["logo_enqueue"]["enqueued"], 4)
+        self.assertEqual(summary["logo_enqueue"]["status"], "ok")
+        self.assertIsNotNone(summary["logo_enqueue"]["coverage"])
+
+        rendered = ingest_report.render_cohort(summary)
+        self.assertIn("company logos requested / enqueued / status", rendered)
+        self.assertIn("5 / 4 / ok", rendered)
+        self.assertIn("company logo coverage", rendered)
+        self.assertIn("80.0", rendered)
 
 
 if __name__ == "__main__":

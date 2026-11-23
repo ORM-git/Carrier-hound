@@ -186,6 +186,46 @@ def plan_sources(config: dict[str, Any]) -> list[dict[str, Any]]:
     return plan
 
 
+def normalize_source_filter(
+    sources: list[str] | set[str] | tuple[str, ...] | None,
+    cohort: str | None = None,
+) -> set[str]:
+    """
+    Normalizes and validates source filter tokens.
+    - None defaults to {"all"}.
+    - Explicit --cohort and --source together: reject (even if source was empty/whitespace).
+    - Explicit empty collection (sources=[] or set()), empty token ('', '   '), or containing
+      empty comma segments (',', ',greenhouse', 'greenhouse,'): reject with SourceSelectionError.
+    - Strips whitespace and lowercases valid tokens.
+    """
+    if cohort is not None and sources is not None:
+        raise SourceSelectionError("--cohort cannot be combined with --source")
+
+    if sources is None:
+        return {"all"}
+
+    if len(sources) == 0:
+        raise SourceSelectionError("explicit empty source filter supplied; omit --source for default all")
+
+    tokens: set[str] = set()
+    for item in sources:
+        if not isinstance(item, str):
+            item = str(item)
+        if not item.strip():
+            raise SourceSelectionError("empty or whitespace source filter token is invalid")
+        segments = item.split(",")
+        for seg in segments:
+            stripped = seg.strip()
+            if not stripped:
+                raise SourceSelectionError(f"source filter contains empty comma segment: {item!r}")
+            tokens.add(stripped.lower())
+
+    if not tokens:
+        raise SourceSelectionError("source filter resulted in an empty selection")
+
+    return tokens
+
+
 def select_sources(plan: list[dict[str, Any]], source_filter: set[str], cohort: str | None) -> list[dict[str, Any]]:
     """Validated, deterministic selection. Unknown tokens, unknown cohorts and empty results are errors."""
     known = {"all"}.union(*(p["aliases"] for p in plan)) if plan else {"all"}
@@ -232,10 +272,7 @@ async def run_master_ingestion(
     )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
-    raw_filters = sources or ["all"]
-    source_filter = {s.strip().lower() for item in raw_filters for s in item.split(",") if s.strip()}
-    if not source_filter:
-        source_filter = {"all"}
+    source_filter = normalize_source_filter(sources, cohort)
 
     config = load_company_seeds(seeds_path)
     rl_cfg = config.get("rate_limit") or {}
@@ -245,7 +282,12 @@ async def run_master_ingestion(
     )
 
     layer1_seeds = list(config.get("layer1_public_ats") or [])
-    selected_plan = select_sources(plan_sources(config), source_filter, cohort)
+    plan = plan_sources(config)
+    known = {"all"}.union(*(p["aliases"] for p in plan)) if plan else {"all"}
+    unknown = sorted(source_filter - known)
+    if unknown:
+        raise SourceSelectionError(f"unknown source filter(s): {', '.join(unknown)}")
+    selected_plan = select_sources(plan, source_filter, cohort)
     started_at = datetime.now(timezone.utc).isoformat()
 
     async with httpx.AsyncClient(
@@ -563,6 +605,11 @@ async def run_master_ingestion(
             "failed_sources": failed_sources,
             "sources": source_reports,
             "greenhouse_inspection": greenhouse_inspection,
+            "logo_enqueue": (
+                getattr(writer, "logo_enqueue", None)
+                if "writer" in locals() and writer is not None
+                else None
+            ) or {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None},
         }
 
 
