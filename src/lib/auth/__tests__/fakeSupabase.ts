@@ -16,6 +16,8 @@ export interface FakeDbOptions {
   failTables?: Record<string, DbError>;
   /** Force auth.admin.deleteUser to fail. */
   authDeleteError?: DbError;
+  /** Force auth.admin.updateUserById to fail. */
+  authUpdateError?: DbError;
   /** Role of client: 'service_role' (default for admin) or 'authenticated'/'anon' (RLS-restricted). */
   role?: "service_role" | "authenticated" | "anon";
 }
@@ -26,6 +28,7 @@ export function createFakeSupabase(options: FakeDbOptions = {}) {
   const missingDeletedAt = new Set(options.missingDeletedAt || []);
   const failTables = { ...(options.failTables || {}) };
   let authDeleteError: DbError = options.authDeleteError ?? null;
+  let authUpdateError: DbError = options.authUpdateError ?? null;
   let nextId = 1;
   const idPrefix = Math.random().toString(36).slice(2, 8); // unique per instance: in-memory rate limits are keyed by user id
   const calls: string[] = [];
@@ -118,6 +121,11 @@ export function createFakeSupabase(options: FakeDbOptions = {}) {
           tables.set("profiles", rows("profiles").filter((r) => r.user_id !== id));
           return { error: null };
         },
+        async updateUserById(id: string, _attributes: any) {
+          calls.push(`auth.updateUserById`);
+          if (authUpdateError) return { error: authUpdateError };
+          return { data: { user: users.get(id) }, error: null };
+        },
       },
       async getUser(token: string) {
         const user = users.get(token) || null;
@@ -157,6 +165,9 @@ export function createFakeSupabase(options: FakeDbOptions = {}) {
     },
     setAuthDeleteError(error: DbError) {
       authDeleteError = error;
+    },
+    setAuthUpdateError(error: DbError) {
+      authUpdateError = error;
     },
   };
 }

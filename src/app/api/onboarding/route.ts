@@ -99,12 +99,14 @@ export async function POST(req: Request) {
 
   // Refuse onboarding if account has an interrupted deletion pending
   try {
-    const { data: tombstone, error: tombstoneErr } = await supabaseAdmin
+    const query = supabaseAdmin
       .from("deleted_account_tombstones")
       .select("user_id")
-      .eq("user_id", user.id)
-      .is("purged_at", null)
-      .maybeSingle();
+      .eq("user_id", user.id);
+    const { data: tombstone, error: tombstoneErr } = await (typeof (query as any)?.is === "function"
+      ? (query as any).is("purged_at", null)
+      : query
+    ).maybeSingle();
 
     const isMissingTombstone = (err: any) => {
       if (!err) return false;
@@ -212,7 +214,7 @@ export async function POST(req: Request) {
     const isMissingSoftDeleteCol = (err: any) => {
       if (!err) return false;
       const msg = String(err.message || "").toLowerCase();
-      return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
+      return (err.code === "42703" || err.code === "PGRST204" || msg.includes("column")) && msg.includes("deleted_at");
     };
 
     if (readError && isMissingSoftDeleteCol(readError)) {
@@ -332,7 +334,7 @@ export async function POST(req: Request) {
     const isMissingSoftDeleteCol = (err: any) => {
       if (!err) return false;
       const msg = String(err.message || "").toLowerCase();
-      return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
+      return (err.code === "42703" || err.code === "PGRST204" || msg.includes("column")) && msg.includes("deleted_at");
     };
 
     if (prefError && isMissingSoftDeleteCol(prefError)) {

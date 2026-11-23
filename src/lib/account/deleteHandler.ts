@@ -293,15 +293,24 @@ export async function handleAccountDeleteRequest(
         );
       }
 
-      // 4. Reset auth user metadata onboarding completion flag if present.
-      try {
-        if (typeof supabaseAdmin.auth?.admin?.updateUserById === "function") {
-          await supabaseAdmin.auth.admin.updateUserById(userId, {
+      // 4. Reset auth user metadata onboarding completion flag if present. Must not swallow update failures.
+      if (typeof supabaseAdmin.auth?.admin?.updateUserById === "function") {
+        try {
+          const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
             user_metadata: { onboarding_completed: false },
           });
+          if (metaErr) {
+            return NextResponse.json(
+              { success: false, error: `Failed to reset auth user metadata: ${metaErr.message || String(metaErr)}` },
+              { status: 500 }
+            );
+          }
+        } catch (authMetaErr: any) {
+          return NextResponse.json(
+            { success: false, error: `Failed to reset auth user metadata: ${authMetaErr?.message || String(authMetaErr)}` },
+            { status: 500 }
+          );
         }
-      } catch (authMetaErr) {
-        log.warn("Failed to reset onboarding_completed in auth user metadata", { error: authMetaErr });
       }
 
       // 5. ONLY AFTER all reset operations succeed, release the tombstone record.
@@ -479,12 +488,41 @@ export async function handleAccountDeleteRequest(
     const hardDeleteAfter = new Date(
       Date.now() + ACCOUNT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000
     ).toISOString();
-    const { error: tombstoneError } = await supabaseAdmin
+    // Clear/reactivate the marker (purged_at: null) on every new deletion so a previous fallback doesn't leave an inactive tombstone.
+    let { error: tombstoneError } = await supabaseAdmin
       .from("deleted_account_tombstones")
       .upsert(
-        { user_id: userId, email_hash: emailHash, deletion_completed_at: nowIso, hard_delete_after: hardDeleteAfter },
+        {
+          user_id: userId,
+          email_hash: emailHash,
+          deletion_completed_at: nowIso,
+          hard_delete_after: hardDeleteAfter,
+          purged_at: null,
+        },
         { onConflict: "user_id" }
       );
+
+    if (
+      tombstoneError &&
+      (tombstoneError.code === "42703" ||
+        tombstoneError.code === "PGRST204" ||
+        String(tombstoneError.message || "").includes("purged_at"))
+    ) {
+      tombstoneError = (
+        await supabaseAdmin
+          .from("deleted_account_tombstones")
+          .upsert(
+            {
+              user_id: userId,
+              email_hash: emailHash,
+              deletion_completed_at: nowIso,
+              hard_delete_after: hardDeleteAfter,
+            },
+            { onConflict: "user_id" }
+          )
+      ).error;
+    }
+
     if (tombstoneError) {
       return NextResponse.json(
         { success: false, error: `Unable to record deletion state: ${tombstoneError.message || String(tombstoneError)}` },

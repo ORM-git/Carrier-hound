@@ -329,6 +329,116 @@ describe("delete -> fresh sign-up with the same email (stateful local stub)", ()
     const completed = await checkAccountOnboardingCompleted(db.client, user.id);
     expect(completed).toBe(true);
   });
+
+  it("purged marker reactivated: purged marker then new deletion failing at profiles cleanup leaves completion false", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("purged-marker@example.test");
+    seedCompletedAccount(db, user.id);
+
+    // Simulate an existing tombstone that was marked purged by the 42501 cancel fallback
+    db.insert("deleted_account_tombstones", {
+      user_id: user.id,
+      email_hash: "hash",
+      deletion_completed_at: new Date().toISOString(),
+      hard_delete_after: new Date(Date.now() + 86400000).toISOString(),
+      purged_at: new Date().toISOString(),
+    });
+
+    // Make profiles cleanup fail on new deletion
+    db.setFailTable("profiles", { code: "XX000", message: "profiles cleanup failed" });
+
+    // New deletion attempt
+    const res = await deleteAccount(db, user.id);
+    expect(res.status).toBe(500);
+
+    // Tombstone must be reactivated with purged_at = null!
+    const tombstone = db.rowsOf("deleted_account_tombstones")[0];
+    expect(tombstone.purged_at).toBeNull();
+
+    // Onboarding completion check MUST evaluate to false, not true
+    const completed = await checkAccountOnboardingCompleted(db.client, user.id);
+    expect(completed).toBe(false);
+  });
+
+  it("metadata reset failure: returns 500 and retains tombstone", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("meta-fail@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "initial delete failure" });
+
+    // Interrupted deletion creates tombstone
+    await deleteAccount(db, user.id);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+    db.setFailTable("resumes", null);
+
+    // Metadata reset fails during cancel
+    db.setAuthUpdateError({ message: "Auth admin service unavailable" });
+    const cancelRes = await deleteAccount(db, user.id, { action: "cancel" });
+    expect(cancelRes.status).toBe(500);
+    expect(cancelRes.body.success).toBe(false);
+    expect(cancelRes.body.error).toContain("Failed to reset auth user metadata");
+
+    // Tombstone MUST be retained
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+  });
+
+  it("browser status lookup fails closed to /onboarding when getSession returns no token", async () => {
+    const originalWindow = (globalThis as any).window;
+    try {
+      (globalThis as any).window = {};
+      const fakeClient = {
+        auth: {
+          getSession: async () => ({ data: { session: null }, error: null }),
+        },
+      };
+      const dest = await resolvePostAuthDestination(fakeClient as any, "user-browser-test", "/jobs");
+      expect(dest).toBe("/onboarding?next=%2Fjobs");
+    } finally {
+      if (originalWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = originalWindow;
+      }
+    }
+  });
+
+  it("duplicate / retry deletion safely cleans up after previous partial failure", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("retry-user@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "temporary storage glitch" });
+
+    // First attempt fails at resumes
+    const res1 = await deleteAccount(db, user.id);
+    expect(res1.status).toBe(500);
+    expect(db.hasUser(user.id)).toBe(true);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+
+    // Resolve glitch and retry deletion
+    db.setFailTable("resumes", null);
+    const res2 = await deleteAccount(db, user.id);
+    expect(res2.status).toBe(200);
+    expect(res2.body.success).toBe(true);
+    expect(db.hasUser(user.id)).toBe(false);
+  });
+
+  it("concurrent deletion: multiple simultaneous delete requests handle state safely", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("concurrent-user@example.test");
+    seedCompletedAccount(db, user.id);
+
+    const [res1, res2] = await Promise.all([
+      deleteAccount(db, user.id),
+      deleteAccount(db, user.id),
+    ]);
+
+    // Both requests finish cleanly; at least one returns 200 success
+    expect([200, 401, 404, 500]).toContain(res1.status);
+    expect([200, 401, 404, 500]).toContain(res2.status);
+    const statuses = [res1.status, res2.status];
+    expect(statuses).toContain(200);
+    expect(db.hasUser(user.id)).toBe(false);
+  });
 });
 
 describe("getUserPreferences independent column compatibility", () => {
