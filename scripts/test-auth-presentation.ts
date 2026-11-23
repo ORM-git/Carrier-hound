@@ -35,11 +35,11 @@ function run() {
     loginCode = loginCode.replace(/z-\[70\]/g, "z-40");
     loginCode = loginCode.replace(/z-\[71\]/g, "z-50");
     loginCode = loginCode.replace(/sm:max-w-\[488px\]/g, "max-w-[800px]");
-    loginCode = loginCode.replace(/Welcome back to/g, "Incorrect Heading");
+    loginCode = loginCode.replace(/Sign in for free to/g, "Incorrect Heading");
     loginCode = loginCode.replace(/sm:bg-\[#F3F4F5\]/g, "bg-red-500");
     loginCode = loginCode.replace(/items-end sm:items-center/g, "items-start");
     loginCode = loginCode.replace(/rounded-t-\[20px\] rounded-b-none/g, "rounded-none");
-    signupCode = signupCode.replace(/Welcome to/g, "Unsupported Heading");
+    signupCode = signupCode.replace(/Sign up for free to/g, "Unsupported Heading");
     signupCode = signupCode.replace(/sm:rounded-\[24px\]/g, "rounded-none");
     signupCode = signupCode.replace(/sm:hidden text-\[12px\]/g, "hidden text-[12px]");
   }
@@ -132,12 +132,12 @@ function run() {
   // 3. HEADINGS: CENTRED 24PX LIGHT TEXT WITH BRAND BOLD INLINE (NO SUBTITLE / NO INSIDE LOGO)
   // -------------------------------------------------------------------------
   const hasLoginHeading =
-    loginCode.includes("Welcome back to") &&
+    loginCode.includes("Sign in for free to") &&
     loginCode.includes('<span className="font-bold">CareerMonke</span>') &&
     !loginCode.includes("Sign in to access your dashboard");
 
   const hasSignupHeading =
-    signupCode.includes("Welcome to") &&
+    signupCode.includes("Sign up for free to") &&
     signupCode.includes('<span className="font-bold">CareerMonke</span>') &&
     !signupCode.includes("Create an account to track");
 

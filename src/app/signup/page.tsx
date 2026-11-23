@@ -190,7 +190,7 @@ export default function SignupPage() {
           {/* Heading: centred 24px light text, brand bold inline */}
           <div className="text-center pt-2 sm:pt-0">
             <h1 id="auth-title" className="text-[24px] leading-tight text-[#0F172A] font-light tracking-tight">
-              Welcome to <span className="font-bold">CareerMonke</span>
+              Sign up for free to <span className="font-bold">CareerMonke</span>
             </h1>
           </div>
 

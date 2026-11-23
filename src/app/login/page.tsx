@@ -196,7 +196,7 @@ export default function LoginPage() {
           {/* Heading: centred 24px light text, brand bold inline */}
           <div className="text-center pt-2 sm:pt-0">
             <h1 id="auth-title" className="text-[24px] leading-tight text-[#0F172A] font-light tracking-tight">
-              Welcome back to <span className="font-bold">CareerMonke</span>
+              Sign in for free to <span className="font-bold">CareerMonke</span>
             </h1>
           </div>
 
