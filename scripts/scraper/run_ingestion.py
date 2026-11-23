@@ -17,6 +17,7 @@ import argparse
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Awaitable, Callable
@@ -143,6 +144,37 @@ def _matches_source_filter(source_filter: set[str], *candidates: str) -> bool:
     return bool(source_filter & lower_candidates)
 
 
+def _cohort_matches(cohort: str | None, source_type: str) -> bool:
+    if cohort is None:
+        return True
+    if cohort == "workday":
+        return source_type == "workday"
+    if cohort == "non-workday":
+        return source_type != "workday"
+    raise ValueError("cohort must be workday or non-workday")
+
+
+def _validated_source_filter(sources: list[str] | None, config: dict[str, Any]) -> set[str]:
+    if sources is None:
+        return {"all"}
+    selected = {part.strip().lower() for value in sources for part in value.split(",") if part.strip()}
+    if not selected or ("all" in selected and len(selected) > 1):
+        raise ValueError("--source must name at least one valid source; 'all' cannot be combined")
+    known = {"all", "layer1", "layer2", "layer3", "workday", "amazon", "microsoft", "jobspy", "india", "arbeitnow", "adzuna"}
+    for seed in config.get("layer1_public_ats") or []:
+        ats, slug = str(seed.get("ats") or "").lower(), str(seed.get("slug") or "").lower()
+        known.update((ats, slug, f"{ats}:{slug}"))
+    layer2 = config.get("layer2_enterprise_json") or {}
+    for seed in layer2.get("workday_cxs") or []:
+        slug = str(seed.get("slug") or "").lower()
+        known.update((slug, f"workday:{slug}"))
+    known.update(key.lower() for key in ("amazon", "microsoft") if key in layer2)
+    unknown = selected - known
+    if unknown:
+        raise ValueError(f"Unknown source selector(s): {', '.join(sorted(unknown))}")
+    return selected
+
+
 async def run_master_ingestion(
     *,
     sources: list[str] | None = None,
@@ -156,6 +188,7 @@ async def run_master_ingestion(
     expire_stale_hours: int = 72,
     transport: httpx.AsyncBaseTransport | None = None,
     jobspy_scrape_fn: Callable[..., Any] | None = None,
+    cohort: str | None = None,
 ) -> dict[str, Any]:
     """
     Runs selected ingestion layers/sources with per-source error isolation,
@@ -167,12 +200,13 @@ async def run_master_ingestion(
     )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
-    raw_filters = sources or ["all"]
-    source_filter = {s.strip().lower() for item in raw_filters for s in item.split(",") if s.strip()}
-    if not source_filter:
-        source_filter = {"all"}
-
     config = load_company_seeds(seeds_path)
+    if cohort not in (None, "workday", "non-workday"):
+        raise ValueError("cohort must be workday or non-workday")
+    if cohort and sources is not None:
+        raise ValueError("--cohort cannot be combined with --source")
+    source_filter = _validated_source_filter(sources, config)
+    run_started_at = datetime.now(timezone.utc).isoformat()
     rl_cfg = config.get("rate_limit") or {}
     limiter = PerHostRateLimiter(
         default_rps=float(rl_cfg.get("default_rps_per_host", 4.0)),
@@ -197,7 +231,7 @@ async def run_master_ingestion(
             slug = str(s.get("slug") or "").lower()
             board_id = f"{ats}:{slug}"
             is_full = False if ats == "smartrecruiters" else True
-            if _matches_source_filter(source_filter, "layer1", ats, slug, board_id):
+            if _cohort_matches(cohort, ats) and _matches_source_filter(source_filter, "layer1", ats, slug, board_id):
                 scheduled_tasks.append(
                     asyncio.create_task(
                         run_isolated_source(
@@ -213,7 +247,7 @@ async def run_master_ingestion(
         for wd in workday_seeds:
             slug = str(wd.get("slug") or "").lower()
             board_id = f"workday:{slug}"
-            if _matches_source_filter(source_filter, "layer2", "workday", slug, board_id):
+            if _cohort_matches(cohort, "workday") and _matches_source_filter(source_filter, "layer2", "workday", slug, board_id):
                 scheduled_tasks.append(
                     asyncio.create_task(
                         run_isolated_source(
@@ -225,7 +259,7 @@ async def run_master_ingestion(
                     )
                 )
 
-        if "amazon" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "amazon"):
+        if _cohort_matches(cohort, "amazon") and "amazon" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "amazon"):
             amz_seed = layer2_cfg["amazon"]
             scheduled_tasks.append(
                 asyncio.create_task(
@@ -238,7 +272,7 @@ async def run_master_ingestion(
                 )
             )
 
-        if "microsoft" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "microsoft"):
+        if _cohort_matches(cohort, "microsoft") and "microsoft" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "microsoft"):
             ms_seed = layer2_cfg["microsoft"]
             scheduled_tasks.append(
                 asyncio.create_task(
@@ -252,7 +286,7 @@ async def run_master_ingestion(
             )
 
         # Layer 3: Scheduled India Batch (JobSpy) & Public JSON Aggregators
-        if _matches_source_filter(source_filter, "layer3", "jobspy", "india"):
+        if _cohort_matches(cohort, "jobspy") and _matches_source_filter(source_filter, "layer3", "jobspy", "india"):
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
@@ -264,7 +298,7 @@ async def run_master_ingestion(
                 )
             )
 
-        if _matches_source_filter(source_filter, "layer3", "arbeitnow"):
+        if _cohort_matches(cohort, "arbeitnow") and _matches_source_filter(source_filter, "layer3", "arbeitnow"):
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
@@ -276,7 +310,7 @@ async def run_master_ingestion(
                 )
             )
 
-        if _matches_source_filter(source_filter, "layer3", "adzuna"):
+        if _cohort_matches(cohort, "adzuna") and _matches_source_filter(source_filter, "layer3", "adzuna"):
             scheduled_tasks.append(
                 asyncio.create_task(
                     run_isolated_source(
@@ -536,8 +570,15 @@ async def run_master_ingestion(
         }
 
         return {
+            "cohort": cohort or "all",
+            "sha": os.environ.get("GITHUB_SHA", "unknown"),
+            "started_at": run_started_at,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "selected_sources": [report["source_id"] for report in source_reports],
+            "completed_sources": [report["source_id"] for report in source_reports if report["completed"]],
             "dry_run": dry_run,
             "fetched": fetched_count,
+            "deduped": len(unique_jobs),
             "selected": len(all_jobs),
             "skipped_by_cap": max(0, len(unique_jobs) - len(all_jobs)),
             "projected_counts": projected_counts,
@@ -551,6 +592,12 @@ async def run_master_ingestion(
             "category_breakdown": category_counts,
             "db": db_stats,
             "expiry_vetoed": expiry_vetoed,
+            "guard_block_reason": (
+                "cohort_source_failure" if failed_sources else
+                "persistence_failure" if db_stats.get("persistence_failed") else
+                "expiry_not_authorized" if no_expire else
+                next((report.get("reason") for report in expiry_reports if report.get("status", "").startswith("skipped_")), None)
+            ),
             "expiry_reports": expiry_reports,
             "failed_sources": failed_sources,
             "sources": source_reports,
@@ -566,6 +613,8 @@ def main() -> None:
         default=None,
         help="Source filter: all, layer1, layer2, layer3, greenhouse, lever, ashby, smartrecruiters, workday, amazon, microsoft, jobspy, arbeitnow, adzuna, or slug",
     )
+    parser.add_argument("--cohort", choices=("workday", "non-workday"), default=None,
+                        help="Run exactly one disjoint source cohort; cannot be combined with --source")
     add_write_mode_arguments(parser)
     parser.add_argument("--baseline-count", type=int, default=0, help="Baseline active job count for 50%% drop guard")
     args = parser.parse_args()
@@ -585,6 +634,7 @@ def main() -> None:
                 allow_uncapped=args.production,
                 allow_expire=not args.no_expire,
                 baseline_active_count=args.baseline_count,
+                cohort=args.cohort,
             )
         )
     except WriteAuthorizationError as exc:
