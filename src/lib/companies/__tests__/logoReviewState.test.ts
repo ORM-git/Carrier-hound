@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { enqueueCompanyLogos } from "../logoQueue";
 
 // Disposable PGlite DB with BOTH logo migrations (each applied twice): owner review state (holds, keep-initials,
@@ -47,6 +47,11 @@ const sbClient = () => ({
   },
 });
 
+// Each test gets a disposable database; close it even when an assertion fails, or WASM instances pile up and the run dies early.
+afterEach(async () => {
+  await db?.close();
+});
+
 beforeEach(async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = SB;
   db = new PGlite();
@@ -88,12 +93,16 @@ describe("reviewed #698 exclusions are seeded from the review records, generical
 
   it("a fresh database without those companies seeds nothing (no orphan rows)", async () => {
     const fresh = new PGlite();
-    await fresh.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
-      CREATE TABLE public.companies (id uuid PRIMARY KEY, name text NOT NULL, slug text UNIQUE NOT NULL, domain text, careers_url text, ats_type text, logo_url text);
-      CREATE TABLE public.jobs (id serial PRIMARY KEY, company_id uuid, status text, is_active boolean);`);
-    await fresh.exec(CONTRACT);
-    await fresh.exec(REVIEW);
-    expect((await fresh.query("SELECT * FROM company_logo_reviews")).rows).toHaveLength(0);
+    try {
+      await fresh.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+        CREATE TABLE public.companies (id uuid PRIMARY KEY, name text NOT NULL, slug text UNIQUE NOT NULL, domain text, careers_url text, ats_type text, logo_url text);
+        CREATE TABLE public.jobs (id serial PRIMARY KEY, company_id uuid, status text, is_active boolean);`);
+      await fresh.exec(CONTRACT);
+      await fresh.exec(REVIEW);
+      expect((await fresh.query("SELECT * FROM company_logo_reviews")).rows).toHaveLength(0);
+    } finally {
+      await fresh.close();
+    }
   });
 });
 

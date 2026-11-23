@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eligibleLogoUrl } from "../logoEligibility";
 import { enqueueCompanyLogos } from "../logoQueue";
 import { repairCompanyLogo, type ClaimedCompany, type LogoRepairDeps } from "../logoRepair";
@@ -27,6 +27,10 @@ const one = async <T,>(sql: string, p: unknown[] = []) => (await db.query<T>(sql
 
 beforeAll(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = SB;
+});
+// Close each disposable database, even after a failed assertion, so WASM instances do not accumulate.
+afterEach(async () => {
+  await db?.close();
 });
 beforeEach(async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = SB; // importing scripts/ingest loads .env.local, which repoints it

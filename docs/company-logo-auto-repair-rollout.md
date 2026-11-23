@@ -27,12 +27,26 @@ Depends on #698 (`20261122_company_logo_contract.sql`, the repair worker and the
    workflow, mode `dry-run`, limit `20`, verify `0`. Review the artifact: `summary-*.json` (counts:
    eligible_hosted, intentional_initials, held, pending, failed), `manifest-*.json`, the preview images.
    Held companies never appear in it.
-3. **Canary write** (small, scoped): with LOGO_REPAIR_ENABLED still off, either
-   - run the reviewed manifest locally, using the exact command the dry-run prints (it always carries
-     `--manifest --limit --concurrency --verify 0`), trimmed to ~5 companies, or
-   - Run workflow, mode `write`, limit `5`, verify `0`.
-   Check the summary has no alerts, then spot-check those companies on /jobs at phone width.
-4. **Enable**: set repository variable `LOGO_REPAIR_LIMIT=20`, then `LOGO_REPAIR_ENABLED=true`. Each scheduled
+3. **Canary write: only a reviewed manifest, never a queue run.** With `LOGO_REPAIR_ENABLED` still off:
+   1. **Make a canary-sized manifest with its own dry-run** (read-only): locally,
+      `npx tsx scripts/repair-company-logos.ts --limit 5 --out reports/logo-repair/canary`, or Run workflow
+      with mode `dry-run`, limit `5`, verify `0`. The dry-run itself picks at most 5 companies and writes
+      `manifest-*.json` plus the exact preview image for each.
+   2. **Review that manifest:** every company ID, its current `logo_url` and the proposed image and sha256 in
+      the preview. Keep the file unchanged; it is what the write checks.
+   3. **Run the exact command that dry-run printed.** It always carries `--manifest <file> --limit <n> --concurrency <c> --verify 0`.
+      The write claims only the listed IDs. It skips any company whose `logo_url` changed since the review
+      (manifest drift) or whose resolved image no longer matches the reviewed sha256, and it runs no
+      verification pass outside the manifest.
+   - **Do not use workflow mode `write` for a canary.** It passes no manifest: it claims whatever is at the
+     top of the queue (`p_ids: null`), which need not be the companies or images you reviewed. A numeric
+     limit is not the same as an exact, reviewed selection.
+   - **Do not trim a larger reviewed manifest by lowering `--limit`.** The CLI refuses a manifest with more
+     companies than `--limit`. A hand-trimmed copy is a new manifest and needs its own review before any
+     write; generating a fresh 5-company dry-run is simpler.
+   - Check the run summary has no alerts, then spot-check those exact companies on /jobs at phone width.
+4. **Enable** (separate approval, after the canary is verified; scheduled maintenance stays OFF until then):
+   set repository variable `LOGO_REPAIR_LIMIT=20`, then `LOGO_REPAIR_ENABLED=true`. Each scheduled
    run (twice an hour) claims at most 20 companies and re-verifies at most 25 hosted logos; holds and
    keep-initials companies are skipped.
 

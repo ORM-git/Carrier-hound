@@ -75,6 +75,28 @@ describe("manifest-scoped runs never touch other companies", () => {
   });
 });
 
+describe("the documented canary is manifest-bound", () => {
+  const doc = fs.readFileSync("docs/company-logo-auto-repair-rollout.md", "utf8");
+  const canary = doc.slice(doc.indexOf("3. **Canary write"), doc.indexOf("4. **Enable"));
+  const workflow = fs.readFileSync(".github/workflows/company-logo-repair.yml", "utf8");
+
+  it("offers only the reviewed manifest command, and warns that a workflow write is an unbound queue run", () => {
+    expect(canary).toContain("--manifest <file> --limit <n> --concurrency <c> --verify 0");
+    expect(canary).toMatch(/Do not use workflow mode `write` for a canary/);
+    expect(canary).not.toMatch(/Run workflow, mode `write`/);
+    expect(canary).not.toMatch(/trimmed to ~5/);
+    // Why: the workflow's write passes no manifest, so the worker would claim the current queue head.
+    expect(workflow).not.toMatch(/--manifest/);
+  });
+
+  it("the canary's own dry-run command parses as a read-only, bounded run", () => {
+    expect(parseArgs(["--limit", "5", "--out", "reports/logo-repair/canary"])).toMatchObject({ write: false, limit: 5, manifest: null });
+    // and the reviewed write it prints stays manifest-scoped with no verification pass
+    const cmd = reviewedWriteCommand(5, 4, "reports/logo-repair/canary/manifest-x.json");
+    expect(parseArgs(cmd.split(" ").slice(3))).toMatchObject({ write: true, limit: 5, verify: 0, manifest: "reports/logo-repair/canary/manifest-x.json" });
+  });
+});
+
 describe("dry run makes zero external writes", () => {
   it("resolves and previews without any storage upload or database mutation", async () => {
     const writes: string[] = [];

@@ -71,29 +71,29 @@ export function companyInitial(company: string | null | undefined): string {
 }
 
 /**
- * True unless the loaded image is measurably unreadable on our light tiles (transparent, all-white, faint).
- * Uses the same rule as the repair worker (logoVisibility.ts). If pixels can't be read (no canvas), the
- * worker's pre-upload check stands.
+ * True only when the loaded image is MEASURED readable on our light tiles, with the same rule as the repair
+ * worker (logoVisibility.ts). No canvas, a denied/tainted read or any measurement error is "not proven", so the
+ * initials stay: a hosted URL or a non-zero size is not evidence that this particular image is visible.
  */
 function readableOnTile(img: HTMLImageElement): boolean {
   try {
     const c = document.createElement("canvas");
     c.width = c.height = LOGO_SAMPLE_PX;
     const ctx = c.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return true;
+    if (!ctx) return false;
     const k = Math.min(LOGO_SAMPLE_PX / img.naturalWidth, LOGO_SAMPLE_PX / img.naturalHeight);
     const w = img.naturalWidth * k, h = img.naturalHeight * k;
     ctx.drawImage(img, (LOGO_SAMPLE_PX - w) / 2, (LOGO_SAMPLE_PX - h) / 2, w, h);
     return logoVisibility(ctx.getImageData(0, 0, LOGO_SAMPLE_PX, LOGO_SAMPLE_PX).data, LOGO_SAMPLE_PX, LOGO_SAMPLE_PX).ok;
   } catch {
-    return true;
+    return false;
   }
 }
 
 /**
  * Shared display contract for every company avatar (cards, detail, Radar, landing ticker): render the
  * initials first and keep them until an eligible hosted logo has loaded with a real size and measured
- * readable. `imgProps` is null when there is nothing to load; `shown` is true once the logo may replace
+ * readable in this browser (the only per-image readability result trusted here; it is cached per URL). `imgProps` is null when there is nothing to load; `shown` is true once the logo may replace
  * the initials.
  */
 export function useVerifiedLogo(logoUrl: string | null | undefined) {

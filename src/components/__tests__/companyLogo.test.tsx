@@ -2,7 +2,7 @@
 import React from "react";
 import { describe, it, expect, afterEach, beforeEach, beforeAll, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
-import CompanyLogo, { companyInitial } from "../CompanyLogo";
+import CompanyLogo, { companyInitial, useVerifiedLogo } from "../CompanyLogo";
 
 const SB = "https://proj.supabase.co";
 beforeAll(() => {
@@ -86,6 +86,7 @@ describe("CompanyLogo", () => {
   });
 
   it("a successful load keeps the image on a neutral light backing (dark transparent marks stay visible)", () => {
+    pixels([17, 24, 39, 255]);
     const logo = url();
     const { container } = render(<CompanyLogo company="Acme" logoUrl={logo} className="w-10 h-10" />);
     const img = container.querySelector("img")!;
@@ -131,6 +132,7 @@ describe("CompanyLogo", () => {
   });
 
   it("a failed old URL does not poison the repaired (new content-hashed) URL", () => {
+    pixels([17, 24, 39, 255]);
     const oldUrl = url();
     const repaired = url();
     const { container, rerender } = render(<CompanyLogo company="Acme" logoUrl={oldUrl} />);
@@ -142,6 +144,110 @@ describe("CompanyLogo", () => {
     sized(img);
     fireEvent.load(img);
     expect(container.querySelector("img")!.className).not.toContain("opacity-0");
+  });
+
+  describe("readability must be measured, never assumed", () => {
+    const loadWith = (setup: () => void) => {
+      setup();
+      const logo = url();
+      const { container } = render(<CompanyLogo company="Acme" logoUrl={logo} className="w-10 h-10" />);
+      const tile = container.firstElementChild as HTMLElement;
+      const before = tile.className;
+      const img = container.querySelector("img")!;
+      sized(img);
+      fireEvent.load(img);
+      return { container, before, after: (container.firstElementChild as HTMLElement).className, logo };
+    };
+    const keepsInitials = (r: ReturnType<typeof loadWith>) => {
+      expect(r.container.querySelector("img")).toBeNull();
+      expect(r.container.textContent).toBe("A");
+      expect(r.after).toBe(r.before); // same box: no layout shift
+    };
+
+    it("no 2D context (canvas unavailable): initials stay", () => {
+      keepsInitials(loadWith(() => vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null)));
+    });
+    it("getContext throws: initials stay", () => {
+      keepsInitials(loadWith(() => vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => { throw new Error("blocked"); })));
+    });
+    it("getImageData throws (tainted / denied read): initials stay", () => {
+      keepsInitials(loadWith(() => vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+        drawImage: () => undefined,
+        getImageData: () => { throw new DOMException("The canvas has been tainted by cross-origin data.", "SecurityError"); },
+      } as any)));
+    });
+    it("drawImage throws: initials stay", () => {
+      keepsInitials(loadWith(() => vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: () => { throw new Error("decode"); }, getImageData: () => ({ data: new Uint8ClampedArray(0) }) } as any)));
+    });
+    it("loaded but transparent content: initials stay", () => {
+      keepsInitials(loadWith(() => pixels([0, 0, 0, 0])));
+    });
+    it("loaded but white / faint on the light tile: initials stay", () => {
+      keepsInitials(loadWith(() => pixels([250, 250, 250, 255])));
+    });
+    it("measured readable: the logo replaces the initials in the same box", () => {
+      const r = loadWith(() => pixels([17, 24, 39, 255]));
+      expect(r.container.querySelector("img")!.className).not.toContain("opacity-0");
+      expect(r.container.textContent).toBe("");
+      expect(r.after).toBe(r.before);
+    });
+    it("a new (repaired) URL still recovers after the old URL failed measurement", () => {
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+      const oldUrl = url();
+      const { container, rerender } = render(<CompanyLogo company="Acme" logoUrl={oldUrl} />);
+      sized(container.querySelector("img")!);
+      fireEvent.load(container.querySelector("img")!);
+      expect(container.querySelector("img")).toBeNull();
+      vi.restoreAllMocks();
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+      pixels([17, 24, 39, 255]);
+      const repaired = url();
+      rerender(<CompanyLogo company="Acme" logoUrl={repaired} />);
+      const img = container.querySelector("img")!;
+      expect(img.getAttribute("src")).toBe(repaired);
+      sized(img);
+      fireEvent.load(img);
+      expect(container.querySelector("img")!.className).not.toContain("opacity-0");
+      // and the old URL stays on initials
+      rerender(<CompanyLogo company="Acme" logoUrl={oldUrl} />);
+      expect(container.querySelector("img")).toBeNull();
+    });
+    it("an already-complete cached image with no canvas keeps the initials (ref path, no load event)", () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(64);
+      vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(64);
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+      const { container } = render(<CompanyLogo company="Acme" logoUrl={url()} />);
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.textContent).toBe("A");
+    });
+    it("the shared hook used by the landing ticker follows the same contract", () => {
+      function TickerLike({ src }: { src: string }) {
+        const { imgProps, shown } = useVerifiedLogo(src);
+        return <div>{imgProps && <img {...imgProps} alt="" />}{!shown && <span>T</span>}</div>;
+      }
+      for (const setup of [
+        () => vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null),
+        () => vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => { throw new Error("blocked"); }),
+        () => pixels([0, 0, 0, 0]),
+      ]) {
+        setup();
+        const { container, unmount } = render(<TickerLike src={url()} />);
+        const img = container.querySelector("img")!;
+        sized(img);
+        fireEvent.load(img);
+        expect(container.querySelector("img")).toBeNull();
+        expect(container.textContent).toBe("T");
+        unmount();
+        vi.restoreAllMocks();
+        vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+      }
+      pixels([17, 24, 39, 255]);
+      const { container } = render(<TickerLike src={url()} />);
+      sized(container.querySelector("img")!);
+      fireEvent.load(container.querySelector("img")!);
+      expect(container.textContent).toBe("");
+    });
   });
 
   it("loads the hosted logo with anonymous CORS so its pixels can be measured", () => {
