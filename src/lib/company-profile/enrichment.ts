@@ -319,8 +319,9 @@ function extractOfficialCompanyPageInternal(input: {
     return types.includes("NewsArticle") || types.includes("Article");
   }).slice(0, 8).flatMap((o, index) => {
     const headline = clean(o.headline || o.name, 220), publishedAt = iso(o.datePublished), sourceUrl = safeCompanySourceUrl(typeof o.url === "string" ? o.url : pageUrl);
-    // A publication date after the page was fetched (beyond one day of timezone skew) is not a real publication date.
-    if (!headline || !publishedAt || !sourceUrl || normalizedHost(sourceUrl) !== expectedHost || Date.parse(publishedAt) > Date.parse(retrievedAt) + 86_400_000) return [];
+    // A publication time after the page was fetched is not a real publication time, however small the gap.
+    // A date-only value is read as midnight UTC, so a page in a zone ahead of UTC may have same-day news rejected; that errs toward not showing it.
+    if (!headline || !publishedAt || !sourceUrl || normalizedHost(sourceUrl) !== expectedHost || Date.parse(publishedAt) > Date.parse(retrievedAt)) return [];
     return [{ id: `${publishedAt}:${index}`, headline, publishedAt, sourceUrl, excerpt: clean(o.description, 300) || null }];
   });
   return { verified: true, facts, leadership, news };

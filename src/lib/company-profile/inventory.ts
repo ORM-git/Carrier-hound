@@ -16,12 +16,18 @@ const PROFILE_TABLES = Object.keys(CANARY_TABLES) as CanaryTable[];
 
 export interface InventoryCompany { id: string; name: string; canonical_domain: string | null }
 export interface InventoryBoard { id: string; company_id: string; enabled: boolean; ats_type: string | null; slug: string | null; careers_url: string | null }
-/** Reads only. Every method takes a whole page of companies, so a page costs a fixed number of queries. */
+/**
+ * Reads only. Each method is called once per page of companies and must return COMPLETE results or throw;
+ * a store may need several requests to do that (the Supabase adapter pages every read; see inventoryStore.ts).
+ */
 export interface InventoryStore {
-  /** Companies with id > afterId (all companies when null), ordered by id ascending, at most `limit`. */
+  /** Companies with id > afterId (all companies when null), ordered by id ascending: exactly min(limit, remaining). */
   companiesAfter(afterId: string | null, limit: number): Promise<InventoryCompany[]>;
-  /** How many companies (in the whole table, not just this page) hold each of these canonical domains. */
-  domainOwnerCounts(domains: string[]): Promise<Record<string, number>>;
+  /**
+   * Every company, anywhere in the table, whose stored canonical_domain contains one of these identities
+   * case-insensitively (a superset is fine). The planner normalizes each value with domainIdentity() and counts exact matches.
+   */
+  domainCandidates(identities: string[]): Promise<Array<{ id: string; canonical_domain: string | null }>>;
   /** Every ATS board, enabled or not, for these companies. */
   boards(companyIds: string[]): Promise<InventoryBoard[]>;
   /** Active jobs (status 'active' and is_active) per company id. */
@@ -53,6 +59,8 @@ export const INVENTORY_DEFINITIONS: Record<InventoryCategory | "scanned" | "elig
   error: "This company's stored rows could not be read or validated. Not a crawl failure: inventory never crawls.",
 };
 
+export const INVENTORY_SCOPE = "Counts, holds and the shortlist cover only the companies scanned in this window. Domain ownership is checked against every company in the table; ATS boards, active jobs and profile rows are read in full for the scanned companies. Separate windows are not merged into one ranking.";
+
 export const INVENTORY_RANKING = [
   "1. More active jobs first: those are the job pages Pro users open.",
   "2. More missing sections first (facts, leadership and news each count as one).",
@@ -81,7 +89,7 @@ export interface CompanyInventoryReport {
   kind: "company-profile-candidate-inventory"; format: 1;
   read_only: true; writes: 0; crawled: false; authorizes_canary: false;
   generated_at: string; code_sha: string | null; target: string;
-  window: { after_id: string | null; limit: number; scanned: number; next_cursor: string | null };
+  window: { after_id: string | null; limit: number; scanned: number; next_cursor: string | null; scope: string };
   definitions: typeof INVENTORY_DEFINITIONS; ranking: string[];
   counts: { companies: Record<InventoryCategory | "scanned" | "eligible", number>; rows: Record<CanaryTable, number> };
   shortlist: ShortlistEntry[];
@@ -120,12 +128,15 @@ export function inventoryDomain(raw: string | null): string | null {
   const domain = String(raw || "").trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
   return /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain) ? domain : null;
 }
-const identityDomain = (domain: string) => domain.replace(/^www\./, "");
+/** The one identity rule for classification and ownership: inventoryDomain() (case, scheme, path) without a leading www. */
+export function domainIdentity(raw: string | null): string | null {
+  return inventoryDomain(raw)?.replace(/^www\./, "") ?? null;
+}
 // Postgres orders uuid bytewise, which equals plain string order for lower-case hex; localeCompare may not.
 const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 function classify(input: {
-  company: InventoryCompany; now: string; domainOwners: Record<string, number>; boards: InventoryBoard[]; activeJobs: number; rawRows: Record<CanaryTable, Record<string, unknown>[]>; secrets: string[];
+  company: InventoryCompany; now: string; domainOwners: Map<string, Set<string>>; boards: InventoryBoard[]; activeJobs: number; rawRows: Record<CanaryTable, Record<string, unknown>[]>; secrets: string[];
 }): InventoryRecord {
   const { company, boards } = input;
   const enabled = boards.filter((b) => b.enabled);
@@ -138,7 +149,7 @@ function classify(input: {
   const categories = new Set<InventoryCategory>();
   const domain = inventoryDomain(company.canonical_domain);
   if (!domain) categories.add("missing_domain");
-  else if ((input.domainOwners[identityDomain(domain)] || 0) > 1) categories.add("ambiguous_identity");
+  else if ((input.domainOwners.get(domainIdentity(domain)!)?.size || 0) > 1) categories.add("ambiguous_identity");
   if (!enabled.length) categories.add("no_enabled_ats");
   try {
     const rows = Object.fromEntries(PROFILE_TABLES.map((t) => [t, input.rawRows[t].map((r) => normalizeCanaryRow(t, r))])) as Record<CanaryTable, CanaryRow[]>;
@@ -215,10 +226,13 @@ export async function buildCompanyInventory(input: {
     if (page.length && cursor && byId(page[0].id, cursor) <= 0) throw new Error("Store returned a company at or before the cursor");
     if (!page.length) { exhausted = true; break; }
     const ids = page.map((c) => c.id);
-    const domains = Array.from(new Set(page.map((c) => inventoryDomain(c.canonical_domain)).filter((d): d is string => Boolean(d)).map(identityDomain)));
-    const [domainOwners, boards, jobs, ...tableRows] = await Promise.all([
-      input.store.domainOwnerCounts(domains), input.store.boards(ids), input.store.activeJobCounts(ids), ...PROFILE_TABLES.map((t) => input.store.rows(t, ids)),
+    const identities = Array.from(new Set(page.map((c) => domainIdentity(c.canonical_domain)).filter((d): d is string => Boolean(d))));
+    const [candidates, boards, jobs, ...tableRows] = await Promise.all([
+      input.store.domainCandidates(identities), input.store.boards(ids), input.store.activeJobCounts(ids), ...PROFILE_TABLES.map((t) => input.store.rows(t, ids)),
     ]);
+    // Ownership counts distinct companies, across the whole table, whose stored value normalizes to the same identity.
+    const domainOwners = new Map(identities.map((d) => [d, new Set<string>()]));
+    for (const row of candidates) domainOwners.get(domainIdentity(row.canonical_domain) ?? "")?.add(row.id);
     for (const company of page) {
       const rawRows = Object.fromEntries(PROFILE_TABLES.map((t, i) => [t, tableRows[i].filter((r) => String(r.company_id) === company.id)])) as Record<CanaryTable, Record<string, unknown>[]>;
       records.push(classify({ company, now, domainOwners, boards: boards.filter((b) => b.company_id === company.id), activeJobs: jobs[company.id] || 0, rawRows, secrets }));
@@ -241,7 +255,7 @@ export async function buildCompanyInventory(input: {
   return {
     kind: "company-profile-candidate-inventory", format: 1, read_only: true, writes: 0, crawled: false, authorizes_canary: false,
     generated_at: now, code_sha: input.codeSha, target: input.target,
-    window: { after_id: input.afterId, limit: input.limit, scanned: records.length, next_cursor: exhausted ? null : cursor },
+    window: { after_id: input.afterId, limit: input.limit, scanned: records.length, next_cursor: exhausted ? null : cursor, scope: INVENTORY_SCOPE },
     definitions: INVENTORY_DEFINITIONS, ranking: INVENTORY_RANKING,
     counts: { companies: companyCounts, rows: rowCounts },
     shortlist: records.filter((r) => r.eligible).sort(compareCandidates).slice(0, input.shortlist).map((r, i) => shortlistEntry(r, i + 1)),
@@ -261,6 +275,8 @@ export function renderInventorySummary(report: CompanyInventoryReport): string {
     "",
     `Generated ${report.generated_at} · target \`${report.target}\` · code \`${report.code_sha ?? "unknown"}\``,
     `Window: after \`${report.window.after_id ?? "start"}\`, ${report.window.scanned} of limit ${report.window.limit} scanned · next cursor \`${report.window.next_cursor ?? "none (end of table)"}\``,
+    "",
+    `Scope: ${report.window.scope}`,
     "",
     "**No writes, no crawl. Suggestions are not permission:** the owner picks at most 3 UUIDs for the read-only canary plan.",
     "",

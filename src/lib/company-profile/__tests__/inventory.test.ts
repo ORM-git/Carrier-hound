@@ -34,6 +34,8 @@ const CO = {
   disabledAts: ID(11),  // hold: only a disabled board
   noAts: ID(12),        // hold: no board at all
   badRows: ID(13),      // hold: stored rows fail validation (error)
+  tieBShadow: ID(14),   // same identity as tieB in another case/scheme/path form, outside the first window
+  tieGamma: ID(15),     // eligible: 3 jobs, never enriched (ties with tieA, loses on UUID)
 };
 
 async function inventoryDb(options: { migrate?: boolean } = {}) {
@@ -49,13 +51,14 @@ async function inventoryDb(options: { migrate?: boolean } = {}) {
     [CO.staleConflict, "Harbor Signal", "harbor-signal.example"], [CO.fresh, "Fresh Fields", "fresh-fields.example"], [CO.cooling, "Cooling Co", "cooling.example"],
     [CO.noDomain, "Nameonly Inc", null], [CO.badDomain, "Bad Domain", "https://user@bad:8080/x"], [CO.dupA, "Twin One", "twins.example"], [CO.dupB, "Twin Two", "www.twins.example"],
     [CO.disabledAts, "Disabled Board", "disabled.example"], [CO.noAts, "No Board", "noboard.example"], [CO.badRows, "Bad Rows", "badrows.example"],
+    [CO.tieBShadow, "Tie Beta Holdings", "HTTPS://WWW.Tie-Beta.example/careers"], [CO.tieGamma, "Tie Gamma", "tie-gamma.example"],
   ];
   for (const [id, name, domain] of companies) await db.query("INSERT INTO public.companies VALUES ($1,$2,$3)", [id, name, domain]);
   for (const [id] of companies) {
     if (id === CO.noAts) continue;
     await db.query("INSERT INTO public.company_boards(id,company_id,ats_type,slug,careers_url,enabled) VALUES ($1,$2,'greenhouse',$3,$4,$5)", [id.replace(/^c/, "b"), id, `slug-${id.slice(-2)}`, `https://boards.greenhouse.io/slug-${id.slice(-2)}`, id !== CO.disabledAts]);
   }
-  const jobs: Record<string, number> = { [CO.bigNever]: 9, [CO.tieA]: 3, [CO.tieB]: 3, [CO.staleConflict]: 2, [CO.fresh]: 5, [CO.noDomain]: 7 };
+  const jobs: Record<string, number> = { [CO.bigNever]: 9, [CO.tieA]: 3, [CO.tieB]: 3, [CO.staleConflict]: 2, [CO.fresh]: 5, [CO.noDomain]: 7, [CO.tieGamma]: 3 };
   for (const [id, n] of Object.entries(jobs)) for (let i = 0; i < n; i++) await db.query("INSERT INTO public.jobs(company_id,status,is_active) VALUES ($1,'active',true)", [id]);
   await db.query("INSERT INTO public.jobs(company_id,status,is_active) VALUES ($1,'expired',false)", [CO.tieB]);
   await db.exec(`
@@ -84,10 +87,9 @@ function pgInventoryStore(db: PGlite, onQuery?: (method: string) => void): Inven
       track("companiesAfter");
       return (await db.query<any>("SELECT id::text id, name, canonical_domain FROM public.companies WHERE $1::uuid IS NULL OR id > $1::uuid ORDER BY id LIMIT $2", [afterId, limit])).rows;
     },
-    async domainOwnerCounts(domains) {
-      track("domainOwnerCounts");
-      const { rows } = await db.query<{ d: string; n: number }>("SELECT regexp_replace(lower(canonical_domain), '^www\\.', '') d, count(*)::int n FROM public.companies WHERE regexp_replace(lower(canonical_domain), '^www\\.', '') = ANY($1::text[]) GROUP BY 1", [domains]);
-      return Object.fromEntries(rows.map((r) => [r.d, r.n]));
+    async domainCandidates(identities) {
+      track("domainCandidates");
+      return (await db.query<any>("SELECT id::text id, canonical_domain FROM public.companies WHERE canonical_domain ILIKE ANY($1::text[]) ORDER BY id", [identities.map((d) => `%${d}%`)])).rows;
     },
     async boards(ids) {
       track("boards");
@@ -139,10 +141,10 @@ describe("company-profile candidate inventory (read-only planner)", () => {
       const before = await snapshot(db);
       const store = pgInventoryStore(db);
       // Structural guarantees: the store has no write method and the builder takes no page fetcher.
-      expect(Object.keys(store).sort()).toEqual(["activeJobCounts", "boards", "companiesAfter", "domainOwnerCounts", "rows"]);
+      expect(Object.keys(store).sort()).toEqual(["activeJobCounts", "boards", "companiesAfter", "domainCandidates", "rows"]);
       const report = await build(db, { store });
       expect(await snapshot(db)).toEqual(before);
-      expect(report).toMatchObject({ read_only: true, writes: 0, crawled: false, authorizes_canary: false, window: { after_id: null, scanned: 13, next_cursor: null } });
+      expect(report).toMatchObject({ read_only: true, writes: 0, crawled: false, authorizes_canary: false, window: { after_id: null, scanned: 15, next_cursor: null } });
       const cats = Object.fromEntries(report.companies.map((r) => [r.company_id, r.categories]));
       expect(cats[CO.bigNever]).toEqual(["missing_facts", "missing_leadership", "missing_news", "never_enriched", "stale"]);
       expect(cats[CO.staleConflict]).toEqual(["conflict"]);
@@ -158,8 +160,8 @@ describe("company-profile candidate inventory (read-only planner)", () => {
       const disabled = report.companies.find((r) => r.company_id === CO.disabledAts)!;
       expect(disabled.ats).toEqual({ enabled: 0, disabled: 1, boards: [] });
       expect(report.counts.companies).toEqual({
-        scanned: 13, eligible: 4, missing_domain: 2, ambiguous_identity: 2, no_enabled_ats: 2, fresh_cache_hit: 1, refresh_not_due: 1,
-        stale: 10, conflict: 1, never_enriched: 9, missing_facts: 9, missing_leadership: 10, missing_news: 10, error: 1,
+        scanned: 15, eligible: 4, missing_domain: 2, ambiguous_identity: 4, no_enabled_ats: 2, fresh_cache_hit: 1, refresh_not_due: 1,
+        stale: 12, conflict: 1, never_enriched: 11, missing_facts: 11, missing_leadership: 12, missing_news: 12, error: 1,
       });
       // Row counts are rows, not companies; the bad-rows company's unreadable rows are not counted.
       expect(report.counts.rows).toEqual({ company_profile_facts: 3, company_profile_leadership: 2, company_profile_news: 2, company_profile_refresh_state: 3 });
@@ -176,7 +178,7 @@ describe("company-profile candidate inventory (read-only planner)", () => {
     const db = await inventoryDb();
     try {
       const report = await build(db);
-      expect(report.shortlist.map((s) => s.company_id)).toEqual([CO.bigNever, CO.tieA, CO.tieB, CO.staleConflict]);
+      expect(report.shortlist.map((s) => s.company_id)).toEqual([CO.bigNever, CO.tieA, CO.tieGamma, CO.staleConflict]);
       expect(report.shortlist[0]).toMatchObject({
         rank: 1, canonical_domain: "northwind-robotics.example", active_jobs: 9,
         reasons: ["9 active jobs", "missing facts, leadership, news", "never enriched", "enabled ATS evidence: greenhouse:slug-01"],
@@ -188,22 +190,27 @@ describe("company-profile candidate inventory (read-only planner)", () => {
       const shuffled = await inventory.buildCompanyInventory({ store: { ...pgInventoryStore(db), boards: async (ids) => (await pgInventoryStore(db).boards(ids)).reverse() }, afterId: null, limit: 1000, shortlist: 10, now: () => NOW, codeSha: null, target: "local" });
       expect(shuffled.shortlist.map((s) => s.company_id)).toEqual(report.shortlist.map((s) => s.company_id));
       // The missing-domain company has the second most jobs but goes to the review queue with no guessed domain.
+      // Tie Beta's identity is also held, in another case/scheme/path form, by a company in a later window.
       expect(report.review_queue).toEqual([
+        { company_id: CO.tieB, name: "Tie Beta", canonical_domain: "tie-beta.example", active_jobs: 3, reasons: ["ambiguous_identity"] },
         { company_id: CO.noDomain, name: "Nameonly Inc", canonical_domain: null, active_jobs: 7, reasons: ["missing_domain"] },
         { company_id: CO.badDomain, name: "Bad Domain", canonical_domain: "https://user@bad:8080/x", active_jobs: 0, reasons: ["missing_domain"] },
         { company_id: CO.dupA, name: "Twin One", canonical_domain: "twins.example", active_jobs: 0, reasons: ["ambiguous_identity"] },
         { company_id: CO.dupB, name: "Twin Two", canonical_domain: "www.twins.example", active_jobs: 0, reasons: ["ambiguous_identity"] },
+        { company_id: CO.tieBShadow, name: "Tie Beta Holdings", canonical_domain: "HTTPS://WWW.Tie-Beta.example/careers", active_jobs: 0, reasons: ["ambiguous_identity"] },
       ]);
       expect(JSON.stringify(report.shortlist)).not.toMatch(/nameonly/i);
       expect(report.holds.map((h) => [h.company_id, h.reasons])).toEqual([
         [CO.fresh, ["fresh_cache_hit"]], [CO.cooling, ["refresh_not_due"]], [CO.disabledAts, ["no_enabled_ats"]], [CO.noAts, ["no_enabled_ats"]], [CO.badRows, ["error"]],
       ]);
       expect(inventory.inventoryDomain("Example.COM/path")).toBe("example.com");
+      expect(inventory.domainIdentity("HTTPS://WWW.Tie-Beta.example/careers")).toBe("tie-beta.example");
+      expect(inventory.domainIdentity("www.twins.example")).toBe(inventory.domainIdentity("TWINS.example"));
       for (const bad of [null, "", "localhost", "user@x.example", "x.example:8443", "10.0.0.1", "-bad.example"]) expect(inventory.inventoryDomain(bad), String(bad)).toBeNull();
     } finally { await db.close(); }
   });
 
-  it("pages with a resumable cursor: no company missed or repeated, and a fixed query count per page", async () => {
+  it("pages with a resumable cursor: no company missed or repeated, and each store method called once per page", async () => {
     const db = await inventoryDb();
     try {
       const full = await build(db);
@@ -222,10 +229,13 @@ describe("company-profile candidate inventory (read-only planner)", () => {
       } while (cursor && runs < 10);
       expect(runs).toBe(4);
       expect(seen).toEqual(full.companies.map((r) => r.company_id));
-      expect(new Set(seen).size).toBe(13);
+      expect(new Set(seen).size).toBe(15);
+      // The first window alone already sees Tie Beta as ambiguous: ownership is not limited to the window.
+      const first = await build(db, { limit: 4 });
+      expect(first.companies.find((r) => r.company_id === CO.tieB)!.categories).toContain("ambiguous_identity");
       // Resuming exactly at the end reports an empty window with no cursor.
-      const end = await build(db, { afterId: ID(13), limit: 5 });
-      expect(end.window).toEqual({ after_id: ID(13), limit: 5, scanned: 0, next_cursor: null });
+      const end = await build(db, { afterId: ID(15), limit: 5 });
+      expect(end.window).toMatchObject({ after_id: ID(15), limit: 5, scanned: 0, next_cursor: null });
       // A store that breaks cursor order is refused rather than producing a wrong cursor.
       const unordered = { ...pgInventoryStore(db), companiesAfter: async (a: string | null, l: number) => (await pgInventoryStore(db).companiesAfter(a, l)).reverse() };
       await expect(build(db, { store: unordered })).rejects.toThrow(/out of UUID order/);
@@ -278,6 +288,7 @@ describe("suggestions never authorize a write", () => {
       // A shortlist longer than the cap cannot be passed through: the canary still caps at 3 explicit IDs.
       const ids = report.shortlist.map((s) => s.company_id).join(",");
       expect(() => canary.parseCanaryOptions(["--production", "--target-project", REF, "--max-companies", "3", "--company-ids", ids, "--plan-out", "p.json"])).toThrow(/over --max-companies 3/);
+      expect(report.shortlist.length).toBeGreaterThan(3);
       expect(isAllowedCompanyProfileWriteTarget(`https://${REF}.supabase.co`, "production", REF)).toBe(false);
     } finally { await db.close(); }
   });
@@ -332,12 +343,28 @@ describe("canary plan review summary", () => {
 });
 
 describe("news publication dates", () => {
-  it("keeps a real past publication date and rejects invalid or future ones", () => {
-    const extract = (html: string) => extractOfficialCompanyPage({ html, pageUrl: fixture.affirm.pageUrl, canonicalDomain: fixture.affirm.canonicalDomain, companyName: fixture.affirm.companyName, retrievedAt: "2026-11-22T00:00:00Z", atsBoards: [{ ats_type: "greenhouse", slug: "affirm", careers_url: "https://boards.greenhouse.io/affirm" }] }).news;
-    expect(extract(fixture.affirm.html)).toEqual([expect.objectContaining({ headline: "Company update", publishedAt: "2026-10-01T00:00:00.000Z" })]);
-    expect(extract(fixture.affirm.html.replace('"datePublished":"2026-10-01"', '"datePublished":"2026-11-22T20:00:00Z"'))).toHaveLength(1);
-    expect(extract(fixture.affirm.html.replace('"datePublished":"2026-10-01"', '"datePublished":"2027-06-01"'))).toEqual([]);
-    expect(extract(fixture.affirm.html.replace('"datePublished":"2026-10-01"', '"datePublished":"last week"'))).toEqual([]);
-    expect(extract(fixture.affirm.html.replace('"datePublished":"2026-10-01",', ""))).toEqual([]);
+  it("keeps real past publication dates and rejects any future timestamp, invalid or missing date", () => {
+    const retrievedAt = "2026-11-22T12:00:00Z";
+    const extract = (published: string | null) => {
+      const html = published === null ? fixture.affirm.html.replace('"datePublished":"2026-10-01",', "") : fixture.affirm.html.replace('"datePublished":"2026-10-01"', `"datePublished":"${published}"`);
+      return extractOfficialCompanyPage({ html, pageUrl: fixture.affirm.pageUrl, canonicalDomain: fixture.affirm.canonicalDomain, companyName: fixture.affirm.companyName, retrievedAt, atsBoards: [{ ats_type: "greenhouse", slug: "affirm", careers_url: "https://boards.greenhouse.io/affirm" }] }).news;
+    };
+    const kept = (published: string) => expect(extract(published).map((n) => n.publishedAt), published).toEqual([new Date(published).toISOString()]);
+    const rejected = (published: string | null) => expect(extract(published), String(published)).toEqual([]);
+    kept("2026-10-01");                 // date-only, in the past
+    kept("2026-11-22");                 // date-only, same UTC day: midnight UTC is before the fetch
+    kept("2026-11-22T11:59:00Z");       // one minute before the fetch
+    kept("2026-11-22T12:00:00Z");       // exactly the fetch time
+    rejected("2026-11-22T12:05:00Z");   // minutes ahead
+    rejected("2026-11-22T18:00:00Z");   // hours ahead, same day
+    rejected("2026-11-23T11:00:00Z");   // within the next 24 hours
+    rejected("2026-11-23");             // tomorrow, date-only
+    rejected("2027-06-01");             // distant future
+    rejected("last week");              // invalid
+    rejected("2026-13-45");             // invalid
+    rejected(null);                     // missing
+    // Publication and retrieval stay separate fields.
+    const [item] = extract("2026-10-01");
+    expect(item).not.toHaveProperty("retrievedAt");
   });
 });

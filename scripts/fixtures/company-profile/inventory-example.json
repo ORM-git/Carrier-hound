@@ -11,8 +11,9 @@
   "window": {
     "after_id": null,
     "limit": 1000,
-    "scanned": 13,
-    "next_cursor": null
+    "scanned": 15,
+    "next_cursor": null,
+    "scope": "Counts, holds and the shortlist cover only the companies scanned in this window. Domain ownership is checked against every company in the table; ATS boards, active jobs and profile rows are read in full for the scanned companies. Separate windows are not merged into one ranking."
   },
   "definitions": {
     "scanned": "Companies read in this window (cursor order by UUID).",
@@ -39,18 +40,18 @@
   "counts": {
     "companies": {
       "missing_domain": 2,
-      "ambiguous_identity": 2,
+      "ambiguous_identity": 4,
       "no_enabled_ats": 2,
       "fresh_cache_hit": 1,
       "refresh_not_due": 1,
-      "stale": 10,
+      "stale": 12,
       "conflict": 1,
-      "never_enriched": 9,
-      "missing_facts": 9,
-      "missing_leadership": 10,
-      "missing_news": 10,
+      "never_enriched": 11,
+      "missing_facts": 11,
+      "missing_leadership": 12,
+      "missing_news": 12,
       "error": 1,
-      "scanned": 13,
+      "scanned": 15,
       "eligible": 4
     },
     "rows": {
@@ -147,16 +148,16 @@
     },
     {
       "rank": 3,
-      "company_id": "c0000000-0000-4000-8000-000000000003",
-      "name": "Tie Beta",
-      "canonical_domain": "tie-beta.example",
+      "company_id": "c0000000-0000-4000-8000-000000000015",
+      "name": "Tie Gamma",
+      "canonical_domain": "tie-gamma.example",
       "active_jobs": 3,
       "ats_evidence": [
         {
-          "id": "b0000000-0000-4000-8000-000000000003",
+          "id": "b0000000-0000-4000-8000-000000000015",
           "ats_type": "greenhouse",
-          "slug": "slug-03",
-          "careers_url": "https://boards.greenhouse.io/slug-03"
+          "slug": "slug-15",
+          "careers_url": "https://boards.greenhouse.io/slug-15"
         }
       ],
       "coverage": {
@@ -174,11 +175,11 @@
         "3 active jobs",
         "missing facts, leadership, news",
         "never enriched",
-        "enabled ATS evidence: greenhouse:slug-03"
+        "enabled ATS evidence: greenhouse:slug-15"
       ],
       "proposed_source_urls": [
-        "https://tie-beta.example/robots.txt",
-        "https://tie-beta.example/",
+        "https://tie-gamma.example/robots.txt",
+        "https://tie-gamma.example/",
         "up to 3 same-host about/leadership/team/news/press links found on that homepage and allowed by robots.txt (known only after the read-only plan)"
       ],
       "estimated_requests": {
@@ -235,6 +236,15 @@
   ],
   "review_queue": [
     {
+      "company_id": "c0000000-0000-4000-8000-000000000003",
+      "name": "Tie Beta",
+      "canonical_domain": "tie-beta.example",
+      "active_jobs": 3,
+      "reasons": [
+        "ambiguous_identity"
+      ]
+    },
+    {
       "company_id": "c0000000-0000-4000-8000-000000000007",
       "name": "Nameonly Inc",
       "canonical_domain": null,
@@ -265,6 +275,15 @@
       "company_id": "c0000000-0000-4000-8000-000000000010",
       "name": "Twin Two",
       "canonical_domain": "www.twins.example",
+      "active_jobs": 0,
+      "reasons": [
+        "ambiguous_identity"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000014",
+      "name": "Tie Beta Holdings",
+      "canonical_domain": "HTTPS://WWW.Tie-Beta.example/careers",
       "active_jobs": 0,
       "reasons": [
         "ambiguous_identity"
@@ -414,13 +433,14 @@
       },
       "freshness": "stale",
       "categories": [
+        "ambiguous_identity",
         "missing_facts",
         "missing_leadership",
         "missing_news",
         "never_enriched",
         "stale"
       ],
-      "eligible": true,
+      "eligible": false,
       "error": null
     },
     {
@@ -787,6 +807,83 @@
       ],
       "eligible": false,
       "error": "Schema mismatch: company_profile_refresh_state.next_refresh_at missing from row"
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000014",
+      "name": "Tie Beta Holdings",
+      "canonical_domain": "HTTPS://WWW.Tie-Beta.example/careers",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000014",
+            "ats_type": "greenhouse",
+            "slug": "slug-14",
+            "careers_url": "https://boards.greenhouse.io/slug-14"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "ambiguous_identity",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000015",
+      "name": "Tie Gamma",
+      "canonical_domain": "tie-gamma.example",
+      "active_jobs": 3,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000015",
+            "ats_type": "greenhouse",
+            "slug": "slug-15",
+            "careers_url": "https://boards.greenhouse.io/slug-15"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": true,
+      "error": null
     }
   ]
 }

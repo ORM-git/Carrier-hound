@@ -31,6 +31,8 @@ Merge order: #700, then #704, then this branch. Or merge this branch alone, sinc
 - **Read-only inventory and candidate planner**
   - Files: `src/lib/company-profile/inventory.ts` and `scripts/inventory-company-profiles.ts`.
   - It selects companies, ATS boards, active-job counts and existing profile rows, in UUID order with a resumable cursor.
+  - Every related read is **proven complete** (`src/lib/company-profile/inventoryStore.ts`): an exact count, then pages in primary-key order until that many rows arrive. A server row cap only costs extra requests. A short read, a total that changes mid-read, a duplicate row or a missing count **stops the run with no report**; partial rows are never treated as missing data.
+  - Domain identity is one rule for classification and ownership: lower-case, without scheme, path or a leading `www.`. Ownership is checked against **every company in the table**, not just the window, so `HTTPS://WWW.Acme.example/jobs` and `acme.example` are the same company identity wherever they sit.
   - **It never fetches a company page**, and its store has no write methods.
   - It refuses `--write`, `--production`, `--company-ids` and every other unknown flag. It refuses to write its output inside the repository.
 - **Plan review summary**
@@ -39,7 +41,7 @@ Merge order: #700, then #704, then this branch. Or merge this branch alone, sinc
 - **Read-only schema preflight**, described above.
 - **Crawl hardening** (shared by the batch path and the canary)
   - A homepage that redirects to a different site now stops with `off_domain_redirect`. Before, subpage links were resolved against the other host and fetched there; identity checks still rejected that content. `www.` to apex redirects are unaffected.
-  - News whose `datePublished` is more than one day after the fetch time is rejected, along with invalid dates, which were already rejected.
+  - News whose `datePublished` is after the fetch time is rejected, even by minutes, along with invalid or missing dates. A date-only value counts as midnight UTC, so same-day news from a site ahead of UTC can be dropped; that errs toward not showing it.
 - **UI**: the Company card labels the job's location as "Job location:", so it cannot be read as company HQ. HQ appears only as the sourced fact.
 
 Unchanged: the batch CLI's production refusal, the canary's 3-company cap and every gate, write, resume and rollback behaviour, Pro-only authorization, public masking and the #700 visual fixes.
@@ -76,7 +78,12 @@ The JSON report includes `definitions` for every category. Categories **overlap*
   4. UUID ascending, as a stable tie-break.
 
   This uses only existing data. No usage tracking was added.
-- **Requests per company**: 2 minimum (robots.txt and homepage), 5 maximum (plus 3 subpages), 15 with every retry.
+- **Scope**: counts, holds and the shortlist cover **only the companies in that window**. Separate windows are not merged into one ranking, so compare their shortlists by hand or run a larger `--limit` (up to 1000).
+- **Inventory request behaviour** for each page of up to 100 companies:
+  - one paged read each for companies, domain-ownership candidates, ATS boards and the four profile tables; each takes `ceil(rows / server row cap)` requests (at most 400 per read, else the run stops)
+  - one head-only exact count per company for active jobs, with **at most 4 in flight**; the first failure stops new counts and the run
+  - no company website is contacted
+- **Plan requests per company** (the later read-only canary plan, not the inventory): 2 minimum (robots.txt and homepage), 5 maximum (plus 3 subpages), 15 with every retry.
 - **Proposed source URLs** before the plan are `https://<domain>/robots.txt` and `https://<domain>/`. The subpages become known only in the read-only plan.
 
 Examples generated from synthetic fixtures (a test rebuilds them byte-for-byte): `scripts/fixtures/company-profile/inventory-example.json` and `.summary.md`, and `canary-plan.json` with `canary-plan.summary.md`.
@@ -121,13 +128,18 @@ npx tsx scripts/enrich-company-profiles.ts --production --target-project szakevh
 
 ### 6. Verify, then stop
 
-1. **Database (read-only):**
+1. **Database (read-only).** Check the exact after-state the plan describes, not just totals:
+   - The journal should list every action as `applied`, none `failed`.
+   - **Row totals per table** should equal the rows in the plan's `companies[].current` for that table **plus that table's inserts**. Updates change rows in place and do not add any; pre-existing rows with no action stay untouched.
+   - **Each action's row**, looked up by its `key` (`company_id`+`fact_key` for facts, `id` for leadership and news, `company_id` for refresh state), should now equal its `after` exactly. Inserted keys did not exist before; updated keys held `before`.
    ```sql
-   SELECT 'facts', count(*) FROM public.company_profile_facts WHERE company_id = ANY('{<UUIDS>}'::uuid[])
+   SELECT 'facts' t, count(*) FROM public.company_profile_facts WHERE company_id = ANY('{<UUIDS>}'::uuid[])
    UNION ALL SELECT 'leadership', count(*) FROM public.company_profile_leadership WHERE company_id = ANY('{<UUIDS>}'::uuid[])
-   UNION ALL SELECT 'news', count(*) FROM public.company_profile_news WHERE company_id = ANY('{<UUIDS>}'::uuid[]);
+   UNION ALL SELECT 'news', count(*) FROM public.company_profile_news WHERE company_id = ANY('{<UUIDS>}'::uuid[])
+   UNION ALL SELECT 'refresh_state', count(*) FROM public.company_profile_refresh_state WHERE company_id = ANY('{<UUIDS>}'::uuid[]);
+   -- then, per action: SELECT * FROM public.<table> WHERE <key columns> = <key values>;  compare with the action's "after"
    ```
-   The counts should match the plan's actions.
+   - If a write stopped part-way, earlier steps stay applied (**not atomic**). Compare against the journal's applied steps, then `--resume` or `--rollback`. Rollback restores only rows that still hold the canary's values; anything changed by someone else since is reported `skipped_drifted` and left alone.
 2. **Sources:** open each proposed source URL and confirm the value really is on the company's own page.
 3. **Live site, after the reviewed code is deployed:** open an active job for each canaried company.
    - As **Pro**: the Company tab shows the facts, leaders and news with clickable sources and dates. Empty sections stay empty. The job location is labelled "Job location", not HQ.
@@ -139,7 +151,7 @@ npx tsx scripts/enrich-company-profiles.ts --production --target-project szakevh
 **DONE (in this branch, offline):**
 - Reconciled #700 and #704 into one branch.
 - Read-only schema preflight.
-- Read-only inventory and ranked shortlist with a resumable cursor.
+- Read-only inventory and ranked shortlist with a resumable cursor, complete paged reads (refusing partial data), one domain-identity rule checked across all companies, and capped count concurrency, tested against a simulated PostgREST server with a row cap.
 - Plan review summary.
 - Off-site redirect stop and future news-date rejection.
 - "Job location" label.
