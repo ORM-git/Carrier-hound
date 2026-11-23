@@ -302,6 +302,7 @@ class SupabaseSetDiffWriter:
         self.write_errors: list[str] = []
         self.failed_writes: int = 0
         self.persistence_failed: bool = False
+        self.logo_enqueue: dict[str, Any] = {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None}
 
     async def sync_companies(
         self,
@@ -323,7 +324,7 @@ class SupabaseSetDiffWriter:
                 "canonical_domain": j.get("canonical_domain"),
                 "domain": j.get("canonical_domain"),
                 "category": j.get("company_category"),
-                "logo_url": j.get("logo_url"),
+                "logo_url": None,  # company-logo contract: raw logos must never be written by Python
                 "ats_type": j.get("source"),
                 "source_priority": int(j.get("source_priority") or 2),
                 "enabled": True,
@@ -360,17 +361,14 @@ class SupabaseSetDiffWriter:
             ex = existing_map.get(slug)
             if ex is None:
                 insert_payload = {k: v for k, v in inc.items() if k != "source_priority"}
+                insert_payload["logo_url"] = None
                 to_insert.append(insert_payload)
             else:
                 ex_prio = 1 if ex.get("ats_type") in ("greenhouse", "lever", "ashby", "smartrecruiters", "workday", "amazon", "microsoft") else 2
                 inc_prio = inc.get("source_priority", 2)
                 updates: dict[str, Any] = {}
 
-                # Never overwrite a known better logo with null or lower-quality aggregator value
-                if not ex.get("logo_url") and inc.get("logo_url"):
-                    updates["logo_url"] = inc["logo_url"]
-                elif inc_prio == 1 and ex_prio > 1 and inc.get("logo_url"):
-                    updates["logo_url"] = inc["logo_url"]
+                # Logos are never written here (company-logo contract): the TS repair worker owns logo_url.
 
                 # Never overwrite canonical domain with null
                 if not ex.get("canonical_domain") and inc.get("canonical_domain"):
@@ -430,7 +428,109 @@ class SupabaseSetDiffWriter:
                 self.persistence_failed = True
                 self.write_errors.append(f"Company insert exception: {redact_sensitive_params(str(exc))}")
 
+        if not self.persistence_failed:
+            # Every company seen is handed over; SQL keeps only those without an eligible hosted logo.
+            seen = [company_id_map[slug] for slug in companies_by_slug if slug in company_id_map]
+            await self.enqueue_company_logos(client, seen)
+
         return company_id_map
+
+    async def enqueue_company_logos(self, client: httpx.AsyncClient, company_ids: list[str]) -> None:
+        """Hand new / ineligible-logo companies to the shared logo repair loop. Fail-open: never
+        marks persistence failed and never raises, so branding can't block job ingestion."""
+        ids = sorted({i for i in company_ids if isinstance(i, str) and i})
+        origin = self.base_url[: -len("/rest/v1")] if self.base_url.endswith("/rest/v1") else self.base_url
+        self.logo_enqueue = {"requested": len(ids), "enqueued": 0, "status": "skipped" if not ids else "pending",
+                             "company_ids": ids[:200], "coverage": None}
+        for start in range(0, len(ids), 500):
+            batch = ids[start:start + 500]
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/rpc/enqueue_company_logos",
+                    headers=self.headers,
+                    json={"p_ids": batch, "p_origin": origin},
+                )
+            except Exception as exc:  # noqa: BLE001 - fail-open by design
+                self.logo_enqueue["status"] = f"error: {redact_sensitive_params(str(exc))}"
+                return
+            if resp.status_code == 404 or "PGRST202" in resp.text:
+                self.logo_enqueue["status"] = "not-migrated"
+                return
+            if resp.status_code >= 400:
+                self.logo_enqueue["status"] = f"error: HTTP {resp.status_code}"
+                return
+            try:
+                raw_val = resp.json()
+            except Exception:  # noqa: BLE001
+                self.logo_enqueue["status"] = "invalid: unparseable json"
+                return
+            if isinstance(raw_val, bool) or not isinstance(raw_val, int):
+                val_type = type(raw_val).__name__[:30]
+                self.logo_enqueue["status"] = f"invalid: expected integer count, got {val_type}"
+                return
+            if raw_val < 0:
+                self.logo_enqueue["status"] = "invalid: negative enqueue count"
+                return
+            if raw_val > len(batch):
+                self.logo_enqueue["status"] = f"invalid: count exceeds requested ({len(batch)})"
+                return
+            self.logo_enqueue["enqueued"] += raw_val
+        if ids:
+            self.logo_enqueue["status"] = "ok"
+            # Same coverage / backlog / orphan counts as the TS ingest and the sweep summary.
+            try:
+                cov = await client.post(f"{self.base_url}/rpc/company_logo_coverage", headers=self.headers, json={"p_origin": origin})
+                if cov.status_code < 400:
+                    try:
+                        cov_val = cov.json()
+                    except Exception:
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: unparseable coverage json"
+                        return
+                    if isinstance(cov_val, bool) or not isinstance(cov_val, dict):
+                        cov_type = type(cov_val).__name__[:30]
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = f"invalid: unexpected coverage shape (got {cov_type})"
+                        return
+
+                    # Real company_logo_coverage contract (20261122 base + 20261123 review state)
+                    base_keys = {
+                        "companies_with_active_jobs",
+                        "eligible_hosted",
+                        "missing_or_ineligible",
+                        "pending",
+                        "failed",
+                        "missing",
+                        "queued_retries",
+                        "orphan_links",
+                    }
+                    review_state_keys = {"held", "intentional_initials", "approved"}
+                    allowed_keys = base_keys | review_state_keys
+
+                    if not base_keys.issubset(cov_val.keys()):
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: coverage missing required keys"
+                        return
+
+                    unexpected = set(cov_val.keys()) - allowed_keys
+                    if unexpected:
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: unexpected coverage keys"
+                        return
+
+                    for k, v in cov_val.items():
+                        if isinstance(v, bool) or not isinstance(v, int):
+                            self.logo_enqueue["coverage"] = "unknown"
+                            self.logo_enqueue["status"] = f"invalid: coverage {k} must be integer"
+                            return
+                        if v < 0:
+                            self.logo_enqueue["coverage"] = "unknown"
+                            self.logo_enqueue["status"] = f"invalid: coverage {k} cannot be negative"
+                            return
+
+                    self.logo_enqueue["coverage"] = cov_val
+            except Exception:  # noqa: BLE001 - reporting only, never fatal
+                pass
 
     async def sync_jobs_set_diff(
         self,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import math
+import os
 import re
 import time
 from typing import Any
@@ -579,6 +580,21 @@ _WORKDAY_LOCK = asyncio.Lock()
 # server's Retry-After (or fail fast if it is longer than we are willing to wait) instead of retrying elsewhere.
 _WORKDAY_COOLDOWN_UNTIL = 0.0
 _WORKDAY_TENANT_NEXT: dict[str, float] = {}   # tenant host -> earliest monotonic time of its next request
+_WORKDAY_LAST_TENANT_START = 0.0
+
+def get_workday_tenant_spacing_seconds() -> float:
+    """Configurable conservative spacing between Workday tenant starts (default: 60s, range: 60-120s)."""
+    raw = os.getenv("WORKDAY_TENANT_SPACING_SECONDS")
+    if raw is not None:
+        try:
+            s = float(raw)
+            if os.getenv("WORKDAY_ALLOW_SHORT_SPACING_FOR_TESTS") == "1":
+                return max(0.0, s)
+            return max(60.0, min(120.0, s))
+        except ValueError:
+            pass
+    return 60.0
+
 WORKDAY_TENANT_SPACING_SECONDS = 2.0
 WORKDAY_MAX_RETRIES = 4          # per page: at most 5 requests, all through the per-host limiter
 WORKDAY_MAX_COOLDOWN_SECONDS = 30.0            # a single Retry-After longer than this fails the board at once
@@ -593,7 +609,8 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
     """One page request under the shared budget: limiter-paced, Retry-After respected, no transport switching."""
     global _WORKDAY_COOLDOWN_UNTIL
     tenant_host = urlparse(url).hostname or url
-    deadline = time.monotonic() + WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS  # all retry/cooldown waiting for this page
+    page_budget = float(os.getenv("WORKDAY_PAGE_WAIT_BUDGET_SECONDS", str(WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS)))
+    deadline = time.monotonic() + page_budget  # all retry/cooldown waiting for this page
     retry_at = 0.0  # network-error backoff, waited out at the top of the loop under the same deadline
     for attempt in range(WORKDAY_MAX_RETRIES + 1):
         now = time.monotonic()
@@ -603,7 +620,7 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
         wait = max(cooldown, _WORKDAY_TENANT_NEXT.get(tenant_host, 0.0) - now, retry_at - now)
         if now + wait > deadline:
             raise WorkdayRateLimited(
-                f"Workday page budget of {WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS:.0f}s would be exceeded waiting {wait:.0f}s more; "
+                f"Workday page budget of {page_budget:.0f}s would be exceeded waiting {wait:.0f}s more; "
                 f"not requesting {url} after {attempt} request(s)"
             )
         if wait > 0:
@@ -619,8 +636,9 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
             continue
         if resp.status_code == 429 or resp.status_code in (502, 503, 504):
             delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=2.0 * (2 ** attempt))
+            # Honor server requested delay without shortening longer waits
             _WORKDAY_COOLDOWN_UNTIL = max(_WORKDAY_COOLDOWN_UNTIL, time.monotonic() + delay)
-            if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS:
+            if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS or (time.monotonic() + delay > deadline):
                 raise WorkdayRateLimited(
                     f"Workday HTTP {resp.status_code} for {url} (Retry-After {delay:.0f}s) after {attempt + 1} request(s)"
                 )
@@ -641,12 +659,22 @@ async def fetch_workday_cxs(
 ) -> list[dict[str, Any]]:
     """Workday CXS: POST https://{tenant}.{wd_cluster}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
     
-    Executes one board at a time under _WORKDAY_LOCK with a polite delay. Every request goes through the
+    Executes one board at a time under _WORKDAY_LOCK with conservative tenant spacing. Every request goes through the
     per-host limiter and the shared Workday retry/cooldown budget (_workday_post); a rate limit is never
     retried with a different transport or fingerprint. When the budget is exhausted the board raises, so
     the source is reported failed and the run-level guard withholds writes.
     """
     async with _WORKDAY_LOCK:
+        global _WORKDAY_LAST_TENANT_START
+        now = time.monotonic()
+        if _WORKDAY_LAST_TENANT_START > now:
+            _WORKDAY_LAST_TENANT_START = 0.0
+        spacing = get_workday_tenant_spacing_seconds()
+        wait_tenant = max(0.0, (_WORKDAY_LAST_TENANT_START + spacing) - now)
+        if _WORKDAY_LAST_TENANT_START > 0.0 and wait_tenant > 0.0:
+            await asyncio.sleep(wait_tenant)
+        _WORKDAY_LAST_TENANT_START = time.monotonic()
+
         tenant = seed["tenant"]
         cluster = seed.get("wd_cluster", "wd5")
         site = seed["site"]
