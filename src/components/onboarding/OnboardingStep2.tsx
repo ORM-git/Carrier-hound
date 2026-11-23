@@ -241,7 +241,7 @@ export default function OnboardingStep2({
           </button>
         </div>
         <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
-          <div className="w-11 h-11 md:w-12 md:h-12 flex-shrink-0 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
+          <div className="w-11 h-11 md:w-12 md:h-12 flex-shrink-0 rounded-2xl bg-[#E6F2FF] border border-[#0082FF]/20 flex items-center justify-center p-2 text-[#0020B0] shadow-sm">
             <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
           </div>
           <div className="flex-1">
@@ -285,7 +285,7 @@ export default function OnboardingStep2({
                 </div>
                 <div className="md:flex-shrink-0">
                   {linkedinSaved && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0020B0] dark:text-brand-400">
                       <Check className="w-3 h-3" /> Saved
                     </span>
                   )}
@@ -350,7 +350,7 @@ export default function OnboardingStep2({
                 </div>
                 <div className="md:flex-shrink-0">
                   {resumeName && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0020B0] dark:text-brand-400">
                       <Check className="w-3 h-3" /> Saved
                     </span>
                   )}
@@ -402,9 +402,9 @@ export default function OnboardingStep2({
                       </span>
                     ) : resumeName ? (
                       <span className="flex flex-col items-center gap-1">
-                        <FileCheck className="w-6 h-6 text-emerald-600" />
+                        <FileCheck className="w-6 h-6 text-[#0020B0]" />
                         <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 break-all">{resumeName}</span>
-                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400">Choose another file to replace</span>
+                        <span className="text-[11px] text-[#0020B0] dark:text-brand-400">Choose another file to replace</span>
                       </span>
                     ) : (
                       <span className="flex flex-col items-center gap-1">
@@ -430,7 +430,7 @@ export default function OnboardingStep2({
                     </p>
                   )}
                   {resumeName && !resumeError && (
-                    <p data-testid="resume-success-mobile" className="text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                    <p data-testid="resume-success-mobile" className="text-xs text-[#0020B0] dark:text-brand-300 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Resume saved
                     </p>
                   )}

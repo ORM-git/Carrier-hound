@@ -88,11 +88,11 @@ export default function OnboardingStep1({
         {/* Copilot Greeting Header */}
         <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
           <div className="relative flex-shrink-0">
-            <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center p-2 text-emerald-600 shadow-sm">
+            <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-[#E6F2FF] border border-[#0082FF]/20 flex items-center justify-center p-2 text-[#0020B0] shadow-sm">
               <BrandIcon className="w-7 h-7 md:w-8 md:h-8" />
             </div>
             <span
-              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"
+              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#0082FF] border-2 border-white dark:border-zinc-900 rounded-full"
               title="Copilot Online"
             />
           </div>
@@ -101,7 +101,7 @@ export default function OnboardingStep1({
               <span className="text-sm md:text-base font-bold text-zinc-900 dark:text-zinc-100">
                 CareerMonke Copilot
               </span>
-              <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+              <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-[#E6F2FF] dark:bg-brand-900/70 text-[#0020B0] dark:text-brand-300">
                 {isEditMode ? "Edit Mode" : "AI"}
               </span>
             </div>
