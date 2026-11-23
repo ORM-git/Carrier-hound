@@ -8,6 +8,7 @@ import math
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -577,8 +578,11 @@ _WORKDAY_LOCK = asyncio.Lock()
 # Shared across every Workday tenant in this process: once Workday rate-limits us, all boards wait out the
 # server's Retry-After (or fail fast if it is longer than we are willing to wait) instead of retrying elsewhere.
 _WORKDAY_COOLDOWN_UNTIL = 0.0
-WORKDAY_MAX_RETRIES = 2          # per page: at most 3 requests, all through the per-host limiter
-WORKDAY_MAX_COOLDOWN_SECONDS = 60.0
+_WORKDAY_TENANT_NEXT: dict[str, float] = {}   # tenant host -> earliest monotonic time of its next request
+WORKDAY_TENANT_SPACING_SECONDS = 2.0
+WORKDAY_MAX_RETRIES = 4          # per page: at most 5 requests, all through the per-host limiter
+WORKDAY_MAX_COOLDOWN_SECONDS = 30.0            # a single Retry-After longer than this fails the board at once
+WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS = 60.0    # deadline for all of a page's waiting (cooldown, spacing, backoff)
 
 
 class WorkdayRateLimited(RuntimeError):
@@ -588,19 +592,30 @@ class WorkdayRateLimited(RuntimeError):
 async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     """One page request under the shared budget: limiter-paced, Retry-After respected, no transport switching."""
     global _WORKDAY_COOLDOWN_UNTIL
+    tenant_host = urlparse(url).hostname or url
+    deadline = time.monotonic() + WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS  # all retry/cooldown waiting for this page
+    retry_at = 0.0  # network-error backoff, waited out at the top of the loop under the same deadline
     for attempt in range(WORKDAY_MAX_RETRIES + 1):
-        wait = _WORKDAY_COOLDOWN_UNTIL - time.monotonic()
-        if wait > WORKDAY_MAX_COOLDOWN_SECONDS:
-            raise WorkdayRateLimited(f"Workday cooldown active for {wait:.0f}s more; not requesting {url}")
+        now = time.monotonic()
+        cooldown = _WORKDAY_COOLDOWN_UNTIL - now
+        if cooldown > WORKDAY_MAX_COOLDOWN_SECONDS:
+            raise WorkdayRateLimited(f"Workday cooldown active for {cooldown:.0f}s more; not requesting {url}")
+        wait = max(cooldown, _WORKDAY_TENANT_NEXT.get(tenant_host, 0.0) - now, retry_at - now)
+        if now + wait > deadline:
+            raise WorkdayRateLimited(
+                f"Workday page budget of {WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS:.0f}s would be exceeded waiting {wait:.0f}s more; "
+                f"not requesting {url} after {attempt} request(s)"
+            )
         if wait > 0:
             await asyncio.sleep(wait)
         await limiter.acquire(url)
+        _WORKDAY_TENANT_NEXT[tenant_host] = time.monotonic() + WORKDAY_TENANT_SPACING_SECONDS
         try:
             resp = await client.post(url, json=body, headers=headers)
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             if attempt >= WORKDAY_MAX_RETRIES:
                 raise RuntimeError(f"Workday network error for {url}: {redact_sensitive_params(str(exc))}") from None
-            await asyncio.sleep(2.0 * (2 ** attempt))  # same budget: counts as one of the page's requests
+            retry_at = time.monotonic() + 2.0 * (2 ** attempt)
             continue
         if resp.status_code == 429 or resp.status_code in (502, 503, 504):
             delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=2.0 * (2 ** attempt))
