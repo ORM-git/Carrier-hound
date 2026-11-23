@@ -43,6 +43,7 @@ This catalog inventories every API route and serverless function in CareerMonke,
 | `src/app/api/account/delete/route.ts` | POST | User Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Authenticated account deletion lacks explicit `no-store`. |
 | `src/app/api/account/export/route.ts` | POST | User Auth (`Bearer`) | `"no-store"` (via handler) | `private/no-store` | ✅ **Compliant**: Sends `no-store` with `attachment` disposition for personal data export. |
 | `src/app/api/account/signout-all/route.ts` | POST | User Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Authenticated global session invalidation lacks explicit `no-store`. |
+| `src/app/api/account/status/route.ts` | GET | User Auth (`Bearer`) | `"private, no-cache, no-store, must-revalidate"` | `private/no-store` | ✅ **Compliant**: Authenticated account status check enforces `private, no-cache, no-store, must-revalidate`. |
 | `src/app/api/admin/early-access/approve/route.ts` | POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Administrative approval mutation lacks explicit `no-store`. |
 | `src/app/api/admin/early-access/reject/route.ts` | POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: Administrative rejection mutation lacks explicit `no-store`. |
 | `src/app/api/admin/early-access/route.ts` | GET, POST | Admin Auth (`Bearer`) | `none set` | `private/no-store` | ⚠️ **Needs Remediation**: GET returns early access email PII to admins without `no-store`. |
@@ -111,7 +112,7 @@ Routes whose response is identical for all anonymous callers and exposes zero PI
 Endpoints handling authenticated sessions (`Bearer`), PII, admin operations, billing, Pro-unmasked data, user preferences, HMAC tokens, or health checks:
 - **Compliant (`no-store` already set)**:
   - `src/app/api/health/route.ts`, `src/app/api/health/ready/route.ts`, `netlify/functions/health.ts` (`"no-store, no-cache, must-revalidate"`)
-  - `src/app/api/me/quota/route.ts`, `src/app/api/onboarding/route.ts`, `src/app/api/onboarding/linkedin/route.ts`, `src/app/api/onboarding/resume/route.ts` (`"private, no-cache, no-store, must-revalidate"`)
+  - `src/app/api/me/quota/route.ts`, `src/app/api/onboarding/route.ts`, `src/app/api/onboarding/linkedin/route.ts`, `src/app/api/onboarding/resume/route.ts`, `src/app/api/account/status/route.ts` (`"private, no-cache, no-store, must-revalidate"`)
   - `src/app/api/account/export/route.ts` (`"no-store"`)
   - `src/app/api/stats/route.ts` (**authenticated / any `Authorization` header branch**: `"no-store"` + `Vary: Authorization`)
 - **Non-`no-store` / Missing `no-store` Remediation Targets**:

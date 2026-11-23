@@ -71,6 +71,8 @@ describe("Product Restore: Navigation, Redirects, and Safe Return URLs", () => {
       expect(getValidReturnUrl("/auth")).toBe("/jobs");
       expect(getValidReturnUrl("/auth/callback")).toBe("/jobs");
       expect(getValidReturnUrl("/login?error=test")).toBe("/jobs");
+      expect(getValidReturnUrl("/onboarding?next=%2Flogin%3FreturnTo%3D%252Fonboarding")).toBe("/onboarding?next=%2Fjobs");
+      expect(getValidReturnUrl("/onboarding?next=%2Fonboarding%3Fnext%3D%252Fprofile")).toBe("/jobs");
     });
   });
 
@@ -92,6 +94,7 @@ describe("Product Restore: Navigation, Redirects, and Safe Return URLs", () => {
         "/jobs?q=frontend&location=remote"
       );
       expect(getValidReturnUrl("/tracker?status=applied")).toBe("/tracker?status=applied");
+      expect(getValidReturnUrl("/onboarding?next=%2Fjobs%3Fq%3Dremote")).toBe("/onboarding?next=%2Fjobs%3Fq%3Dremote");
     });
 
     it("rejects open redirects, backslashes, protocol-relative, and encoded exploits", () => {

@@ -364,8 +364,9 @@ async function runMobileOnboardingSuite() {
   await test("completed users are sent to /jobs (not the retired Dashboard) after onboarding", () => {
     const middlewareCode = fs.readFileSync(path.resolve(__dirname, "../src/middleware.ts"), "utf-8");
     assert.ok(
-      middlewareCode.includes('return NextResponse.redirect(new URL("/jobs", request.url));'),
-      "completed-onboarding redirect must go to /jobs"
+      middlewareCode.includes('getValidReturnUrl(request.nextUrl.searchParams.get("next"), "/jobs")') &&
+        middlewareCode.includes("new URL(destination, request.url)"),
+      "completed-onboarding redirect must preserve a safe destination and default to /jobs"
     );
     assert.ok(!middlewareCode.includes('new URL("/dashboard"'), "middleware must not redirect to /dashboard");
     const onboardingCode = fs.readFileSync(path.resolve(__dirname, "../src/app/onboarding/page.tsx"), "utf-8");
