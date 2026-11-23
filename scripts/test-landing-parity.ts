@@ -76,15 +76,20 @@ async function runParityTests() {
     "Review wall MUST sit between FAQs and the lower Free preview"
   );
 
-  // Company/logo strip placement check (directly between stats and the comparison table)
+  // Real jobs ticker placement check (directly between stats and the comparison table, replacing the sample strip)
   const statsNoteIdx = pageSrc.indexOf('id="stats-note"');
-  const tickerIdx = pageSrc.indexOf('<section className="ls" aria-label="Companies hiring now (sample)">');
+  const tickerIdx = pageSrc.indexOf("<LandingJobsTickerStrip />");
   const cmpHeadingIdx = pageSrc.indexOf('id="cmp-h"');
-  assert.ok(tickerIdx !== -1, "Company/logo strip must be rendered on homepage");
-  assert.ok(!pageSrc.includes("<LandingJobsTickerStrip"), "Old LandingJobsTickerStrip must not be rendered");
+  assert.ok(tickerIdx !== -1, "LandingJobsTickerStrip must be rendered on homepage");
+  assert.ok(!pageSrc.includes("Companies hiring now (sample)") && !pageSrc.includes('className="ls-card"'), "Fictional sample company strip must not be rendered");
   assert.ok(
     statsNoteIdx < tickerIdx && tickerIdx < cmpHeadingIdx,
-    "Company/logo strip MUST be placed directly between the stats row and the comparison table"
+    "LandingJobsTickerStrip MUST be placed directly between the stats row and the comparison table"
+  );
+  // The ticker keeps the sample strip's spacing hook: the comparison section's reduced top padding (52px desktop / 38px mobile).
+  assert.ok(
+    cssSrc.includes(".landing-wrapper .ls + section.s,.landing-wrapper .jobs-ticker-strip + section.s{padding-top:calc(var(--sec) - var(--ls-in))}"),
+    "ticker strip must keep the .ls + section.s spacing rule"
   );
 
   // Founder content checks
@@ -168,7 +173,7 @@ async function runParityTests() {
   const heroIdx = pageSrc.indexOf('<p className="kicker">Skip LinkedIn competition</p>');
   const foldCtaIdx = pageSrc.indexOf('className="btn-cta"');
   const statsIdx = pageSrc.indexOf('id="stats-note"');
-  const stripIdx = pageSrc.indexOf('<section className="ls"');
+  const stripIdx = pageSrc.indexOf("<LandingJobsTickerStrip />");
   const cmpIdx = pageSrc.indexOf('id="cmp-h"');
   const featIdx = pageSrc.indexOf('id="feat-h"');
   const faqIdx = pageSrc.indexOf('id="q-h"');

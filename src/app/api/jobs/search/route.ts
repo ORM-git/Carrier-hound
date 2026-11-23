@@ -20,6 +20,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
+import { firstEligibleLogo } from "@/lib/companies/logoEligibility";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/search" } });
 
@@ -249,7 +250,7 @@ async function getHandler(req: Request) {
       }
 
       const isInactive = Boolean(jobRow.is_active === false || jobRow.status === "expired" || jobRow.status === "closed");
-      const resolvedLogo = jobRow.logo_url || jobRow.logoUrl || jobRow.companies?.logo_url || null;
+      const resolvedLogo = firstEligibleLogo([jobRow.logo_url, jobRow.logoUrl, jobRow.companies?.logo_url]);
       const originalSalary = formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period) || jobRow.salary_text || null;
       const displaySalary = preferredCurrency
         ? (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period, { displayCurrency: preferredCurrency }) || jobRow.salary_text || null)
@@ -827,8 +828,7 @@ async function getHandler(req: Request) {
     }
 
     const formattedJobs = rows.map((row: any) => {
-      const resolvedLogo =
-        row.logo_url || row.logoUrl || row.companies?.logo_url || null;
+      const resolvedLogo = firstEligibleLogo([row.logo_url, row.logoUrl, row.companies?.logo_url]);
       const originalSalary = formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) || row.salary_text || null;
       const displaySalary = preferredCurrency
         ? (formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period, { displayCurrency: preferredCurrency }) || row.salary_text || null)

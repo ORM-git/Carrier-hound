@@ -362,6 +362,9 @@ async def run_master_ingestion(
         elif credentials is not None:
             writer = SupabaseSetDiffWriter(*credentials)
             company_map = await writer.sync_companies(client, all_jobs)
+            # Company-logo contract: companies without an eligible hosted logo were enqueued for the TS
+            # repair worker (scripts/repair-company-logos.ts); reported here, never fatal.
+            db_stats["logo_enqueue"] = dict(getattr(writer, "logo_enqueue", None) or {})
             if writer.persistence_failed:
                 db_stats.update({
                     "inserted": 0,

@@ -40,7 +40,7 @@ const CELLS: [string, string][] = [
   ["From verified employers", "Filter jobs by role, location and work mode"],
   ["Seen by recruiters early", "Apply on the employer's careers page"],
 ];
-const LOWER_ORDER = ["CareerMonke in numbers", "Companies hiring now (sample)", "cmp-h", "feat-h", "rv-h", "fd-h", "q-h", "w-h", "cta-h", "footer", "sb"];
+const LOWER_ORDER = ["CareerMonke in numbers", "cmp-h", "feat-h", "rv-h", "fd-h", "q-h", "w-h", "cta-h", "footer", "sb"];
 
 // Owner-requested live content (careermonke.com snapshot): review records, orders, founder card, header logo.
 type Review = { id: string; name: string; initials: string; location: string; quote: string; avatar: string; avatarSha256: string };
@@ -169,6 +169,7 @@ function check(x: Input) {
   for (const [from, to] of CELLS) want = want.replace(`<span class="vx">${from}</span>`, `<span class="vx">${to}</span>`);
   // Owner-requested: moving reviews, founder block and review wall come from live careermonke.com.
   for (const [start, build] of [
+    ['<section class="ls" aria-label="Companies hiring now (sample)">', () => ""],
     ['<section class="s rv" aria-labelledby="rv-h">', LIVE_SECTIONS.rv],
     ['<section class="wrap s fd" aria-labelledby="fd-h">', LIVE_SECTIONS.fd],
     ['<section class="wrap s" aria-labelledby="w-h">', LIVE_SECTIONS.wl],
@@ -188,11 +189,15 @@ function check(x: Input) {
     m[1] === "footer" ? "footer" : m[1] === "aside" ? "sb" : (m[2].match(/aria-(?:label|labelledby)="([^"]*)"/) || [])[1]
   );
   assert.deepEqual(order, LOWER_ORDER, "lower sections must be in 3386250 order");
+  // Owner-requested: the real jobs ticker sits exactly where the sample company strip was (stats row -> ticker -> comparison).
+  const statsEnd = lower.indexOf('id="stats-note"'), tickerAt = lower.indexOf("<LandingJobsTickerStrip />"), cmpAt = lower.indexOf('aria-labelledby="cmp-h"');
+  assert.ok(statsEnd > 0 && statsEnd < tickerAt && tickerAt < cmpAt, "real jobs ticker must sit between the stats row and the comparison");
+  assert.equal(lower.split("<LandingJobsTickerStrip").length - 1, 1, "exactly one jobs ticker");
   const cells = Array.from(lower.matchAll(/<span className="vx">\s*([^<]*?)\s*<\/span>/g), (m) => squash(m[1]));
   assert.deepEqual(cells.filter((_, i) => i % 2 === 1), CELLS.map((c) => c[1]), "CareerMonke Way cells must be exactly the five new lines, in order");
   const usual = Array.from(want.matchAll(/<tr><td>[\s\S]*?<span class="vx">([^<]*)<\/span>/g), (m) => m[1]);
   assert.deepEqual(cells.filter((_, i) => i % 2 === 0), usual, "Usual Grind column must be unchanged");
-  for (const banned of ['id="hero-h"', "fj-cards", "hjs", "try-demo", 'data-run="tailor"', "A resume for every role", "github.com", "LandingJobsTickerStrip"]) {
+  for (const banned of ['id="hero-h"', "fj-cards", "hjs", "try-demo", 'data-run="tailor"', "A resume for every role", "github.com", "Companies hiring now (sample)", 'className="ls-card"']) {
     assert.ok(!x.page.includes(banned), `removed block must not come back: ${banned}`);
   }
 
@@ -276,7 +281,9 @@ function check(x: Input) {
     .replace(/(animation(?:-name)?:)([^;}]*)/g, (_, k, v) => k + prefix(v))
     .replace(/(^|[{}])body\{/g, "$1.landing-wrapper{")
     // owner-requested: the founder stat row is removed, so its stat-only rules go too
-    .replace(/(?<=^|[{}])\.landing-wrapper \.fd-stats[^{]*\{[^}]*\}/g, "");
+    .replace(/(?<=^|[{}])\.landing-wrapper \.fd-stats[^{]*\{[^}]*\}/g, "")
+    // owner-requested (#698): the real ticker replaces the sample strip and keeps its spacing hook (52px / 38px)
+    .replace(".landing-wrapper .ls+section.s{", ".landing-wrapper .ls+section.s,.landing-wrapper .jobs-ticker-strip+section.s{");
   const LIVE_MARK = "/* ---- Live review cards + founder card";
   const liveAt = x.lowerCss.indexOf(LIVE_MARK);
   assert.ok(liveAt > 0, "lower CSS must keep the live review/founder block last");

@@ -891,7 +891,7 @@
 .landing-wrapper{--ls-in:22px}
 @media (min-width:768px){.landing-wrapper{--ls-in:28px}}
 .landing-wrapper section.stats-row{padding-bottom:calc(var(--sec) - var(--ls-in))}
-.landing-wrapper .ls + section.s{padding-top:calc(var(--sec) - var(--ls-in))}
+.landing-wrapper .ls + section.s,.landing-wrapper .jobs-ticker-strip + section.s{padding-top:calc(var(--sec) - var(--ls-in))}
 .landing-wrapper section.rv,.landing-wrapper section.s.band{margin-top:var(--half);padding-top:var(--half);padding-bottom:var(--half)}
 .landing-wrapper section.rv + section.s,.landing-wrapper section.s.band + section.s{padding-top:var(--half)}
 .landing-wrapper .free-preview-band{margin-top:var(--half);padding-top:var(--half);padding-bottom:var(--half)}

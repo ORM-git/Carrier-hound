@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
+import { eligibleLogoUrl } from "../../src/lib/companies/logoEligibility";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -40,33 +41,8 @@ const CORS_OPTIONS = {
 };
 
 function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: string): string | null {
-  if (!rawLogoUrl || typeof rawLogoUrl !== "string") return null;
-  try {
-    const parsed = new URL(rawLogoUrl);
-    if (supabaseUrl) {
-      try {
-        const expectedHost = new URL(supabaseUrl).host;
-        if (parsed.host !== expectedHost && !parsed.host.endsWith(".supabase.co")) {
-          return null;
-        }
-      } catch {
-        if (!parsed.host.endsWith(".supabase.co")) {
-          return null;
-        }
-      }
-    } else {
-      if (!parsed.host.endsWith(".supabase.co")) {
-        return null;
-      }
-    }
-
-    if (!parsed.pathname.includes("/company-logos/")) {
-      return null;
-    }
-    return rawLogoUrl;
-  } catch {
-    return null;
-  }
+  // Shared company-logo contract: only this project's company-logos objects (see logoEligibility.ts).
+  return eligibleLogoUrl(rawLogoUrl, supabaseUrl);
 }
 
 export async function handler(event?: any) {
@@ -189,7 +165,7 @@ export async function handler(event?: any) {
       offset += pageRows.length;
     }
 
-    // 2. Collect company_ids and distinct company names for the selected rows
+    // 2. Logos are matched by stable company_id only: a name match could attach another company's logo.
     const companyIds = Array.from(
       new Set(
         selectedRows
@@ -198,18 +174,9 @@ export async function handler(event?: any) {
       )
     );
 
-    const distinctCompanyNames = Array.from(
-      new Set(
-        selectedRows
-          .map((r) => r.cleanCompany)
-          .filter(Boolean)
-      )
-    );
 
     const idToLogo = new Map<string, string>();
-    const nameToLogo = new Map<string, string>();
 
-    // 2a. Match by company_id where available
     if (companyIds.length > 0) {
       const { data: idData, error: idError } = await supabase
         .from("companies")
@@ -232,50 +199,6 @@ export async function handler(event?: any) {
           const validLogo = sanitizeLogoUrl(c.logo_url, supabaseUrl);
           if (validLogo) {
             idToLogo.set(String(c.id), validLogo);
-            if (c.name) {
-              nameToLogo.set(String(c.name).trim().toLowerCase(), validLogo);
-            }
-          }
-        }
-      }
-    }
-
-    // 2b. Match by name case variants for companies without company_id or not yet matched
-    if (distinctCompanyNames.length > 0) {
-      const searchNames = new Set<string>();
-      for (const name of distinctCompanyNames) {
-        searchNames.add(name);
-        searchNames.add(name.toLowerCase());
-        searchNames.add(name.toUpperCase());
-        searchNames.add(name.charAt(0).toUpperCase() + name.slice(1).toLowerCase());
-      }
-
-      const { data: nameData, error: nameError } = await supabase
-        .from("companies")
-        .select("id, name, logo_url")
-        .in("name", Array.from(searchNames));
-
-      if (nameError) {
-        return {
-          statusCode: 503,
-          headers: {
-            ...headers,
-            "Cache-Control": "no-store",
-          },
-          body: JSON.stringify({ error: "Service unavailable" }),
-        };
-      }
-
-      if (nameData) {
-        for (const c of nameData) {
-          const validLogo = sanitizeLogoUrl(c.logo_url, supabaseUrl);
-          if (validLogo) {
-            if (c.id && !idToLogo.has(String(c.id))) {
-              idToLogo.set(String(c.id), validLogo);
-            }
-            if (c.name) {
-              nameToLogo.set(String(c.name).trim().toLowerCase(), validLogo);
-            }
           }
         }
       }
@@ -295,8 +218,6 @@ export async function handler(event?: any) {
       let resolvedLogo: string | null = null;
       if (compId && idToLogo.has(compId)) {
         resolvedLogo = idToLogo.get(compId)!;
-      } else if (cleanCompany && nameToLogo.has(cleanCompany.toLowerCase())) {
-        resolvedLogo = nameToLogo.get(cleanCompany.toLowerCase())!;
       }
 
       tickerItems.push({

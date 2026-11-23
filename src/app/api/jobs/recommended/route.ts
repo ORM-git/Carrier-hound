@@ -12,6 +12,7 @@ import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 import { applyExperienceLevelQuery, parseExperienceLevels, EARLY_CAREER_OR_CLAUSE } from "@/lib/jobs/experienceLevels";
 import { normalizeUserCountries as normalizeEligibleCountries } from "@/lib/jobs/eligibility";
+import { firstEligibleLogo } from "@/lib/companies/logoEligibility";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -521,8 +522,8 @@ export async function GET(req: Request) {
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
           companyDomain: row.companies?.domain || null,
-          logoUrl: row.logo_url || row.companies?.logo_url || null,
-          logo_url: row.logo_url || row.companies?.logo_url || null,
+          logoUrl: firstEligibleLogo([row.logo_url, row.companies?.logo_url]),
+          logo_url: firstEligibleLogo([row.logo_url, row.companies?.logo_url]),
           matchScore: typeof row.matchScore === "number" ? row.matchScore : (typeof row._matchScore === "number" ? row._matchScore : null),
         };
       }

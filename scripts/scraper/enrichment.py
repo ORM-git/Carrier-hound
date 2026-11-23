@@ -595,15 +595,13 @@ def assign_legacy_category(title: str | None, role_category: str) -> str:
 
 
 def resolve_logo_url(ats_logo_url: str | None, canonical_domain: str | None) -> str | None:
-    """Resolves logo from ATS metadata or domain icon, or None for frontend initial-avatar fallback."""
-    if ats_logo_url and isinstance(ats_logo_url, str):
-        trimmed = ats_logo_url.strip()
-        if trimmed.startswith("https://") or trimmed.startswith("http://"):
-            return trimmed
-    if canonical_domain and isinstance(canonical_domain, str):
-        dom = canonical_domain.strip().lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").split("/")[0]
-        if "." in dom:
-            return f"https://www.google.com/s2/favicons?domain={dom}&sz=128"
+    """Company-logo contract (src/lib/companies/logoEligibility.ts): ingestion never stores logos.
+
+    Always None. Companies are enqueued for the TypeScript logo repair worker, which resolves, validates,
+    hosts and records the logo; eligibility is decided once, in SQL/TS, against this project's origin.
+    Arguments are kept for call compatibility.
+    """
+    del ats_logo_url, canonical_domain
     return None
 
 

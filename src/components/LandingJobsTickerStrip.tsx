@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { parseTickerResponse } from "@/lib/api/clientSchemas";
+import { companyInitial, useVerifiedLogo } from "@/components/CompanyLogo";
 
 export interface TickerJobItem {
   company: string;
@@ -59,15 +60,10 @@ interface TickerCardProps {
 }
 
 function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerCardProps) {
-  const cleanCompany = (job.company || "").trim();
-  const letter = cleanCompany.charAt(0).toUpperCase() || "?";
+  const letter = companyInitial(job.company);
   const relativeTime = formatRelativeTime(job.posted_at);
-
-  const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    setImgError(false);
-  }, [job.logo_url]);
+  // Same contract as CompanyLogo: the letter tile stays until a hosted logo loads and measures readable.
+  const { imgProps, shown: showLogo } = useVerifiedLogo(job.logo_url);
 
   return (
     <Link
@@ -77,18 +73,20 @@ function TickerCard({ job, keyPrefix = "", index, isDuplicate = false }: TickerC
       className="ticker-card flex items-center shrink-0 h-9 md:h-12 gap-4 md:gap-3 mr-12 md:mr-16 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg select-none"
     >
       {/* Logo square or neutral letter tile */}
-      <div className="w-9 h-9 md:w-12 md:h-12 min-w-[36px] min-h-[36px] md:min-w-[48px] md:min-h-[48px] rounded-[7px] md:rounded-[10px] overflow-hidden bg-[#1F1F1F] border border-white/10 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
-        {job.logo_url && !imgError ? (
+      {/* Same tile size either way; a logo sits on a neutral light backing so dark transparent marks stay visible. */}
+      <div className={`relative w-9 h-9 md:w-12 md:h-12 min-w-[36px] min-h-[36px] md:min-w-[48px] md:min-h-[48px] rounded-[7px] md:rounded-[10px] overflow-hidden ${showLogo ? "bg-[#F4F4F5]" : "bg-[#1F1F1F]"} border border-white/10 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
+        {imgProps && (
           <img
-            src={job.logo_url}
+            key={imgProps.src}
+            {...imgProps}
             alt={`${job.company} logo`}
             referrerPolicy="no-referrer"
-            className="w-full h-full object-contain p-1 rounded-[6px] md:rounded-[9px]"
+            className={`w-full h-full object-contain p-1 rounded-[6px] md:rounded-[9px] ${showLogo ? "" : "opacity-0"}`}
             loading="lazy"
-            onError={() => setImgError(true)}
           />
-        ) : (
-          <span className="text-white text-xs md:text-base font-semibold leading-none select-none">
+        )}
+        {!showLogo && (
+          <span aria-hidden={imgProps ? true : undefined} className="absolute inset-0 flex items-center justify-center text-white text-xs md:text-base font-semibold leading-none select-none">
             {letter}
           </span>
         )}
@@ -178,7 +176,11 @@ export default function LandingJobsTickerStrip({ initialJobs }: LandingJobsTicke
     return () => window.removeEventListener("resize", tuneDuration);
   }, [jobs]);
 
-  // If fewer than 5 real jobs, loading without initial data, or fetch failed: hide the whole strip
+  // While loading, hold the strip's height (no layout shift when real jobs arrive). Fewer than 5 real jobs or a
+  // failed fetch hides the strip entirely: no sample or placeholder content is ever shown as live.
+  if (loading) {
+    return <div aria-hidden="true" className="jobs-ticker-strip w-full h-[84px] md:h-[104px] bg-black md:bg-[#0A0A0A] border-y border-white/10" />;
+  }
   if (!jobs || jobs.length < 5) {
     return null;
   }
