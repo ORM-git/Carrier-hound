@@ -45,7 +45,8 @@ FROM information_schema.role_table_grants
 WHERE table_name = 'deleted_account_tombstones';
 ```
 **Expected Grants**:
-- `service_role`: `SELECT`, `INSERT`, `UPDATE`
+- `service_role`: `SELECT`, `INSERT`, `UPDATE` (from `20261106h`), plus `DELETE` (from `20261123a_grant_tombstone_delete_to_service_role.sql`).
+  *Note: If `DELETE` is not yet granted, server cancel recovery automatically falls back to `UPDATE purged_at = now()` so recovery is never blocked.*
 - `anon`, `authenticated`: **NO GRANTS** (revoked per `20261106h_soft_delete_tombstones.sql`).
 
 ### 1.3 Verify Soft-Delete Columns (`deleted_at`)

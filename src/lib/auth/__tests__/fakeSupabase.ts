@@ -87,6 +87,9 @@ export function createFakeSupabase(options: FakeDbOptions = {}) {
       async upsert(row: Row) {
         calls.push(`upsert:${table}`);
         if (failTables[table]) return { error: failTables[table] };
+        if (row && "deleted_at" in row && missingDeletedAt.has(table)) {
+          return { error: missingColumn(table) };
+        }
         const existing = rows(table).find((r) => r.user_id === row.user_id);
         if (existing) Object.assign(existing, row);
         else rows(table).push({ ...row });

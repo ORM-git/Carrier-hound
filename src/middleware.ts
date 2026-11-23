@@ -627,6 +627,7 @@ async function middlewareImpl(request: NextRequest) {
                 .from("deleted_account_tombstones")
                 .select("user_id")
                 .eq("user_id", userId)
+                .is("purged_at", null)
                 .maybeSingle();
               if (tombstone?.user_id) {
                 const redirect = NextResponse.redirect(new URL("/settings?tab=privacy&state=deletion_pending", request.url));
@@ -671,6 +672,7 @@ async function middlewareImpl(request: NextRequest) {
             .from("deleted_account_tombstones")
             .select("user_id")
             .eq("user_id", userId)
+            .is("purged_at", null)
             .maybeSingle();
           if (tombstone?.user_id) {
             const redirect = NextResponse.redirect(new URL("/settings?tab=privacy&state=deletion_pending", request.url));

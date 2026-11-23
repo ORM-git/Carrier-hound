@@ -225,6 +225,7 @@ export async function handleAccountDeleteRequest(
         .from("deleted_account_tombstones")
         .select("user_id")
         .eq("user_id", userId)
+        .is("purged_at", null)
         .maybeSingle();
 
       const isIgnorableErr = (err: any) => {
@@ -254,19 +255,83 @@ export async function handleAccountDeleteRequest(
         );
       }
 
+      // Explicit idempotent recovery transition:
+      // 1. Reset surviving profiles row (contains onboarding_completed_at, full_name, target_roles).
+      //    Must not allow an old completed profile to survive cancellation and bypass onboarding.
+      const { error: profileResetErr } = await supabaseAdmin
+        .from("profiles")
+        .delete()
+        .eq("user_id", userId);
+      if (profileResetErr && !isIgnorableErr(profileResetErr)) {
+        return NextResponse.json(
+          { success: false, error: `Failed to reset profile during recovery: ${profileResetErr.message || String(profileResetErr)}` },
+          { status: 500 }
+        );
+      }
+
+      // 2. Reset surviving candidate_profiles (contains confirmed_at, skills, resume text).
+      const { error: candResetErr } = await supabaseAdmin
+        .from("candidate_profiles")
+        .delete()
+        .eq("user_id", userId);
+      if (candResetErr && !isIgnorableErr(candResetErr)) {
+        return NextResponse.json(
+          { success: false, error: `Failed to reset candidate profile during recovery: ${candResetErr.message || String(candResetErr)}` },
+          { status: 500 }
+        );
+      }
+
+      // 3. Reset user_preferences row (clears old soft-deleted row so fresh onboarding starts with clean slate).
+      const { error: prefResetErr } = await supabaseAdmin
+        .from("user_preferences")
+        .delete()
+        .eq("user_id", userId);
+      if (prefResetErr && !isIgnorableErr(prefResetErr)) {
+        return NextResponse.json(
+          { success: false, error: `Failed to reset preferences during recovery: ${prefResetErr.message || String(prefResetErr)}` },
+          { status: 500 }
+        );
+      }
+
+      // 4. Reset auth user metadata onboarding completion flag if present.
+      try {
+        if (typeof supabaseAdmin.auth?.admin?.updateUserById === "function") {
+          await supabaseAdmin.auth.admin.updateUserById(userId, {
+            user_metadata: { onboarding_completed: false },
+          });
+        }
+      } catch (authMetaErr) {
+        log.warn("Failed to reset onboarding_completed in auth user metadata", { error: authMetaErr });
+      }
+
+      // 5. ONLY AFTER all reset operations succeed, release the tombstone record.
       const { error: cancelError } = await supabaseAdmin
         .from("deleted_account_tombstones")
         .delete()
         .eq("user_id", userId);
 
       if (cancelError) {
-        return NextResponse.json(
-          { success: false, error: `Failed to cancel deletion request: ${cancelError.message || String(cancelError)}` },
-          { status: 500 }
-        );
+        if (cancelError.code === "42501") {
+          // If service_role lacks DELETE grant under 20261106h, use UPDATE purged_at fallback
+          const { error: purgeError } = await supabaseAdmin
+            .from("deleted_account_tombstones")
+            .update({ purged_at: new Date().toISOString() })
+            .eq("user_id", userId);
+          if (purgeError) {
+            return NextResponse.json(
+              { success: false, error: `Failed to release deletion tombstone: ${purgeError.message || String(purgeError)}` },
+              { status: 500 }
+            );
+          }
+        } else {
+          return NextResponse.json(
+            { success: false, error: `Failed to cancel deletion request: ${cancelError.message || String(cancelError)}` },
+            { status: 500 }
+          );
+        }
       }
 
-      log.info("Interrupted deletion cancelled by user", { userId });
+      log.info("Interrupted deletion cancelled and account reset for fresh setup", { userId });
       return NextResponse.json({
         success: true,
         action: "cancelled",

@@ -71,6 +71,7 @@ export async function GET(req: Request) {
       .from("deleted_account_tombstones")
       .select("user_id, created_at, deletion_completed_at")
       .eq("user_id", userId)
+      .is("purged_at", null)
       .maybeSingle();
 
     if (tombstoneErr && !isMissingTombstoneTable(tombstoneErr)) {

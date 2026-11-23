@@ -83,6 +83,7 @@ export async function checkAccountOnboardingCompleted(
       .from("deleted_account_tombstones")
       .select("user_id")
       .eq("user_id", userId)
+      .is("purged_at", null)
       .maybeSingle();
     if (error) {
       if (error.code === "42501") {
@@ -201,10 +202,16 @@ export async function resolvePostAuthDestination(
             return "/settings?tab=privacy&state=deletion_pending";
           }
           return status.onboardingCompleted ? safeDestination : onboardingRedirectFor(safeDestination);
+        } else {
+          // If status endpoint returns an error (e.g. 500/503) or is unavailable, fail closed to onboarding.
+          // Never fall back to unprivileged client-side check which is blinded by RLS 42501 on tombstones.
+          log.warn("Server status check returned non-200 in browser; failing closed to onboarding", { status: res.status });
+          return onboardingRedirectFor(safeDestination);
         }
       }
     } catch (err) {
-      log.warn("Failed to query /api/account/status, falling back to direct check", { error: err });
+      log.warn("Failed to query /api/account/status in browser; failing closed to onboarding", { error: err });
+      return onboardingRedirectFor(safeDestination);
     }
   }
 

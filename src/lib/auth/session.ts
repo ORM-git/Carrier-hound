@@ -192,17 +192,18 @@ function isMissingDeletedAtColumnError(error: any): boolean {
  * alone). If the columns do not exist yet (migration 20261117 not applied) the
  * save fails loudly instead of dropping the country and reporting success.
  */
-export async function saveUserPreferences(prefs: UserPreferences, userId?: string): Promise<void> {
+export async function saveUserPreferences(prefs: UserPreferences, userId?: string, clientOverride?: any): Promise<void> {
   const updatedPrefs: UserPreferences = {
     ...prefs,
     updatedAt: new Date().toISOString(),
   };
 
-  const supabase = createClient();
+  const supabase = clientOverride || createClient();
   if (userId && userId !== "local-user") {
     // Explicit column list (object literal). country / country_code are only written when the
     // caller set them, so a save without a country never blanks a stored one.
-    const { error: upsertError } = await supabase.from("user_preferences").upsert({
+    // deleted_at: null ensures active preferences writes clear any soft-delete tombstone.
+    const upsertPayload: Record<string, any> = {
       user_id: userId,
       roles: updatedPrefs.roles || [],
       categories: updatedPrefs.categories || [],
@@ -218,12 +219,19 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       daily_digest_opt_in: updatedPrefs.dailyDigestOptIn ?? false,
       onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
+      deleted_at: null,
       updated_at: updatedPrefs.updatedAt,
       ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
       ...(updatedPrefs.countryCode !== undefined
         ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
         : {}),
-    });
+    };
+
+    let { error: upsertError } = await supabase.from("user_preferences").upsert(upsertPayload);
+    if (upsertError && isMissingDeletedAtColumnError(upsertError)) {
+      delete upsertPayload.deleted_at;
+      upsertError = (await supabase.from("user_preferences").upsert(upsertPayload)).error;
+    }
 
     if (upsertError) {
       if (isMissingCountryColumnError(upsertError)) {

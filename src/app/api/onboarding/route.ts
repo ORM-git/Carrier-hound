@@ -103,6 +103,7 @@ export async function POST(req: Request) {
       .from("deleted_account_tombstones")
       .select("user_id")
       .eq("user_id", user.id)
+      .is("purged_at", null)
       .maybeSingle();
 
     const isMissingTombstone = (err: any) => {
@@ -197,15 +198,31 @@ export async function POST(req: Request) {
   }
   const sanitizedWorkAuth = body.workAuth.trim().slice(0, 100);
 
-  // Fetch existing DB preferences to preserve old locations, experience level, currency, and work model
-  // Fail closed: if we cannot read saved prefs we must not overwrite them (would drop old locations).
+  // Fetch existing DB preferences to preserve old locations, experience level, currency, and work model.
+  // Only query live (non-soft-deleted) preferences; a soft-deleted row from an interrupted deletion must not leak old data.
   let existingDbPrefs: any = null;
   try {
-    const { data: dbData, error: readError } = await supabaseAdmin
+    let { data: dbData, error: readError } = await supabaseAdmin
       .from("user_preferences")
       .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, eligibility_filter, daily_digest_opt_in")
       .eq("user_id", user.id)
+      .is("deleted_at", null)
       .maybeSingle();
+
+    const isMissingSoftDeleteCol = (err: any) => {
+      if (!err) return false;
+      const msg = String(err.message || "").toLowerCase();
+      return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
+    };
+
+    if (readError && isMissingSoftDeleteCol(readError)) {
+      ({ data: dbData, error: readError } = await supabaseAdmin
+        .from("user_preferences")
+        .select("roles, categories, experience_level, employment_types, locations, remote_preference, work_auth, min_salary, salary_currency, eligibility_filter, daily_digest_opt_in")
+        .eq("user_id", user.id)
+        .maybeSingle());
+    }
+
     if (readError) {
       log.error("Failed to read existing user_preferences in /api/onboarding", { error: readError.message });
       return jsonResponse({ error: "Failed to load saved preferences" }, 500);
@@ -290,26 +307,42 @@ export async function POST(req: Request) {
     };
 
     // Explicit column list (object literal): no request field reaches the DB unvetted.
-    const { error: prefError } = await supabaseAdmin.from("user_preferences").upsert(
-      {
-        user_id: user.id,
-        roles: sanitizedRoles,
-        categories: mergedCategories,
-        employment_types: sanitizedTypes,
-        locations: mergedLocations,
-        remote_preference: finalRemotePref,
-        work_auth: sanitizedWorkAuth,
-        country: resolvedCountry.name,
-        country_code: resolvedCountry.code,
-        experience_level: experienceLevel,
-        min_salary: minSalary,
-        salary_currency: salaryCurrency,
-        daily_digest_opt_in: dailyDigestOptIn,
-        onboarding_completed: true,
-        updated_at: updatedAt,
-      },
-      { onConflict: "user_id" }
-    );
+    // Explicitly set deleted_at: null so fresh onboarding after a partial delete clears any tombstone.
+    const upsertPayload: Record<string, any> = {
+      user_id: user.id,
+      roles: sanitizedRoles,
+      categories: mergedCategories,
+      employment_types: sanitizedTypes,
+      locations: mergedLocations,
+      remote_preference: finalRemotePref,
+      work_auth: sanitizedWorkAuth,
+      country: resolvedCountry.name,
+      country_code: resolvedCountry.code,
+      experience_level: experienceLevel,
+      min_salary: minSalary,
+      salary_currency: salaryCurrency,
+      daily_digest_opt_in: dailyDigestOptIn,
+      onboarding_completed: true,
+      deleted_at: null,
+      updated_at: updatedAt,
+    };
+
+    let { error: prefError } = await supabaseAdmin
+      .from("user_preferences")
+      .upsert(upsertPayload, { onConflict: "user_id" });
+
+    const isMissingSoftDeleteCol = (err: any) => {
+      if (!err) return false;
+      const msg = String(err.message || "").toLowerCase();
+      return err.code === "42703" || err.code === "PGRST204" || msg.includes("deleted_at");
+    };
+
+    if (prefError && isMissingSoftDeleteCol(prefError)) {
+      delete upsertPayload.deleted_at;
+      prefError = (await supabaseAdmin
+        .from("user_preferences")
+        .upsert(upsertPayload, { onConflict: "user_id" })).error;
+    }
 
     // No retry without the country columns: a save that drops the country must never report success.
     if (prefError && isMissingCountryColumnError(prefError)) {

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { handleAccountDeleteRequest } from "@/lib/account/deleteHandler";
 import { checkAccountOnboardingCompleted, resolvePostAuthDestination } from "@/lib/auth/onboarding";
 import { createFakeSupabase, seedCompletedAccount } from "@/lib/auth/__tests__/fakeSupabase";
-import { getUserPreferences } from "@/lib/auth/session";
+import { getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
+import { emptyUserPreferences } from "@/lib/auth/types";
 
 /*
  * MOCK COVERAGE: the deletion handler and the onboarding rule run for real against a stateful local
@@ -25,7 +26,7 @@ async function deleteAccount(db: Db, userId: string, bodyJson?: any) {
 
 describe("account deletion contract", () => {
   beforeEach(() => {
-    (globalThis as any).__mockRateLimitClient = null;
+    (globalThis as any).__mockSentry = { captureMessage: () => {} };
   });
   it("success: data cleaned, Auth identity deleted last, success=true", async () => {
     const db = createFakeSupabase();
@@ -205,6 +206,118 @@ describe("delete -> fresh sign-up with the same email (stateful local stub)", ()
 
     // Step 3: Account can now proceed cleanly to onboarding
     expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
+  });
+
+  it("A1 regression: interrupted deletion with surviving profile resets profile on cancel and enforces fresh onboarding", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("surviving-profile@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("profiles", { code: "XX000", message: "profiles delete failed" });
+
+    // Step 1: Deletion fails because profiles could not be deleted
+    const delRes = await deleteAccount(db, user.id);
+    expect(delRes.status).toBe(500);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+    expect(db.rowsOf("profiles")).toHaveLength(1);
+
+    // Step 2: Dependency recovers, user calls cancel
+    db.setFailTable("profiles", null);
+    const cancelRes = await deleteAccount(db, user.id, { action: "cancel" });
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.success).toBe(true);
+
+    // Step 3: Old completed profiles row was reset (removed), user MUST NOT skip onboarding!
+    expect(db.rowsOf("profiles")).toEqual([]);
+    const completed = await checkAccountOnboardingCompleted(db.client, user.id);
+    expect(completed).toBe(false);
+    expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
+  });
+
+  it("A2 regression: partial delete then cancel allows fresh onboarding save with readable fresh preferences", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("fresh-prefs@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "temporary failure" });
+
+    // Step 1: Deletion fails midway, soft-deleting user_preferences
+    const delRes = await deleteAccount(db, user.id);
+    expect(delRes.status).toBe(500);
+    db.setFailTable("resumes", null);
+
+    // Step 2: User cancels deletion
+    const cancelRes = await deleteAccount(db, user.id, { action: "cancel" });
+    expect(cancelRes.status).toBe(200);
+
+    // Step 3: Fresh onboarding saves new answers
+    await saveUserPreferences(
+      {
+        ...emptyUserPreferences(),
+        roles: ["Staff Platform Engineer"],
+        country: "United States",
+        countryCode: "US",
+        onboardingCompleted: true,
+      },
+      user.id,
+      db.client
+    );
+
+    // Step 4: Fresh preferences are readable and NOT soft-deleted
+    const prefs = await getUserPreferences(user.id, db.client);
+    expect(prefs.roles).toEqual(["Staff Platform Engineer"]);
+    expect(prefs.country).toBe("United States");
+    expect(prefs.countryCode).toBe("US");
+    expect(prefs.onboardingCompleted).toBe(true);
+  });
+
+  it("A1 safety: reset failure retains tombstone and keeps account truthfully blocked", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("reset-fail@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "temporary failure" });
+
+    // Step 1: Delete fails midway
+    await deleteAccount(db, user.id);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+    db.setFailTable("resumes", null);
+
+    // Step 2: Cancel fails because resetting profiles fails
+    db.setFailTable("profiles", { code: "XX000", message: "reset failed" });
+    const cancelRes = await deleteAccount(db, user.id, { action: "cancel" });
+    expect(cancelRes.status).toBe(500);
+    expect(cancelRes.body.success).toBe(false);
+
+    // Tombstone must be retained! Account remains deletion_pending!
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+  });
+
+  it("A3 permissions: if tombstone DELETE gets 42501, UPDATE purged_at fallback succeeds", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("perm-fallback@example.test");
+    seedCompletedAccount(db, user.id);
+    db.setFailTable("resumes", { code: "XX000", message: "temporary failure" });
+
+    // Step 1: Delete fails midway
+    await deleteAccount(db, user.id);
+    db.setFailTable("resumes", null);
+    expect(db.rowsOf("deleted_account_tombstones")).toHaveLength(1);
+
+    // When deleting tombstone, simulate 42501
+    const originalFrom = db.client.from.bind(db.client);
+    db.client.from = (table: string) => {
+      const builder = originalFrom(table);
+      if (table === "deleted_account_tombstones") {
+        builder.delete = () => ({
+          eq: () => Promise.resolve({ error: { code: "42501", message: "permission denied for table" } }),
+        });
+      }
+      return builder;
+    };
+
+    // Cancel must use UPDATE purged_at fallback and succeed
+    const cancelRes = await deleteAccount(db, user.id, { action: "cancel" });
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.success).toBe(true);
+    expect(db.rowsOf("deleted_account_tombstones")[0].purged_at).toBeTruthy();
   });
 
   it("realistic RLS permission: unprivileged authenticated client getting 42501 on tombstones is not falsely blocked", async () => {
