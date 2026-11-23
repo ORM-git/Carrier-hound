@@ -171,6 +171,41 @@ describe("POST /api/onboarding", () => {
     expect(json.error).toContain("Work authorization status is required");
   });
 
+  const authorized = "Authorized to work (No sponsorship required)";
+  const sponsorship = "Requires visa sponsorship (e.g. H1B)";
+  const other = "Other / Work Permit";
+  const postWorkAuth = (workAuth: unknown) =>
+    POST(
+      makeReq(
+        { roles: ["Software Engineer"], employmentTypes: ["full-time"], country: "United States", workAuth },
+        "valid-user-token"
+      )
+    );
+
+  it.each([
+    [`${authorized} + ${sponsorship}`],
+    [`${authorized} + ${other}`],
+    [`${authorized} + ${sponsorship} + ${other}`],
+    ["Authorized"],
+    ["unknown"],
+    [["requires_sponsorship", "other"]],
+    [42],
+    [null],
+  ])("returns 400 for invalid work authorization %j", async (workAuth) => {
+    const res = await postWorkAuth(workAuth);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("Work authorization status is required");
+  });
+
+  it("accepts {2,3} in either order or as ids and stores the canonical string", async () => {
+    for (const input of [`${other} + ${sponsorship}`, "requires_sponsorship + other"]) {
+      const res = await postWorkAuth(input);
+      expect(res.status).toBe(200);
+      expect((await res.json()).preferences.workAuth).toBe(`${sponsorship} + ${other}`);
+      expect(mockDb.user_preferences.get("user-123").work_auth).toBe(`${sponsorship} + ${other}`);
+    }
+  });
+
   it("persists valid country separately (name + code) and workAuth without inventing defaults", async () => {
     const res = await POST(
       makeReq(

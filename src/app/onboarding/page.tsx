@@ -20,7 +20,7 @@ import OnboardingStep2, { ResumeParseSummary } from "@/components/onboarding/Onb
 import { setFirstJobsMarker } from "@/components/onboarding/onboardingMarkers";
 import { isOnboardingActive } from "@/config/onboarding";
 import { normalizeUserCountries } from "@/lib/countries";
-import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
+import { parseWorkAuth, serializeWorkAuth } from "@/lib/onboarding/workAuth";
 
 function OnboardingPageInner() {
   const router = useRouter();
@@ -118,13 +118,11 @@ function OnboardingPageInner() {
               }
             }
           }
-          // Only prefill a work authorization the form can actually show as selected
+          // Only prefill a work authorization that parses to a valid selection set
           // (legacy seeded "Authorized" is not one of the options and stays blank).
-          if (
-            prefs.workAuth &&
-            WORK_AUTH_OPTIONS.some((opt) => opt.label === prefs.workAuth || opt.id === prefs.workAuth)
-          ) {
-            setWorkAuth(prefs.workAuth);
+          const savedWorkAuth = parseWorkAuth(prefs.workAuth);
+          if (savedWorkAuth && savedWorkAuth.length > 0) {
+            setWorkAuth(serializeWorkAuth(savedWorkAuth));
           }
           if (prefs.remotePreference) {
             setOpenToRemote(prefs.remotePreference !== "onsite");

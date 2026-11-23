@@ -6,6 +6,7 @@ import BrandIcon from "@/components/BrandIcon";
 import JobFunctionBottomSheet from "./JobFunctionBottomSheet";
 import CountryPickerModal from "./CountryPickerModal";
 import { JOB_TYPE_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
+import { isWorkAuthComplete, parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
 
 const HELP_BUTTON_CLASS =
   "p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] lg:focus-visible:ring-brand-500 transition-colors";
@@ -58,7 +59,8 @@ export default function OnboardingStep1({
     roles.length > 0 &&
     employmentTypes.length > 0 &&
     Boolean(country && country.trim().length > 0) &&
-    Boolean(workAuth && workAuth.trim().length > 0);
+    isWorkAuthComplete(workAuth);
+  const selectedWorkAuth = parseWorkAuth(workAuth) ?? [];
 
   // Rendered twice (mobile tree + desktop tree); the hidden copy is display:none so only one is focusable
   const remoteHelpButton = (extraClass = "") => (
@@ -314,13 +316,13 @@ export default function OnboardingStep1({
 
             <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
               {WORK_AUTH_OPTIONS.map((opt) => {
-                const isSelected = workAuth === opt.label || workAuth === opt.id;
+                const isSelected = selectedWorkAuth.includes(opt.id as WorkAuthId);
                 return (
                   <button
                     key={opt.id}
                     type="button"
                     aria-pressed={isSelected}
-                    onClick={() => onSelectWorkAuth(opt.label)}
+                    onClick={() => onSelectWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId))}
                     className={`w-full min-h-[44px] md:h-full flex items-center gap-3 px-3.5 py-2.5 md:p-4 rounded-2xl border text-left text-sm font-semibold transition ${
                       isSelected
                         ? "bg-[#E6F2FF] border-[#0082FF] text-[#0020B0] dark:text-brand-100 shadow-sm"
@@ -645,13 +647,13 @@ export default function OnboardingStep1({
 
                 <div className="space-y-2">
                   {WORK_AUTH_OPTIONS.map((opt) => {
-                    const isSelected = workAuth === opt.label || workAuth === opt.id;
+                    const isSelected = selectedWorkAuth.includes(opt.id as WorkAuthId);
                     return (
                       <button
                         key={opt.id}
                         type="button"
                         aria-pressed={isSelected}
-                        onClick={() => onSelectWorkAuth(opt.label)}
+                        onClick={() => onSelectWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId))}
                         className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border text-left text-sm font-semibold transition ${
                           isSelected
                             ? "bg-brand-500/10 border-brand-500 text-brand-900 dark:text-brand-100 shadow-xs"

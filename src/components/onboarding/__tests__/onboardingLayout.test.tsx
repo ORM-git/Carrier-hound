@@ -77,6 +77,57 @@ describe("OnboardingStep1 help controls", () => {
   });
 });
 
+describe("OnboardingStep1 work authorization: {1}, {2}, {3}, {2,3}", () => {
+  const A = "Authorized to work (No sponsorship required)";
+  const S = "Requires visa sponsorship (e.g. H1B)";
+  const O = "Other / Work Permit";
+  const filled = { ...step1Props, roles: ["Software Engineer"], employmentTypes: ["full-time"], country: "India" };
+
+  // Stateful wrapper so taps accumulate like on the real page.
+  function Harness({ initial = "" }: { initial?: string }) {
+    const [workAuth, setWorkAuth] = React.useState(initial);
+    return <OnboardingStep1 {...filled} workAuth={workAuth} onSelectWorkAuth={setWorkAuth} />;
+  }
+  // The mobile tree renders first; the desktop copy is display:none in a real browser.
+  const option = (label: string) => screen.getAllByRole("button", { name: label })[0];
+  const pressed = () => [A, S, O].filter((l) => option(l).getAttribute("aria-pressed") === "true");
+  const next = () => screen.getByTestId("btn-onboarding-step1-next-mobile") as HTMLButtonElement;
+
+  it("nothing is preselected and Next stays disabled until a valid set is chosen", () => {
+    render(<Harness />);
+    expect(pressed()).toEqual([]);
+    expect(next().disabled).toBe(true);
+    fireEvent.click(option(S));
+    expect(next().disabled).toBe(false);
+  });
+
+  it("2 and 3 combine; 1 clears them; 2 or 3 clear 1; re-tap deselects", () => {
+    render(<Harness />);
+    fireEvent.click(option(S));
+    fireEvent.click(option(O));
+    expect(pressed()).toEqual([S, O]);
+    fireEvent.click(option(A));
+    expect(pressed()).toEqual([A]);
+    fireEvent.click(option(O));
+    expect(pressed()).toEqual([O]);
+    fireEvent.click(option(O));
+    expect(pressed()).toEqual([]);
+    expect(next().disabled).toBe(true);
+  });
+
+  it("an invalid saved combination shows nothing selected and does not complete the step", () => {
+    render(<Harness initial={`${A} + ${S}`} />);
+    expect(pressed()).toEqual([]);
+    expect(next().disabled).toBe(true);
+  });
+
+  it("a saved {2,3} reloads as both selected", () => {
+    render(<Harness initial={`${S} + ${O}`} />);
+    expect(pressed()).toEqual([S, O]);
+    expect(next().disabled).toBe(false);
+  });
+});
+
 describe("OnboardingStep2 card text", () => {
   it("does not truncate card titles or descriptions", () => {
     render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
