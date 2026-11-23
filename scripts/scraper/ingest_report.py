@@ -56,6 +56,12 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
             if isinstance(e, dict) and e.get("status") == "failed"
         ],
         "guard_block_reason": report.get("guard_block_reason"),
+        "logo_enqueue": {
+            "requested": int((report.get("logo_enqueue") or {}).get("requested", 0)),
+            "enqueued": int((report.get("logo_enqueue") or {}).get("enqueued", 0)),
+            "status": str((report.get("logo_enqueue") or {}).get("status", "skipped")),
+            "coverage": (report.get("logo_enqueue") or {}).get("coverage"),
+        },
     }
 
 
@@ -78,6 +84,13 @@ def render_cohort(s: dict[str, Any]) -> str:
         rows += [("confirmed inserted", c.get("inserted")), ("confirmed updated", c.get("updated")),
                  ("unchanged", c.get("unchanged")), ("expired", c.get("expired"))]
     rows += [("persistence failed", s["persistence_failed"]), ("guard", s.get("guard_block_reason") or "none")]
+    logo = s.get("logo_enqueue") or {}
+    cov = logo.get("coverage")
+    cov_str = "n/a" if cov is None else (json.dumps(cov) if isinstance(cov, dict) else str(cov))
+    rows += [
+        ("company logos requested / enqueued / status", f"{logo.get('requested', 0)} / {logo.get('enqueued', 0)} / {logo.get('status', 'skipped')}"),
+        ("company logo coverage", cov_str),
+    ]
     lines = [title, "", "| metric | value |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows]
     if s["failed_sources"]:
         lines += ["", "**Failed sources (this cohort's writes and expiry withheld):**", ""]

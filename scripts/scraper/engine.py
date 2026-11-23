@@ -302,7 +302,7 @@ class SupabaseSetDiffWriter:
         self.write_errors: list[str] = []
         self.failed_writes: int = 0
         self.persistence_failed: bool = False
-        self.logo_enqueue: dict[str, Any] = {"requested": 0, "enqueued": 0, "status": "skipped"}
+        self.logo_enqueue: dict[str, Any] = {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None}
 
     async def sync_companies(
         self,
@@ -324,7 +324,7 @@ class SupabaseSetDiffWriter:
                 "canonical_domain": j.get("canonical_domain"),
                 "domain": j.get("canonical_domain"),
                 "category": j.get("company_category"),
-                "logo_url": j.get("logo_url"),
+                "logo_url": None,  # company-logo contract: raw logos must never be written by Python
                 "ats_type": j.get("source"),
                 "source_priority": int(j.get("source_priority") or 2),
                 "enabled": True,
@@ -361,6 +361,7 @@ class SupabaseSetDiffWriter:
             ex = existing_map.get(slug)
             if ex is None:
                 insert_payload = {k: v for k, v in inc.items() if k != "source_priority"}
+                insert_payload["logo_url"] = None
                 to_insert.append(insert_payload)
             else:
                 ex_prio = 1 if ex.get("ats_type") in ("greenhouse", "lever", "ashby", "smartrecruiters", "workday", "amazon", "microsoft") else 2
