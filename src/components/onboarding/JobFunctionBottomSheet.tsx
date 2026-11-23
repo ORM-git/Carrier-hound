@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { X, Search, ChevronRight, Check, ArrowLeft } from "lucide-react";
-import { ONBOARDING_CATEGORIES, OnboardingCategory } from "@/data/onboardingCategories";
+import { X, Search, ChevronRight, ChevronDown, Check } from "lucide-react";
+import { ONBOARDING_CATEGORIES } from "@/data/onboardingCategories";
 
 interface JobFunctionBottomSheetProps {
   isOpen: boolean;
@@ -26,7 +26,15 @@ export default function JobFunctionBottomSheet({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCatId, setSelectedCatId] = useState<string>("software-internet-ai");
-  const [mobileDrilldownCat, setMobileDrilldownCat] = useState<OnboardingCategory | null>(null);
+  // Mobile accordion: several categories may be open at once; selections live in selectedRoles, not here.
+  const [expandedCatIds, setExpandedCatIds] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (id: string) =>
+    setExpandedCatIds((prev) => {
+      const nextIds = new Set(prev);
+      if (nextIds.has(id)) nextIds.delete(id);
+      else nextIds.add(id);
+      return nextIds;
+    });
 
   // Focus return handler
   const handleClose = useCallback(() => {
@@ -393,81 +401,75 @@ export default function JobFunctionBottomSheet({
                 </div>
               </div>
 
-              {/* MOBILE VIEW: Drill-down pattern with Back button */}
+              {/* MOBILE VIEW: inline accordion, child roles selectable under their category (no drill-down screen) */}
               <div className="lg:hidden flex-1 overflow-y-auto">
-                {mobileDrilldownCat ? (
-                  /* Drill-in View: Subgroups & Chips */
-                  <div className="p-4 space-y-4">
-                    <button
-                      type="button"
-                      onClick={() => setMobileDrilldownCat(null)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Back to categories</span>
-                    </button>
-
-                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 border-b border-zinc-100 dark:border-zinc-800 pb-2">
-                      {mobileDrilldownCat.name}
-                    </h3>
-
-                    <div className="space-y-4 pt-1">
-                      {mobileDrilldownCat.subgroups.map((sg) => (
-                        <div key={sg.name} className="space-y-2">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            {sg.name}
-                          </h4>
-                          <div className="flex flex-wrap gap-2">
-                            {sg.roles.map((role) => {
-                              const isSelected = selectedRoles.includes(role);
-                              return (
-                                <button
-                                  key={role}
-                                  type="button"
-                                  onClick={() => onToggleRole(role)}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition ${
-                                    isSelected
-                                      ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
-                                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700"
-                                  }`}
-                                >
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
-                                  <span>{role}</span>
-                                </button>
-                              );
-                            })}
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80 px-4 py-1">
+                  {ONBOARDING_CATEGORIES.map((cat) => {
+                    const count = roleCountsByCat.get(cat.id) || 0;
+                    const expanded = expandedCatIds.has(cat.id);
+                    const panelId = `mobile-cat-panel-${cat.id}`;
+                    return (
+                      <div key={cat.id}>
+                        <h3>
+                          <button
+                            type="button"
+                            data-testid={`mobile-cat-${cat.id}`}
+                            onClick={() => toggleExpanded(cat.id)}
+                            aria-expanded={expanded}
+                            aria-controls={panelId}
+                            className="w-full min-h-[48px] flex items-center justify-between gap-3 py-3 text-left text-sm font-semibold text-zinc-800 dark:text-zinc-200 hover:text-emerald-600 transition"
+                          >
+                            <span>{cat.name}</span>
+                            <span className="flex items-center gap-2 flex-shrink-0">
+                              {count > 0 && (
+                                <span className="text-xs px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 font-bold rounded-full">
+                                  {count}
+                                  <span className="sr-only"> selected</span>
+                                </span>
+                              )}
+                              <ChevronDown
+                                aria-hidden="true"
+                                className={`w-4 h-4 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+                              />
+                            </span>
+                          </button>
+                        </h3>
+                        {expanded && (
+                          <div id={panelId} role="region" aria-label={cat.name} className="pb-4 space-y-3">
+                            {cat.subgroups.map((sg) => (
+                              <div key={sg.name} className="space-y-2">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                                  {sg.name}
+                                </h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {sg.roles.map((role) => {
+                                    const isSelected = selectedRoles.includes(role);
+                                    return (
+                                      <button
+                                        key={role}
+                                        type="button"
+                                        onClick={() => onToggleRole(role)}
+                                        aria-pressed={isSelected}
+                                        className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl text-sm text-left font-medium transition ${
+                                          isSelected
+                                            ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
+                                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700"
+                                        }`}
+                                      >
+                                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] flex-shrink-0" aria-hidden="true" />}
+                                        <span>{role}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  /* Categories List View */
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80 px-4 py-2">
-                    {ONBOARDING_CATEGORIES.map((cat) => {
-                      const count = roleCountsByCat.get(cat.id) || 0;
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          data-testid={`mobile-cat-${cat.id}`}
-                          onClick={() => setMobileDrilldownCat(cat)}
-                          className="w-full flex items-center justify-between py-3.5 text-left text-sm font-semibold text-zinc-800 dark:text-zinc-200 hover:text-emerald-600 transition"
-                        >
-                          <span>{cat.name}</span>
-                          <div className="flex items-center gap-2">
-                            {count > 0 && (
-                              <span className="text-xs px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 font-bold rounded-full">
-                                {count}
-                              </span>
-                            )}
-                            <ChevronRight className="w-4 h-4 text-zinc-400" />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}

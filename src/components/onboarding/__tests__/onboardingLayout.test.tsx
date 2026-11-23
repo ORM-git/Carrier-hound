@@ -122,27 +122,51 @@ describe("Two-pane JobFunctionBottomSheet: navigation, search, selection and foc
     expect(screen.getByText("Strategy & Management")).toBeTruthy();
   });
 
-  it("supports mobile category drill-in and back navigation", () => {
-    render(
+  it("expands mobile categories inline as an accordion and keeps selections across collapse", () => {
+    const onToggleRole = vi.fn();
+    const { rerender } = render(
+      <JobFunctionBottomSheet isOpen={true} onClose={() => {}} selectedRoles={[]} onToggleRole={onToggleRole} />
+    );
+
+    const consulting = screen.getByTestId("mobile-cat-consulting");
+    expect(consulting.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById("mobile-cat-panel-consulting")).toBeNull();
+
+    // Expand in place: no drill-down screen, other category rows stay rendered.
+    fireEvent.click(consulting);
+    expect(consulting.getAttribute("aria-expanded")).toBe("true");
+    expect(consulting.getAttribute("aria-controls")).toBe("mobile-cat-panel-consulting");
+    const panel = document.getElementById("mobile-cat-panel-consulting")!;
+    expect(panel.textContent).toContain("Strategy & Management");
+    expect(screen.queryByText("Back to categories")).toBeNull();
+    expect(screen.getByTestId("mobile-cat-software-internet-ai")).toBeTruthy();
+
+    // Select a child role inline.
+    const role = Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === "Management Consultant")!;
+    fireEvent.click(role);
+    expect(onToggleRole).toHaveBeenCalledWith("Management Consultant");
+
+    // A second category can be open at the same time.
+    fireEvent.click(screen.getByTestId("mobile-cat-software-internet-ai"));
+    expect(document.getElementById("mobile-cat-panel-software-internet-ai")).not.toBeNull();
+    expect(document.getElementById("mobile-cat-panel-consulting")).not.toBeNull();
+
+    // Collapse/re-expand keeps the parent-owned selection (count badge + pressed chip).
+    rerender(
       <JobFunctionBottomSheet
         isOpen={true}
         onClose={() => {}}
-        selectedRoles={[]}
-        onToggleRole={() => {}}
+        selectedRoles={["Management Consultant"]}
+        onToggleRole={onToggleRole}
       />
     );
-
-    // Click mobile Consulting category
-    const mobileCat = screen.getByTestId("mobile-cat-consulting");
-    fireEvent.click(mobileCat);
-
-    // Now in drill-down view: shows subcategory and Back button
-    expect(screen.getByText("Back to categories")).toBeTruthy();
-    expect(screen.getByText("Strategy & Management")).toBeTruthy();
-
-    // Clicking Back returns to category list
-    fireEvent.click(screen.getByText("Back to categories"));
-    expect(screen.getByTestId("mobile-cat-consulting")).toBeTruthy();
+    fireEvent.click(consulting);
+    expect(consulting.getAttribute("aria-expanded")).toBe("false");
+    expect(consulting.textContent).toContain("1 selected");
+    fireEvent.click(consulting);
+    const reopened = document.getElementById("mobile-cat-panel-consulting")!;
+    const chip = Array.from(reopened.querySelectorAll("button")).find((b) => b.textContent === "Management Consultant")!;
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("searches across all taxonomy groups and allows clearing", () => {
