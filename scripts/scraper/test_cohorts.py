@@ -418,7 +418,16 @@ class LogoContractTests(unittest.TestCase):
                 rpc_calls.append(json.loads(req.content.decode("utf-8")))
                 return httpx.Response(200, json=1)
             if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
-                return httpx.Response(200, json={"coverage": 1.0})
+                return httpx.Response(200, json={
+                    "companies_with_active_jobs": 1,
+                    "eligible_hosted": 1,
+                    "missing_or_ineligible": 0,
+                    "pending": 0,
+                    "failed": 0,
+                    "missing": 0,
+                    "queued_retries": 0,
+                    "orphan_links": 0,
+                })
             return httpx.Response(404)
 
         transport = httpx.MockTransport(mock_handle)
@@ -463,7 +472,16 @@ class LogoContractTests(unittest.TestCase):
                 rpc_calls.append(json.loads(req.content.decode("utf-8")))
                 return httpx.Response(200, json=1)
             if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
-                return httpx.Response(200, json={"coverage": 1.0})
+                return httpx.Response(200, json={
+                    "companies_with_active_jobs": 1,
+                    "eligible_hosted": 1,
+                    "missing_or_ineligible": 0,
+                    "pending": 0,
+                    "failed": 0,
+                    "missing": 0,
+                    "queued_retries": 0,
+                    "orphan_links": 0,
+                })
             return httpx.Response(404)
 
         transport = httpx.MockTransport(mock_handle)
@@ -557,14 +575,26 @@ class LogoContractTests(unittest.TestCase):
                     self.assertEqual(status, "invalid: expected integer count, got bool")
 
     def test_enqueue_company_logos_invalid_coverage_shape_fails_open(self):
+        valid_base = {
+            "companies_with_active_jobs": 10,
+            "eligible_hosted": 8,
+            "missing_or_ineligible": 2,
+            "pending": 0,
+            "failed": 0,
+            "missing": 0,
+            "queued_retries": 0,
+            "orphan_links": 0,
+        }
         cases = [
             ("invalid-string-shape", "string shape"),
             ({"unexpected_only_key": "raw_sensitive_token"}, "unexpected keys only"),
-            ({"total_companies": True, "with_logo": 0}, "boolean count"),
-            ({"total_companies": -5, "with_logo": 0}, "negative total"),
-            ({"total_companies": 10, "with_logo": 15}, "with_logo exceeds total"),
-            ({"coverage_pct": 150.0}, "pct > 100"),
-            ({"coverage_pct": -2.0}, "negative pct"),
+            ({k: v for k, v in valid_base.items() if k != "orphan_links"}, "missing required base key"),
+            ({**valid_base, "invented_metric": 5}, "unexpected invented key"),
+            ({**valid_base, "companies_with_active_jobs": True}, "boolean count in base key"),
+            ({**valid_base, "pending": -5}, "negative value in base key"),
+            ({**valid_base, "held": True}, "boolean count in review-state key"),
+            ({**valid_base, "approved": -1}, "negative count in review-state key"),
+            ({**valid_base, "intentional_initials": 2.5}, "float count in review-state key"),
         ]
         for payload, desc in cases:
             with self.subTest(case=desc):
@@ -595,18 +625,28 @@ class LogoContractTests(unittest.TestCase):
                 self.assertNotEqual(status, "ok")
                 self.assertNotIn("raw_sensitive_token", status)
 
-    def test_enqueue_company_logos_valid_coverage_shape_accepted(self):
+    def test_enqueue_company_logos_valid_base_coverage_shape_accepted(self):
         writer = engine.SupabaseSetDiffWriter(
             supabase_url="https://fake.supabase.co",
             service_key="fake-key",
         )
+        base_payload = {
+            "companies_with_active_jobs": 10,
+            "eligible_hosted": 8,
+            "missing_or_ineligible": 2,
+            "pending": 0,
+            "failed": 1,
+            "missing": 1,
+            "queued_retries": 1,
+            "orphan_links": 0,
+        }
         def mock_handle(req: httpx.Request):
             if req.method == "GET" and "/companies" in str(req.url):
                 return httpx.Response(200, json=[{"id": "comp-1", "slug": "co1"}])
             if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
                 return httpx.Response(200, json=1)
             if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
-                return httpx.Response(200, json={"total_companies": 10, "with_logo": 8, "coverage_pct": 80.0})
+                return httpx.Response(200, json=base_payload)
             return httpx.Response(404)
 
         transport = httpx.MockTransport(mock_handle)
@@ -618,7 +658,45 @@ class LogoContractTests(unittest.TestCase):
         asyncio.run(run())
         self.assertFalse(writer.persistence_failed)
         self.assertEqual(writer.logo_enqueue["status"], "ok")
-        self.assertEqual(writer.logo_enqueue["coverage"], {"total_companies": 10, "with_logo": 8, "coverage_pct": 80.0})
+        self.assertEqual(writer.logo_enqueue["coverage"], base_payload)
+
+    def test_enqueue_company_logos_valid_review_state_coverage_shape_accepted(self):
+        writer = engine.SupabaseSetDiffWriter(
+            supabase_url="https://fake.supabase.co",
+            service_key="fake-key",
+        )
+        review_state_payload = {
+            "companies_with_active_jobs": 15,
+            "eligible_hosted": 10,
+            "missing_or_ineligible": 2,
+            "held": 1,
+            "intentional_initials": 2,
+            "approved": 5,
+            "pending": 0,
+            "failed": 0,
+            "missing": 0,
+            "queued_retries": 0,
+            "orphan_links": 0,
+        }
+        def mock_handle(req: httpx.Request):
+            if req.method == "GET" and "/companies" in str(req.url):
+                return httpx.Response(200, json=[{"id": "comp-1", "slug": "co1"}])
+            if req.method == "POST" and "/rpc/enqueue_company_logos" in str(req.url):
+                return httpx.Response(200, json=1)
+            if req.method == "POST" and "/rpc/company_logo_coverage" in str(req.url):
+                return httpx.Response(200, json=review_state_payload)
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(mock_handle)
+        async def run():
+            async with httpx.AsyncClient(transport=transport) as client:
+                jobs = [{"company_slug": "co1", "company": "Co1", "source": "greenhouse"}]
+                await writer.sync_companies(client, jobs)
+
+        asyncio.run(run())
+        self.assertFalse(writer.persistence_failed)
+        self.assertEqual(writer.logo_enqueue["status"], "ok")
+        self.assertEqual(writer.logo_enqueue["coverage"], review_state_payload)
 
     def test_cohort_report_serializes_and_renders_logo_enqueue(self):
         report = {
@@ -638,7 +716,16 @@ class LogoContractTests(unittest.TestCase):
                 "requested": 5,
                 "enqueued": 4,
                 "status": "ok",
-                "coverage": {"total_companies": 5, "with_logo": 4, "coverage_pct": 80.0},
+                "coverage": {
+                    "companies_with_active_jobs": 5,
+                    "eligible_hosted": 4,
+                    "missing_or_ineligible": 1,
+                    "pending": 0,
+                    "failed": 0,
+                    "missing": 1,
+                    "queued_retries": 1,
+                    "orphan_links": 0,
+                },
             },
         }
         summary = ingest_report.cohort_summary(report, exit_code=0, cohort="workday")
@@ -651,7 +738,7 @@ class LogoContractTests(unittest.TestCase):
         self.assertIn("company logos requested / enqueued / status", rendered)
         self.assertIn("5 / 4 / ok", rendered)
         self.assertIn("company logo coverage", rendered)
-        self.assertIn("80.0", rendered)
+        self.assertIn("eligible_hosted", rendered)
 
 
 if __name__ == "__main__":
