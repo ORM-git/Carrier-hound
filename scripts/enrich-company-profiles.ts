@@ -3,7 +3,7 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { createClient } from "@supabase/supabase-js";
-import { companyProfileObservationRpc, evaluateCompanyProfileFreshness, extractOfficialCompanyPage, extractOfficialCompanySubpage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
+import { companyProfileObservationRpc, dedupeCompanyNewsObservations, dedupeLeadershipObservations, evaluateCompanyProfileFreshness, extractOfficialCompanyPage, extractOfficialCompanySubpage, isAllowedCompanyProfileWriteTarget, isAtsEvidenceLinked, parseEnrichmentOptions, processCompanyBatch, reconcileCompanyFacts, robotsAllows } from "../src/lib/company-profile/enrichment";
 import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -102,8 +102,8 @@ async function main() {
         const result = await supabase.from("company_profile_facts").upsert(factRows, { onConflict: "company_id,fact_key" });
         if (result.error) throw result.error;
         report.facts_written += factRows.length;
-        const leaders = extracted.leadership.map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf, source_url: p.sourceUrl, retrieved_at: p.retrievedAt }));
-        const news = extracted.news.map((n) => ({ company_id: company.id, headline: n.headline, published_at: n.publishedAt, source_url: n.sourceUrl, excerpt: n.excerpt, retrieved_at: new Date().toISOString() }));
+        const leaders = dedupeLeadershipObservations(extracted.leadership.map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf, source_url: p.sourceUrl, retrieved_at: p.retrievedAt })));
+        const news = dedupeCompanyNewsObservations(extracted.news.map((n) => ({ company_id: company.id, headline: n.headline, published_at: n.publishedAt, source_url: n.sourceUrl, excerpt: n.excerpt, retrieved_at: new Date().toISOString() })));
         if (leaders.length) { const r = await supabase.rpc(companyProfileObservationRpc.leadership, { p_observations: leaders }); if (r.error) throw r.error; report.leaders_written += leaders.length; }
         if (news.length) { const r = await supabase.rpc(companyProfileObservationRpc.news, { p_observations: news }); if (r.error) throw r.error; report.news_written += news.length; }
         const conflict = Object.values(next).some((fact) => fact.status === "conflict");

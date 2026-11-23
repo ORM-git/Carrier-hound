@@ -15,6 +15,37 @@ export const companyProfileObservationRpc = {
   news: "record_company_profile_news_observation",
 } as const;
 
+type TimestampedObservation = { company_id: string; retrieved_at: string };
+
+function dedupeObservationsByKey<T extends TimestampedObservation>(rows: T[], keyFor: (row: T) => string): T[] {
+  const observations = new Map<string, T>();
+  for (const row of rows) {
+    const retrievedAt = Date.parse(row.retrieved_at);
+    if (!Number.isFinite(retrievedAt)) continue;
+    const key = keyFor(row);
+    const existing = observations.get(key);
+    if (!existing) {
+      observations.set(key, row);
+    } else if (retrievedAt > Date.parse(existing.retrieved_at)) {
+      observations.set(key, { ...existing, retrieved_at: row.retrieved_at });
+    }
+  }
+  return Array.from(observations.values());
+}
+
+export function dedupeLeadershipObservations<T extends TimestampedObservation & { name: string; role: string; role_as_of: string | null }>(rows: T[]): T[] {
+  return dedupeObservationsByKey(rows, (row) => JSON.stringify([
+    row.company_id,
+    row.name,
+    row.role,
+    row.role_as_of === null ? null : row.role_as_of.slice(0, 10),
+  ]));
+}
+
+export function dedupeCompanyNewsObservations<T extends TimestampedObservation & { source_url: string }>(rows: T[]): T[] {
+  return dedupeObservationsByKey(rows, (row) => JSON.stringify([row.company_id, row.source_url]));
+}
+
 export interface CompanyProfileFreshnessInput {
   now: string;
   state?: { status?: string | null; last_succeeded_at?: string | null; next_refresh_at?: string | null; last_error?: string | null } | null;

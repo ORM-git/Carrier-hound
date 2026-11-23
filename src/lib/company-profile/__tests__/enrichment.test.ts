@@ -52,6 +52,41 @@ describe("official company enrichment", () => {
     });
   });
 
+  it("deduplicates the same leader and news item found on two pages", async () => {
+    const loaded = await import("../enrichment");
+    const dedupeLeaders = (loaded as typeof loaded & { dedupeLeadershipObservations?: (rows: any[]) => any[] }).dedupeLeadershipObservations;
+    const dedupeNews = (loaded as typeof loaded & { dedupeCompanyNewsObservations?: (rows: any[]) => any[] }).dedupeCompanyNewsObservations;
+    expect(typeof dedupeLeaders).toBe("function");
+    expect(typeof dedupeNews).toBe("function");
+    if (!dedupeLeaders || !dedupeNews) return;
+
+    const atsBoards = [{ ats_type: "greenhouse", slug: "affirm", careers_url: "https://boards.greenhouse.io/affirm" }];
+    const homepage = extractOfficialCompanyPage({ ...fixture.affirm, atsBoards, retrievedAt: "2026-11-21T10:00:00.000Z" });
+    const subpage = loaded.extractOfficialCompanySubpage({
+      ...fixture.affirmSubpage,
+      atsBoards,
+      homepageContext: { verified: homepage.verified, homepageUrl: fixture.affirm.pageUrl, homepageHtml: fixture.affirm.html },
+      retrievedAt: "2026-11-22T10:00:00.000Z",
+    });
+    expect(homepage.leadership).toHaveLength(1);
+    expect(subpage.leadership).toHaveLength(1);
+    expect(homepage.news).toHaveLength(1);
+    expect(subpage.news).toHaveLength(1);
+
+    const leaders = dedupeLeaders([homepage, subpage].flatMap((page) => page.leadership.map((person) => ({
+      company_id: "company-1", name: person.name, role: person.role, role_as_of: person.roleAsOf,
+      source_url: person.sourceUrl, retrieved_at: person.retrievedAt,
+    }))));
+    const news = dedupeNews([homepage, subpage].flatMap((page, index) => page.news.map((item) => ({
+      company_id: "company-1", headline: item.headline, published_at: item.publishedAt,
+      source_url: item.sourceUrl, excerpt: item.excerpt, retrieved_at: index === 0 ? "2026-11-21T10:00:00.000Z" : "2026-11-22T10:00:00.000Z",
+    }))));
+    expect(leaders).toHaveLength(1);
+    expect(leaders[0]).toMatchObject({ source_url: homepage.leadership[0].sourceUrl, retrieved_at: "2026-11-22T10:00:00.000Z" });
+    expect(news).toHaveLength(1);
+    expect(news[0]).toMatchObject({ headline: homepage.news[0].headline, published_at: homepage.news[0].publishedAt, source_url: homepage.news[0].sourceUrl, excerpt: homepage.news[0].excerpt, retrieved_at: "2026-11-22T10:00:00.000Z" });
+  });
+
   it("rejects unlinked ATS boards, leaders affiliated with another company, and personal profile links", () => {
     const unrelatedBoard = { ...fixture.affirm, atsBoards: [{ ats_type: "greenhouse", slug: "unrelated", careers_url: "https://boards.greenhouse.io/unrelated" }] };
     expect(extractOfficialCompanyPage(unrelatedBoard).verified).toBe(false);
