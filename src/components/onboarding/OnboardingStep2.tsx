@@ -19,6 +19,8 @@ interface OnboardingStep2Props {
   initialResumeParse?: ResumeParseSummary | null;
   initialUploading?: boolean;
   onResumeSaved?: (fileName: string, parse: ResumeParseSummary | null) => void;
+  initialLinkedinUrl?: string | null;
+  onLinkedinSaved?: (url: string) => void;
 }
 
 const ACCEPT = `.pdf,.docx,${RESUME_MIME.pdf},${RESUME_MIME.docx}`;
@@ -88,11 +90,13 @@ export default function OnboardingStep2({
   initialResumeParse = null,
   initialUploading = false,
   onResumeSaved,
+  initialLinkedinUrl = null,
+  onLinkedinSaved,
 }: OnboardingStep2Props) {
   const isFeatureEnabled = isOnboardingStep2EnabledClient();
 
-  const [linkedinInput, setLinkedinInput] = useState("");
-  const [linkedinSaved, setLinkedinSaved] = useState(false);
+  const [linkedinInput, setLinkedinInput] = useState(initialLinkedinUrl ?? "");
+  const [linkedinSaved, setLinkedinSaved] = useState(Boolean(initialLinkedinUrl));
   const [linkedinSkipped, setLinkedinSkipped] = useState(false);
   const [linkedinSaving, setLinkedinSaving] = useState(false);
   const [linkedinError, setLinkedinError] = useState<string | null>(null);
@@ -132,8 +136,10 @@ export default function OnboardingStep2({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Couldn't save your LinkedIn URL.");
-      setLinkedinInput(data.linkedinUrl || check.normalizedUrl);
+      const savedUrl = data.linkedinUrl || check.normalizedUrl;
+      setLinkedinInput(savedUrl);
       setLinkedinSaved(true);
+      onLinkedinSaved?.(savedUrl);
       toast.success("LinkedIn URL saved");
     } catch (err: any) {
       setLinkedinError(err?.message || "Couldn't save your LinkedIn URL.");
@@ -278,20 +284,15 @@ export default function OnboardingStep2({
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">e.g. https://www.linkedin.com/in/yourname</p>
                 </div>
                 <div className="md:flex-shrink-0">
-                  {linkedinSaved ? (
+                  {linkedinSaved && (
                     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                       <Check className="w-3 h-3" /> Saved
                     </span>
-                  ) : linkedinSkipped ? (
-                    <span className="text-[11px] font-semibold text-zinc-400">Skipped</span>
-                  ) : (
-                    <SkipLink onClick={() => setLinkedinSkipped(true)} label="Skip LinkedIn URL" testId="skip-linkedin-mobile" />
                   )}
                 </div>
               </div>
 
-              {!linkedinSkipped && (
-                <form onSubmit={handleSaveLinkedIn} className="space-y-3 md:flex-1 md:flex md:flex-col md:justify-between" noValidate>
+              <form onSubmit={handleSaveLinkedIn} className="space-y-3 md:flex-1 md:flex md:flex-col md:justify-between" noValidate>
                   <div className="space-y-3 md:space-y-2">
                     <input
                       type="url"
@@ -332,8 +333,7 @@ export default function OnboardingStep2({
                       {linkedinSaved ? "Saved" : linkedinSaving ? "Saving..." : "Save"}
                     </button>
                   </div>
-                </form>
-              )}
+              </form>
             </section>
 
             {/* CARD 2: Resume or LinkedIn "Save to PDF" upload (stored privately; text parsed server-side for ranking) */}
@@ -349,20 +349,15 @@ export default function OnboardingStep2({
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 md:break-words">PDF or DOCX, up to 5 MB. Stored privately.</p>
                 </div>
                 <div className="md:flex-shrink-0">
-                  {resumeName ? (
+                  {resumeName && (
                     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                       <Check className="w-3 h-3" /> Saved
                     </span>
-                  ) : resumeSkipped ? (
-                    <span className="text-[11px] font-semibold text-zinc-400">Skipped</span>
-                  ) : (
-                    <SkipLink onClick={() => setResumeSkipped(true)} label="Skip resume upload" testId="skip-resume-mobile" />
                   )}
                 </div>
               </div>
 
-              {!resumeSkipped && (
-                <>
+              <>
                   <input
                     ref={mobileFileInputRef}
                     type="file"
@@ -449,8 +444,7 @@ export default function OnboardingStep2({
                       {describeResumeParse(resumeParse)}
                     </p>
                   )}
-                </>
-              )}
+              </>
             </section>
           </div>
         )}
@@ -469,7 +463,7 @@ export default function OnboardingStep2({
                 data-testid="btn-onboarding-finish-mobile"
                 className="min-h-[44px] px-6 sm:px-8 md:px-10 py-2.5 md:py-3.5 rounded-full text-sm md:text-base font-bold text-[#0F172A] bg-[#0082FF] hover:bg-[#0039F5] hover:text-white active:bg-[#0039F5] active:text-white shadow-md md:hover:shadow-lg transition disabled:opacity-50"
               >
-                {isSaving ? "Saving..." : linkedinSaved || resumeName ? "Finish" : "Skip for now & Finish"}
+                {isSaving ? "Saving..." : linkedinSaved || resumeName ? "Finish" : "Skip for now"}
               </button>
             </div>
           </div>

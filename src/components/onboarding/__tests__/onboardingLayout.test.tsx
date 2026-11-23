@@ -303,21 +303,113 @@ describe("Step 2 Skip Both and Finish", () => {
     const onFinish = vi.fn();
     render(<OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" />);
 
-    // Skip LinkedIn (state is shared, so both breakpoint trees reflect it)
+    // Desktop keeps per-card skips (the phone tree has none since item 10)
     const skipLi = screen.getByTestId("skip-linkedin");
     fireEvent.click(skipLi);
-    expect(screen.getAllByText("Skipped")).toHaveLength(2);
+    expect(screen.getAllByText("Skipped")).toHaveLength(1);
 
     // Skip Resume
     const skipRes = screen.getByTestId("skip-resume");
     fireEvent.click(skipRes);
-    expect(screen.getAllByText("Skipped")).toHaveLength(4);
+    expect(screen.getAllByText("Skipped")).toHaveLength(2);
 
     // Finish button
     const finishBtn = screen.getByTestId("btn-onboarding-finish");
     expect(finishBtn.textContent).toBe("Skip for now & Continue to Jobs");
     fireEvent.click(finishBtn);
     expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Step 2 phone: one bottom-right 'Skip for now' for LinkedIn and CV", () => {
+  const URL_IN = "https://www.linkedin.com/in/test-user";
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => new Response(JSON.stringify({ linkedinUrl: URL_IN }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const finishBtn = () => screen.getByTestId("btn-onboarding-finish-mobile");
+  const saveLinkedIn = async () => {
+    fireEvent.change(screen.getByTestId("input-linkedin-url-mobile"), { target: { value: URL_IN } });
+    fireEvent.click(screen.getByTestId("btn-save-linkedin-mobile"));
+    await waitFor(() => expect(finishBtn().textContent).toBe("Finish"));
+  };
+
+  it("both empty: no per-card skip controls, one 'Skip for now' that finishes without saving anything", () => {
+    const onFinish = vi.fn();
+    render(<OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" />);
+    expect(screen.queryByTestId("skip-linkedin-mobile")).toBeNull();
+    expect(screen.queryByTestId("skip-resume-mobile")).toBeNull();
+    // Both optional fields stay visible on the phone.
+    expect(screen.getByTestId("input-linkedin-url-mobile")).toBeTruthy();
+    expect(screen.getByTestId("resume-dropzone-mobile")).toBeTruthy();
+    expect(finishBtn().textContent).toBe("Skip for now");
+    fireEvent.click(finishBtn());
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("one field filled: saving LinkedIn still works, the action becomes Finish and the CV is skipped", async () => {
+    const onFinish = vi.fn();
+    const onLinkedinSaved = vi.fn();
+    render(
+      <OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" onLinkedinSaved={onLinkedinSaved} />
+    );
+    await saveLinkedIn();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/onboarding/linkedin");
+    expect(onLinkedinSaved).toHaveBeenCalledWith(URL_IN);
+    fireEvent.click(finishBtn());
+    expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it("typed but unsaved LinkedIn is not treated as saved: the action stays 'Skip for now'", () => {
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    fireEvent.change(screen.getByTestId("input-linkedin-url-mobile"), { target: { value: URL_IN } });
+    expect(finishBtn().textContent).toBe("Skip for now");
+  });
+
+  it("both filled: saved CV plus saved LinkedIn shows Finish and both stay marked saved", async () => {
+    const onFinish = vi.fn();
+    render(
+      <OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" initialResumeName="cv.pdf" />
+    );
+    expect(finishBtn().textContent).toBe("Finish");
+    await saveLinkedIn();
+    expect(screen.getAllByText("Saved").length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(finishBtn());
+    expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it("Back then Next keeps the saved LinkedIn URL and CV (page re-passes them on remount)", async () => {
+    let savedUrl: string | null = null;
+    const first = render(
+      <OnboardingStep2
+        onBack={() => {}}
+        onFinish={() => {}}
+        isSaving={false}
+        authToken="t"
+        initialResumeName="cv.pdf"
+        onLinkedinSaved={(u) => (savedUrl = u)}
+      />
+    );
+    await saveLinkedIn();
+    first.unmount(); // Back to step 1 unmounts step 2 on the real page
+    render(
+      <OnboardingStep2
+        onBack={() => {}}
+        onFinish={() => {}}
+        isSaving={false}
+        authToken="t"
+        initialResumeName="cv.pdf"
+        initialLinkedinUrl={savedUrl}
+      />
+    );
+    expect((screen.getByTestId("input-linkedin-url-mobile") as HTMLInputElement).value).toBe(URL_IN);
+    expect(finishBtn().textContent).toBe("Finish");
+    expect(screen.getAllByText("cv.pdf").length).toBeGreaterThan(0);
   });
 });
 

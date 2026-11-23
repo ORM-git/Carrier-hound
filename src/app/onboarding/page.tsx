@@ -58,6 +58,7 @@ function OnboardingPageInner() {
 
   // Preserve saved Step 2 state across Back navigation
   const [savedResumeName, setSavedResumeName] = useState<string | null>(null);
+  const [savedLinkedinUrl, setSavedLinkedinUrl] = useState<string | null>(null);
   const [savedResumeParse, setSavedResumeParse] = useState<ResumeParseSummary | null>(null);
 
   // Funnel tracking: onboarding started on mount. Editing saved preferences is not onboarding,
@@ -367,6 +368,8 @@ function OnboardingPageInner() {
               setSavedResumeName(name);
               setSavedResumeParse(parse);
             }}
+            initialLinkedinUrl={savedLinkedinUrl}
+            onLinkedinSaved={setSavedLinkedinUrl}
           />
         )}
       </div>
