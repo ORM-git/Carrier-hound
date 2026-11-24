@@ -18,7 +18,9 @@ describe("mobile card score weight (item 19)", () => {
     expect(page).toContain('stopColor="#BFDBFE"');
     expect(page).toContain('stopColor="#2563EB"');
     expect(page).toContain('text-[0.6em]');
-    expect(page).toContain('(displayScore / 100) * circumference');
+    expect(page).toContain('const offset = 100 - displayScore;');
+    expect(page).toContain('pathLength={100}');
+    expect(page).toContain('<ellipse');
     expect(page).toContain('stroke={light ? "#DBEAFE" : "#1E293B"}');
     expect(page).toContain("+Score");
   });

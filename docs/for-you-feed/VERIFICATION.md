@@ -26,3 +26,7 @@ Owner supplied the score-ring reference on Nov24 at 16:54. Feed rings retain the
 Normal flow now has only sentinel and non-interactive loading status. Button appears only for error or paused empty/duplicate-page recovery. No remaining count on any screen. Native IO checks repeated at 360/390/768/1440: 50 idle then 75 on fresh End. After 75 cards, DOM asserts no Load More button and captures at 390/1440 show the last card, sentinel gap and footer with no button. Fresh-input gate unchanged.
 
 100 focused tests pass again; typecheck passes. Updated ring screenshots inspected at all four widths. Only fixture pixels, not live score accuracy evidence.
+
+## Oval refinement
+
+Owner clarified oval rather than circular on Nov24 at 17:04. Ring width/placement retained, height is 62% of width; the thin blue gradient and small percent sign remain. Native ellipse uses normalized pathLength=100, so partial arc length follows the actual score without an approximate circumference. Typecheck and ring tests pass; native scroll/no-button checks repeated at all four widths. Settled 390/1440 screenshots inspected.

@@ -325,17 +325,18 @@ function CircularMatchRing({
 }) {
   const gradientId = `match-blue-${useId().replace(/:/g, "")}`;
   const displayScore = Math.min(100, Math.max(0, score));
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (displayScore / 100) * circumference;
+  const height = Math.round(size * 0.62);
+  const radiusX = (size - strokeWidth) / 2;
+  const radiusY = (height - strokeWidth) / 2;
+  const offset = 100 - displayScore;
   const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
   return (
     <div
       className="relative inline-flex items-center justify-center shrink-0"
-      style={{ width: size, height: size }}
+      style={{ width: size, height }}
     >
-      <svg aria-hidden="true" className="w-full h-full -rotate-90" viewBox={`0 0 ${size} ${size}`}>
+      <svg aria-hidden="true" className="w-full h-full" viewBox={`0 0 ${size} ${height}`}>
         <defs>
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#BFDBFE" />
@@ -343,21 +344,24 @@ function CircularMatchRing({
             <stop offset="100%" stopColor="#2563EB" />
           </linearGradient>
         </defs>
-        <circle
+        <ellipse
           cx={size / 2}
-          cy={size / 2}
-          r={radius}
+          cy={height / 2}
+          rx={radiusX}
+          ry={radiusY}
           stroke={light ? "#DBEAFE" : "#1E293B"}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
-        <circle
+        <ellipse
           cx={size / 2}
-          cy={size / 2}
-          r={radius}
+          cy={height / 2}
+          rx={radiusX}
+          ry={radiusY}
           stroke={`url(#${gradientId})`}
           strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
+          pathLength={100}
+          strokeDasharray={100}
           strokeDashoffset={offset}
           strokeLinecap="round"
           fill="transparent"
