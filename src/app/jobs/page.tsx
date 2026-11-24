@@ -1,4 +1,5 @@
 "use client";
+import { compactSalaryDisplay } from "@/lib/salary/display";
 
 import React, { useState, useMemo, useEffect, useRef, useId, Suspense, startTransition } from "react";
 import dynamic from "next/dynamic";
@@ -2261,17 +2262,11 @@ function JobsPageInner() {
                                   {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
                                   <div
                                     className="flex items-center gap-1.5 min-w-0 truncate h-5"
-                                    title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
                                     <span className={`truncate ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
-                                      {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
+                                      {compactSalaryDisplay(job.salary)}
                                     </span>
-                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
-                                      <span className="text-[11px] text-[#64748B] truncate hidden sm:inline">
-                                        ({job.salary_original})
-                                      </span>
-                                    )}
                                   </div>
 
                                   {/* Row 2, Col 1: Work mode */}
@@ -2513,17 +2508,12 @@ function JobsPageInner() {
                                     Early applicant
                                   </span>
                                 )}
-                                {job.salary && (
+                                {user && (
                                   <span
                                     className="min-h-6 h-auto max-w-full flex-wrap whitespace-normal break-words px-2.5 py-1 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
-                                    title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
-                                    {isPro ? job.salary : "••••••••"}
-                                    {/* Original-currency value visible on touch, not only in a hover title */}
-                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
-                                      <span className="font-normal text-[#64748B]">({job.salary_original})</span>
-                                    )}
+                                    {compactSalaryDisplay(job.salary)}
                                   </span>
                                 )}
                               </div>

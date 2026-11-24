@@ -1,0 +1,50 @@
+[
+  {
+    "width": 360,
+    "state": "free",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 360,
+    "state": "salary-missing",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 390,
+    "state": "free",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 390,
+    "state": "salary-missing",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 768,
+    "state": "free",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 768,
+    "state": "salary-missing",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 1440,
+    "state": "free",
+    "salaryVisible": true,
+    "noOverflow": true
+  },
+  {
+    "width": 1440,
+    "state": "salary-missing",
+    "salaryVisible": true,
+    "noOverflow": true
+  }
+]

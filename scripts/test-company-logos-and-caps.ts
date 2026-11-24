@@ -403,15 +403,15 @@ async function runSuite() {
         for (const j of clientCapped) if (j.companyGroupId) clientCounts.set(j.companyGroupId, (clientCounts.get(j.companyGroupId) || 0) + 1);
         check2f(Math.max(0, ...clientCounts.values()) <= 3 && clientCapped.length === 30, `2f-8 [${which}] client capJobsPerCompany caps guest jobs by companyGroupId (max 3 in top-30)`, `[${which}] client capping failed on guest payload`);
 
-        // Masking of name / salary / applyUrl stays byte-identical to the previous guest format
+        // Salary is intentionally visible to signed-in users (free included) and masked for signed-out visitors; name / applyUrl / description / logo stay byte-identical to the previous guest format
         const maskBroken = jobs.filter((j) => j.company !== "Verified Employer" || j.salary !== "" || j.applyUrl !== "" || j.description !== "" || j.logoUrl !== null).length;
-        check2f(maskBroken === 0, `2f-9 [${which}] company name, salary, applyUrl, description and logo stay masked`, `[${which}] ${maskBroken} guest jobs lost masking`);
+        check2f(maskBroken === 0, `2f-9 [${which}] company name, salary, applyUrl, description and logo stay masked for guests`, `[${which}] ${maskBroken} guest jobs lost masking`);
 
         // Single-job path
         const single = await guestSingle(which, "grp-job-0");
         const sj = JSON.parse(single.text).jobs?.[0];
         check2f(single.status === 200 && !!sj && !("companyId" in sj) && !("company_id" in sj) && sj.companyGroupId === expectedX && !rawIds.some((id) => single.text.includes(id)), `2f-10 [${which}] single-job guest response has companyGroupId and no raw company id`, `[${which}] single-job guest response leaks or lacks companyGroupId`);
-        check2f(sj?.company === "Verified Employer" && sj?.applyUrl === "" && sj?.salary === "", `2f-11 [${which}] single-job masking unchanged`, `[${which}] single-job masking changed`);
+        check2f(sj?.company === "Verified Employer" && sj?.applyUrl === "" && sj?.salary === "", `2f-11 [${which}] single-job guest masking: company/applyUrl/salary locked`, `[${which}] single-job masking changed`);
       }
 
       // Pro responses are unchanged: raw company_id/companyId and no companyGroupId

@@ -143,24 +143,30 @@ beforeEach(() => {
 });
 
 describe("real listing + detail handlers: free vs Pro", () => {
-  it("free user: listing masks company and hides salary/apply", async () => {
+  it("free user: listing exposes salary but still masks company and apply URL", async () => {
     const res = await search(req("http://localhost/api/jobs/search", "tok-free"));
     const job = (await res.json()).jobs[0];
     expect(job.company).toBe("Verified Employer");
-    expect(job.salary).toBe("");
+    expect(job.salary).not.toBe("");
     expect(job.applyUrl).toBe("");
+    expect(job.description).toBe("");
+    expect(job.skills).toEqual([]);
   });
 
   it("anonymous visitor gets the same masked listing", async () => {
     const job = (await (await search(req("http://localhost/api/jobs/search"))).json()).jobs[0];
     expect(job.company).toBe("Verified Employer");
     expect(job.applyUrl).toBe("");
+    // Signed-out visitors do not see salary; signed-in free users do.
+    expect(job.salary).toBe("");
+    expect(job.salary_display).toBeNull();
   });
 
   it("free user: search detail is masked and Pro detail endpoint is 403", async () => {
     const detail = (await (await search(req("http://localhost/api/jobs/search?id=11111111-1111-4111-8111-111111111111", "tok-free"))).json()).jobs[0];
     expect(detail.company).toBe("Verified Employer");
     expect(detail.applyUrl).toBe("");
+    expect(detail.salary).not.toBe("");
     const pro = await proDetail(req("http://localhost/api/jobs/pro?id=11111111-1111-4111-8111-111111111111", "tok-free"));
     expect(pro.status).toBe(403);
   });

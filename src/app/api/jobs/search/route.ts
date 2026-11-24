@@ -213,7 +213,7 @@ async function getHandler(req: Request) {
       const singleColumns = (isPro && hasServiceKey)
         ? "*, companies(name, logo_url, category, canonical_domain, domain)"
         : hasServiceKey
-        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
+        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, salary_min, salary_max, currency, salary_period, salary_text, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
         : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active, role_category, top_keywords, is_remote";
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
@@ -310,9 +310,10 @@ async function getHandler(req: Request) {
         type: jobRow.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(jobRow.verified),
         applyUrl: isInactive || !isPro ? "" : (jobRow.apply_url || ""),
-        salary: isInactive || !isPro ? "" : (displaySalary || originalSalary || ""),
-        salary_display: isInactive || !isPro ? null : displaySalary,
-        salary_original: isInactive || !isPro ? null : originalSalary,
+        // Salary is visible to signed-in users (free included); signed-out visitors stay masked.
+        salary: isInactive || !userId ? "" : (displaySalary || originalSalary || ""),
+        salary_display: isInactive || !userId ? null : displaySalary,
+        salary_original: isInactive || !userId ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
         scoreRevision: scoreInputRevision(jobRow, isPro),
         matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro),
@@ -908,9 +909,10 @@ async function getHandler(req: Request) {
         companyGroupId: row.company_id ? listGroupIds.get(row.company_id) ?? null : null,
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at),
-        salary: "",
-        salary_display: null,
-        salary_original: null,
+        // Salary is visible to signed-in users (free included); signed-out visitors stay masked.
+        salary: userId ? (displaySalary || originalSalary || "") : "",
+        salary_display: userId ? displaySalary : null,
+        salary_original: userId ? originalSalary : null,
         category: row.category || "engineering",
         role_category: resolvedRoleCategory,
         company_category: null,

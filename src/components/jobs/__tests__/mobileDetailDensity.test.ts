@@ -9,7 +9,7 @@ const facts = detail.slice(detail.indexOf('data-testid="mobile-job-facts"'), det
 describe("mobile detail density (item 17)", () => {
   it("the compact fact row is mobile-only and carries every fact once", () => {
     expect(detail).toContain('<ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden');
-    for (const fact of ["job.location", "Location locked", "workModelLabel(job)", "job.remoteScope", "{job.type}", "{jobLevel}", "{job.category}", "job.salary :", "job.salary_original", "{expText}", "formatRelativeTime(job.postedAt || job.date)"]) {
+    for (const fact of ["job.location", "Location locked", "workModelLabel(job)", "job.remoteScope", "{job.type}", "{jobLevel}", "{job.category}", "compactSalaryDisplay(job.salary)", "{expText}", "formatRelativeTime(job.postedAt || job.date)"]) {
       expect(facts).toContain(fact);
     }
   });

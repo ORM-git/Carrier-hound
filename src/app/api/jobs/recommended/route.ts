@@ -120,6 +120,7 @@ export async function GET(req: Request) {
 
     // Check optional Pro entitlement and user preferences via Bearer token
     let isPro = false;
+    let signedIn = false;
     let dbAnswers: OnboardingAnswers = {};
     let displayAnswers: OnboardingAnswers | null = null;
 
@@ -129,6 +130,7 @@ export async function GET(req: Request) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
+          signedIn = true;
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);
           displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, user.id, cfEnv);
@@ -540,9 +542,10 @@ export async function GET(req: Request) {
         companyGroupId: row.company_id ? listGroupIds.get(row.company_id) ?? null : null,
         location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
         date: formatDate(row.posted_at || row.created_at || row.first_seen_at),
-        salary: "",
-        salary_display: null,
-        salary_original: null,
+        // Salary is visible to signed-in users (free included); signed-out visitors stay masked.
+        salary: signedIn ? (displaySalary || originalSalary || "") : "",
+        salary_display: signedIn ? displaySalary : null,
+        salary_original: signedIn ? originalSalary : null,
         category: row.category || "engineering",
         remote: Boolean(row.remote),
         remoteScope: row.remote_scope || undefined,
