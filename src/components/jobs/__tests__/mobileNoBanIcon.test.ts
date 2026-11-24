@@ -1,8 +1,9 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
-// CM mobile item 13: no standalone circle-slash (Ban) button on mobile cards or the mobile detail strip;
-// hiding stays available as the labeled "Remove From List" menu action.
+// CM mobile item 13: no standalone circle-slash (Ban) button on mobile cards or the mobile detail sticky
+// strip; hiding there stays available as the labeled "Remove From List" menu action. The mobile overview
+// action row (in the header body, not the sticky strip) intentionally carries the block-icon Hide circle.
 const page = readFileSync("src/app/jobs/page.tsx", "utf8");
 const detail = readFileSync("src/components/jobs/JobDetailView.tsx", "utf8");
 const menu = readFileSync("src/components/jobs/JobCardMenu.tsx", "utf8");
@@ -28,6 +29,13 @@ describe("mobile hide control (item 13)", () => {
     expect(strip).toContain("<JobCardMenu");
     expect(strip).toContain("onRemoveFromList={() => onHide()}");
     expect(strip).toContain('className="-my-1"'); // 44px target without growing the sticky strip
+  });
+
+  it("the overview action row intentionally carries the block-icon Hide circle", () => {
+    const actionRow = between(detail, "w-16 h-16 rounded-2xl", "{/* Mobile pills:");
+    expect(actionRow).toContain("<Ban");
+    expect(actionRow).toContain('aria-label="Hide position"');
+    expect(actionRow).toContain("onHide");
   });
 
   it("the menu keeps the labeled hide action and desktop keeps its hide button", () => {
