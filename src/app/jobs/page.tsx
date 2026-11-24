@@ -913,6 +913,7 @@ function JobsPageInner() {
   const cursorRef = useRef<string | null>(null);
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const autoLoadArmedRef = useRef(true);
   useEffect(() => () => pageLoaderRef.current.reset(), []);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
@@ -955,6 +956,7 @@ function JobsPageInner() {
     lastQueryKeyRef.current = queryKey;
 
     pageLoaderRef.current.reset();
+    autoLoadArmedRef.current = true;
     setLoadingMore(false);
     setLoadMoreError(false);
     setAutoLoadPaused(false);
@@ -1031,6 +1033,8 @@ function JobsPageInner() {
   const handleLoadMore = async () => {
     const loader = pageLoaderRef.current;
     if (loader.busy || !hasNextPageRef.current) return;
+    // One page per intent. Layout/scroll anchoring after append is not new user input.
+    autoLoadArmedRef.current = false;
     const nextPage = loadedPageRef.current + 1;
     const isRecommended = activeTab === "recommended";
     const effectiveSortBy = isRecommended ? "match" : sortBy;
@@ -1092,20 +1096,54 @@ function JobsPageInner() {
   const canLoadMore = activeTab === "recommended" && hasNextPage;
 
   // Mobile only: load the next page when the sentinel above the manual button scrolls into view.
-  // Pauses on error (manual Retry) and at the end; re-armed after each page, never loops on its own.
+  // Appending a page never re-arms automatic loading. A fresh downward gesture is required.
   useEffect(() => {
     const el = loadMoreSentinelRef.current;
     if (!el || !canLoadMore || loadMoreError || autoLoadPaused || loadingJobs || typeof IntersectionObserver === "undefined") return;
     if (!window.matchMedia("(max-width: 639px)").matches) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) handleLoadMore();
+        if (autoLoadArmedRef.current && entries.some((e) => e.isIntersecting)) handleLoadMore();
       },
       { rootMargin: "400px 0px" }
     );
     observer.observe(el);
-    return () => observer.disconnect();
-    // handleLoadMore reads current state; re-arm when the list grows or the load state changes
+    let frame = 0;
+    let touchY: number | null = null;
+    const armFromInput = () => {
+      if (pageLoaderRef.current.busy) return;
+      autoLoadArmedRef.current = true;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rect = el.getBoundingClientRect();
+        if (autoLoadArmedRef.current && rect.top <= window.innerHeight + 400 && rect.bottom >= -400) handleLoadMore();
+      });
+    };
+    const onWheel = (event: WheelEvent) => { if (event.deltaY > 0) armFromInput(); };
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.repeat || target?.closest("input,textarea,select,[contenteditable=true]")) return;
+      if (["End", "PageDown", "ArrowDown", " "].includes(event.key)) armFromInput();
+    };
+    const onTouchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY ?? null; };
+    const onTouchMove = (event: TouchEvent) => {
+      const nextY = event.touches[0]?.clientY ?? null;
+      if (touchY !== null && nextY !== null && nextY < touchY) armFromInput();
+      touchY = nextY;
+    };
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+    };
+    // Refresh closures when the list changes, but preserve the consumed intent across observers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canLoadMore, loadMoreError, autoLoadPaused, loadingJobs, loadingMore, liveJobs.length]);
 

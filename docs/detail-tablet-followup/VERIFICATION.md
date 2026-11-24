@@ -25,3 +25,11 @@ Tests cover single/double/triple escaping, numeric whitespace, punctuation, Unic
 - No full build claimed locally. Exact-head CI and independent review remain required.
 
 All screenshots use synthetic data and controlled auth/service boundaries. External requests are blocked. Synthetic score 83 proves layout only, not score accuracy. No production auth, account writes, ingestion, schema changes or payments were performed. This follow-up does not merge or deploy itself.
+
+## Item 21 follow-up: scroll-anchoring runaway
+
+Production review found sequential requests continuing after one End/PageUp input. The automatic loader previously treated each recreated observer's initial intersecting callback as fresh intent. It now consumes an input gate before every next-page request. Appending data, plain scroll events and observer recreation cannot re-arm it. A new downward wheel, touch movement or non-repeated navigation key after the previous request allows another page; manual Load More/Retry remains available. Error/end/duplicate-page pause and cancellation behavior remain intact.
+
+`scroll-intent.cjs` uses the real browser IntersectionObserver, not the controlled observer, with 25 unique jobs per page and additional pages always available. At 360/390/430 it presses End then PageUp, sends no input for three seconds, and verifies exactly one appended page (50 cards, only page 2). A fresh End loads page 3 (75 cards), then remains stable again. The 390px idle screenshot was directly inspected. Synthetic data only.
+
+The 37-case existing feed/browser lifecycle matrix passes after making its simulated user-input intent explicit. Pagination/real-feed unit regressions pass 37/37, including twelve repeated passive observer/scroll events that cannot append, followed by fresh intent reaching 75 cards. Typecheck passes; lint stays 0 errors / 252 existing warnings. Full CI/review of the new exact head remains required.

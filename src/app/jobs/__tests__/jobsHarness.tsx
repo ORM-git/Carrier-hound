@@ -96,7 +96,8 @@ type IOEntry = { cb: IntersectionObserverCallback; els: Element[]; disconnected:
 export const io = {
   instances: [] as IOEntry[],
   /** Fires every live observer that watches the sentinel, as the browser does when it scrolls into view. */
-  enter() {
+  enter(userInput = true) {
+    if (userInput) window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
     for (const inst of io.instances) {
       if (inst.disconnected) continue;
       inst.cb(
