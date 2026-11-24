@@ -55,7 +55,7 @@ function runAudit(corruptions: {
   }
   if (corruptions.breakMobileBaseNavGap) {
     // Re-inflate the mobile list tail and top padding (the pre-#12 values).
-    jobsCode = jobsCode.replace(/pt-3 sm:pt-4 space-y-3/g, "py-5 sm:pt-4 space-y-4").replace(/: "pb-4"\}/g, ': "pb-44"}');
+    jobsCode = jobsCode.replace(/pt-3 sm:pt-4 space-y-3/g, "py-5 sm:pt-4 space-y-4").replace(/space-y-3 pb-4 sm:pb-32/g, "space-y-3 pb-44 sm:pb-32");
   }
   if (corruptions.removeIsProDefinitiveGating) {
     jobsCode = jobsCode.replace(/\{isProDefinitive \?/g, "{true ?");
@@ -74,14 +74,14 @@ function runAudit(corruptions: {
   }
 
   // Check 1: Gap between top nav and filter row (~16px on desktop sm:pt-4, sm:py-0). Mobile (CM item 12):
-  // 12px top padding, 12px section gap, 6px sticky filter padding, and a 16px list tail (detail view keeps pb-44).
+  // 12px top padding, 12px section gap, 6px sticky filter padding, and a 16px list tail (detail too: its fixed bottom strip was removed in item 16).
   const hasCompactNavGap = jobsCode.includes("sm:pt-4") && filterBarCode.includes("sm:py-0");
   const hasMobileBaseNav = jobsCode.includes("pt-3 sm:pt-4 space-y-3") &&
-    jobsCode.includes('selectedJob || detailLoading ? "pb-44" : "pb-4"}') &&
+    jobsCode.includes("space-y-3 pb-4 sm:pb-32") &&
     !jobsCode.includes("py-5 sm:pt-4") &&
     filterBarCode.includes("py-1.5 sm:py-0");
   if (!hasCompactNavGap || !hasMobileBaseNav) {
-    failures.push("NAV GAP FAIL: Desktop keeps sm:pt-4/sm:py-0; mobile base must be pt-3, space-y-3, filter py-1.5 and a pb-4 list tail (pb-44 only for detail).");
+    failures.push("NAV GAP FAIL: Desktop keeps sm:pt-4/sm:py-0; mobile base must be pt-3, space-y-3, filter py-1.5 and a pb-4 tail in list and detail.");
   }
 
   // Check 2: Filter rows gap (8px), gap to cards (12px on sm), mobile pt-2 preserved
@@ -138,7 +138,7 @@ function runAudit(corruptions: {
   const hasPricingMobileBase = pricingCode.includes("py-12 sm:py-20") &&
     pricingCode.includes("gap-16 sm:gap-20") &&
     !pricingCode.includes("space-y-tk-4 sm:space-y-tk-3");
-  const hasDetailMobileBase = detailCode.includes("space-y-4 sm:space-y-3 md:pb-12") &&
+  const hasDetailMobileBase = detailCode.includes("space-y-4 sm:space-y-3 pb-[calc(var(--cookie-h)+1rem)]") &&
     detailCode.includes("p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3");
   const hasTrackerMobileBase = trackerCode.includes("py-5 sm:py-4 space-y-5 sm:space-y-3.5") &&
     trackerCode.includes("p-6 sm:p-5 space-y-4 sm:space-y-3");

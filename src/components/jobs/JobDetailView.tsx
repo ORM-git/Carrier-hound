@@ -292,8 +292,9 @@ export default function JobDetailView({
 
   return (
     <div
-      style={{ paddingBottom: `calc(${cookieNoticeHeight}px + 7rem)` }}
-      className="max-w-[880px] w-full mx-auto space-y-4 sm:space-y-3 md:pb-12"
+      // Mobile: no bottom strip to clear any more (item 16); desktop keeps its 7rem tail.
+      style={{ "--cookie-h": `${cookieNoticeHeight}px` } as React.CSSProperties}
+      className="max-w-[880px] w-full mx-auto space-y-4 sm:space-y-3 pb-[calc(var(--cookie-h)+1rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
     >
       {/* Expired Job Banner */}
       {(isExpired || job.isExpired) && (
@@ -561,7 +562,7 @@ export default function JobDetailView({
               onClick={handleShare}
               data-testid="mobile-header-share-button"
               aria-label="Share position"
-              className="w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+              className="w-11 h-11 -my-1 -mr-1.5 flex items-center justify-center rounded-lg text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
             >
               <Share2 className="w-4 h-4" />
             </button>
@@ -1157,47 +1158,6 @@ export default function JobDetailView({
         </div>
       </div>
 
-      {/* Mobile Sticky Bottom Apply Bar */}
-      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-3 flex items-center justify-between gap-3 shadow-lg">
-        <button
-          type="button"
-          onClick={handleShare}
-          data-testid="mobile-share-job-button"
-          aria-label="Share job"
-          className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer shrink-0"
-        >
-          <Share2 className="w-4 h-4" />
-        </button>
-        {isExpired || job.isExpired ? (
-          <button
-            type="button"
-            disabled
-            className="flex-1 py-2.5 min-h-[44px] rounded-full bg-slate-200 text-slate-500 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-none cursor-not-allowed"
-          >
-            <span>Position Closed</span>
-          </button>
-        ) : isUnlocked && job.applyUrl ? (
-          <a
-            href={job.applyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onApply}
-            className="flex-1 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-none cursor-pointer"
-          >
-            <span>Apply</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        ) : (
-          <button
-            type="button"
-            onClick={onApply}
-            className="flex-1 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-none cursor-pointer"
-          >
-            {!isUnlocked && <Lock className="w-3.5 h-3.5" />}
-            <span>Apply</span>
-          </button>
-        )}
-      </div>
     </div>
   );
 }
