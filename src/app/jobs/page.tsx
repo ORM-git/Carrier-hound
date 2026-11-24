@@ -315,6 +315,7 @@ function CircularMatchRing({
   size = 56,
   strokeWidth = 4.5,
   light = false,
+  shape = "capsule",
 }: {
   score: number;
   size?: number;
@@ -322,9 +323,53 @@ function CircularMatchRing({
   isPro?: boolean; // accepted for call-site compatibility; not rendered
   /** White-card variant (mobile list): CM-blue arc on a pale track, dark text. */
   light?: boolean;
+  /** Desktop ring (pre-#726): full circle; the mobile reference stays a capsule. */
+  shape?: "capsule" | "circle";
 }) {
   const gradientId = `match-blue-${useId().replace(/:/g, "")}`;
   const displayScore = Math.min(100, Math.max(0, score));
+  const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
+
+  if (shape === "circle") {
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (displayScore / 100) * circumference;
+    return (
+      <div
+        className="relative inline-flex items-center justify-center shrink-0"
+        style={{ width: size, height: size }}
+      >
+        <svg aria-hidden="true" className="w-full h-full -rotate-90" viewBox={`0 0 ${size} ${size}`}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={light ? "#DBEAFE" : "#1E293B"}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={light ? "#2563EB" : "#2DD4BF"}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            fill="transparent"
+            className="transition-all duration-300 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`${textClass} ${light ? "text-[#0F172A]" : "text-white"} leading-none tracking-tight`}>
+            {displayScore}<span className="text-[0.6em] font-semibold ml-px">%</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   // Reference is a capsule: straight top/bottom, semicircular ends, not an ellipse.
   const height = Math.round(size * (58 / 104));
   const radius = (height - strokeWidth) / 2;
@@ -334,7 +379,6 @@ function CircularMatchRing({
   // Start just before the top-left tangent, matching the reference arc origin.
   const outline = `M ${left - radius * 0.3} ${inset + radius * (1 - Math.sqrt(0.91))} A ${radius} ${radius} 0 0 1 ${left} ${inset} H ${right} A ${radius} ${radius} 0 0 1 ${right} ${height - inset} H ${left} A ${radius} ${radius} 0 0 1 ${left - radius * 0.3} ${inset + radius * (1 - Math.sqrt(0.91))} Z`;
   const offset = 100 - displayScore;
-  const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
   return (
     <div
@@ -2418,13 +2462,25 @@ function JobsPageInner() {
                               {matchScore !== null ? (
                                 <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
                                   <div className="flex flex-col items-center w-full pt-1">
-                                    <CircularMatchRing
-                                      score={matchScore}
-                                      size={70}
-                                      strokeWidth={2.25}
-                                      light
-                                      isPro={isPro}
-                                    />
+                                    {/* Mobile keeps the #726 capsule; md+ restores the circular ring. */}
+                                    <span className="md:hidden">
+                                      <CircularMatchRing
+                                        score={matchScore}
+                                        size={70}
+                                        strokeWidth={2.25}
+                                        light
+                                        isPro={isPro}
+                                      />
+                                    </span>
+                                    <span className="hidden md:block">
+                                      <CircularMatchRing
+                                        score={matchScore}
+                                        size={70}
+                                        strokeWidth={4.5}
+                                        shape="circle"
+                                        isPro={isPro}
+                                      />
+                                    </span>
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
                                       {cardZeroSkills
                                         ? "EXPERIENCE MATCH"
