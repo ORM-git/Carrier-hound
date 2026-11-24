@@ -255,7 +255,7 @@ export default function OnboardingStep2({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-28 md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-[max(7rem,5em)] md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
         {/* Profile-style header: back control + title */}
         <div className="relative flex items-center justify-center min-h-[44px] mb-2 md:mb-6">
           <button
@@ -334,7 +334,7 @@ export default function OnboardingStep2({
                     id="linkedin-error-mobile"
                     role="alert"
                     data-testid="linkedin-error-mobile"
-                    className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5"
+                    className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5 [overflow-wrap:anywhere]"
                   >
                     <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {linkedinError}
                   </p>

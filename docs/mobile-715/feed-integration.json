@@ -33,6 +33,25 @@
   },
   {
     "width": 360,
+    "manualRetryRecovery": true
+  },
+  {
+    "width": 360,
+    "transition": "saved",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "transition": "unmount",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
     "lockedLogoNoProtectedRequest": true
   },
   {
@@ -69,6 +88,25 @@
   },
   {
     "width": 390,
+    "manualRetryRecovery": true
+  },
+  {
+    "width": 390,
+    "transition": "saved",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "transition": "unmount",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
     "lockedLogoNoProtectedRequest": true
   },
   {
@@ -102,6 +140,25 @@
       1,
       2
     ]
+  },
+  {
+    "width": 430,
+    "manualRetryRecovery": true
+  },
+  {
+    "width": 430,
+    "transition": "saved",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "transition": "unmount",
+    "abortedStaleRequest": true
   },
   {
     "width": 430,
