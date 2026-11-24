@@ -2231,7 +2231,7 @@ function JobsPageInner() {
                                 {/* Role, tags and metadata remain one uninterrupted group. */}
 
                                 {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
-                                <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
+                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
                                   {/* Row 1, Col 1: Location */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
@@ -2261,10 +2261,10 @@ function JobsPageInner() {
 
                                   {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
                                   <div
-                                    className="flex items-start gap-1.5 min-w-0 flex-wrap"
+                                    className="flex items-center gap-1.5 min-w-0 truncate h-5"
                                   >
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className={`whitespace-normal break-words ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
+                                    <span className={`truncate ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
                                       {compactSalaryDisplay(job.salary)}
                                     </span>
                                   </div>
