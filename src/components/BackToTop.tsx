@@ -3,11 +3,17 @@
 import React, { useEffect, useState } from "react";
 import { ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePathname } from "next/navigation";
 
 export default function BackToTop() {
+  const pathname = usePathname();
+  // Onboarding owns a fixed bottom action bar. Keep this optional shortcut out
+  // of that flow rather than placing another floating control over its Next CTA.
+  const isOnboarding = pathname === "/onboarding" || pathname?.startsWith("/onboarding/");
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    if (isOnboarding) return;
     const handleScroll = () => {
       if (window.scrollY > 300) {
         setVisible(true);
@@ -16,9 +22,10 @@ export default function BackToTop() {
       }
     };
 
+    handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [isOnboarding]);
 
   const scrollToTop = () => {
     window.scrollTo({
@@ -27,7 +34,7 @@ export default function BackToTop() {
     });
   };
 
-  if (!visible) return null;
+  if (isOnboarding || !visible) return null;
 
   return (
     <button
