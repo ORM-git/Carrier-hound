@@ -21,6 +21,21 @@ export const runtime = "edge";
 
 const RECOMMENDED_POOL_SIZE = 1000;
 
+// Keyset continuation cursors are opaque to the client: "k:<posted_at>|<id>" marks the
+// position strictly after a raw row in the (posted_at desc, id desc) stream order.
+// "null" encodes a row whose posted_at is NULL (such rows sort last in the stream).
+function encodeContinuationCursor(row: { posted_at?: string | null; id: string }): string {
+  return `k:${row.posted_at ?? "null"}|${row.id}`;
+}
+
+function parseContinuationCursor(raw: string): { posted_at: string | null; id: string } | null {
+  if (!raw.startsWith("k:")) return null;
+  const sep = raw.lastIndexOf("|");
+  if (sep <= 2 || sep === raw.length - 1) return null;
+  const posted = raw.slice(2, sep);
+  return { posted_at: posted === "null" ? null : posted, id: raw.slice(sep + 1) };
+}
+
 function sanitizeSearchQuery(input: string): string {
   if (!input) return "";
   return input
@@ -444,15 +459,20 @@ export async function GET(req: Request) {
     let paginatedJobs: any[] = [];
     let totalCount = 0;
     let hasNextPage = false;
-    let nextCursor: number | null = null;
+    let nextCursor: string | null = null;
+    let isContinuationResponse = false;
+    let totalIsLowerBound = false;
 
     const hasResume = hasResumeSignals(answers.resumeProfile);
 
-    // Beyond-pool continuation cursor: an opaque DB offset into the SAME ordered, filtered
-    // query. The ranked pool is exactly the first RECOMMENDED_POOL_SIZE rows of this ordering,
-    // so chunks at offsets >= RECOMMENDED_POOL_SIZE never repeat or skip a pool row.
-    const rawCursor = parseInt(searchParams.get("cursor") || "", 10);
-    const cursor = Number.isFinite(rawCursor) && rawCursor >= RECOMMENDED_POOL_SIZE ? Math.floor(rawCursor) : null;
+    // Beyond-pool continuation uses a KEYSET cursor ("k:<posted_at>|<id>") over the same
+    // relevance-filtered query ordered by (posted_at desc, id desc). A keyset stays correct
+    // when rows are inserted or deleted between requests - the next chunk always starts
+    // strictly after the last raw row the stream consumed, so no unseen row is ever skipped
+    // and no seen row repeats. (Rows inserted after the stream started sort before the key
+    // and surface on the next fresh load, matching the pool's snapshot semantics.)
+    const rawCursorParam = searchParams.get("cursor") || "";
+    const cursorKey = parseContinuationCursor(rawCursorParam);
 
     // Use a fixed candidate set per request (fixed pool size, not growing with page)
     // with deterministic tie-breaks (score desc, posted_at desc, id).
@@ -461,42 +481,62 @@ export async function GET(req: Request) {
       .order("posted_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false });
 
-    if (cursor !== null) {
-      // Continuation chunk: keep serving page-sized chunks in the same deterministic order
-      // until the domain's matching jobs are genuinely exhausted. One extra row probes for a
-      // next chunk. Ranking, the relevance gate and the per-company cap apply inside each
-      // chunk exactly as inside the pool; a chunk that filters down to empty is skipped
-      // (bounded lookahead) so the client never sees an empty page mid-stream.
-      let dbOffset = cursor;
-      let fetched = 0;
-      const MAX_CHUNKS_PER_REQUEST = 4;
-      while (fetched < MAX_CHUNKS_PER_REQUEST) {
-        fetched += 1;
-        const { data: rawJobs, error } = await query.range(dbOffset, dbOffset + pageSize);
-        if (error) {
-          log.error("Failed to query continuation jobs for recommendations", { error: error.message || error });
-          return NextResponse.json(
-            { error: "Database service unavailable", jobs: [], totalCount: 0 },
-            { status: 503 }
-          );
-        }
-        const rows = rawJobs || [];
-        hasNextPage = rows.length > pageSize;
-        const chunk = rows.slice(0, pageSize);
+    // Stream semantics beyond the pool: raw rows are scanned in (posted_at desc, id desc)
+    // order in page-sized slices; each slice is scored and ranked independently and the
+    // per-company cap (max 3 per company, reorder-only, nothing dropped) applies within the
+    // slice. This is deliberately NOT equivalent to one globally ranked list: within the
+    // 1000-row pool the whole pool is ranked together; beyond it, recency-ordered slices
+    // trade cross-slice ranking for completeness (every matching job is eventually served)
+    // and bounded work per request.
+    const runContinuation = async (after: { posted_at: string | null; id: string }) => {
+      const keyFilter = after.posted_at
+        // Null posted_at rows sort after every dated row in the stream, so they belong
+        // to the region strictly after any dated key.
+        ? `posted_at.lt.${after.posted_at},and(posted_at.eq.${after.posted_at},id.lt.${after.id}),posted_at.is.null`
+        : `and(posted_at.is.null,id.lt.${after.id})`;
+      // One bounded scan per request: up to RECOMMENDED_POOL_SIZE raw rows, walked in
+      // page-sized slices until a slice yields qualifying jobs. A request never returns an
+      // empty non-terminal page unless the whole scan budget filtered out (extreme edge);
+      // then the client auto-continues via the continuation flag below.
+      const { data: rawJobs, error } = await query.or(keyFilter).limit(RECOMMENDED_POOL_SIZE);
+      if (error) {
+        log.error("Failed to query continuation jobs for recommendations", { error: error.message || error });
+        return NextResponse.json(
+          { error: "Database service unavailable", jobs: [], totalCount: 0 },
+          { status: 503 }
+        );
+      }
+      const rows = rawJobs || [];
+      // More rows remain when the scan hit its budget or when already-fetched rows beyond
+      // the served slice were not consumed yet.
+      let consumed = 0;
+      paginatedJobs = [];
+      while (consumed < rows.length) {
+        const chunk = rows.slice(consumed, consumed + pageSize);
+        consumed += chunk.length;
         const rankedJobs = isPersonalized || hasResume
           ? rankJobsByRecommendation(chunk, answers)
           : rankJobsByRecommendation(chunk, null);
         const qualifyingJobs = isPersonalized
           ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
           : rankedJobs;
-        paginatedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
-        dbOffset += pageSize;
-        if (paginatedJobs.length > 0 || !hasNextPage) break;
+        paginatedJobs = capJobsPerCompany(qualifyingJobs, 3, pageSize);
+        if (paginatedJobs.length > 0) break;
       }
+      hasNextPage = consumed < rows.length || rows.length === RECOMMENDED_POOL_SIZE;
+      const lastRawRow = consumed > 0 ? rows[consumed - 1] : null;
+      nextCursor = hasNextPage && lastRawRow ? encodeContinuationCursor(lastRawRow) : null;
+      isContinuationResponse = true;
+      totalIsLowerBound = true;
       // totalCount stays 0 on continuation chunks: the domain-wide total is not verified
       // here and a chunk count must never be presented as one. The client keeps its last
-      // known total and relies on hasNextPage for continuation.
-      nextCursor = hasNextPage ? dbOffset : null;
+      // known total (marked as a lower bound) and relies on hasNextPage for continuation.
+      return null;
+    };
+
+    if (cursorKey !== null) {
+      const failure = await runContinuation(cursorKey);
+      if (failure) return failure;
     } else {
       query = query.range(0, RECOMMENDED_POOL_SIZE - 1);
 
@@ -527,10 +567,29 @@ export async function GET(req: Request) {
 
       // The stream continues while this page is not the pool's end; when the pool came back
       // full, the corpus likely holds more rows beyond it, so the stream continues past the
-      // pool through the continuation cursor instead of stopping at an artificial boundary.
+      // pool through a keyset continuation cursor instead of stopping at an artificial
+      // boundary. When this request exhausts the pool (including a pool that filters down
+      // to nothing), the first continuation chunk is served in the SAME response so the
+      // client never sees an empty non-terminal page.
       const poolFull = candidateJobs.length === RECOMMENDED_POOL_SIZE;
       hasNextPage = to + 1 < cappedJobs.length || poolFull;
-      nextCursor = poolFull && to + 1 >= cappedJobs.length ? RECOMMENDED_POOL_SIZE : null;
+      if (poolFull) {
+        totalIsLowerBound = true;
+        const poolTail = candidateJobs[candidateJobs.length - 1];
+        if (paginatedJobs.length === 0) {
+          // The pool is exhausted by this request (a beyond-pool page, or a pool that
+          // filters down to nothing): serve the first continuation chunk in the SAME
+          // response so the client never sees an empty non-terminal page.
+          const failure = await runContinuation({ posted_at: poolTail.posted_at ?? null, id: poolTail.id });
+          if (failure) return failure;
+          totalCount = cappedJobs.length + paginatedJobs.length;
+        } else if (to + 1 >= cappedJobs.length) {
+          // Serving the pool's final rows: hand out the keyset continuation cursor.
+          nextCursor = encodeContinuationCursor(poolTail);
+        }
+      } else {
+        nextCursor = null;
+      }
     }
 
     // Build company group ID map for non-Pro responses to prevent company_id leakage
@@ -625,6 +684,13 @@ export async function GET(req: Request) {
       pageSize,
       hasNextPage,
       nextCursor,
+      // continuation: true marks beyond-pool chunks (pool responses omit it). The client
+      // auto-continues ONLY on an empty page that carries this flag; the pinned
+      // pause-on-empty behavior for pool pages is unchanged.
+      continuation: isContinuationResponse,
+      // totalIsLowerBound: true means totalCount is a verified lower bound (a full pool or
+      // known-served rows), never the verified domain-wide total.
+      totalIsLowerBound,
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });

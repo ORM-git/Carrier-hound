@@ -376,6 +376,9 @@ function CircularMatchRing({
   );
 }
 
+// Consecutive empty continuation chunks tolerated before auto-loading pauses (anti-spin bound).
+const MAX_EMPTY_CONTINUATIONS = 3;
+
 function JobsPageInner() {
   const { isExpanded } = useSidebarMode();
   const router = useRouter();
@@ -919,10 +922,16 @@ function JobsPageInner() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
   const [autoLoadPaused, setAutoLoadPaused] = useState(false);
+  // totalCount is a verified lower bound once the full ranked pool is in play; the welcome
+  // copy then says "at least N".
+  const [totalIsLowerBound, setTotalIsLowerBound] = useState(false);
   // One next-page request at a time; reset (abort + stale) when the list query (filters/tab/search/sort) changes.
   const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
   const loadedPageRef = useRef(1);
   const cursorRef = useRef<string | null>(null);
+  // Consecutive empty continuation chunks seen without progress; bounded so a misbehaving
+  // cursor cannot spin the loader indefinitely.
+  const emptyContinuationStreakRef = useRef(0);
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const autoLoadArmedRef = useRef(true);
@@ -1003,6 +1012,8 @@ function JobsPageInner() {
         if (queryKey === lastQueryKeyRef.current) {
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
+          setTotalIsLowerBound(Boolean(res.totalIsLowerBound));
+          emptyContinuationStreakRef.current = 0;
           setHasNextPage(Boolean(res.hasNextPage));
           cursorRef.current = res.nextCursor ?? null;
           hasNextPageRef.current = Boolean(res.hasNextPage);
@@ -1087,7 +1098,25 @@ function JobsPageInner() {
         }
         // Server order kept; ids already shown or repeated within this page are skipped.
         // liveJobs is current here: one request at a time, and a query change makes this response stale.
-        setAutoLoadPaused(appendPage(liveJobs, res.jobs).length === liveJobs.length);
+        const appendedNothing = appendPage(liveJobs, res.jobs).length === liveJobs.length;
+        if (appendedNothing && res.hasNextPage && res.continuation) {
+          // An empty beyond-pool chunk means the server's bounded scan filtered out mid-stream,
+          // not that the domain is exhausted: keep going. The pinned pause-on-empty applies to
+          // pool responses, which never carry the continuation flag.
+          // Anti-spin guards: pause if the server hands back a non-advancing cursor, or after
+          // MAX_EMPTY_CONTINUATIONS consecutive empty continuation chunks without progress.
+          const advancing = Boolean(res.nextCursor) && res.nextCursor !== cursorRef.current;
+          emptyContinuationStreakRef.current = advancing ? emptyContinuationStreakRef.current + 1 : MAX_EMPTY_CONTINUATIONS;
+          if (advancing && emptyContinuationStreakRef.current < MAX_EMPTY_CONTINUATIONS) {
+            setAutoLoadPaused(false);
+            autoLoadArmedRef.current = true;
+          } else {
+            setAutoLoadPaused(true);
+          }
+        } else {
+          emptyContinuationStreakRef.current = 0;
+          setAutoLoadPaused(appendedNothing);
+        }
         setLiveJobs((prev) => appendPage(prev, res.jobs));
         setHasNextPage(Boolean(res.hasNextPage));
         setPage(nextPage);
@@ -1095,6 +1124,7 @@ function JobsPageInner() {
         cursorRef.current = res.nextCursor ?? null;
         hasNextPageRef.current = Boolean(res.hasNextPage);
         if (res.totalCount) setTotalCount(res.totalCount);
+        if (res.totalIsLowerBound) setTotalIsLowerBound(true);
       }
     );
     // A stale outcome means the query changed; its reset already cleared loading/error state.
@@ -2759,6 +2789,7 @@ function JobsPageInner() {
             onClose={() => finishWelcome(null)}
             onConfirm={(levels) => finishWelcome(levels)}
             recommendedCount={isDegraded ? null : totalCount || liveJobs.length}
+            recommendedCountIsLowerBound={totalIsLowerBound}
             initialLevels={selectedLevel}
             savedExperienceLevel={preferences?.experienceLevel}
           />

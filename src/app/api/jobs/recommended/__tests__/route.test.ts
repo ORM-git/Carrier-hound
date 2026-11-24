@@ -1276,18 +1276,30 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     state.tables.jobs = corpus;
     state.tables.jobs_public = corpus;
   };
+  // Baseline stream order: posted_at desc (nulls last), id desc - the same order the
+  // route's pool and continuation queries use.
+  const streamOrder = (rows: any[]) =>
+    [...rows].sort((a, b) => {
+      const pa = a.posted_at ?? "";
+      const pb = b.posted_at ?? "";
+      return pb.localeCompare(pa) || String(b.id).localeCompare(String(a.id));
+    });
+  const keyOf = (row: any) => `k:${row.posted_at ?? "null"}|${row.id}`;
 
-  it("last pool page hands out a continuation cursor when the corpus exceeds the pool", async () => {
+  it("the pool's final page serves its rows and hands out a keyset continuation cursor", async () => {
     seed(1400);
     const res = await recommendedRoute(
       req("http://localhost/api/jobs/recommended?page=40&pageSize=25", "tok-user-no-answers")
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.jobs.length).toBe(25);
+    expect(body.jobs.length).toBe(25); // pool rows 975-999 are still served, not skipped
     expect(body.totalCount).toBe(1000); // bounded pool total, honestly reported
     expect(body.hasNextPage).toBe(true);
-    expect(body.nextCursor).toBe(1000);
+    expect(typeof body.nextCursor).toBe("string");
+    expect(body.nextCursor.startsWith("k:")).toBe(true); // keyset, not a numeric offset
+    expect(body.continuation).toBe(false); // pool pages are not continuation chunks
+    expect(body.totalIsLowerBound).toBe(true);
   });
 
   it("mid-pool pages keep hasNextPage without a cursor", async () => {
@@ -1298,26 +1310,32 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     expect(body.jobs.length).toBe(25);
     expect(body.hasNextPage).toBe(true);
     expect(body.nextCursor).toBeNull();
+    expect(body.continuation).toBe(false);
+    expect(body.totalIsLowerBound).toBe(true); // pool came back full: 1000 is a lower bound
   });
 
-  it("cursor chunks continue past the pool in order with no overlap, until exhaustion", async () => {
+  it("keyset chunks continue past the pool in order with no overlap, until exhaustion", async () => {
     seed(1400);
     const seen = new Set<string>();
+    let cursor: string | null = null;
     for (let p = 1; p <= 40; p++) {
       const body = await (await recommendedRoute(
         req(`http://localhost/api/jobs/recommended?page=${p}&pageSize=25`, "tok-user-no-answers")
       )).json();
       for (const j of body.jobs) seen.add(j.id);
+      if (p === 40) cursor = body.nextCursor;
     }
     expect(seen.size).toBe(1000);
+    expect(cursor).not.toBeNull();
 
-    let cursor: number | null = 1000;
     let chunks = 0;
     while (cursor !== null) {
       const body = await (await recommendedRoute(
-        req(`http://localhost/api/jobs/recommended?cursor=${cursor}&pageSize=25`, "tok-user-no-answers")
+        req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(cursor)}&pageSize=25`, "tok-user-no-answers")
       )).json();
       chunks += 1;
+      expect(body.continuation).toBe(true);
+      expect(body.totalIsLowerBound).toBe(true);
       expect(body.totalCount).toBe(0); // chunk counts are never presented as a domain-wide total
       for (const j of body.jobs) {
         expect(seen.has(j.id)).toBe(false); // zero duplicates across the pool boundary
@@ -1330,23 +1348,38 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     expect(chunks).toBeGreaterThanOrEqual(16); // 400 beyond-pool rows / 25 per chunk
   });
 
-  it("cursor at or past the corpus end returns an empty page with hasNextPage false", async () => {
-    seed(1400);
-    const body = await (await recommendedRoute(
-      req("http://localhost/api/jobs/recommended?cursor=1400&pageSize=25", "tok-user-no-answers")
+  it("a keyset cursor at the corpus end returns an empty terminal page", async () => {
+    seed(1025);
+    const page40 = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?page=40&pageSize=25", "tok-user-no-answers")
     )).json();
-    expect(body.jobs.length).toBe(0);
-    expect(body.hasNextPage).toBe(false);
-    expect(body.nextCursor).toBeNull();
+    const chunk = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(page40.nextCursor)}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(chunk.jobs.length).toBe(25); // rows 1000-1024
+    expect(chunk.hasNextPage).toBe(false); // scan reached the end: genuinely exhausted
+    expect(chunk.nextCursor).toBeNull();
+
+    const ordered = streamOrder(state.tables.jobs);
+    const end = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(keyOf(ordered[1024]))}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(end.jobs.length).toBe(0);
+    expect(end.hasNextPage).toBe(false);
+    expect(end.nextCursor).toBeNull();
+    expect(end.continuation).toBe(true);
   });
 
-  it("a cursor inside the pool range is ignored and the normal pool page is served", async () => {
+  it("non-keyset or malformed cursors are ignored and the normal pool page is served", async () => {
     seed(1400);
-    const body = await (await recommendedRoute(
-      req("http://localhost/api/jobs/recommended?cursor=50&page=1&pageSize=25", "tok-user-no-answers")
-    )).json();
-    expect(body.jobs.length).toBe(25);
-    expect(body.totalCount).toBe(1000);
+    for (const bad of ["50", "k:garbage", "k:|", "k:no-separator"]) {
+      const body = await (await recommendedRoute(
+        req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(bad)}&page=1&pageSize=25`, "tok-user-no-answers")
+      )).json();
+      expect(body.jobs.length).toBe(25);
+      expect(body.totalCount).toBe(1000);
+      expect(body.continuation).toBe(false);
+    }
   });
 
   it("pool path reports hasNextPage false when the corpus fits inside the pool (genuine end)", async () => {
@@ -1357,5 +1390,152 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     expect(body.jobs.length).toBe(20); // 320 rows = 12 full pages + 20
     expect(body.hasNextPage).toBe(false);
     expect(body.nextCursor).toBeNull();
+    expect(body.totalIsLowerBound).toBe(false); // pool not full: 320 is the verified total
+    expect(body.continuation).toBe(false);
+  });
+
+  it("deleting a previously seen row between requests does not skip the next unseen row", async () => {
+    // Regression: numeric-offset cursors skipped ordered[1025] here (reviewer reproduction).
+    seed(1400);
+    const ordered = streamOrder(state.tables.jobs);
+    const page40 = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?page=40&pageSize=25", "tok-user-no-answers")
+    )).json();
+    const first = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(page40.nextCursor)}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(first.jobs.length).toBe(25);
+    const deleted = first.jobs[0].id;
+    state.tables.jobs = state.tables.jobs.filter((r: any) => r.id !== deleted);
+    state.tables.jobs_public = state.tables.jobs;
+    const second = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(first.nextCursor)}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    // The keyset resumes strictly after the last consumed raw row, so the previously
+    // unseen row MUST be present even though one earlier row was deleted.
+    expect(second.jobs.some((j: any) => j.id === ordered[1025].id)).toBe(true);
+  });
+
+  it("inserted newer rows between requests never shift, repeat or displace the stream", async () => {
+    seed(1400);
+    const page40 = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?page=40&pageSize=25", "tok-user-no-answers")
+    )).json();
+    const before = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(page40.nextCursor)}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    const inserted = {
+      ...generateTestCorpus(1)[0],
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      posted_at: new Date(Date.now() + 864e5).toISOString(), // newest row in the corpus
+    };
+    state.tables.jobs = [...state.tables.jobs, inserted];
+    state.tables.jobs_public = state.tables.jobs;
+    const after = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(page40.nextCursor)}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(after.jobs.map((j: any) => j.id).sort()).toEqual(before.jobs.map((j: any) => j.id).sort());
+    expect(after.jobs.some((j: any) => j.id === inserted.id)).toBe(false); // surfaces on a fresh load, not mid-stream
+  });
+
+  it("heavily filtered regions never produce an empty non-terminal page (reviewer reproduction)", async () => {
+    // 1200 on-role jobs: the first 1100 are US-restricted remote (ineligible for an
+    // India-preference account), the last 100 are eligible India onsite.
+    const base = generateTestCorpus(1)[0];
+    state.tables.user_preferences.find((x: any) => x.user_id === "u_pro_answers").locations = ["India"];
+    const rows = Array.from({ length: 1200 }, (_, i) => ({
+      ...base,
+      id: `adv-${String(i).padStart(5, "0")}`,
+      company_id: `c-${i}`,
+      posted_at: new Date(Date.UTC(2026, 10, 24) - i * 60000).toISOString(),
+      location: i >= 1100 ? "Bengaluru, India" : "Remote, United States",
+      country_code: i >= 1100 ? "IN" : "US",
+      remote: i < 1100,
+      remote_scope: i < 1100 ? "remote" : "onsite",
+      remote_eligibility: i < 1100 ? "country_restricted" : null,
+    }));
+    state.tables.jobs = rows;
+    state.tables.jobs_public = rows;
+    const ordered = streamOrder(rows);
+    // Start strictly after raw row 999: the old code returned jobs=0 + hasNextPage=true here.
+    const body = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(keyOf(ordered[999]))}&pageSize=25`, "tok-pro-with-answers")
+    )).json();
+    expect(body.jobs.length).toBe(25); // the eligible slice at 1100-1124 served in the same response
+    expect(body.hasNextPage).toBe(true); // 75 eligible rows remain beyond it
+    expect(body.nextCursor).not.toBeNull();
+
+    // Walking the cursor serves every remaining eligible row and then ends for real.
+    const seen = new Set<string>(body.jobs.map((j: any) => j.id));
+    let cursor: string | null = body.nextCursor;
+    while (cursor !== null) {
+      const next = await (await recommendedRoute(
+        req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(cursor)}&pageSize=25`, "tok-pro-with-answers")
+      )).json();
+      for (const j of next.jobs) {
+        expect(seen.has(j.id)).toBe(false);
+        seen.add(j.id);
+      }
+      expect(next.hasNextPage).toBe(next.nextCursor !== null);
+      cursor = next.nextCursor;
+    }
+    expect(seen.size).toBe(100); // every eligible job served, nothing filtered out mid-stream lost
+  });
+
+  it("identical posted_at ties across a chunk boundary neither repeat nor skip rows", async () => {
+    const base = generateTestCorpus(1)[0];
+    const tied = Array.from({ length: 30 }, (_, i) => ({
+      ...base,
+      id: `tie-${String(i).padStart(3, "0")}`,
+      company_id: `tie-co-${i}`,
+      posted_at: "2026-11-01T00:00:00.000Z", // all 30 rows share one timestamp
+    }));
+    state.tables.jobs = tied;
+    state.tables.jobs_public = tied;
+    const ordered = streamOrder(tied); // ties broken by id desc
+    const first = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(keyOf(ordered[0]))}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(first.jobs.length).toBe(25); // ordered[1..25]
+    const second = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(first.nextCursor ?? "")}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(second.jobs.length).toBe(4); // ordered[26..29]: the id tie-break carries the boundary
+    const all = [...first.jobs, ...second.jobs].map((j: any) => j.id);
+    expect(new Set(all).size).toBe(29);
+    expect(all.sort()).toEqual(ordered.slice(1).map((r) => r.id).sort());
+  });
+
+  it("null posted_at rows sort last, are served exactly once, and keyset cursors handle the null key", async () => {
+    const base = generateTestCorpus(1)[0];
+    const rows = [
+      ...Array.from({ length: 30 }, (_, i) => ({
+        ...base,
+        id: `dated-${String(i).padStart(3, "0")}`,
+        company_id: `dated-co-${i}`,
+        posted_at: new Date(Date.UTC(2026, 9, 1) - i * 60000).toISOString(),
+      })),
+      ...Array.from({ length: 3 }, (_, i) => ({
+        ...base,
+        id: `undated-${String(i).padStart(3, "0")}`,
+        company_id: `undated-co-${i}`,
+        posted_at: null,
+      })),
+    ];
+    state.tables.jobs = rows;
+    state.tables.jobs_public = rows;
+    const ordered = streamOrder(rows);
+    expect(ordered.slice(30).map((r) => r.id)).toEqual(["undated-002", "undated-001", "undated-000"]); // nulls last, id desc
+    // Cursor strictly after the last dated row: the null-posted rows arrive next, in order.
+    const first = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(keyOf(ordered[29]))}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(first.jobs.map((j: any) => j.id).sort()).toEqual(["undated-000", "undated-001", "undated-002"]);
+    expect(first.hasNextPage).toBe(false); // genuinely exhausted after them
+    // A null-key cursor strictly after the first null row serves the remaining null rows only.
+    const second = await (await recommendedRoute(
+      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent("k:null|undated-002")}&pageSize=25`, "tok-user-no-answers")
+    )).json();
+    expect(second.jobs.map((j: any) => j.id).sort()).toEqual(["undated-000", "undated-001"]);
   });
 });

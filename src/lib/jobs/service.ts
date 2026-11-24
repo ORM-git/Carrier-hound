@@ -129,6 +129,8 @@ export interface GetJobsResult {
   totalCount: number;
   nextCursor?: string | null;
   hasNextPage?: boolean;
+  continuation?: boolean;
+  totalIsLowerBound?: boolean;
   isDegraded?: boolean;
   error?: string | null;
   appliedEligibility?: { countries: string[]; filteredOut: number } | null;
@@ -495,6 +497,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           // The server owns continuation once it hands out cursors; fall back to the
           // page-arithmetic guess only for older responses without the field.
           hasNextPage: typeof json.hasNextPage === "boolean" ? json.hasNextPage : (page * pageSize) < count,
+          continuation: json.continuation === true,
+          totalIsLowerBound: json.totalIsLowerBound === true,
           isDegraded: false,
         };
       }

@@ -16,6 +16,9 @@ export interface FirstJobsWelcomeProps {
   onClose: () => void;
   onConfirm: (selectedLevels: CanonicalExperienceLevel[]) => void;
   recommendedCount?: number | null;
+  // True when recommendedCount is a verified lower bound (full ranked pool), not the
+  // domain-wide total: the copy then says "at least N".
+  recommendedCountIsLowerBound?: boolean;
   initialLevels?: string | null;
   savedExperienceLevel?: string | null;
 }
@@ -25,6 +28,7 @@ export default function FirstJobsWelcome({
   onClose,
   onConfirm,
   recommendedCount,
+  recommendedCountIsLowerBound,
   initialLevels,
   savedExperienceLevel,
 }: FirstJobsWelcomeProps) {
@@ -129,7 +133,9 @@ export default function FirstJobsWelcome({
 
   const hasCount = typeof recommendedCount === "number" && recommendedCount > 0;
   const title = hasCount
-    ? `Welcome! We found ${recommendedCount} roles in your current recommendations.`
+    ? recommendedCountIsLowerBound
+      ? `Welcome! We found at least ${recommendedCount} roles in your current recommendations.`
+      : `Welcome! We found ${recommendedCount} roles in your current recommendations.`
     : "Your job preferences are ready";
 
   const suggestedCanonical = savedExperienceLevel

@@ -153,6 +153,43 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(loadMoreButton()).not.toBeNull();
   });
 
+  it("an empty continuation chunk with an advancing cursor auto-continues, bounded by the anti-spin guard", async () => {
+    let empties = 0;
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 25);
+      // Beyond-pool chunks whose scan budget filtered out mid-stream: empty but NOT the end.
+      empties += 1;
+      return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:cursor-${empties}`, continuation: true };
+    };
+    await mount();
+    for (let k = 0; k < 8; k++) {
+      await act(async () => io.enter());
+      await flush();
+    }
+    // The pinned pause-on-empty does NOT apply to continuation-flagged chunks (they
+    // auto-continue), but the loader pauses after 3 consecutive empty chunks so a
+    // server that keeps promising more can never spin the client indefinitely.
+    expect(empties).toBe(3);
+    expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+    expect(loadMoreButton()).not.toBeNull();
+  });
+
+  it("a non-advancing continuation cursor pauses auto-load immediately", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 25);
+      return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:same-cursor", continuation: true };
+    };
+    await mount();
+    for (let k = 0; k < 6; k++) {
+      await act(async () => io.enter());
+      await flush();
+    }
+    // One chunk advances onto the new cursor; the next response repeats it, so the loader
+    // pauses instead of requesting the same position forever.
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(loadMoreButton()).not.toBeNull();
+  });
+
   it("a slow page that returns after a filter change is never applied", async () => {
     const slow = deferred<any>();
     h.transport = async ({ page: p, search }) => {
