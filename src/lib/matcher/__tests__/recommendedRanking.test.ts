@@ -178,8 +178,8 @@ describe("compareByRecommendedRanking", () => {
 });
 
 describe("shouldApplyRecommendedRanking", () => {
-  it("is true on the Recommended tab regardless of the local sort default", () => {
-    expect(shouldApplyRecommendedRanking("recommended", "newest")).toBe(true);
+  it("honors explicit Most recent on the For You tab", () => {
+    expect(shouldApplyRecommendedRanking("recommended", "newest")).toBe(false);
   });
 
   it("is true when the user explicitly picks Sort: Recommended on another tab", () => {
@@ -194,12 +194,12 @@ describe("shouldApplyRecommendedRanking", () => {
 describe("integration: default Recommended tab with no resume", () => {
   it("uses the ranking score to order jobs, not just recency, even with no candidate/resume", () => {
     // Mirrors the Jobs page's exact wiring: activeTab defaults to "recommended",
-    // sortBy defaults to "newest" (never set to "match"), and there is no
+    // sortBy defaults to "match", and there is no
     // confirmed resume. The ranking must still apply (per shouldApplyRecommendedRanking)
     // and must still produce a meaningful, non-recency-only order via the module's
     // neutral fitScore fallback.
     const activeTab = "recommended";
-    const sortBy = "newest";
+    const sortBy = "match";
     const candidate = null; // no resume
     const preferences = null; // no stated location/remote preference either
 

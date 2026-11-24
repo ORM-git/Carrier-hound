@@ -1,4 +1,5 @@
 "use client";
+import { descriptionSections, structuredDescriptionList } from "@/lib/jobs/descriptionSections";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
@@ -256,50 +257,19 @@ export default function JobDetailView({
         : "Fair match"
       : "";
 
-  // Extract structured lists if present
-  const requirementsList: string[] = useMemo(() => {
-    const raw = (job as any).requirements;
-    if (Array.isArray(raw)) {
-      return raw.map((r) => String(r).trim()).filter(Boolean);
+  const sections = useMemo(() => {
+    const derived = descriptionSections(job.description);
+    const source = job as typeof job & Record<string, unknown>;
+    for (const key of ["requirements", "responsibilities", "benefits", "preferred"] as const) {
+      const explicit = structuredDescriptionList(source[key] || (key === "preferred" ? source.preferred_qualifications : null));
+      if (explicit.length) derived[key] = explicit;
     }
-    if (typeof raw === "string" && raw.trim()) {
-      return raw.split("\n").map((r) => r.replace(/^[-*•]\s*/, "").trim()).filter(Boolean);
-    }
-    return [];
+    return derived;
   }, [job]);
-
-  const preferredList: string[] = useMemo(() => {
-    const raw = (job as any).preferred || (job as any).preferred_qualifications;
-    if (Array.isArray(raw)) {
-      return raw.map((r) => String(r).trim()).filter(Boolean);
-    }
-    if (typeof raw === "string" && raw.trim()) {
-      return raw.split("\n").map((r) => r.replace(/^[-*•]\s*/, "").trim()).filter(Boolean);
-    }
-    return [];
-  }, [job]);
-
-  const responsibilitiesList: string[] = useMemo(() => {
-    const raw = (job as any).responsibilities;
-    if (Array.isArray(raw)) {
-      return raw.map((r) => String(r).trim()).filter(Boolean);
-    }
-    if (typeof raw === "string" && raw.trim()) {
-      return raw.split("\n").map((r) => r.replace(/^[-*•]\s*/, "").trim()).filter(Boolean);
-    }
-    return [];
-  }, [job]);
-
-  const benefitsList: string[] = useMemo(() => {
-    const raw = (job as any).benefits;
-    if (Array.isArray(raw)) {
-      return raw.map((b) => String(b).trim()).filter(Boolean);
-    }
-    if (typeof raw === "string" && raw.trim()) {
-      return raw.split("\n").map((b) => b.replace(/^[-*•]\s*/, "").trim()).filter(Boolean);
-    }
-    return [];
-  }, [job]);
+  const requirementsList = sections.requirements;
+  const preferredList = sections.preferred;
+  const responsibilitiesList = sections.responsibilities;
+  const benefitsList = sections.benefits;
 
   const jobLevel = inferJobLevel(job.title);
   const expMatch = job.description?.match(/(\d+\+?\s*(?:-\s*\d+\+?)?\s*years?(?:\s*of)?\s*(?:experience|exp)?)/i);
@@ -1044,7 +1014,7 @@ export default function JobDetailView({
           {/* 3. Qualification (Required, Preferred) (only if data exists) */}
           {(requirementsList.length > 0 || preferredList.length > 0) && (
             <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
-              <h2 className="text-[18px] font-bold text-[#0F172A]">Requirements</h2>
+              <h2 className="text-[18px] font-bold text-[#0F172A]">Qualifications</h2>
 
               {requirementsList.length > 0 && (
                 <div className="space-y-2">

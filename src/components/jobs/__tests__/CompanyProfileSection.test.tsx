@@ -30,6 +30,27 @@ function renderDetail(job = baseJob(), onSelectJob = vi.fn()) {
 afterEach(() => cleanup());
 
 describe("Company section", () => {
+  it("fills headed description bullets immediately above Company without changing source text", () => {
+    const description = "About the team\nWe build software.\nResponsibilities\n- Build tools.\nQualifications\n- Go experience.\nBenefits\n- Paid leave.";
+    const { container } = renderDetail({ ...baseJob(), description });
+    const headings = Array.from(container.querySelectorAll("h2")).map(el => el.textContent);
+    expect(headings.indexOf("Responsibilities")).toBeLessThan(headings.indexOf("Qualifications"));
+    expect(headings.indexOf("Benefits") + 1).toBe(headings.indexOf("Company"));
+    expect(screen.getByText("Build tools.")).toBeTruthy();
+    expect(screen.getByText("Paid leave.")).toBeTruthy();
+    expect(container.querySelector(".whitespace-pre-wrap")?.textContent).toBe(description);
+  });
+
+  it("prefers an explicit source section and keeps unstructured prose only in description", () => {
+    const job = { ...baseJob(), responsibilities: ["Explicit source duty"], description: "Responsibilities\n- Derived duty" };
+    renderDetail(job);
+    expect(screen.getByText("Explicit source duty")).toBeTruthy();
+    expect(screen.queryByText("Derived duty")).toBeNull();
+    cleanup();
+    renderDetail({ ...baseJob(), description: "Benefits include paid leave, but this is plain prose." });
+    expect(screen.queryByRole("heading", { name: "Benefits" })).toBeNull();
+  });
+
   it("renders sourced facts, leadership, dated news, and company-scoped jobs", () => {
     renderDetail();
     expect(screen.getByText("Acme builds software for teams.")).toBeTruthy();
