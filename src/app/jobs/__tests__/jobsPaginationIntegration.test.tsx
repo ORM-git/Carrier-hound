@@ -302,3 +302,144 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(uniqueTitles()).toHaveLength(50);
   });
 });
+
+describe("pending downward intent while a next-page request is in flight", () => {
+  const wheel = () => window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+  const keyDown = () =>
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown", bubbles: true }));
+  const touchDrag = () => {
+    const start = new Event("touchstart");
+    (start as any).touches = [{ clientY: 400 }];
+    window.dispatchEvent(start);
+    const move = new Event("touchmove");
+    (move as any).touches = [{ clientY: 250 }];
+    window.dispatchEvent(move);
+  };
+
+  it.each([
+    ["wheel", wheel],
+    ["keyboard", keyDown],
+    ["touch drag", touchDrag],
+  ])("a %s gesture during a slow page loads exactly one more page after it settles", async (_name, gesture) => {
+    const slow = deferred<any>();
+    h.transport = async ({ page: p }) =>
+      p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? slow.promise : page(jobs(range(51, 60)), false);
+    await mount();
+    await act(async () => io.enter()); // starts page 2 (slow)
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    await act(async () => gesture()); // user keeps scrolling while the request runs
+    await act(async () => slow.resolve(page(jobs(range(26, 50)), true)));
+    await flush();
+    // The pending intent is consumed once: page 3 without any new gesture, and nothing beyond it.
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(uniqueTitles()).toHaveLength(60);
+    for (let k = 0; k < 3; k++) {
+      await act(async () => io.enter(false)); // anchoring/IO without input is not a gesture
+      await flush();
+    }
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+  });
+
+  it("repeated gestures during one request coalesce into a single pending page", async () => {
+    const slow = deferred<any>();
+    h.transport = async ({ page: p }) =>
+      p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? slow.promise : page(jobs(range(51, 75)), true);
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => {
+      for (let k = 0; k < 6; k++) wheel();
+    });
+    await act(async () => slow.resolve(page(jobs(range(26, 50)), true)));
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+  });
+
+  it("no gesture during the request: settling never loads another page on its own", async () => {
+    const slow = deferred<any>();
+    h.transport = async ({ page: p }) =>
+      p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? slow.promise : page(jobs(range(51, 75)), true);
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => slow.resolve(page(jobs(range(26, 50)), true)));
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(uniqueTitles()).toHaveLength(50);
+  });
+
+  it("a pending intent is discarded when the page errors; Retry still works", async () => {
+    const slow = deferred<any>();
+    let p2Calls = 0;
+    h.transport = async ({ page: p }) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 500);
+      if (p === 2 && ++p2Calls === 1) return slow.promise;
+      return page(jobs(range(26, 50)), true, 500);
+    };
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => wheel());
+    await act(async () => slow.resolve({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null, isDegraded: true, error: "degraded" }));
+    await flush();
+    expect(screen.getByRole("alert").textContent).toContain("Couldn't load more jobs.");
+    expect(pagesRequested()).toEqual([1, 2]); // no silent retry from the pending intent
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+    expect(uniqueTitles()).toHaveLength(50);
+  });
+
+  it("a pending intent is discarded at the end of the list", async () => {
+    const slow = deferred<any>();
+    h.transport = async ({ page: p }) =>
+      p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? slow.promise : page(jobs(range(51, 75)), true);
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => wheel());
+    await act(async () => slow.resolve(page(jobs(range(26, 40)), false))); // terminal page
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(screen.queryByTestId("jobs-load-more-sentinel")).toBeNull();
+  });
+
+  it("a pending intent is discarded when the page does not grow (pause contract kept)", async () => {
+    const slow = deferred<any>();
+    h.transport = async ({ page: p }) =>
+      p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? slow.promise : page(jobs(range(51, 75)), true);
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => wheel());
+    await act(async () => slow.resolve(page([], true))); // empty page, hasNext true -> pause
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(loadMoreButton()).not.toBeNull(); // manual path remains
+  });
+
+  it("a pending intent is cleared by a query change and never applied to the new list", async () => {
+    const slow = deferred<any>();
+    h.transport = async ({ page: p, search }) => {
+      if (p === 1) return search ? page(jobs(range(201, 203)), true) : page(jobs(range(1, 25)), true);
+      return search ? page(jobs(range(203, 210)), false) : slow.promise;
+    };
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => wheel());
+    window.history.pushState(null, "", "/jobs?search=fixture");
+    await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
+    await waitFor(() => {
+      expect(h.calls.some((call) => call.page === 1 && call.search === "fixture")).toBe(true);
+    });
+    await act(async () => slow.resolve(page(jobs(range(26, 50)), true))); // stale old-query response
+    await flush();
+    // No page 2 of the new query without a fresh gesture.
+    expect(h.calls.filter((c) => c.search === "fixture").map((c) => c.page)).toEqual([1]);
+    await act(async () => io.enter()); // fresh gesture on the new list
+    await flush();
+    expect(h.calls.filter((c) => c.search === "fixture").map((c) => c.page)).toEqual([1, 2]);
+  });
+});
