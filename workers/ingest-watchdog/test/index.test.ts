@@ -171,8 +171,60 @@ describe("Ingest Watchdog Worker", () => {
       });
 
       await expect(inspectIngestionStatus(baseEnv, mockFetch as any, now)).rejects.toThrow(
-        "History verification truncated at pagination bound"
+        /Inconsistent runs evidence|History verification truncated at pagination bound/
       );
+    });
+
+    it("total_count 1 + one completed foreign-branch run must fail closed and never admit either cohort", async () => {
+      const mockFetch = vi.fn(async (url: string) => {
+        if (url.includes("/runs?")) {
+          return new Response(
+            JSON.stringify({
+              total_count: 1,
+              workflow_runs: [
+                {
+                  id: 101,
+                  head_branch: "feat/dev-foreign",
+                  status: "completed",
+                  conclusion: "success",
+                  created_at: "2026-11-24T05:00:00Z",
+                  updated_at: "2026-11-24T05:20:00Z",
+                },
+              ],
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      });
+
+      // 1. inspectIngestionStatus must reject with Inconsistent runs evidence
+      await expect(inspectIngestionStatus(baseEnv, mockFetch as any, now)).rejects.toThrow(
+        "Inconsistent runs evidence"
+      );
+
+      // 2. checkAndReconcileIngestion must throw, never dispatch, and send an alert
+      await expect(checkAndReconcileIngestion(baseEnv, mockFetch as any, now)).rejects.toThrow(
+        "Inconsistent runs evidence"
+      );
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining("/dispatches"),
+        expect.anything()
+      );
+
+      // 3. /health endpoint must return 503 not-ready
+      vi.stubGlobal("fetch", mockFetch);
+      try {
+        const healthReq = new Request("https://worker.test/health", { method: "GET" });
+        const healthRes = await worker.fetch(healthReq, baseEnv, {});
+        expect(healthRes.status).toBe(503);
+        const healthBody = await healthRes.json();
+        expect(healthBody.status).toBe("unhealthy");
+        expect(healthBody.ready).toBe(false);
+        expect(healthBody.issue).toContain("Inconsistent runs evidence");
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it("admits verified bootstrap when total_count is genuinely 0", async () => {

@@ -378,8 +378,17 @@ export async function inspectIngestionStatus(
   // Filter strictly to runs on target branch (main)
   const runs = allRuns.filter((r) => r.head_branch === branch);
 
-  // Verified bootstrap check: total_count === 0, or zero runs on main after exhausting all runs
-  const isVerifiedBootstrap = (totalCount === 0 && allRuns.length === 0) || (allRuns.length >= totalCount && runs.length === 0);
+  // Inconsistent evidence check:
+  // Foreign-branch entries in branch-scoped response, or total_count > 0 with zero matching main runs
+  const foreignBranchRuns = allRuns.filter((r) => r.head_branch !== branch);
+  if (foreignBranchRuns.length > 0 || (totalCount > 0 && runs.length === 0)) {
+    throw new Error(
+      `Inconsistent runs evidence: branch-scoped response contains ${foreignBranchRuns.length} foreign-branch entries or total_count > 0 (${totalCount}) with zero matching runs on ${branch}; failing closed to not-ready.`
+    );
+  }
+
+  // Verified bootstrap check: ONLY when total_count === 0 AND complete history is empty
+  const isVerifiedBootstrap = totalCount === 0 && allRuns.length === 0;
 
   // If bound blocked verification without finding main runs while more runs exist
   if (!isVerifiedBootstrap && runs.length === 0 && allRuns.length < totalCount) {

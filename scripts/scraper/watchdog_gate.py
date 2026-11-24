@@ -144,8 +144,17 @@ def fetch_workflow_runs_and_jobs(
     # Filter strictly to runs on target branch (main)
     runs = [r for r in all_runs if r.get("head_branch") == branch]
 
-    # Check for verified first-run bootstrap
-    is_verified_bootstrap = (total_count == 0 and len(all_runs) == 0) or (len(all_runs) >= total_count and len(runs) == 0)
+    # Inconsistent evidence check:
+    # Foreign-branch entries in branch-scoped response, or total_count > 0 with zero matching main runs
+    has_foreign_branches = any(r.get("head_branch") != branch for r in all_runs)
+    if has_foreign_branches or (total_count > 0 and len(runs) == 0):
+        raise GateVerificationError(
+            f"Inconsistent runs evidence: branch-scoped response contains foreign-branch entries or "
+            f"total_count > 0 ({total_count}) with zero matching runs on {branch}; failing closed."
+        )
+
+    # Check for verified first-run bootstrap: ONLY when total_count == 0 AND complete history is empty
+    is_verified_bootstrap = (total_count == 0 and len(all_runs) == 0)
 
     # Fail closed if pagination bound blocked verification without finding main runs
     if not is_verified_bootstrap and len(runs) == 0 and len(all_runs) < total_count:

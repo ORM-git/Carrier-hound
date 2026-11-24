@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import tempfile
 import unittest
 import urllib.error
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 from scripts.scraper.watchdog_gate import (
+    main,
     evaluate_watchdog_admission,
     fetch_workflow_runs_and_jobs,
     parse_iso8601,
@@ -466,7 +469,7 @@ class TestWatchdogGate(unittest.TestCase):
         mock_page1.read.return_value = json.dumps({
             "total_count": 100,
             "workflow_runs": [
-                {"id": i, "head_branch": "feat/other", "status": "completed", "conclusion": "success"}
+                {"id": i, "head_branch": "main", "status": "completed", "conclusion": "success"}
                 for i in range(1, 31)
             ]
         }).encode("utf-8")
@@ -482,6 +485,53 @@ class TestWatchdogGate(unittest.TestCase):
         with self.assertRaises(GateVerificationError) as ctx:
             fetch_workflow_runs_and_jobs("ORM-git/Carrier-hound", "token")
         self.assertIn("500", str(ctx.exception))
+
+    @patch("urllib.request.urlopen")
+    def test_total_count_1_foreign_branch_run_fails_closed_and_never_admits_cohorts(self, mock_urlopen):
+        # total_count 1 + one completed foreign-branch run must fail closed and never admit either cohort
+        mock_runs_resp = MagicMock()
+        mock_runs_resp.status = 200
+        mock_runs_resp.read.return_value = json.dumps({
+            "total_count": 1,
+            "workflow_runs": [
+                {
+                    "id": 101,
+                    "head_branch": "feat/foreign-branch",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "created_at": "2026-11-24T05:00:00Z",
+                    "updated_at": "2026-11-24T05:20:00Z",
+                }
+            ]
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_runs_resp
+
+        # 1. fetch_workflow_runs_and_jobs must raise GateVerificationError
+        with self.assertRaises(GateVerificationError) as ctx:
+            fetch_workflow_runs_and_jobs("ORM-git/Carrier-hound", "fake-token", branch="main")
+        self.assertIn("Inconsistent runs evidence", str(ctx.exception))
+
+        # 2. main() with GITHUB_OUTPUT must write skip=true and admitted_cohorts=[]
+        with tempfile.NamedTemporaryFile(mode="r+", delete=False) as tf:
+            tf_path = tf.name
+        try:
+            with patch.dict(os.environ, {
+                "IS_WATCHDOG": "true",
+                "GITHUB_TOKEN": "fake-token",
+                "GITHUB_REPOSITORY": "ORM-git/Carrier-hound",
+                "GITHUB_OUTPUT": tf_path,
+                "TARGET_COHORT": "both",
+            }):
+                code = main()
+                self.assertEqual(code, 1)
+
+            with open(tf_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("skip=true", content)
+            self.assertIn("admitted_cohorts=[]", content)
+        finally:
+            if os.path.exists(tf_path):
+                os.remove(tf_path)
 
 
 if __name__ == "__main__":
