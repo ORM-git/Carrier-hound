@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 
+PER_SOURCE_COLUMNS = ("source", "status", "fetched", "validated", "rejected", "salary_sanitized", "duplicate_skipped",
+                      "inserted", "updated", "failed", "expired", "cooldown_reason", "next_eligible_at", "last_success_at")
+
+
 def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, cohort: str) -> dict[str, Any]:
     code = str(exit_code) if exit_code not in (None, "") else "n/a"
     if not isinstance(report, dict):
@@ -55,10 +59,15 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
             {"source": str(d.get("source")), "reason": str(d.get("reason") or "")[:120], "next_eligible_at": d.get("next_eligible_at")}
             for d in (report.get("deferred_sources") or []) if isinstance(d, dict)
         ],
+        "salary_sanitized": int(report.get("salary_sanitized_count") or 0),
+        "duplicate_skipped": int(report.get("duplicate_skipped_count") or 0),
+        "duplicate_samples": [
+            {k: str(r.get(k) or "")[:160] for k in ("source_key", "stage", "code", "reason")}
+            for r in (report.get("duplicate_skipped") or [])[:10] if isinstance(r, dict)
+        ],
         "per_source": [
-            {k: src.get(k) for k in ("source", "status", "fetched", "validated", "rejected", "inserted", "updated",
-                                     "cooldown_reason", "next_eligible_at", "last_success_at")}
-            for src in (report.get("sources") or []) if isinstance(src, dict) and src.get("source_type") == "workday"
+            {k: src.get(k) for k in PER_SOURCE_COLUMNS}
+            for src in (report.get("sources") or []) if isinstance(src, dict)
         ],
         "projected": report.get("projected_counts") if dry_run else None,
         "confirmed_writes": None if dry_run or not isinstance(persisted, dict) else {
@@ -94,6 +103,8 @@ def render_cohort(s: dict[str, Any]) -> str:
          f"{s['selected_sources']} / {s['completed_sources']} / {len(s['failed_sources'])}"),
         ("fetched (not new jobs)", s.get("fetched")), ("unique after dedupe", s.get("deduped")),
         ("validated / rejected", f"{s.get('validated')} / {s.get('rejected', 0)}"),
+        ("salary sanitized (non-finite -> null, job kept)", s.get("salary_sanitized", 0)),
+        ("duplicate apply_url skipped (existing job kept; not a failure)", s.get("duplicate_skipped", 0)),
     ]
     wd = s.get("workday")
     if isinstance(wd, dict):
@@ -121,11 +132,13 @@ def render_cohort(s: dict[str, Any]) -> str:
         lines += ["", "**Failed sources (this cohort's writes and expiry withheld):**", ""]
         lines += [f"- `{f['source']}`: {f['error']}" for f in s["failed_sources"]]
     if s.get("per_source"):
-        lines += ["", "| workday board | status | fetched | validated | rejected | inserted | updated | cooldown | next eligible | last success |",
-                  "|---|---|---|---|---|---|---|---|---|---|"]
-        lines += ["| " + " | ".join(str(p.get(k) if p.get(k) is not None else "-") for k in (
-            "source", "status", "fetched", "validated", "rejected", "inserted", "updated",
-            "cooldown_reason", "next_eligible_at", "last_success_at")) + " |" for p in s["per_source"]]
+        lines += ["", "| " + " | ".join(c.replace("_", " ") for c in PER_SOURCE_COLUMNS) + " |",
+                  "|" + "---|" * len(PER_SOURCE_COLUMNS)]
+        lines += ["| " + " | ".join(str(p.get(k) if p.get(k) is not None else "-") for k in PER_SOURCE_COLUMNS) + " |"
+                  for p in s["per_source"]]
+    if s.get("duplicate_samples"):
+        lines += ["", f"**Duplicate apply_url rows skipped ({s.get('duplicate_skipped', 0)}; existing job kept):**", ""]
+        lines += [f"- `{r['source_key']}` [{r['stage']}] {r['reason']}" for r in s["duplicate_samples"]]
     if s.get("deferred_sources"):
         lines += ["", "**Deferred Workday boards (not attempted this run; not a success):**", ""]
         lines += [f"- `{d['source']}`: {d['reason']} (next eligible {d['next_eligible_at'] or 'next run'})" for d in s["deferred_sources"]]

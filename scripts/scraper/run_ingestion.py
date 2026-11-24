@@ -55,7 +55,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
-from .persistence import prevalidate_jobs
+from .persistence import prevalidate_jobs, sanitize_salaries
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 PARTIAL_COVERAGE_SOURCES: frozenset[str] = frozenset({"workday", "amazon", "microsoft", "arbeitnow", "smartrecruiters", "jobspy", "adzuna"})
@@ -411,6 +411,7 @@ async def run_master_ingestion(
             }
 
         fetched_count = len(all_jobs)
+        all_jobs, sanitized = sanitize_salaries(all_jobs)  # NaN/inf salary -> null salary, job kept
         all_jobs, rejected = prevalidate_jobs(all_jobs)  # before dedupe: dedupe ranks on int(source_priority)
         validated_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
@@ -480,10 +481,15 @@ async def run_master_ingestion(
         expiry_vetoed = db_stats.get("persistence_failed", False)
         expiry_reports: list[dict[str, Any]] = []
         rejected += list(db_stats.get("rejected") or [])
-        # A board with any rejected (unpersisted) row is not fully persisted: never expire on its behalf.
-        for item in rejected:
-            if item["source_id"] in board_status_map and not board_status_map[item["source_id"]]["error"]:
-                board_status_map[item["source_id"]]["error"] = "rows rejected before persistence"
+        duplicates = list(db_stats.get("duplicate_skipped") or [])
+        row_key = lambda j: f"{j.get('source_id') or j.get('source_type') or '?'}/{j.get('source_job_id') or '?'}"[:160]
+        # A board with any rejected or duplicate-skipped (unpersisted) row is not fully persisted: never
+        # expire on its behalf (its live job may sit on another row). Mapped through the board's own rows.
+        unpersisted_keys = {r["source_key"] for r in rejected} | {d["source_key"] for d in duplicates}
+        for rep in task_reports:
+            status = board_status_map.get(rep["source"])
+            if status and not status["error"] and any(row_key(j) in unpersisted_keys for j in rep["jobs"]):
+                status["error"] = "rows rejected or duplicate-skipped before persistence"
 
         if credentials is not None and not no_expire and not expiry_vetoed:
             writer = SupabaseSetDiffWriter(*credentials)
@@ -603,15 +609,26 @@ async def run_master_ingestion(
         key_sets = {name: {tuple(k) for k in db_stats.get(name) or []}
                     for name in ("inserted_source_keys", "updated_source_keys", "persisted_source_keys")}
         rejected_keys = {r["source_key"] for r in rejected}
+        duplicate_keys = {d["source_key"] for d in duplicates}
+        sanitized_keys = {s["source_key"] for s in sanitized}
+        expired_by_source = {e.get("source_id"): int(e.get("expired") or 0) for e in expiry_reports}
         now_dt = datetime.now(timezone.utc)
         wd_persisted = 0
         for rep, src in zip(task_reports, source_reports):
             keys = {(str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) for j in rep["jobs"]}
-            rej = sum(1 for k in keys if f"{k[0]}/{k[1]}"[:160] in rejected_keys)
+            key_str = {k: f"{k[0]}/{k[1]}"[:160] for k in keys}
+            rej = sum(1 for k in keys if key_str[k] in rejected_keys)
+            dups = {k for k in keys if key_str[k] in duplicate_keys}
+            persisted = keys & key_sets["persisted_source_keys"]
             src.update(validated=len(keys) - rej, rejected=rej,
-                       inserted=len(keys & key_sets["inserted_source_keys"]), updated=len(keys & key_sets["updated_source_keys"]))
+                       salary_sanitized=sum(1 for k in keys if key_str[k] in sanitized_keys),
+                       duplicate_skipped=len(dups),
+                       inserted=len(keys & key_sets["inserted_source_keys"]), updated=len(keys & key_sets["updated_source_keys"]),
+                       # not persisted for a reason other than rejection/duplicate (stopped writes, withheld writes)
+                       failed=(len(keys) - rej - len(dups) - len(persisted)) if writes_attempted else 0,
+                       expired=expired_by_source.get(src["source"], 0))
             if (src["source_type"] == "workday" and rep["completed"] and writes_attempted and not rej
-                    and not db_stats.get("persistence_failed") and keys <= key_sets["persisted_source_keys"]):
+                    and not db_stats.get("persistence_failed") and (keys - dups) <= key_sets["persisted_source_keys"]):
                 workday_schedule.record_attempt(wd_boards, src["source"], now_dt, wd_lim, ok=True)
                 workday_schedule.mark_persisted(wd_boards, src["source"], now_dt)
                 wd_persisted += 1
@@ -712,6 +729,10 @@ async def run_master_ingestion(
             "validated": validated_count,
             "rejected": rejected[:200],
             "rejected_count": len(rejected),
+            "salary_sanitized": sanitized[:200],
+            "salary_sanitized_count": len(sanitized),
+            "duplicate_skipped": duplicates[:200],
+            "duplicate_skipped_count": len(duplicates),
             "skipped_by_cap": max(0, len(unique_jobs) - selected_count),
             "projected_counts": projected_counts,
             "persisted_counts": None if dry_run else {
