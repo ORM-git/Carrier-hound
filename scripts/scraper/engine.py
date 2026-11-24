@@ -705,7 +705,9 @@ class SupabaseSetDiffWriter:
             partitions[i] = partition_set_diff(chunk, existing_by_start[i])
 
         # Identity is the source key; apply_url is unique too. A planned insert whose apply_url another row
-        # already owns (or an earlier row of this run claims) is that existing job: skip it, never a second row.
+        # already owns, or a row of this run has been CONFIRMED inserted with, is that existing job: skip it,
+        # never a second row. A URL is claimed only after a confirmed insert, so a rejected first candidate
+        # never blocks the next valid one.
         existing_urls = await self._existing_apply_urls(client, [row.get("apply_url") for p in partitions.values() for row in p[0]])
         if self.persistence_failed:
             stats.update({"failed_writes": self.failed_writes, "persistence_failed": True, "write_errors": self.write_errors})
@@ -715,14 +717,19 @@ class SupabaseSetDiffWriter:
         for i in range(0, len(jobs), batch_size):
             chunk = jobs[i : i + batch_size]
             planned_inserts, to_update, unchanged_ids = partitions[i]
-            to_insert = []
+            to_insert: list[dict[str, Any]] = []
+            next_candidates: list[dict[str, Any]] = []  # same URL as an earlier row of this batch: tried after it
+            batch_urls: set[str] = set()
             for row in planned_inserts:
                 url = row.get("apply_url")
                 if isinstance(url, str) and url and (url in existing_urls or url in claimed_urls):
                     stats["duplicate_skipped"].append(rejection(row, "prelookup", "apply_url already owned by another job"))
                     continue
                 if isinstance(url, str) and url:
-                    claimed_urls.add(url)
+                    if url in batch_urls:
+                        next_candidates.append(row)
+                        continue
+                    batch_urls.add(url)
                 to_insert.append(row)
 
             # Unchanged jobs must still refresh last_seen_at
@@ -764,14 +771,27 @@ class SupabaseSetDiffWriter:
             if self.persistence_failed:
                 break
 
-            if to_insert:
-                inserted = await self._insert_jobs(client, to_insert, db_columns, stats)
-                for row in inserted:
+            def record_inserted(rows: list[dict[str, Any]]) -> None:
+                for row in rows:
+                    if isinstance(row.get("apply_url"), str) and row["apply_url"]:
+                        claimed_urls.add(row["apply_url"])  # claimed only once the insert is confirmed
                     sid = str(row.get("source_id") or "")
                     sjid = str(row.get("source_job_id") or "")
                     if sid and sjid:
                         persisted_source_keys.add((sid, sjid))
                         inserted_keys.add((sid, sjid))
+
+            if to_insert:
+                record_inserted(await self._insert_jobs(client, to_insert, db_columns, stats))
+            # Next candidate per URL, one at a time: a duplicate once an earlier candidate owns the URL,
+            # otherwise (the earlier one was rejected) it gets its own chance.
+            for row in next_candidates:
+                if self.persistence_failed:
+                    break
+                if row["apply_url"] in claimed_urls:
+                    stats["duplicate_skipped"].append(rejection(row, "prelookup", "apply_url already owned by another job"))
+                    continue
+                record_inserted(await self._insert_jobs(client, [row], db_columns, stats))
 
             if self.persistence_failed:
                 break

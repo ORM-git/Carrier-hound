@@ -161,6 +161,74 @@ class DuplicateTests(unittest.TestCase):
         self.assertTrue(stats["persistence_failed"])
 
 
+CHECK = json.dumps({"code": "23514", "message": 'new row for relation "jobs" violates check constraint "jobs_x_check"'})
+
+
+def first_candidate_fails(status: int, text: str):
+    """POST handler: any batch containing greenhouse:acme/1 fails with (status, text); everything else inserts."""
+    def post(_req, rows):
+        if any(r["source_id"] == "greenhouse:acme" and r["source_job_id"] == "1" for r in rows):
+            return httpx.Response(status, text=text)
+        return ok_insert(_req, rows)
+    return post
+
+
+class ClaimAfterConfirmTests(unittest.TestCase):
+    """A URL is claimed only after a confirmed insert: a rejected first candidate never blocks the next one."""
+
+    shared = "https://jobs.example.com/apply/shared"
+
+    def owners(self, db: Db) -> list[str]:
+        return [f"{r['source_id']}/{r['source_job_id']}" for b in db.posts() for r in b if r["apply_url"] == self.shared]
+
+    def assert_second_owns_url(self, db: Db, stats: dict, second: str):
+        self.assertEqual([r["source_key"] for r in stats["rejected"]], ["greenhouse:acme/1"])
+        self.assertEqual(stats["duplicate_skipped"], [], "the valid second candidate is not a duplicate")
+        self.assertIn(tuple(second.split("/")), set(map(tuple, stats["inserted_source_keys"])), "exactly one row owns the URL")
+        self.assertFalse(stats["persistence_failed"])
+
+    def test_rejected_first_candidate_then_valid_second_in_the_same_batch(self):
+        db = Db(post=first_candidate_fails(400, CHECK))
+        stats = write(db, [row("greenhouse:acme", 1, self.shared), row("lever:acme", 9, self.shared), row("lever:acme", 10)])
+        self.assert_second_owns_url(db, stats, "lever:acme/9")
+        self.assertEqual(stats["inserted"], 2)
+
+    def test_rejected_first_candidate_then_valid_second_across_the_50_row_boundary(self):
+        filler = [row("lever:acme", 100 + n) for n in range(49)]
+        jobs = filler + [row("greenhouse:acme", 1, self.shared), row("ashby:acme", 7, self.shared)]  # index 49 | 50
+        db = Db(post=first_candidate_fails(400, CHECK))
+        stats = write(db, jobs)
+        self.assert_second_owns_url(db, stats, "ashby:acme/7")
+        self.assertEqual(stats["inserted"], 50)
+
+    def test_confirmed_first_candidate_makes_the_later_one_a_duplicate_across_the_boundary(self):
+        filler = [row("lever:acme", 100 + n) for n in range(49)]
+        jobs = filler + [row("greenhouse:acme", 1, self.shared), row("ashby:acme", 7, self.shared)]
+        db = Db(post=ok_insert)
+        stats = write(db, jobs)
+        self.assertEqual(self.owners(db), ["greenhouse:acme/1"])
+        self.assertEqual([d["source_key"] for d in stats["duplicate_skipped"]], ["ashby:acme/7"])
+        self.assertEqual(stats["rejected"], [])
+
+    def test_duplicate_skipped_first_candidate_lets_the_second_meet_the_same_db_owner(self):
+        # first candidate hits 409/23505 (URL taken by a racing writer): the second also gets 23505, never a 2nd row
+        db = Db(post=lambda _r, rows: httpx.Response(409, text=DUP) if any(r["apply_url"] == self.shared for r in rows) else ok_insert(_r, rows))
+        stats = write(db, [row("greenhouse:acme", 1, self.shared), row("lever:acme", 9, self.shared)])
+        self.assertEqual(len(stats["duplicate_skipped"]), 2)
+        self.assertEqual(stats["inserted"], 0)
+        self.assertFalse(stats["persistence_failed"])
+
+    def test_ambiguous_failure_of_the_first_candidate_stops_before_the_next(self):
+        for name, post in (("503", first_candidate_fails(503, "upstream")),
+                           ("unknown 409", first_candidate_fails(409, "conflict"))):
+            with self.subTest(name):
+                db = Db(post=post)
+                stats = write(db, [row("greenhouse:acme", 1, self.shared), row("lever:acme", 9, self.shared)])
+                self.assertEqual(len(db.posts()), 1, "no further write after an ambiguous failure")
+                self.assertTrue(stats["persistence_failed"])
+                self.assertEqual(stats["duplicate_skipped"], [])
+
+
 class SalaryTests(unittest.TestCase):
     def test_non_finite_salary_becomes_null_and_the_job_is_kept(self):
         jobs = [row("jobspy:indeed", n, salary_min=lo, salary_max=hi, salary_period="yearly", currency="INR")
