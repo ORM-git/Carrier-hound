@@ -6,8 +6,8 @@ import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { PREPAID_PRICE_SUMMARY } from "@/config/plans";
 
 export const metadata = {
-  title: "Terms and Conditions | CareerMonke",
-  description: "Terms and conditions of service for CareerMonke job discovery and AI resume tailoring platform.",
+  title: "Terms and Conditions | Career Monke",
+  description: "Terms and conditions of service for Career Monke job discovery and AI resume tailoring platform.",
   alternates: {
     canonical: "https://careermonke.com/terms-and-conditions",
   },
@@ -26,7 +26,7 @@ export default function TermsPage() {
         <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
-          Welcome to CareerMonke. These Terms and Conditions (&quot;Terms&quot;) constitute a legally binding agreement made between you, whether personally or on behalf of an entity (&quot;you&quot;, &quot;user&quot;, &quot;subscriber&quot;), and Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), concerning your access to and use of the CareerMonke website and platform tools.
+          Welcome to Career Monke. These Terms and Conditions (&quot;Terms&quot;) constitute a legally binding agreement made between you, whether personally or on behalf of an entity (&quot;you&quot;, &quot;user&quot;, &quot;subscriber&quot;), and Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), concerning your access to and use of the Career Monke website and platform tools.
         </p>
 
         <p className="mb-2">
@@ -35,7 +35,7 @@ export default function TermsPage() {
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">1. Services Provided</h2>
         <p className="mb-2">
-          CareerMonke is a job discovery and career tools platform. Job listings on CareerMonke are collected, organized, and kept current from publicly available company career pages and official job postings. On top of this listing database we provide:
+          Career Monke is a job discovery and career tools platform. Job listings on Career Monke are collected, organized, and kept current from publicly available company career pages and official job postings. On top of this listing database we provide:
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
@@ -52,7 +52,7 @@ export default function TermsPage() {
           </li>
         </ul>
         <p className="mb-2">
-          AI-generated outputs are algorithmic suggestions to assist your own applications. CareerMonke does not guarantee interviews, employment, or hiring outcomes, and is not a recruitment agency or an employer.
+          AI-generated outputs are algorithmic suggestions to assist your own applications. Career Monke does not guarantee interviews, employment, or hiring outcomes, and is not a recruitment agency or an employer.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">2. Eligibility and User Accounts</h2>
@@ -147,7 +147,7 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">5. Intellectual Property &amp; Acceptable Use</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            All software, content, designs, text, and AI model architectures on CareerMonke are the exclusive intellectual property of Olive Ridley Media Private Limited.
+            All software, content, designs, text, and AI model architectures on Career Monke are the exclusive intellectual property of Olive Ridley Media Private Limited.
           </li>
           <li>
             You are granted a limited, non-transferable, revocable license to access the platform for individual, personal career discovery. You may not use automated scripts, bots, or extraction tools to extract our job feeds or abuse our AI token allocations.
@@ -157,7 +157,7 @@ export default function TermsPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">6. Limitation of Liability &amp; Disclaimer</h2>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            CareerMonke does not guarantee employment, interviews, or hiring placement. We aggregate publicly available corporate job listings and provide AI-generated optimization recommendations based on algorithmic feedback.
+            Career Monke does not guarantee employment, interviews, or hiring placement. We aggregate publicly available corporate job listings and provide AI-generated optimization recommendations based on algorithmic feedback.
           </li>
           <li>
             The services are provided on an &quot;as-is&quot; and &quot;as-available&quot; basis. In no event shall Olive Ridley Media Private Limited be liable for any direct, indirect, incidental, or consequential damages arising out of your platform usage.

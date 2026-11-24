@@ -116,7 +116,7 @@ async function runHideEmptyTitlesHeadingSuite() {
     const meta = generateMetadata({ params: { slug } });
     assert.strictEqual(
       meta.title,
-      `${guide.hero.title} | CareerMonke`,
+      `${guide.hero.title} | Career Monke`,
       `SEO Title mismatch for slug '${slug}'`
     );
     assert.strictEqual(

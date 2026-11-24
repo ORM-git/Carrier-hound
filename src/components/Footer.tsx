@@ -23,8 +23,9 @@ function LandingFooter() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-4 pb-tk-4 border-b border-line">
           {/* Brand */}
           <div className="lg:col-span-4">
-            <Link href="/" aria-label="CareerMonke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
+            <Link href="/" aria-label="Career Monke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
               <BrandIcon variant="full" width={36} height={44} className="h-9 w-auto" />
+              <span className="ml-2 text-lg font-bold">Career Monke</span>
             </Link>
           </div>
 
@@ -287,6 +288,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
         <div className="pt-6 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center">
             <BrandIcon variant="full" width={28} height={34} className="h-7 w-auto" />
+            <span className="ml-2 text-base font-bold">Career Monke</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#64748B]">
             <Link href="/about" className="hover:text-[#2563EB] transition-colors">

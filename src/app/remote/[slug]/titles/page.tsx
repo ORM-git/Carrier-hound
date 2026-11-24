@@ -35,7 +35,7 @@ export function generateMetadata({ params }: PageProps) {
   if (!guide) return { title: "Role Guide Not Found" };
 
   return {
-    title: `${guide.hero.title} | CareerMonke`,
+    title: `${guide.hero.title} | Career Monke`,
     description: guide.hero.lede,
   };
 }

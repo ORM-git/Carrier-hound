@@ -251,7 +251,7 @@ export default function AllFiltersDrawer({
                 <button
                   type="button"
                   onClick={() => setDraft((p) => ({ ...p, category: "" }))}
-                  aria-label={`Remove function ${draft.category}`}
+                  aria-label={`Remove job role ${draft.category}`}
                   className="hover:text-rose-600 transition"
                 >
                   <X className="w-3 h-3" />

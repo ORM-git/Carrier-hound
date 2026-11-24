@@ -77,6 +77,8 @@ export default function PricingPage() {
   const isBillingEnabled = process.env.NEXT_PUBLIC_BILLING_ENABLED === "true";
   const isAutoRenewEnabled = process.env.NEXT_PUBLIC_AUTORENEW_ENABLED === "true";
   const [autoRenewConsent, setAutoRenewConsent] = useState(false);
+  // Mobile plan picker: Monthly (middle tier) preselected; selecting never starts checkout.
+  const [selectedPlan, setSelectedPlan] = useState<string>("monthly");
 
   // Single synchronous purchase lock shared by all plan buttons
   const checkoutLockRef = useRef<boolean>(false);
@@ -184,7 +186,7 @@ export default function PricingPage() {
   const faqItems: Array<{ q: string; a: React.ReactNode }> = [
     {
       q: "What do I get?",
-      a: "Full access to CareerMonke job listings: every verified unindexed remote job, with filters, salary data where the employer publishes it, and direct apply links.",
+      a: "Full access to Career Monke job listings: every verified unindexed remote job, with filters, salary data where the employer publishes it, and direct apply links.",
     },
     {
       q: "Does my plan renew automatically?",
@@ -226,13 +228,42 @@ export default function PricingPage() {
         </h1>
         <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
           <span className="sm:block">Full access to verified unindexed remote job listings.</span>{" "}
-          <span className="sm:block whitespace-nowrap">
+          <span className="block whitespace-normal break-words sm:whitespace-nowrap">
             {isAutoRenewEnabled ? "Flat ₹499/mo monthly auto-renew, cancel anytime." : "One-time payment, no auto-renewal."}
           </span>
         </p>
       </header>
 
-      {/* Plan cards: stacked on mobile, three columns from md */}
+      {/* Mobile (<md): one radio group picks the plan; only the selected card (and its Buy button) shows.
+          md+: the three cards side by side, unchanged. */}
+      <fieldset data-testid="mobile-plan-picker" className="md:hidden -mb-10 sm:-mb-14">
+        <legend className="sr-only">Choose a plan</legend>
+        <div className="grid grid-cols-3 gap-2">
+          {paidPlansToDisplay.map((plan) => (
+            <label
+              key={plan.id}
+              className={cnTokens(
+                "min-h-[64px] rounded-xl border px-2 py-2 flex flex-col items-center justify-center text-center cursor-pointer transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#2563EB] has-[:focus-visible]:ring-offset-2",
+                selectedPlan === plan.id
+                  ? "border-2 border-[#2563EB] bg-blue-50 text-[#090E34] dark:bg-slate-900 dark:text-white"
+                  : "border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+              )}
+            >
+              <input
+                type="radio"
+                name="mobile-plan"
+                value={plan.id}
+                checked={selectedPlan === plan.id}
+                onChange={() => setSelectedPlan(plan.id)}
+                className="sr-only"
+              />
+              <span className="text-sm font-semibold">{plan.name}</span>
+              <span className="text-xs">{formatPriceINR(plan.price)}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
       <section aria-label="Plans" className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6 items-stretch">
         {paidPlansToDisplay.map((plan) => {
           const isPopular = plan.id === "monthly";
@@ -244,6 +275,7 @@ export default function PricingPage() {
               data-plan-card={plan.id}
               className={cnTokens(
                 "flex flex-col rounded-2xl p-6 sm:p-8 bg-white dark:bg-slate-950 min-w-0",
+                selectedPlan !== plan.id && "max-md:hidden",
                 isPopular
                   ? "border-2 border-[#2563EB] shadow-lg shadow-blue-600/10"
                   : "border border-slate-200 dark:border-slate-800"
@@ -301,7 +333,7 @@ export default function PricingPage() {
                         className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                       <span>
-                        I authorize CareerMonke to charge ₹499/month until cancelled. I can cancel anytime from Settings.
+                        I authorize Career Monke to charge ₹499/month until cancelled. I can cancel anytime from Settings.
                       </span>
                     </label>
                   </div>

@@ -43,10 +43,10 @@ function run() {
   }
 
   // Check 2: Header left logo
-  if (!headerCode.includes("BrandIcon") || !headerCode.includes("CareerMonke")) {
-    failures.push("HEADER FAIL: Header must contain CareerMonke logo on the left.");
+  if (!headerCode.includes("BrandIcon") || !headerCode.includes("Career Monke")) {
+    failures.push("HEADER FAIL: Header must contain Career Monke logo on the left.");
   } else {
-    console.log("  [PASS] header brand: CareerMonke logo with BrandIcon on the left");
+    console.log("  [PASS] header brand: Career Monke logo with BrandIcon on the left");
   }
 
   // Check 3: Header nav links 14px, ink, active link bold with 2px ink underline

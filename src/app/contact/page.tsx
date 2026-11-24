@@ -4,8 +4,8 @@ import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
-  title: "Contact Us | CareerMonke",
-  description: "Contact information and official corporate details for CareerMonke and Olive Ridley Media Private Limited.",
+  title: "Contact Us | Career Monke",
+  description: "Contact information and official corporate details for Career Monke and Olive Ridley Media Private Limited.",
   alternates: {
     canonical: "https://careermonke.com/contact",
   },
@@ -29,7 +29,7 @@ export default function ContactUsPage() {
 
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
-            <strong>Brand Platform:</strong> CareerMonke
+            <strong>Brand Platform:</strong> Career Monke
           </li>
           <li>
             <strong>Corporate Legal Entity:</strong> Olive Ridley Media Private Limited

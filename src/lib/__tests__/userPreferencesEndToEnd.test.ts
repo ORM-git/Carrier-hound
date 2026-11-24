@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { parseWorkAuth, serializeWorkAuth, toggleWorkAuth } from "@/lib/onboarding/workAuth";
 import { PGlite } from "@electric-sql/pglite";
 // vi.mock calls below are hoisted above these imports.
 import { getUserPreferences, saveUserPreferences } from "../auth/session";
@@ -177,6 +178,29 @@ describe("user preferences end to end (migration 20261117 applied)", () => {
     await db.close();
   });
 
+  it.each([
+    ["authorized"], ["requires_sponsorship"], ["other"], ["requires_sponsorship", "other"],
+  ])("work authorization toggle -> API -> Postgres -> reload -> settings save: %j", async (...ids) => {
+    let selected = "";
+    for (const id of ids) selected = toggleWorkAuth(selected, id as any);
+    const res = await POST(onboardingRequest({ ...VALID_BODY, workAuth: selected }));
+    expect(res.status).toBe(200);
+    const reloaded = await getUserPreferences(USER_ID);
+    expect(parseWorkAuth(reloaded.workAuth)).toEqual(ids);
+    expect((await row()).work_auth).toBe(serializeWorkAuth(ids as any));
+    await saveUserPreferences({ ...reloaded, workAuth: reloaded.workAuth }, USER_ID);
+    expect(parseWorkAuth((await getUserPreferences(USER_ID)).workAuth)).toEqual(ids);
+  });
+
+  it.each(["", "authorized + other", "unknown", 42, ["authorized"]])("API rejects invalid authorization and preserves saved choice %j", async (bad) => {
+    const ok = await POST(onboardingRequest({ ...VALID_BODY, workAuth: "other" }));
+    expect(ok.status).toBe(200);
+    const before = (await row()).work_auth;
+    const response = await POST(onboardingRequest({ ...VALID_BODY, workAuth: bad }));
+    expect(response.status).toBe(400);
+    expect((await row()).work_auth).toBe(before);
+  });
+
   it("new account: getter returns blank values and seeds nothing into the DB", async () => {
     const prefs = await getUserPreferences(USER_ID);
 
@@ -257,7 +281,8 @@ describe("user preferences end to end (migration 20261117 applied)", () => {
     expect(fromDb).toEqual(JSON.parse(JSON.stringify(fromApi)));
     expect(prefs.country).toBe("India");
     expect(prefs.countryCode).toBe("IN");
-    expect(prefs.workAuth).toBe("Requires visa sponsorship (e.g. H1B)");
+    // The API accepts the legacy label and stores the current first-person wording.
+    expect(prefs.workAuth).toBe("I need visa sponsorship.");
     expect(prefs.salaryCurrency).toBeUndefined();
   });
 

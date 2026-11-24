@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
-import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { displayMatchScore, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 
 // Match insights + tracker actions only. AI tool entry points (resume tailoring) are
@@ -29,6 +29,7 @@ export interface JobAiToolsPanelProps {
   isUpdatingApplied?: boolean;
   onSave: () => void;
   onToggleApplied?: () => void;
+  className?: string;
 }
 
 export default function JobAiToolsPanel({
@@ -41,15 +42,13 @@ export default function JobAiToolsPanel({
   isUpdatingApplied = false,
   onSave,
   onToggleApplied,
+  className = "",
 }: JobAiToolsPanelProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
-  const matchScore = typeof job?.matchScore === "number" && !isNaN(job.matchScore)
-    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
-    : diagnostics
-    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
-    : null;
+  // Same contract as the detail header: shared/feed score, else the fit fallback, one clamp.
+  const matchScore = displayMatchScore(job, diagnostics);
   const matchLabel =
     matchScore !== null
       ? matchScore > 70
@@ -65,7 +64,7 @@ export default function JobAiToolsPanel({
   return (
     <div
       data-testid="job-ai-tools-panel"
-      className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-xs transition-all duration-200"
+      className={`bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-xs transition-all duration-200 ${className}`}
     >
       {/* HEADER / MOBILE TOGGLE */}
       <div className="flex items-center justify-between gap-3">

@@ -672,7 +672,7 @@ export default function LandingTopArtifact() {
     <div ref={rootRef} className="landing-top-artifact">
 <header className="nav" id="nav">
   <div className="wrap">
-    <Link className="brand" href="/" aria-label="CareerMonke home"><img src="/careermonke-logo.png" alt="CareerMonke" width="40" height="40" className="object-contain" /><span>CareerMonke</span></Link>
+    <Link className="brand" href="/" aria-label="Career Monke home"><img src="/careermonke-logo.png" alt="Career Monke" width="40" height="40" className="object-contain" /><span>Career Monke</span></Link>
     <div className="nav-actions">
       <Link className="nav-link" href="/login">Sign in</Link>
       <Link className="btn btn-ink btn-sm" href="/signup">Sign up free</Link>
@@ -707,8 +707,8 @@ export default function LandingTopArtifact() {
         <div className="float f2" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7-.4 1-1.2 2.3-2.4 3.6M6.4 6.4C4.3 7.8 2.8 10 2 12c1 2.5 5 7 10 7 1.8 0 3.4-.5 4.8-1.3"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg>Not on LinkedIn</div>
         <div className="float f3" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Resume tailored <em>+26%</em></div>
         <div className="float f4" aria-hidden="true"><b>7</b> applied<small>vs 200+ on job boards</small></div>
-        <div className="buddy" aria-hidden="true"><span className="bubble">Pick a job type!</span><img src="/mascot.png" alt="CareerMonke mascot" width="84" height="84" /></div>
-        <div className="demo" id="demo" role="region" aria-label="Try CareerMonke: interactive demo">
+        <div className="buddy" aria-hidden="true"><span className="bubble">Pick a job type!</span><img src="/mascot.png" alt="Career Monke mascot" width="84" height="84" /></div>
+        <div className="demo" id="demo" role="region" aria-label="Try Career Monke: interactive demo">
           <canvas aria-hidden="true" />
           <div className="chrome" aria-hidden="true"><span className="dots3"><i></i><i></i><i></i></span><span className="demo-tag"><span className="pulse"></span>Live demo</span><span className="url">careermonke.com</span></div>
           <ol className="steps" aria-label="Demo progress">

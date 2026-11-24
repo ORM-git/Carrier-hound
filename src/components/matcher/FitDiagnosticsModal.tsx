@@ -80,7 +80,7 @@ export default function FitDiagnosticsModal({
       salaryText: job.salary_text,
       applyUrl: job.apply_url,
       stage: "saved",
-      notes: `Matched ${score}% on CareerMonke Fit Diagnostics.`,
+      notes: `Matched ${score}% on Career Monke Fit Diagnostics.`,
     });
     setIsSavedToTracker(true);
     toast.success(`Saved "${job.title}" at ${job.company} to your Application Tracker!`);

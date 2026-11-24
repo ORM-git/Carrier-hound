@@ -1,4 +1,6 @@
+import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
+import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
@@ -119,6 +121,7 @@ export async function GET(req: Request) {
     // Check optional Pro entitlement and user preferences via Bearer token
     let isPro = false;
     let dbAnswers: OnboardingAnswers = {};
+    let displayAnswers: OnboardingAnswers | null = null;
 
     const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
     if (authHeader && authHeader.startsWith("Bearer ") && hasServiceKey) {
@@ -128,6 +131,7 @@ export async function GET(req: Request) {
         if (user) {
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);
+          displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, user.id, cfEnv);
 
           // Fetch user preferences for onboarding answers
           const { data: prefs } = await supabaseAdmin
@@ -523,7 +527,8 @@ export async function GET(req: Request) {
           companyDomain: row.companies?.domain || null,
           logoUrl: row.logo_url || row.companies?.logo_url || null,
           logo_url: row.logo_url || row.companies?.logo_url || null,
-          matchScore: typeof row.matchScore === "number" ? row.matchScore : (typeof row._matchScore === "number" ? row._matchScore : null),
+          matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro),
+          scoreRevision: scoreInputRevision(row, true),
         };
       }
 
@@ -551,7 +556,8 @@ export async function GET(req: Request) {
         postedAt: row.posted_at || row.created_at,
         logoUrl: null,
         logo_url: null,
-        matchScore: typeof row.matchScore === "number" ? row.matchScore : (typeof row._matchScore === "number" ? row._matchScore : null),
+        matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro),
+        scoreRevision: scoreInputRevision(row, false),
       };
     });
 

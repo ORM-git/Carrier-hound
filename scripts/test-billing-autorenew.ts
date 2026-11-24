@@ -169,7 +169,7 @@ async function runAutorenewTests() {
   assert.ok(refundFile.includes("How to cancel auto-renewal"), "Refund must explain how to cancel");
 
   assert.ok(pricingFile.includes("autorenew-consent-checkbox"), "Pricing page must have auto-renew consent checkbox");
-  assert.ok(pricingFile.includes("I authorize CareerMonke to charge ₹499/month until cancelled"), "Pricing page must have consent wording");
+  assert.ok(pricingFile.includes("I authorize Career Monke to charge ₹499/month until cancelled"), "Pricing page must have consent wording");
   console.log("  ✓ Policy & pricing pages updated with flat 499 auto-renew terms (12 cycles, no false reminder promises).\n");
 
   // TEST 4: Next.js route testing

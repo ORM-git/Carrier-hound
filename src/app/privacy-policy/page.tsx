@@ -4,8 +4,8 @@ import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
-  title: "Privacy Policy | CareerMonke",
-  description: "Privacy policy and data protection terms for CareerMonke job discovery and AI resume tailoring service.",
+  title: "Privacy Policy | Career Monke",
+  description: "Privacy policy and data protection terms for Career Monke job discovery and AI resume tailoring service.",
   alternates: {
     canonical: "https://careermonke.com/privacy-policy",
   },
@@ -24,7 +24,7 @@ export default function PrivacyPolicyPage() {
         <p className="text-xs text-gray-500 font-mono">Last updated: November 10, 2026</p>
 
         <p className="mb-2">
-          Welcome to CareerMonke. This Privacy Policy explains how Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, protects, uses, discloses, and processes your personal information when you use our website and platform tools.
+          Welcome to Career Monke. This Privacy Policy explains how Olive Ridley Media Private Limited (&quot;the Company&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, protects, uses, discloses, and processes your personal information when you use our website and platform tools.
         </p>
 
         <p className="mb-2">
@@ -77,7 +77,7 @@ export default function PrivacyPolicyPage() {
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. How Our AI Features Process Your Resume Data</h2>
         <p className="mb-2">
-          CareerMonke&apos;s AI features (resume match scoring, AI resume tailoring, and AI cover letter generation) run only when you explicitly start them for a specific job. This is how your data flows when they run:
+          Career Monke&apos;s AI features (resume match scoring, AI resume tailoring, and AI cover letter generation) run only when you explicitly start them for a specific job. This is how your data flows when they run:
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
@@ -103,7 +103,7 @@ export default function PrivacyPolicyPage() {
             <strong>Service Providers:</strong> We share only the necessary fragments of your data with the providers that run the platform: Supabase (database, authentication, and file storage), Cloudflare and Netlify (hosting and content delivery), Google (sign-in and transactional email delivery), Sentry (error monitoring with personal identifiers removed before dispatch), Razorpay (payments), and Groq (AI processing, as described above).
           </li>
           <li>
-            <strong>Cross-Border Transfers:</strong> Because CareerMonke caters to a global market, data collected from international jurisdictions may be securely stored and processed on cloud servers located outside your home region. Specifically, Groq retained data (such as temporary operational logs and usage metadata) is stored in the United States (verified); we do not state the US inference location as verified. Groq does not retain inference inputs or outputs by default, but may retain temporary logs of inputs and outputs for up to 30 days (unless required longer by law) solely to troubleshoot platform reliability or investigate abuse.
+            <strong>Cross-Border Transfers:</strong> Because Career Monke caters to a global market, data collected from international jurisdictions may be securely stored and processed on cloud servers located outside your home region. Specifically, Groq retained data (such as temporary operational logs and usage metadata) is stored in the United States (verified); we do not state the US inference location as verified. Groq does not retain inference inputs or outputs by default, but may retain temporary logs of inputs and outputs for up to 30 days (unless required longer by law) solely to troubleshoot platform reliability or investigate abuse.
           </li>
           <li>
             <strong>No Selling of Personal Data:</strong> We do not trade, rent, sell, or distribute your private personal data or uploaded resumes to third-party recruitment agencies, brokers, or marketing networks.
@@ -229,7 +229,7 @@ export default function PrivacyPolicyPage() {
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">9. Cookies and Tracking Mechanisms</h2>
         <h3 className="text-sm font-semibold text-[#09090B] mt-3 mb-1">Cookies and monitoring</h3>
         <p className="mb-2">
-          CareerMonke employs a minimal, privacy-first approach to browser storage and operational tracking:
+          Career Monke employs a minimal, privacy-first approach to browser storage and operational tracking:
         </p>
         <ul className="list-disc pl-5 space-y-2 mb-2">
           <li>
@@ -242,7 +242,7 @@ export default function PrivacyPolicyPage() {
             <strong>Operational Analytics:</strong> We operate a lightweight, first-party beacon for basic usage metrics (such as page views and route transitions) to monitor platform health. This internal analytics logging is strictly gated behind your cookie consent.
           </li>
           <li>
-            <strong>No Advertising Cookies:</strong> We have a strict policy: no advertising cookies, third-party marketing pixels, or cross-site tracking technologies are present or used on CareerMonke. We do not track you across other websites or sell your data to advertisers.
+            <strong>No Advertising Cookies:</strong> We have a strict policy: no advertising cookies, third-party marketing pixels, or cross-site tracking technologies are present or used on Career Monke. We do not track you across other websites or sell your data to advertisers.
           </li>
           <li>
             <strong>Managing Your Preferences:</strong> Users can clear cookies at any time through their web browser settings, or refuse non-essential browser storage. Please note that clearing essential storage may require you to sign in again to access protected features.

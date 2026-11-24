@@ -498,7 +498,7 @@ export default function AdminUsersPage() {
 
             <p className="text-sm text-slate-600 mb-4 leading-relaxed">
               Are you sure you want to block <span className="font-semibold text-slate-900">{blockingUser.email}</span>?
-              This will immediately revoke all active sessions and lock them out of CareerMonke.
+              This will immediately revoke all active sessions and lock them out of Career Monke.
             </p>
 
             <div className="mb-4">

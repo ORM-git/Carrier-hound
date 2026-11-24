@@ -31,6 +31,8 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "react-toastify";
+import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
+import { isWorkAuthComplete, parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
 
 function SettingsPageInner() {
   const { isExpanded } = useSidebarMode();
@@ -53,6 +55,10 @@ function SettingsPageInner() {
   const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"]>("remote");
   const [locations, setLocations] = useState<string[]>([]);
   const [workAuth, setWorkAuth] = useState("");
+  const [workAuthError, setWorkAuthError] = useState<string | null>(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  // Not editable here; loaded so a save writes the onboarding job types back instead of overwriting them.
+  const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
   const [minSalary, setMinSalary] = useState<number | undefined>(undefined);
   const [salaryCurrency, setSalaryCurrency] = useState("USD");
   // Not editable here; loaded only so a preferences save writes the stored choice back unchanged.
@@ -115,6 +121,7 @@ function SettingsPageInner() {
         setRemotePreference(p.remotePreference || "remote");
         setLocations(p.locations || []);
         setWorkAuth(p.workAuth || "");
+        setEmploymentTypes(p.employmentTypes || []);
         setMinSalary(p.minSalary);
         setSalaryCurrency(p.salaryCurrency || "USD");
         setDailyDigestOptIn(p.dailyDigestOptIn ?? false);
@@ -148,11 +155,17 @@ function SettingsPageInner() {
 
   const handleSavePreferences = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingPrefs) return;
+    // Same rule as onboarding: one of {1}, {2}, {3}, {2,3}. Never filled in for the user.
+    if (!isWorkAuthComplete(workAuth)) {
+      setWorkAuthError("Choose your work authorization before saving.");
+      return;
+    }
     const updated: UserPreferences = {
       roles,
       categories: roles.map((r) => r.toLowerCase()),
       experienceLevel,
-      employmentTypes: ["full-time"],
+      employmentTypes,
       locations,
       remotePreference,
       workAuth,
@@ -162,8 +175,16 @@ function SettingsPageInner() {
       onboardingCompleted: true,
       updatedAt: new Date().toISOString(),
     };
-    await saveUserPreferences(updated, user?.id);
-    toast.success("Job target preferences saved successfully.");
+    setSavingPrefs(true);
+    try {
+      await saveUserPreferences(updated, user?.id);
+      toast.success("Job target preferences saved successfully.");
+    } catch {
+      // The form keeps the edited values so the user can retry.
+      toast.error("Could not save your preferences. Your changes are still here, please try again.");
+    } finally {
+      setSavingPrefs(false);
+    }
   };
 
   const handleAddRole = (e: React.FormEvent) => {
@@ -336,7 +357,7 @@ function SettingsPageInner() {
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-semibold border border-blue-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                    Email Magic Link (Passwordless)
+                    Email &amp; password
                   </span>
                 )}
               </div>
@@ -471,17 +492,32 @@ function SettingsPageInner() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Work Authorization
-                </label>
-                <input
-                  type="text"
-                  aria-label="Work Authorization"
-                  value={workAuth}
-                  onChange={(e) => setWorkAuth(e.target.value)}
-                  placeholder="e.g. Authorized (No sponsorship needed)"
-                  className="w-full text-xs sm:text-sm py-2.5 px-3.5 rounded-xl border border-slate-200 bg-white focus:outline-blue-600 shadow-2xs"
-                />
+                {/* Same canonical 1 / 2 / 3 / 2+3 contract as onboarding; free text could save values the API rejects. */}
+                <fieldset>
+                  <legend className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Work Authorization
+                  </legend>
+                  {WORK_AUTH_OPTIONS.map((opt) => (
+                    <label key={opt.id} className="flex items-center gap-2.5 min-h-[44px] text-xs sm:text-sm text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={(parseWorkAuth(workAuth) ?? []).includes(opt.id as WorkAuthId)}
+                        onChange={() => {
+                          setWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId));
+                          setWorkAuthError(null);
+                        }}
+                        aria-describedby={workAuthError ? "settings-work-auth-error" : undefined}
+                        className="w-4 h-4 accent-blue-600"
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  ))}
+                  {workAuthError && (
+                    <p id="settings-work-auth-error" role="alert" className="text-xs text-red-700 mt-1">
+                      {workAuthError}
+                    </p>
+                  )}
+                </fieldset>
               </div>
 
               <div>
@@ -514,10 +550,11 @@ function SettingsPageInner() {
             <div className="pt-4 border-t border-slate-100 flex justify-end">
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm transition shadow-xs cursor-pointer"
+                disabled={savingPrefs}
+                className="inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm transition shadow-xs cursor-pointer disabled:opacity-60"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Preferences</span>
+                <span>{savingPrefs ? "Saving..." : "Save Preferences"}</span>
               </button>
             </div>
           </form>
@@ -548,7 +585,7 @@ function SettingsPageInner() {
                   Subscription & Billing
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Manage your CareerMonke Pro access, invoices, and renewal.
+                  Manage your Career Monke Pro access, invoices, and renewal.
                 </p>
               </div>
 
@@ -567,13 +604,13 @@ function SettingsPageInner() {
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">
-                    {isPro ? "CareerMonke Pro Plan" : "CareerMonke Free Tier"}
+                    {isPro ? "Career Monke Pro Plan" : "Career Monke Free Tier"}
                   </h3>
                   <p className="text-xs text-slate-500">
                     {isPro
                       ? formattedPlanText
                         ? `${formattedPlanText}. Full direct apply unlocked.`
-                        : "CareerMonke Pro Plan. Full direct apply unlocked."
+                        : "Career Monke Pro Plan. Full direct apply unlocked."
                       : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
                   </p>
                 </div>
@@ -736,7 +773,7 @@ function SettingsPageInner() {
         open={isPaywallOpen}
         onOpenChange={setIsPaywallOpen}
         user={user}
-        featureTitle="Upgrade to CareerMonke Pro"
+        featureTitle="Upgrade to Career Monke Pro"
       />
     </LoggedInAppShell>
   );

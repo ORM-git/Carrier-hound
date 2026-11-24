@@ -60,12 +60,12 @@ check(
   "Login: Inflight state renders spinning Loader2 icon"
 );
 check(
-  loginSrc.includes("Sending link…") && loginSrc.includes("Connecting to Google…"),
+  loginSrc.includes("Signing in…") && loginSrc.includes("Sending link…") && loginSrc.includes("Connecting to Google…"),
   "Login: Inflight state displays pending labels for email and Google actions"
 );
 check(
-  loginSrc.includes("resendTimer") && loginSrc.includes("Resend magic link"),
-  "Login: Magic link email sent state provides resend affordance"
+  loginSrc.includes("resendTimer") && loginSrc.includes("Resend reset link"),
+  "Login: Password-reset email sent state provides resend affordance"
 );
 
 // 1.2 Signup Page (src/app/signup/page.tsx)
@@ -79,17 +79,17 @@ check(
   "Signup: Inflight state renders spinning Loader2 icon"
 );
 check(
-  signupSrc.includes("Sending link…") && signupSrc.includes("Connecting to Google…"),
+  signupSrc.includes("Creating account…") && signupSrc.includes("Connecting to Google…"),
   "Signup: Inflight state displays pending labels for email and Google actions"
 );
 
 // 1.3 Settings Page (src/app/settings/page.tsx)
 const settingsSrc = fs.readFileSync(path.join(ROOT, "src/app/settings/page.tsx"), "utf8");
-// Verify identified gaps: Preferences save and Notification save buttons lack disabled state
+// Preferences save locks while pending, with edited values retained on failure.
 const prefsButtonMatch = settingsSrc.match(/<button[^>]*type="submit"[^>]*>[\s\S]*?Save Preferences[\s\S]*?<\/button>/);
 check(
-  Boolean(prefsButtonMatch && !prefsButtonMatch[0].includes("disabled")),
-  "Settings: Confirmed gap - Save Preferences button currently lacks disabled attribute"
+  Boolean(prefsButtonMatch && prefsButtonMatch[0].includes("disabled={savingPrefs}")) && settingsSrc.includes("if (savingPrefs) return"),
+  "Settings: Save Preferences locks the button and handler while pending"
 );
 // The Notifications tab no longer has a save button: its only control was the AI matching
 // digest opt-in, which is intentionally not offered (stored choices are written back unchanged).

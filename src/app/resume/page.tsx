@@ -211,7 +211,7 @@ export default function ResumePage() {
       <LoggedInAppShell pageLabel="RESUME" user={user} isPro={false}>
         <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-8 w-full">
           <ProUpgradeScreen
-            title="Unlock CareerMonke Pro"
+            title="Unlock Career Monke Pro"
             subtitle="Upgrade to Pro to upload your resume and compute compatibility scores."
           />
         </div>
@@ -273,7 +273,7 @@ export default function ResumePage() {
                 : "No active resume. Upload a resume to enable fit scoring."}
             </span>
             <span
-              title="CareerMonke uses your confirmed resume facts to calculate match scores."
+              title="Career Monke uses your confirmed resume facts to calculate match scores."
               className="text-[#64748B] hover:text-[#0F172A] cursor-help inline-flex items-center"
             >
               ⓘ

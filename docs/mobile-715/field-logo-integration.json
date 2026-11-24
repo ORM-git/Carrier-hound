@@ -1,0 +1,80 @@
+[
+  {
+    "width": 360,
+    "state": "guest",
+    "cardAndDetailLogoPrivate": true
+  },
+  {
+    "width": 360,
+    "state": "free",
+    "cardAndDetailLogoPrivate": true
+  },
+  {
+    "width": 360,
+    "state": "populated",
+    "longSalaryAndCoreFields": true,
+    "proLogoRequest": true
+  },
+  {
+    "width": 360,
+    "state": "expired",
+    "expiredWarning": true
+  },
+  {
+    "width": 360,
+    "state": "unknown",
+    "notFound": true
+  },
+  {
+    "width": 390,
+    "state": "guest",
+    "cardAndDetailLogoPrivate": true
+  },
+  {
+    "width": 390,
+    "state": "free",
+    "cardAndDetailLogoPrivate": true
+  },
+  {
+    "width": 390,
+    "state": "populated",
+    "longSalaryAndCoreFields": true,
+    "proLogoRequest": true
+  },
+  {
+    "width": 390,
+    "state": "expired",
+    "expiredWarning": true
+  },
+  {
+    "width": 390,
+    "state": "unknown",
+    "notFound": true
+  },
+  {
+    "width": 430,
+    "state": "guest",
+    "cardAndDetailLogoPrivate": true
+  },
+  {
+    "width": 430,
+    "state": "free",
+    "cardAndDetailLogoPrivate": true
+  },
+  {
+    "width": 430,
+    "state": "populated",
+    "longSalaryAndCoreFields": true,
+    "proLogoRequest": true
+  },
+  {
+    "width": 430,
+    "state": "expired",
+    "expiredWarning": true
+  },
+  {
+    "width": 430,
+    "state": "unknown",
+    "notFound": true
+  }
+]

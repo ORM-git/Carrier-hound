@@ -90,23 +90,23 @@ async function runParityTests() {
   // Founder content checks
   assert.ok(pageSrc.includes('src="/owner.jpg"'), "Founder image must point to /owner.jpg");
   assert.ok(
-    pageSrc.includes('alt="Orissa Lee Patnaik, founder of CareerMonke"'),
-    "Founder alt text must match 'Orissa Lee Patnaik, founder of CareerMonke'"
+    pageSrc.includes('alt="Orissa Lee Patnaik, founder of Career Monke"'),
+    "Founder alt text must match 'Orissa Lee Patnaik, founder of Career Monke'"
   );
   // Live careermonke.com founder card (owner request): 112x112 photo in a bordered card, socials below the bio.
   assert.ok(pageSrc.includes('width="112" height="112"'), "Founder image markup must define width 112 height 112");
   assert.ok(pageSrc.includes('<div className="founder">') && pageSrc.includes('<div className="founder-body">'), "Founder must use the live .founder card markup");
   assert.ok(pageSrc.includes("Orissa here!"), "Founder heading must be 'Orissa here!'");
   assert.ok(
-    pageSrc.includes('<p className="role">Creator of CareerMonke</p>'),
-    "Founder role must be 'Creator of CareerMonke'"
+    pageSrc.includes('<p className="role">Creator of Career Monke</p>'),
+    "Founder role must be 'Creator of Career Monke'"
   );
   assert.ok(
     pageSrc.includes("Growing up in the US and living in India showed me the friction of job hunting is universal. Broken software discards qualified people, and legacy sites make every role a cattle call."),
     "Founder bio paragraph 1 must match"
   );
   assert.ok(
-    pageSrc.includes("I built CareerMonke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric."),
+    pageSrc.includes("I built Career Monke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric."),
     "Founder bio paragraph 2 must match"
   );
   assert.ok(

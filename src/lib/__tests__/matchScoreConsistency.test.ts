@@ -108,15 +108,16 @@ describe("card and detail read one stored score (withFeedScore)", () => {
   const shown = (j: { matchScore?: number | null }) =>
     typeof j.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(j.matchScore))) : null;
 
-  it("deep-linked detail (no score, or a recomputed resume score) shows the feed card's score", () => {
-    const feed = [{ id: "j1", title: "Frontend Engineer, Ads", matchScore: 83 }];
-    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: undefined }, feed))).toBe(shown(feed[0]));
-    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: 85 }, feed))).toBe(83);
+  it("deep-linked detail with the same score-input revision shows the feed card's score", () => {
+    const feed = [{ id: "j1", title: "Frontend Engineer, Ads", matchScore: 83, scoreRevision: "1.p.abc" }];
+    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: undefined, scoreRevision: "1.p.abc" }, feed))).toBe(83);
+    expect(shown(withFeedScore({ id: "j1", title: "Frontend Engineer, Ads", matchScore: 85, scoreRevision: "1.p.abc" }, feed))).toBe(83);
   });
 
-  it("keeps the job's own score when the feed doesn't have it, and returns the same object when unchanged", () => {
-    const detail = { id: "x", matchScore: 70 };
+  it("keeps the job's own score when the feed lacks it or its revision differs; same object when unchanged", () => {
+    const detail = { id: "x", matchScore: 70, scoreRevision: "1.p.new" };
     expect(withFeedScore(detail, [])).toBe(detail);
-    expect(withFeedScore(detail, [{ id: "x", matchScore: 70 }])).toBe(detail);
+    expect(withFeedScore(detail, [{ id: "x", matchScore: 70, scoreRevision: "1.p.new" }])).toBe(detail);
+    expect(withFeedScore(detail, [{ id: "x", matchScore: 91, scoreRevision: "1.p.old" }])).toBe(detail);
   });
 });

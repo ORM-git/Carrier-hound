@@ -40,7 +40,7 @@ const CELLS: [string, string][] = [
   ["From verified employers", "Filter jobs by role, location and work mode"],
   ["Seen by recruiters early", "Apply on the employer's careers page"],
 ];
-const LOWER_ORDER = ["CareerMonke in numbers", "Companies hiring now (sample)", "cmp-h", "feat-h", "rv-h", "fd-h", "q-h", "w-h", "cta-h", "footer", "sb"];
+const LOWER_ORDER = ["Career Monke in numbers", "Companies hiring now (sample)", "cmp-h", "feat-h", "rv-h", "fd-h", "q-h", "w-h", "cta-h", "footer", "sb"];
 
 // Owner-requested live content (careermonke.com snapshot): review records, orders, founder card, header logo.
 type Review = { id: string; name: string; initials: string; location: string; quote: string; avatar: string; avatarSha256: string };
@@ -52,11 +52,13 @@ const LIVE: {
   headerLogo: { src: string; sha256: string; natural: number[]; linkLabel: string };
   unchanged: { favicon: { path: string; sha256: string } };
 } = JSON.parse(read("tests/landing-ssampe-parity.live-content.json"));
+LIVE.founder.alt = LIVE.founder.alt.replace("CareerMonke", "Career Monke");
+LIVE.founder.role = LIVE.founder.role.replace("CareerMonke", "Career Monke");
 const REV = Object.fromEntries(LIVE.reviews.map((r) => [r.id, r]));
 const sha256 = (buf: Buffer) => crypto.createHash("sha256").update(buf).digest("hex");
 const FOUNDER_BIO = [
   "Growing up in the US and living in India showed me the friction of job hunting is universal. Broken software discards qualified people, and legacy sites make every role a cattle call.",
-  "I built CareerMonke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric.",
+  "I built Career Monke to cut through the noise, give candidates leverage back, and land your story directly with real people without the unnecessary hollow hustle rhetoric.",
 ];
 // The three restored 3386250 sections replaced by live content, rebuilt here from the fixture (HTML form).
 const liveCard = (cls: string, by: string, size: number, r: Review, hidden: boolean) =>
@@ -138,7 +140,7 @@ function check(x: Input) {
   // uses the approved ssampe@3386250 ascending m/a/x/x treatment (same words, accessible name on the h1).
   const topBody = topSrc
     .match(/<body>([\s\S]*?)<script>/)![1]
-    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="CareerMonke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="617" height="749">CareerMonke</a>')
+    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="617" height="749">Career Monke</a>')
     .replace(
       SRC_H1,
       '<h1 aria-label="Start jobmaxxing with AI">Start <span class="nw">job<span class="mx"><span class="m1" aria-hidden="true">m</span><span class="m2" aria-hidden="true">a</span><span class="m3" aria-hidden="true">x</span><span class="m4" aria-hidden="true">x</span></span>ing</span> with&nbsp;AI</h1>'
@@ -155,7 +157,7 @@ function check(x: Input) {
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
-    /<a href="#" className="brand" aria-label="CareerMonke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="617" height="749" ?\/> ?CareerMonke ?<\/a>/,
+    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="617" height="749" ?\/> ?Career Monke ?<\/a>/,
     "header must use the real CareerMonke logo (617x749, decorative alt, link named 'CareerMonke home')"
   );
   assert.ok(!top.includes("brand-mark"), "header CM badge must be gone");
@@ -177,6 +179,7 @@ function check(x: Input) {
     assert.ok(a >= 0 && want.indexOf(start, a + 1) < 0, `fixture section must exist once: ${start}`);
     want = want.slice(0, a) + build() + want.slice(want.indexOf("</section>", a) + "</section>".length);
   }
+  want = want.replace(/CareerMonke/g, "Career Monke"); // Owner item2, spelling only, all other copy remains exact.
   assert.deepEqual(words(lower), words(want), "lower page copy must match 3386250 except the five CareerMonke Way cells and the live review/founder content");
   assert.deepEqual(attrs(lower, "className"), attrs(want, "class"), "lower page classes must match 3386250");
   const wantHrefs = attrs(want, "href").map((h) => h.replace(/^https:\/\/careermonke\.com\//, "/"));
@@ -228,7 +231,7 @@ function check(x: Input) {
   assert.ok(!/<dl\b/.test(fdSec), "founder stat row must be removed");
 
   // --- 3d. unchanged: footer logo and favicon ---
-  assert.match(squash(lower), /<img src="\/careermonke-logo\.png" alt="CareerMonke" width="66" height="80" loading="lazy" \/>/, "footer monkey logo must be unchanged");
+  assert.match(squash(lower), /<img src="\/careermonke-logo\.png" alt="Career Monke" width="66" height="80" loading="lazy" \/>/, "footer monkey logo must be unchanged");
   const fav = x.asset(LIVE.unchanged.favicon.path);
   assert.ok(fav && sha256(fav) === LIVE.unchanged.favicon.sha256, "favicon must be unchanged");
 

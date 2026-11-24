@@ -28,7 +28,7 @@ export function generateMetadata({ params }: PageProps) {
   if (!data) return { title: "Category Landing Not Found" };
 
   return {
-    title: `${data.title} | CareerMonke Jobs`,
+    title: `${data.title} | Career Monke Jobs`,
     description: data.lede,
   };
 }

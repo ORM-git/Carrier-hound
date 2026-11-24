@@ -187,7 +187,7 @@ export default function GuideHeader() {
           {/* Left: Brand Logo */}
           <Link
             href={user ? "/jobs" : "/"}
-            aria-label="CareerMonke Home"
+            aria-label="Career Monke Home"
             className="flex items-center shrink-0 min-h-[44px] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
           >
             <BrandIcon variant="full" width={36} height={44} className="h-9 w-auto" priority />
@@ -408,7 +408,7 @@ export default function GuideHeader() {
             <Link
               href={user ? "/jobs" : "/"}
               onClick={() => setDrawerOpen(false)}
-              aria-label="CareerMonke Home"
+              aria-label="Career Monke Home"
               className="flex items-center"
             >
               <BrandIcon variant="full" width={32} height={39} className="h-8 w-auto" />
