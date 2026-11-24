@@ -1083,8 +1083,9 @@ export default function JobDetailView({
           </div>
         </div>
 
-        {/* (4) RIGHT RAIL (DESKTOP ONLY: STACKED CARDS REUSING CURRENT LABELS) */}
-        <div className="hidden lg:block lg:col-span-5 space-y-3 min-w-0">
+        {/* (4) RIGHT RAIL: beside the content on desktop; below it on mobile/tablet so Similar jobs and private
+            notes are never lost (CM mobile item 20). Renders nothing when neither exists. */}
+        <div className="lg:col-span-5 space-y-3 min-w-0 empty:hidden">
           {/* AI tool entry cards (resume tailoring, Interview Pack, Skill What-If) are intentionally
               not offered outside the landing page. */}
 

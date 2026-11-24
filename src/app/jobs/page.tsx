@@ -2394,10 +2394,20 @@ function JobsPageInner() {
                                     {formattedJobType}
                                   </span>
                                 )}
-                                {job.remote && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
-                                    <Laptop className="w-3 h-3 text-[#475569]" />
-                                    Remote
+                                {/* Work model always shown, as on desktop (Remote / On-site) */}
+                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
+                                  <Laptop className="w-3 h-3 text-[#475569]" />
+                                  {job.remote ? "Remote" : "On-site"}
+                                </span>
+                                {jobLevel && (
+                                  <span data-testid="mobile-card-level" className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
+                                    <TrendingUp className="w-3 h-3 text-[#475569]" />
+                                    {jobLevel}
+                                  </span>
+                                )}
+                                {isRecent && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md text-[12px] font-semibold bg-[#EFF6FF] text-[#1E40AF] inline-flex items-center">
+                                    Early applicant
                                   </span>
                                 )}
                                 {job.salary && (
@@ -2407,6 +2417,10 @@ function JobsPageInner() {
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
                                     {isPro ? job.salary : "••••••••"}
+                                    {/* Original-currency value visible on touch, not only in a hover title */}
+                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
+                                      <span className="font-normal text-[#64748B]">({job.salary_original})</span>
+                                    )}
                                   </span>
                                 )}
                               </div>
@@ -2415,6 +2429,8 @@ function JobsPageInner() {
                               <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0] mt-1">
                                 <span className="text-xs text-[#475569] truncate">
                                   {job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added"}
+                                  {/* Source provenance, as in the desktop card panel */}
+                                  <span> · {job.directSource ? "Direct feed" : "Active feed"}</span>
                                 </span>
 
                                 {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}
