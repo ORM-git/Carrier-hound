@@ -224,3 +224,54 @@ def test_greenhouse_canary_normalizes_recorded_payload_without_inference_or_trun
         assert job["country_code"] is None
         assert job["location"] == expected_location
 
+
+
+def test_pay_detail_404_is_typed_warning_but_other_failures_stay_fatal():
+    from unittest.mock import patch, AsyncMock
+    import pytest
+    async def run(status, payload):
+        calls = []
+        def handler(request):
+            calls.append(str(request.url))
+            return httpx.Response(status, json=payload)
+        job = {"source_id": "greenhouse:stripe", "source_job_id": "stripe-7337544",
+               "salary_min": None, "salary_max": None}
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with patch("scripts.scraper.rate_limiter.asyncio.sleep", AsyncMock()):
+                result = await enrich_greenhouse_pay_transparency(client, PerHostRateLimiter(), {"token": "stripe"}, [job])
+        return result, job, calls
+    warnings, job, calls = asyncio.run(run(404, {}))
+    assert len(warnings) == 1 and warnings[0]["code"] == "greenhouse_detail_404"
+    assert len(calls) == 1 and job["salary_min"] is None
+    for status, payload in [(429, {}), (503, {}), (403, {}), (200, {})]:
+        with pytest.raises(RuntimeError):
+            asyncio.run(run(status, payload))
+
+
+def test_pay_detail_mixed_success_404_preserves_good_salary():
+    def handler(request):
+        return httpx.Response(404, json={}) if "/7337544?" in str(request.url) else httpx.Response(200, json={
+            "pay_input_ranges": [{"min_cents": 10000000, "max_cents": 20000000, "currency_type": "USD"}]})
+    jobs = [{"source_id": "greenhouse:stripe", "source_job_id": f"stripe-{n}", "salary_min": None, "salary_max": None}
+            for n in [7337544, 8172510]]
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await enrich_greenhouse_pay_transparency(client, PerHostRateLimiter(), {"token": "stripe"}, jobs)
+    warnings = asyncio.run(run())
+    assert [w["source_job_id"] for w in warnings] == ["stripe-7337544"]
+    assert jobs[0]["salary_min"] is None and jobs[1]["salary_min"] == 100000
+
+
+def test_stripe_recovery_workflow_is_explicit_direct_no_expiry_and_not_a_cohort():
+    from scripts.scraper import run_ingestion, engine
+    path = Path(__file__).resolve().parents[2] / '.github/workflows/greenhouse-stripe-recovery.yml'
+    text = path.read_text()
+    assert 'schedule:' not in text
+    assert '--source greenhouse:stripe --no-expire' in text
+    assert '--cohort' not in text and '--expire)' not in text
+    assert 'group: ingest-pipeline' in text and 'cancel-in-progress: false' in text
+    assert 'WRITE STRIPE ONLY NO EXPIRY' in text
+    assert 'ingest_report' not in text and 'watchdog_gate' not in text
+    plan = run_ingestion.plan_sources(json.loads(Path(engine.DEFAULT_SEEDS_PATH).read_text()))
+    selected = run_ingestion.select_sources(plan, {'greenhouse:stripe'}, None)
+    assert len(selected) == 1 and selected[0]['id'] == 'greenhouse:stripe'

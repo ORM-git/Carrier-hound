@@ -938,16 +938,23 @@ async def run_ingestion(
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
         selected_count = len(all_jobs)
+        enrichment_warnings: list[dict[str, str]] = []
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
             greenhouse_seed = {**seed, "token": seed.get("token") or seed.get("slug")}
             board_source_id = f"greenhouse:{greenhouse_seed['token']}"
             try:
-                await enrich_greenhouse_pay_transparency(
+                warnings = await enrich_greenhouse_pay_transparency(
                     client, limiter, greenhouse_seed,
                     [job for job in all_jobs if job.get("source_id") == board_source_id],
                 )
+                if warnings:
+                    enrichment_warnings.extend(warnings)
+                    withheld = {w["source_job_id"] for w in warnings}
+                    all_jobs = [j for j in all_jobs if not (
+                        j.get("source_id") == board_source_id and j.get("source_job_id") in withheld
+                    )]
             except Exception as exc:
                 errors.append(redact_sensitive_params(str(exc)))
         to_insert, to_update, unchanged = partition_set_diff(all_jobs, [])
@@ -993,6 +1000,7 @@ async def run_ingestion(
         },
         "unique_after_dedupe": db_stats["inserted"] + db_stats["updated"] + db_stats["skipped_unchanged"],
         "db": db_stats,
+        "enrichment_warnings": enrichment_warnings,
         "errors": errors,
         "validated": validated_count,
         "rejected": rejected + list(db_stats.get("rejected") or []),

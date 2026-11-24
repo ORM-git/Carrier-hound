@@ -13,6 +13,14 @@ from urllib.parse import urlparse
 import httpx
 
 
+class RequestHTTPError(RuntimeError):
+    """Redacted HTTP error with a typed status for narrowly scoped caller policy."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def redact_sensitive_params(text: str) -> str:
     """Masks secret values like app_key, api_key, token, password, secret in URLs, headers, or error strings."""
     if not text:
@@ -138,7 +146,7 @@ async def request_with_backoff(
             await asyncio.sleep(min(delay, 15.0))
         except httpx.HTTPStatusError as exc:
             sanitized_err = redact_sensitive_params(str(exc))
-            raise RuntimeError(f"HTTP error requesting {safe_url}: {sanitized_err}") from None
+            raise RequestHTTPError(f"HTTP error requesting {safe_url}: {sanitized_err}", exc.response.status_code) from None
 
     if last_exc:
         raise last_exc

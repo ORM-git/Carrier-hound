@@ -231,6 +231,37 @@ class CohortRunTests(unittest.TestCase):
                 seeds_path=self.seeds, dry_run=False, max_rows=None, allow_uncapped=True,
                 no_expire=not expire, allow_expire=expire, cohort=cohort, transport=httpx.MockTransport(handler)))
 
+    def test_salary_detail_404_withholds_only_row_and_disables_board_expiry(self):
+        bad, good = job("greenhouse:acme", 1), job("greenhouse:acme", 2)
+        bad["source_job_id"], good["source_job_id"] = "acme-1", "acme-2"
+        def handle(request):
+            if request.url.host == FAKE_HOST:
+                self.db_calls.append((request.method, request.url.path))
+                raise AssertionError("incomplete board must not even query expiry baseline")
+            if "/jobs/1?" in str(request.url):
+                return httpx.Response(404, json={})
+            return httpx.Response(200, json={"pay_input_ranges": []})
+        writer = self.make_writer()
+        empty = AsyncMock(return_value=([], None))
+        with patch.dict(os.environ, FAKE_ENV), patch.object(run_ingestion, "load_dotenv_into_env", lambda: None), \
+                patch.object(run_ingestion, "SupabaseSetDiffWriter", writer), \
+                patch.object(run_ingestion, "fetch_layer1_seed", AsyncMock(return_value=([bad, good], None))), \
+                patch.object(run_ingestion, "fetch_jobspy_india", empty), \
+                patch.object(run_ingestion, "fetch_arbeitnow", empty), patch.object(run_ingestion, "fetch_adzuna", empty):
+            report = asyncio.run(run_ingestion.run_master_ingestion(
+                seeds_path=self.seeds, dry_run=False, max_rows=None, allow_uncapped=True,
+                no_expire=False, allow_expire=True, cohort="non-workday", transport=httpx.MockTransport(handle)))
+        sent = writer.return_value.sync_jobs_set_diff.await_args.args[1]
+        self.assertEqual([j["source_job_id"] for j in sent], ["acme-2"])
+        self.assertEqual(report["failed_sources"], [])
+        self.assertEqual(report["persisted_counts"]["inserted"], 1)
+        self.assertEqual(report["expiry_reports"][0]["status"], "skipped_incomplete_source")
+        self.assertEqual(run_ingestion.exit_code_for(report), 0)
+        summary = ingest_report.cohort_summary(report, 0, "non-workday")
+        self.assertIn("greenhouse_detail_404", str(summary["enrichment_warnings"]))
+        self.assertTrue(any(line.startswith("::warning") for line in ingest_report.annotations(summary)))
+        self.assertIn("rows withheld", ingest_report.render_cohort(summary))
+
     def test_repeated_workday_429_does_not_block_a_healthy_non_workday_cohort(self):
         handler = self.handler(429, retry_after="8")
         other_writer, wd_writer = self.make_writer(), self.make_writer()
