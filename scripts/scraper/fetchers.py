@@ -23,6 +23,7 @@ from .enrichment import (
     resolve_logo_url,
     strip_html,
 )
+from .persistence import normalize_salary_period
 from .rate_limiter import PerHostRateLimiter, parse_retry_after, redact_sensitive_params, request_with_backoff
 
 COUNTRY_NAMES = {
@@ -226,7 +227,7 @@ def build_normalized_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     currency: str | None = "USD",
-    salary_period: str | None = "year",
+    salary_period: str | None = None,
     country_code_hint: str | None = None,
     infer_country_from_location: bool = True,
     country_unknown_as_location: bool = True,
@@ -289,7 +290,8 @@ def build_normalized_job(
         "salary_min": salary_min,
         "salary_max": salary_max,
         "currency": currency,
-        "salary_period": salary_period,
+        # Truthful null when no salary is stated; known aliases (year/month/hour) map to the DB enum.
+        "salary_period": normalize_salary_period(salary_period) if (salary_text or salary_min is not None or salary_max is not None) else None,
         "description": clean_desc,
         "apply_url": apply_url.strip(),
         "source": source,

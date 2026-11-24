@@ -52,6 +52,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
+from .persistence import prevalidate_jobs
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 PARTIAL_COVERAGE_SOURCES: frozenset[str] = frozenset({"workday", "amazon", "microsoft", "arbeitnow", "smartrecruiters", "jobspy", "adzuna"})
@@ -357,6 +358,8 @@ async def run_master_ingestion(
         fetched_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
+        selected_count = len(all_jobs)
+        all_jobs, rejected = prevalidate_jobs(all_jobs)
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
@@ -416,6 +419,11 @@ async def run_master_ingestion(
         # 7. Per-board 50% drop guard -> skip if persisted < baseline * 0.5.
         expiry_vetoed = db_stats.get("persistence_failed", False)
         expiry_reports: list[dict[str, Any]] = []
+        rejected += list(db_stats.get("rejected") or [])
+        # A board with any rejected (unpersisted) row is not fully persisted: never expire on its behalf.
+        for item in rejected:
+            if item["source_id"] in board_status_map and not board_status_map[item["source_id"]]["error"]:
+                board_status_map[item["source_id"]]["error"] = "rows rejected before persistence"
 
         if credentials is not None and not no_expire and not expiry_vetoed:
             writer = SupabaseSetDiffWriter(*credentials)
@@ -588,8 +596,11 @@ async def run_master_ingestion(
             "guard_block_reason": guard_block_reason,
             "dry_run": dry_run,
             "fetched": fetched_count,
-            "selected": len(all_jobs),
-            "skipped_by_cap": max(0, len(unique_jobs) - len(all_jobs)),
+            "selected": selected_count,
+            "validated": len(all_jobs),
+            "rejected": rejected[:200],
+            "rejected_count": len(rejected),
+            "skipped_by_cap": max(0, len(unique_jobs) - selected_count),
             "projected_counts": projected_counts,
             "persisted_counts": None if dry_run else {
                 "inserted": db_stats["inserted"],

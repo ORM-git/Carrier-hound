@@ -42,6 +42,13 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
         "failed_sources": failed,
         "fetched": report.get("fetched"),
         "deduped": report.get("selected"),
+        "validated": report.get("validated"),
+        "rejected": int(report.get("rejected_count") or len(report.get("rejected") or [])),
+        "rejected_samples": [
+            {k: str(r.get(k) or "")[:160] for k in ("source_key", "stage", "code", "reason")}
+            for r in (report.get("rejected") or [])[:10] if isinstance(r, dict)
+        ],
+        "failed_writes": int(db.get("failed_writes") or 0),
         "projected": report.get("projected_counts") if dry_run else None,
         "confirmed_writes": None if dry_run or not isinstance(persisted, dict) else {
             "inserted": persisted.get("inserted"),
@@ -75,6 +82,7 @@ def render_cohort(s: dict[str, Any]) -> str:
         ("sources selected / completed / failed",
          f"{s['selected_sources']} / {s['completed_sources']} / {len(s['failed_sources'])}"),
         ("fetched (not new jobs)", s.get("fetched")), ("unique after dedupe", s.get("deduped")),
+        ("validated / rejected", f"{s.get('validated')} / {s.get('rejected', 0)}"),
     ]
     if s["dry_run"]:
         p = s.get("projected") or {}
@@ -82,7 +90,8 @@ def render_cohort(s: dict[str, Any]) -> str:
     else:
         c = s.get("confirmed_writes") or {}
         rows += [("confirmed inserted", c.get("inserted")), ("confirmed updated", c.get("updated")),
-                 ("unchanged", c.get("unchanged")), ("expired", c.get("expired"))]
+                 ("unchanged", c.get("unchanged")), ("failed writes", s.get("failed_writes", 0)),
+                 ("expired", c.get("expired"))]
     rows += [("persistence failed", s["persistence_failed"]), ("guard", s.get("guard_block_reason") or "none")]
     logo = s.get("logo_enqueue") or {}
     cov = logo.get("coverage")
@@ -95,12 +104,16 @@ def render_cohort(s: dict[str, Any]) -> str:
     if s["failed_sources"]:
         lines += ["", "**Failed sources (this cohort's writes and expiry withheld):**", ""]
         lines += [f"- `{f['source']}`: {f['error']}" for f in s["failed_sources"]]
+    if s.get("rejected_samples"):
+        lines += ["", f"**Rejected rows ({s.get('rejected', 0)}; not persisted, board expiry withheld):**", ""]
+        lines += [f"- `{r['source_key']}` [{r['stage']}] {r['reason']}" for r in s["rejected_samples"]]
     return "\n".join(lines)
 
 
 def annotations(s: dict[str, Any]) -> list[str]:
     out = [f"::error title=Ingestion source failed [{s['cohort']}]::{f['source']}: {f['error']}" for f in s.get("failed_sources") or []]
     out += [f"::error title=Ingestion write error [{s['cohort']}]::{e}" for e in s.get("write_errors") or []]
+    out += [f"::error title=Ingestion row rejected [{s['cohort']}]::{r['source_key']}: {r['reason']}" for r in s.get("rejected_samples") or []]
     if s["status"] == "no_report":
         out.append(f"::error title=Ingestion report missing [{s['cohort']}]::exit {s['exit_code']}")
     return out
