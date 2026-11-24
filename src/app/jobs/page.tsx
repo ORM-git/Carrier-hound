@@ -1109,7 +1109,12 @@ function JobsPageInner() {
     );
     // A stale outcome means the query changed; its reset already cleared loading/error state.
     if (outcome === "stale") return;
-    if (outcome === "error") setLoadMoreError(true);
+    if (outcome === "error") {
+      // A failed request consumes any intent recorded during it. Recovery is the Retry
+      // button, which is the user's own fresh intent, never the pre-failure swipe.
+      pendingDownwardRef.current = false;
+      setLoadMoreError(true);
+    }
     setLoadingMore(false);
 
     // Consume the one pending downward intent, if any, exactly once. Gestures arrive faster than a

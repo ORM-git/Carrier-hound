@@ -391,6 +391,32 @@ describe("pending downward intent while a next-page request is in flight", () =>
     expect(uniqueTitles()).toHaveLength(50);
   });
 
+  it("a pending intent is discarded when the request throws; Retry needs its own gesture", async () => {
+    const slow = deferred<any>();
+    let p2Calls = 0;
+    h.transport = async ({ page: p }) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 500);
+      if (p === 2 && ++p2Calls === 1) return slow.promise;
+      return page(jobs(range(26, 50)), true, 500);
+    };
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    await act(async () => wheel()); // user keeps scrolling while page 2 is in flight
+    await act(async () => slow.reject(new Error("network down")));
+    await flush();
+    expect(screen.getByRole("alert").textContent).toContain("Couldn't load more jobs.");
+    expect(pagesRequested()).toEqual([1, 2]); // the thrown failure consumed the pending intent
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await flush();
+    // Retry is the user's fresh intent: it loads page 2 and must not chain page 3.
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+    expect(uniqueTitles()).toHaveLength(50);
+    await act(async () => io.enter(false)); // anchoring without input is not a gesture
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+  });
+
   it("a pending intent is discarded at the end of the list", async () => {
     const slow = deferred<any>();
     h.transport = async ({ page: p }) =>
@@ -442,4 +468,27 @@ describe("pending downward intent while a next-page request is in flight", () =>
     await flush();
     expect(h.calls.filter((c) => c.search === "fixture").map((c) => c.page)).toEqual([1, 2]);
   });
+});
+
+it("reviewer: thrown page error clears pending intent before manual Retry", async () => {
+  const slow = deferred<any>();
+  let calls = 0;
+  h.transport = async ({ page: p }) =>
+    p === 1
+      ? page(jobs(range(1, 25)), true)
+      : p === 2
+        ? ++calls === 1
+          ? slow.promise
+          : page(jobs(range(26, 50)), true)
+        : page(jobs(range(51, 75)), false);
+  await mount();
+  await act(async () => io.enter());
+  await flush();
+  await act(async () => window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 })));
+  await act(async () => slow.reject(new Error("network fail")));
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2]);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 2]);
 });
