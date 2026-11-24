@@ -51,7 +51,7 @@ export default function HomePage() {
                     Sign in
                   </a>
                   <a href="/signup" className="btn-dark">
-                    Sign up free
+                    Sign up for free
                   </a>
                 </div>
               </nav>
@@ -250,7 +250,7 @@ export default function HomePage() {
                               <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z" />
                             </svg>
                           </button>
-                          <button className="btn-apply">
+                          <a href="/jobs" className="btn-apply">
                             Apply
                             <svg
                               width="15"
@@ -262,7 +262,7 @@ export default function HomePage() {
                             >
                               <path d="M5 12h14M13 6l6 6-6 6" />
                             </svg>
-                          </button>
+                          </a>
                         </div>
                       </div>
                     </div>
@@ -409,7 +409,7 @@ export default function HomePage() {
                           <div className="job-actions">
                             <span className="icon-btn"></span>
                             <span className="icon-btn"></span>
-                            <span className="btn-apply">Apply</span>
+                            <a href="/jobs" className="btn-apply">Apply</a>
                           </div>
                         </div>
                       </div>

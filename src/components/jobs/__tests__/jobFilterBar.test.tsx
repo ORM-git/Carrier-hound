@@ -175,6 +175,6 @@ describe("JobFilterBar - Chip Labels and Unclipped Popovers", () => {
     const sortBtns = screen.getAllByLabelText(/sort by/i);
     // Desktop sort button
     fireEvent.click(sortBtns[1] || sortBtns[0]);
-    expect(screen.getByText(/recommended \(match\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/top matched/i)).toBeInTheDocument();
   });
 });
