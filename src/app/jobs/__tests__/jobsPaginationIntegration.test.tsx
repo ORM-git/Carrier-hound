@@ -492,3 +492,108 @@ it("reviewer: thrown page error clears pending intent before manual Retry", asyn
   await flush();
   expect(pagesRequested()).toEqual([1, 2, 2]);
 });
+
+it("reviewer: recursive pending page with only already-appended rows pauses on no growth", async () => {
+  const slow = deferred<any>();
+  h.transport = async ({ page: p }) =>
+    p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? slow.promise : page(jobs(range(26, 50)), true);
+  await mount();
+  await act(async () => io.enter());
+  await flush();
+  await act(async () => window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 })));
+  await act(async () => slow.resolve(page(jobs(range(26, 50)), true)));
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 3]);
+  expect(uniqueTitles()).toHaveLength(50);
+  expect(loadMoreButton()).not.toBeNull();
+});
+
+it("an all-duplicate pending page pauses and never chains duplicates on a fresh gesture-free settle", async () => {
+  const wheel = () => window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+  const slow = deferred<any>();
+  h.transport = async ({ page: p }) =>
+    p === 1
+      ? page(jobs(range(1, 25)), true)
+      : p === 2
+        ? slow.promise
+        : page(jobs(range(26, 50)), true); // every later page is all duplicates with hasNext true
+  await mount();
+  await act(async () => io.enter());
+  await flush();
+  await act(async () => wheel()); // pending intent during page 2
+  await act(async () => slow.resolve(page(jobs(range(26, 50)), true)));
+  await flush();
+  // Pending page 3 was all duplicates: no growth, so the pause contract engages.
+  expect(pagesRequested()).toEqual([1, 2, 3]);
+  expect(uniqueTitles()).toHaveLength(50);
+  expect(loadMoreButton()).not.toBeNull(); // manual recovery path is present
+  await act(async () => io.enter(false)); // observer re-entry is not a gesture
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 3]);
+  // Manual recovery still works: the button loads the next page as its own intent.
+  fireEvent.click(loadMoreButton()!);
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+});
+
+it("a pending page that throws after a successful settle leaves Retry as the only recovery", async () => {
+  const wheel = () => window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+  const slow = deferred<any>();
+  let p3Calls = 0;
+  h.transport = async ({ page: p }) => {
+    if (p === 1) return page(jobs(range(1, 25)), true);
+    if (p === 2) return slow.promise;
+    if (++p3Calls === 1) throw new Error("network down");
+    return page(jobs(range(51, 75)), true);
+  };
+  await mount();
+  await act(async () => io.enter());
+  await flush();
+  await act(async () => wheel()); // pending intent during page 2
+  await act(async () => slow.resolve(page(jobs(range(26, 50)), true)));
+  await flush();
+  // The pending intent fired page 3, which threw: error surface, no silent retry.
+  expect(pagesRequested()).toEqual([1, 2, 3]);
+  expect(screen.getByRole("alert").textContent).toContain("Couldn't load more jobs.");
+  expect(uniqueTitles()).toHaveLength(50);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 3, 3]);
+  expect(uniqueTitles()).toHaveLength(75);
+  // And it stops there: Retry is one intent, one page.
+  await act(async () => io.enter(false));
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 3, 3]);
+});
+
+it("a query change while the pending page is in flight keeps that page stale and never chains on the new list", async () => {
+  const wheel = () => window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+  const slow2 = deferred<any>();
+  const slow3 = deferred<any>();
+  h.transport = async ({ page: p, search }) => {
+    if (search) return p === 1 ? page(jobs(range(201, 210)), true) : page(jobs(range(211, 215)), false);
+    if (p === 1) return page(jobs(range(1, 25)), true);
+    if (p === 2) return slow2.promise;
+    return slow3.promise;
+  };
+  await mount();
+  await act(async () => io.enter());
+  await flush();
+  await act(async () => wheel()); // pending intent during page 2
+  await act(async () => slow2.resolve(page(jobs(range(26, 50)), true))); // settle fires pending page 3
+  await flush();
+  expect(pagesRequested()).toEqual([1, 2, 3]);
+  window.history.pushState(null, "", "/jobs?search=fixture");
+  await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
+  await waitFor(() => {
+    expect(h.calls.some((call) => call.page === 1 && call.search === "fixture")).toBe(true);
+  });
+  await act(async () => slow3.resolve(page(jobs(range(51, 75)), true))); // stale old-query page 3
+  await flush();
+  // The stale page applied nothing and nothing chains on the new query without a fresh gesture.
+  expect(h.calls.filter((c) => c.search === "fixture").map((c) => c.page)).toEqual([1]);
+  expect(uniqueTitles()).toHaveLength(10);
+  await act(async () => io.enter());
+  await flush();
+  expect(h.calls.filter((c) => c.search === "fixture").map((c) => c.page)).toEqual([1, 2]);
+});

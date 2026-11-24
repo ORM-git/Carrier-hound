@@ -471,6 +471,14 @@ function JobsPageInner() {
 
   // Live Supabase Jobs Data
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
+  // Authoritative rows for growth checks. The pending-intent settle calls handleLoadMore from the
+  // closure of an older render, so reading the liveJobs state there would compare a new page
+  // against stale rows and report growth for an all-duplicate page. This ref is updated
+  // synchronously wherever a page is applied.
+  const liveJobsRef = useRef<LiveJob[]>([]);
+  useEffect(() => {
+    liveJobsRef.current = liveJobs;
+  }, [liveJobs]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [appliedEligibility, setAppliedEligibility] = useState<{ countries: string[]; filteredOut: number } | null>(null);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
@@ -1007,6 +1015,7 @@ function JobsPageInner() {
     })
       .then((res) => {
         if (queryKey === lastQueryKeyRef.current) {
+          liveJobsRef.current = res.jobs;
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
           setHasNextPage(Boolean(res.hasNextPage));
@@ -1094,10 +1103,15 @@ function JobsPageInner() {
           return;
         }
         // Server order kept; ids already shown or repeated within this page are skipped.
-        // liveJobs is current here: one request at a time, and a query change makes this response stale.
-        const grew = appendPage(liveJobs, res.jobs).length !== liveJobs.length;
+        // Compare against the authoritative rows ref, not closure state: one request at a time, a
+        // query change makes this response stale, and the pending-intent settle may invoke this
+        // handler from an older render whose liveJobs snapshot misses the last appended page.
+        const prevRows = liveJobsRef.current;
+        const nextRows = appendPage(prevRows, res.jobs);
+        const grew = nextRows.length !== prevRows.length;
         setAutoLoadPaused(!grew);
-        setLiveJobs((prev) => appendPage(prev, res.jobs));
+        liveJobsRef.current = nextRows;
+        setLiveJobs(nextRows);
         setHasNextPage(Boolean(res.hasNextPage));
         setPage(nextPage);
         loadedPageRef.current = nextPage;
