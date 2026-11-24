@@ -13,6 +13,6 @@ describe("mobile bottom inventory text (item 22)", () => {
   it("tab counters and pagination state are untouched", () => {
     expect(page).toContain("count: savedCount,");
     expect(page).toContain("count: appliedCount,");
-    expect(page).toContain("const canLoadMore = activeTab === \"recommended\" && (hasNextPage || (totalCount > 0 && liveJobs.length < totalCount));");
+    expect(page).toContain("const canLoadMore = activeTab === \"recommended\" && hasNextPage;");
   });
 });

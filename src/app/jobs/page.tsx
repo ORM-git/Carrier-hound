@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -64,6 +64,7 @@ import {
 import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
 import { workModelLabel } from "@/lib/jobs/workModel";
+import { appendPage, createNextPageLoader } from "@/lib/jobs/pagination";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -897,8 +898,8 @@ function JobsPageInner() {
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
-  // One next-page request at a time; aborted when the list query (filters/tab/search/sort) changes.
-  const loadMoreAbortRef = useRef<AbortController | null>(null);
+  // One next-page request at a time; reset (abort + stale) when the list query (filters/tab/search/sort) changes.
+  const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
@@ -940,8 +941,7 @@ function JobsPageInner() {
     }
     lastQueryKeyRef.current = queryKey;
 
-    loadMoreAbortRef.current?.abort();
-    loadMoreAbortRef.current = null;
+    pageLoaderRef.current.reset();
     setLoadingMore(false);
     setLoadMoreError(false);
     setLoadingJobs(true);
@@ -1012,70 +1012,63 @@ function JobsPageInner() {
   ]);
 
   const handleLoadMore = async () => {
-    if (loadMoreAbortRef.current) return; // a page is already in flight
-    const controller = new AbortController();
-    loadMoreAbortRef.current = controller;
-    const queryKey = lastQueryKeyRef.current;
+    const loader = pageLoaderRef.current;
+    if (loader.busy) return;
     const nextPage = page + 1;
+    const isRecommended = activeTab === "recommended";
+    const effectiveSortBy = isRecommended ? "match" : sortBy;
+    const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
+    const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
     setLoadingMore(true);
     setLoadMoreError(false);
-    try {
-      const isRecommended = activeTab === "recommended";
-      const effectiveSortBy = isRecommended ? "match" : sortBy;
-      const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
-      const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
-      const res = await getLiveJobs({
-        page: nextPage,
-        pageSize: 25,
-        cursor: nextCursor ?? undefined,
-        category: selectedCategory,
-        search: debouncedSearch,
-        remoteOnly,
-        location: selectedLocation,
-        level: selectedLevel,
-        jobType: selectedJobType,
-        countryCode: selectedCountryCode,
-        workModel: selectedWorkModel,
-        datePosted: selectedDatePosted,
-        experience: selectedExperience,
-        salaryMin: selectedSalaryMin,
-        sourceType: selectedSourceType,
-        company: selectedCompany,
-        isPro,
-        sortBy: effectiveSortBy,
-        candidate: effectiveCandidate,
-        preferences: effectivePreferences,
-        signal: controller.signal,
-      });
-      // Stale: the list query changed while this page was loading; its reset already cleared state.
-      if (controller.signal.aborted || queryKey !== lastQueryKeyRef.current) return;
-      if (res.isDegraded || res.error) {
-        setLoadMoreError(true);
-        return;
+    const outcome = await loader.load(
+      (signal) =>
+        getLiveJobs({
+          page: nextPage,
+          pageSize: 25,
+          cursor: nextCursor ?? undefined,
+          category: selectedCategory,
+          search: debouncedSearch,
+          remoteOnly,
+          location: selectedLocation,
+          level: selectedLevel,
+          jobType: selectedJobType,
+          countryCode: selectedCountryCode,
+          workModel: selectedWorkModel,
+          datePosted: selectedDatePosted,
+          experience: selectedExperience,
+          salaryMin: selectedSalaryMin,
+          sourceType: selectedSourceType,
+          company: selectedCompany,
+          isPro,
+          sortBy: effectiveSortBy,
+          candidate: effectiveCandidate,
+          preferences: effectivePreferences,
+          signal,
+        }),
+      (res) => {
+        if (res.isDegraded || res.error) {
+          setLoadMoreError(true);
+          return;
+        }
+        // Server order kept; ids already shown or repeated within this page are skipped.
+        setLiveJobs((prev) => appendPage(prev, res.jobs));
+        setNextCursor(res.nextCursor ?? null);
+        setHasNextPage(Boolean(res.hasNextPage));
+        setPage(nextPage);
+        if (res.totalCount) setTotalCount(res.totalCount);
       }
-      // Keep server order; skip ids already shown (overlapping pages after inserts).
-      setLiveJobs((prev) => {
-        const seen = new Set(prev.map((j) => j.id));
-        return [...prev, ...res.jobs.filter((j) => !seen.has(j.id))];
-      });
-      setNextCursor(res.nextCursor ?? null);
-      setHasNextPage(Boolean(res.hasNextPage));
-      setPage(nextPage);
-      if (res.totalCount) setTotalCount(res.totalCount);
-    } catch (e) {
-      if (controller.signal.aborted || queryKey !== lastQueryKeyRef.current) return;
-      console.warn("Failed to load more jobs", e);
-      setLoadMoreError(true);
-    } finally {
-      if (loadMoreAbortRef.current === controller) {
-        loadMoreAbortRef.current = null;
-        setLoadingMore(false);
-      }
-    }
+    );
+    // A stale outcome means the query changed; its reset already cleared loading/error state.
+    if (outcome === "stale") return;
+    if (outcome === "error") setLoadMoreError(true);
+    setLoadingMore(false);
   };
 
-  const canLoadMore = activeTab === "recommended" && (hasNextPage || (totalCount > 0 && liveJobs.length < totalCount));
+  // getLiveJobs always reports hasNextPage; a totalCount fallback would show a phantom button once
+  // duplicates are dropped (shown < total while the server has no next page).
+  const canLoadMore = activeTab === "recommended" && hasNextPage;
 
   // Mobile only: load the next page when the sentinel above the manual button scrolls into view.
   // Pauses on error (manual Retry) and at the end; re-armed after each page, never loops on its own.
