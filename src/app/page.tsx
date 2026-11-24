@@ -42,8 +42,8 @@ export default function HomePage() {
                     className="brand-logo"
                     src="/careermonke-logo.png"
                     alt=""
-                    width="617"
-                    height="749"
+                    width="534"
+                    height="232"
                   />
                   Career Monke
                 </a>
