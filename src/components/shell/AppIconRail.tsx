@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import BrandIcon from "@/components/BrandIcon";
 import { useSidebarMode } from "@/lib/sidebar";
-import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import {
   Briefcase,
   FileText,
@@ -78,7 +77,6 @@ interface AppIconRailProps {
 export default function AppIconRail({ currentRoute }: AppIconRailProps) {
   const pathname = usePathname() || currentRoute || "/jobs";
   const { isExpanded, toggle } = useSidebarMode();
-  const cookieNoticeHeight = useCookieNoticeHeight();
 
   return (
     <>
@@ -258,44 +256,6 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
         </div>
       </aside>
 
-      {/* ========================================================================= */}
-      {/* MOBILE BOTTOM NAVIGATION BAR (Full-width, >=44px tap targets, offset by   */}
-      {/* CookieNotice actual height and safe-area-inset-bottom, hidden on desktop) */}
-      {/* ========================================================================= */}
-      <nav
-        aria-label="Mobile Navigation"
-        data-testid="app-mobile-nav"
-        style={{
-          bottom: `${cookieNoticeHeight}px`,
-        }}
-        // Always shown below md, including while a job detail is open (CM mobile item 16).
-        className="fixed inset-x-0 h-16 bg-white border-t border-[#E2E8F0] z-40 flex md:hidden items-center justify-around px-2 shadow-sm transition-[bottom] duration-200"
-      >
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const active = item.isActive(pathname);
-          return (
-            <Link
-              key={item.id}
-              href={item.href}
-              aria-label={item.label}
-              aria-current={active ? "page" : undefined}
-              className={`flex-1 min-h-[44px] min-w-[44px] flex flex-col items-center justify-center py-1 rounded-[12px] transition-all duration-200 ${
-                active
-                  ? "bg-[#EFF6FF] text-[#2563EB] font-bold ring-1 ring-[#93C5FD]/60"
-                  : "text-[#090E34] hover:text-[#2563EB]"
-              }`}
-            >
-              <Icon className="w-6 h-6 stroke-[1.75]" />
-              <span className={`text-[11px] font-medium leading-none mt-1 tracking-tight ${
-                active ? "font-bold text-[#1D4ED8]" : "font-medium text-[#090E34]"
-              }`}>
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
     </>
   );
 }
