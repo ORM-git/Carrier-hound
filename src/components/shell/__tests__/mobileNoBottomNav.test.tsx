@@ -26,11 +26,16 @@ describe("mobile bottom nav removed", () => {
     expect(rail).not.toContain("useCookieNoticeHeight");
   });
 
-  it("pages keep no clearance tokens for the removed 64px nav", () => {
+  it("pages keep no below-md clearance tokens for the removed 64px nav (tablet/desktop keep main's spacing)", () => {
     const detail = readFileSync("src/components/jobs/JobDetailView.tsx", "utf8");
     expect(detail).not.toContain("pb-[calc(var(--cookie-h)+5rem)]");
+    expect(detail).toContain("md:pb-[calc(var(--cookie-h)+7rem)]");
     const tracker = readFileSync("src/app/tracker/page.tsx", "utf8");
-    expect(tracker).not.toContain("pb-24");
+    expect(tracker).toContain("pb-8 md:pb-24 lg:pb-12");
+    expect(tracker).not.toMatch(/(?<!:)pb-24/);
+    const jobs = readFileSync("src/app/jobs/page.tsx", "utf8");
+    expect(jobs).toContain("space-y-3 pb-4 md:pb-32 lg:pb-12");
+    expect(jobs).not.toContain("sm:pb-32");
     const backToTop = readFileSync("src/components/BackToTop.tsx", "utf8");
     expect(backToTop).toContain("bottom-[24px]");
     expect(backToTop).not.toContain("bottom-[84px]");

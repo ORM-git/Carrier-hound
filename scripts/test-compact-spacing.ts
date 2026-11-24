@@ -55,7 +55,7 @@ function runAudit(corruptions: {
   }
   if (corruptions.breakMobileBaseNavGap) {
     // Re-inflate the mobile list tail and top padding (the pre-#12 values).
-    jobsCode = jobsCode.replace(/pt-3 sm:pt-4 space-y-3/g, "py-5 sm:pt-4 space-y-4").replace(/space-y-3 pb-4 lg:pb-12/g, "space-y-3 pb-44 lg:pb-12");
+    jobsCode = jobsCode.replace(/pt-3 sm:pt-4 space-y-3/g, "py-5 sm:pt-4 space-y-4").replace(/space-y-3 pb-4 md:pb-32 lg:pb-12/g, "space-y-3 pb-44 lg:pb-12");
   }
   if (corruptions.removeIsProDefinitiveGating) {
     jobsCode = jobsCode.replace(/\{isProDefinitive \?/g, "{true ?");
@@ -77,7 +77,7 @@ function runAudit(corruptions: {
   // 12px top padding, 12px section gap, 6px sticky filter padding, and a 16px list tail (the mobile bottom nav and the fixed detail strip are both gone, so no bottom clearance tokens remain).
   const hasCompactNavGap = jobsCode.includes("sm:pt-4") && filterBarCode.includes("sm:py-0");
   const hasMobileBaseNav = jobsCode.includes("pt-3 sm:pt-4 space-y-3") &&
-    jobsCode.includes("space-y-3 pb-4 lg:pb-12") &&
+    jobsCode.includes("space-y-3 pb-4 md:pb-32 lg:pb-12") &&
     !jobsCode.includes("py-5 sm:pt-4") &&
     filterBarCode.includes("py-1.5 sm:py-0");
   if (!hasCompactNavGap || !hasMobileBaseNav) {
