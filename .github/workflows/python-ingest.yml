@@ -76,6 +76,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_API_URL: ${{ github.api_url }}
           TARGET_COHORT: ${{ inputs.cohort }}
+          CADENCE_MINUTES: "240"
+          OVERDUE_GRACE_MINUTES: "45"
+          ATTEMPT_COOLDOWN_MINUTES: "45"
         run: python -m scripts.scraper.watchdog_gate
 
       - name: Validate inputs

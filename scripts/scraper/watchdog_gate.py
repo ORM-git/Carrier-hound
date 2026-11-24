@@ -7,13 +7,14 @@ inside the 'plan' job AFTER the workflow acquires the 'ingest-pipeline' concurre
 Safe & Truthful Guarantees:
 1. Concurrency admission runs strictly AFTER acquiring existing ingest-pipeline lock.
 2. Fails CLOSED when credentials, history, or cohort reports cannot be verified
-   (missing token/repo, 401/403/429/timeout, malformed history/jobs).
+   (missing token/repo, 401/403/429/timeout, malformed history/jobs, empty jobs).
 3. Distinguishes verified first-run bootstrap (API 200 with zero runs) from API failures.
 4. Derives freshness from verified production-write cohort jobs on main, not generic green status.
 5. Tracks both cohorts independently (non-workday and workday); dry-runs, skip-only,
    and other-branch runs are strictly excluded from production freshness.
-6. Enforces bounded attempt cooldown separate from success freshness to prevent
-   rapid retry loops after failure, and prevents rewriting a healthy cohort.
+6. Enforces bounded attempt cooldown (45m) separate from success freshness (285m = 240m cadence + 45m grace).
+7. A 200-minute-old successful cohort is fresh (< 285m) and is NEVER rewritten.
+8. Paginates with explicit bounds (max 3 pages); fails closed if bounds block verification.
 """
 
 from __future__ import annotations
@@ -27,8 +28,10 @@ from datetime import datetime, timezone
 from typing import Any, Tuple, List, Dict, Optional
 
 
-DEFAULT_SUCCESS_COOLDOWN_SECONDS = 195 * 60  # 3 hours 15 minutes (cadence is 4h)
-DEFAULT_ATTEMPT_COOLDOWN_SECONDS = 45 * 60   # 45 minutes attempt backoff
+DEFAULT_CADENCE_MINUTES = 240
+DEFAULT_OVERDUE_GRACE_MINUTES = 45
+DEFAULT_OVERDUE_THRESHOLD_SECONDS = (DEFAULT_CADENCE_MINUTES + DEFAULT_OVERDUE_GRACE_MINUTES) * 60  # 285 min = 17,100s
+DEFAULT_ATTEMPT_COOLDOWN_SECONDS = 45 * 60  # 45 minutes = 2,700s
 
 
 class GateVerificationError(Exception):
@@ -46,63 +49,109 @@ def parse_iso8601(dt_str: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def parse_bounded_timing(val: Optional[str], default_val: int, name: str, min_val: int, max_val: int) -> int:
+    if val is None or val.strip() == "":
+        return default_val
+    try:
+        n = int(val.strip())
+        if n < min_val or n > max_val:
+            raise GateVerificationError(
+                f"Invalid timing value for {name}: must be an integer between {min_val} and {max_val}, got '{val}'"
+            )
+        return n
+    except ValueError as e:
+        raise GateVerificationError(
+            f"Invalid timing value for {name}: must be an integer, got '{val}'"
+        ) from e
+
+
 def fetch_workflow_runs_and_jobs(
     repo_full_name: str,
     token: str,
     branch: str = "main",
     workflow_file: str = "python-ingest.yml",
     api_url: str = "https://api.github.com",
-    per_page: int = 15,
+    per_page: int = 30,
+    max_pages: int = 3,
 ) -> Tuple[List[Dict[str, Any]], Dict[int, List[Dict[str, Any]]], bool]:
     """
-    Queries GitHub Actions API for completed workflow runs on branch, and fetches
-    the job steps for each run.
+    Queries GitHub Actions API for workflow runs on branch, paginates with explicit bounds,
+    and fetches job steps for each run.
 
     Returns:
         (runs, jobs_by_run_id, is_verified_bootstrap)
     Raises:
-        GateVerificationError on any API failure, rate limit, timeout, or malformed JSON.
+        GateVerificationError on any API failure, rate limit, timeout, malformed JSON, or empty jobs.
     """
     if not repo_full_name or not token:
         raise GateVerificationError("Missing GITHUB_REPOSITORY or GITHUB_TOKEN: cannot verify history.")
 
-    runs_url = f"{api_url.rstrip('/')}/repos/{repo_full_name}/actions/workflows/{workflow_file}/runs?branch={branch}&status=completed&per_page={per_page}"
-    req = urllib.request.Request(
-        runs_url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "ingest-watchdog-admission-gate",
-        },
-    )
+    all_runs: List[Dict[str, Any]] = []
+    total_count = 0
+    page = 1
 
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            if resp.status != 200:
-                raise GateVerificationError(f"GitHub API returned HTTP {resp.status} fetching runs.")
-            raw = resp.read().decode("utf-8")
-            data = json.loads(raw)
-    except urllib.error.HTTPError as e:
-        raise GateVerificationError(f"GitHub API HTTP {e.code} fetching runs: {e.reason}") from e
-    except urllib.error.URLError as e:
-        raise GateVerificationError(f"GitHub API network error fetching runs: {e.reason}") from e
-    except Exception as e:
-        raise GateVerificationError(f"GitHub API error fetching runs: {e}") from e
+    while page <= max_pages:
+        runs_url = f"{api_url.rstrip('/')}/repos/{repo_full_name}/actions/workflows/{workflow_file}/runs?branch={branch}&per_page={per_page}&page={page}"
+        req = urllib.request.Request(
+            runs_url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "ingest-watchdog-admission-gate",
+            },
+        )
 
-    if not isinstance(data, dict) or "workflow_runs" not in data:
-        raise GateVerificationError("Malformed GitHub API response: missing 'workflow_runs' field.")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status != 200:
+                    raise GateVerificationError(f"GitHub API returned HTTP {resp.status} fetching runs.")
+                raw = resp.read().decode("utf-8")
+                data = json.loads(raw)
+        except urllib.error.HTTPError as e:
+            raise GateVerificationError(f"GitHub API HTTP {e.code} fetching runs: {e.reason}") from e
+        except urllib.error.URLError as e:
+            raise GateVerificationError(f"GitHub API network error fetching runs: {e.reason}") from e
+        except Exception as e:
+            if isinstance(e, GateVerificationError):
+                raise
+            raise GateVerificationError(f"GitHub API error fetching runs: {e}") from e
 
-    raw_runs = data.get("workflow_runs", [])
-    if not isinstance(raw_runs, list):
-        raise GateVerificationError("Malformed GitHub API response: 'workflow_runs' is not a list.")
+        if not isinstance(data, dict):
+            raise GateVerificationError("Malformed GitHub API response: expected object, got non-object.")
+        if "workflow_runs" not in data or not isinstance(data["workflow_runs"], list):
+            raise GateVerificationError("Malformed GitHub API response: missing or malformed 'workflow_runs' list.")
+        if "total_count" not in data or not isinstance(data["total_count"], (int, float)):
+            raise GateVerificationError("Malformed GitHub API response: missing or malformed 'total_count'.")
 
-    # Filter strictly to runs on target branch
-    runs = [r for r in raw_runs if isinstance(r, dict) and r.get("head_branch") == branch]
+        total_count = int(data["total_count"])
+        page_runs = data["workflow_runs"]
+
+        # Detect inconsistent API state: nonzero total_count with empty page
+        if page == 1 and total_count > 0 and len(page_runs) == 0:
+            raise GateVerificationError(f"Inconsistent runs API response: nonzero total_count ({total_count}) with empty page.")
+
+        for r in page_runs:
+            if not isinstance(r, dict):
+                raise GateVerificationError("Invalid run schema: run entry is not a dict.")
+            if not isinstance(r.get("id"), (int, float)) or not isinstance(r.get("head_branch"), str) or not isinstance(r.get("status"), str):
+                raise GateVerificationError(f"Invalid run schema: missing required fields in run #{r.get('id')}.")
+            all_runs.append(r)
+
+        if len(page_runs) < per_page or len(all_runs) >= total_count:
+            break
+        page += 1
+
+    # Filter strictly to runs on target branch (main)
+    runs = [r for r in all_runs if r.get("head_branch") == branch]
 
     # Check for verified first-run bootstrap
-    total_count = data.get("total_count", len(raw_runs))
-    if total_count == 0 or len(runs) == 0:
-        return [], {}, True
+    is_verified_bootstrap = (total_count == 0 and len(all_runs) == 0) or (len(all_runs) >= total_count and len(runs) == 0)
+
+    # Fail closed if pagination bound blocked verification without finding main runs
+    if not is_verified_bootstrap and len(runs) == 0 and len(all_runs) < total_count:
+        raise GateVerificationError(
+            f"History verification truncated at pagination bound (max {max_pages} pages, {len(all_runs)}/{total_count} runs); failing closed."
+        )
 
     jobs_by_run_id: Dict[int, List[Dict[str, Any]]] = {}
 
@@ -111,7 +160,7 @@ def fetch_workflow_runs_and_jobs(
         if not run_id:
             continue
 
-        jobs_url = f"{api_url.rstrip('/')}/repos/{repo_full_name}/actions/runs/{run_id}/jobs"
+        jobs_url = f"{api_url.rstrip('/')}/repos/{repo_full_name}/actions/runs/{run_id}/jobs?per_page=100"
         jreq = urllib.request.Request(
             jobs_url,
             headers={
@@ -127,6 +176,8 @@ def fetch_workflow_runs_and_jobs(
                 jraw = jresp.read().decode("utf-8")
                 jdata = json.loads(jraw)
         except Exception as e:
+            if isinstance(e, GateVerificationError):
+                raise
             raise GateVerificationError(f"Failed to fetch jobs for run #{run_id}: {e}") from e
 
         if not isinstance(jdata, dict) or "jobs" not in jdata:
@@ -136,9 +187,17 @@ def fetch_workflow_runs_and_jobs(
         if not isinstance(jobs_list, list):
             raise GateVerificationError(f"Malformed jobs list for run #{run_id}.")
 
+        # Completed run must have non-empty jobs
+        if r.get("status") == "completed" and len(jobs_list) == 0:
+            raise GateVerificationError(f"Unverifiable history: completed run #{run_id} has empty jobs list.")
+
+        for j in jobs_list:
+            if not isinstance(j, dict) or not isinstance(j.get("name"), str) or not isinstance(j.get("status"), str):
+                raise GateVerificationError(f"Invalid job schema in run #{run_id}: missing name or status.")
+
         jobs_by_run_id[run_id] = jobs_list
 
-    return runs, jobs_by_run_id, False
+    return runs, jobs_by_run_id, is_verified_bootstrap
 
 
 def evaluate_watchdog_admission(
@@ -147,7 +206,7 @@ def evaluate_watchdog_admission(
     jobs_by_run_id: Optional[Dict[int, List[Dict[str, Any]]]] = None,
     target_cohort: str = "both",
     current_time: Optional[datetime] = None,
-    success_cooldown_seconds: int = DEFAULT_SUCCESS_COOLDOWN_SECONDS,
+    success_cooldown_seconds: int = DEFAULT_OVERDUE_THRESHOLD_SECONDS,
     attempt_cooldown_seconds: int = DEFAULT_ATTEMPT_COOLDOWN_SECONDS,
     verified_bootstrap: bool = False,
 ) -> Tuple[bool, str, List[str]]:
@@ -189,7 +248,6 @@ def evaluate_watchdog_admission(
         # Look up jobs for this run
         jobs = (jobs_by_run_id.get(run_id) if jobs_by_run_id else None) or []
 
-        # If jobs are not available but run has a conclusion, inspect job names or fallback safely
         for c in all_cohorts:
             # Look for production write job: "Python ingestion [cohort] (write-production-expire)"
             prod_job = next(
@@ -210,7 +268,7 @@ def evaluate_watchdog_admission(
                     if c not in latest_success_time or run_dt > latest_success_time[c]:
                         latest_success_time[c] = run_dt
 
-            # Note: jobs matching "(dry-run)" or skip-only runs have no prod_job and are ignored!
+            # Note: jobs matching "(dry-run)" or skip-only runs have no prod_job and are ignored
 
     # Evaluate per requested cohort
     cohorts_to_run: List[str] = []
@@ -224,12 +282,13 @@ def evaluate_watchdog_admission(
         is_fresh = False
         if last_success:
             success_age_sec = (now - last_success).total_seconds()
-            if 0 <= success_age_sec < success_cooldown_seconds:
+            if 0 <= success_age_sec <= success_cooldown_seconds:
                 is_fresh = True
                 cooldown_min = int(success_cooldown_seconds // 60)
                 age_min = int(success_age_sec // 60)
-                reasons.append(f"Cohort '{c}' succeeded {age_min}m ago (within {cooldown_min}m success cooldown).")
+                reasons.append(f"Cohort '{c}' succeeded {age_min}m ago (within {cooldown_min}m threshold).")
 
+        # A cohort that succeeded recently (e.g. 200m ago < 285m threshold) is fresh and never rewritten!
         if is_fresh:
             continue
 
@@ -263,20 +322,6 @@ def main() -> int:
     if target_cohort not in ("both", "non-workday", "workday"):
         target_cohort = "both"
 
-    success_cooldown_min = os.environ.get("COOLDOWN_MINUTES", "").strip()
-    success_cooldown_seconds = (
-        int(success_cooldown_min) * 60
-        if success_cooldown_min.isdigit()
-        else DEFAULT_SUCCESS_COOLDOWN_SECONDS
-    )
-
-    attempt_cooldown_min = os.environ.get("ATTEMPT_COOLDOWN_MINUTES", "").strip()
-    attempt_cooldown_seconds = (
-        int(attempt_cooldown_min) * 60
-        if attempt_cooldown_min.isdigit()
-        else DEFAULT_ATTEMPT_COOLDOWN_SECONDS
-    )
-
     output_path = os.environ.get("GITHUB_OUTPUT")
 
     def write_output(skip: bool, reason: str, admitted_cohorts: List[str]) -> None:
@@ -292,6 +337,18 @@ def main() -> int:
         write_output(False, "Not a watchdog catch-up run; admission granted.", all_c)
         print("[Watchdog Admission Gate] Not a watchdog run. skip=false")
         return 0
+
+    try:
+        cadence_min = parse_bounded_timing(os.environ.get("CADENCE_MINUTES"), DEFAULT_CADENCE_MINUTES, "CADENCE_MINUTES", 15, 1440)
+        grace_min = parse_bounded_timing(os.environ.get("OVERDUE_GRACE_MINUTES"), DEFAULT_OVERDUE_GRACE_MINUTES, "OVERDUE_GRACE_MINUTES", 0, 360)
+        attempt_cooldown_min = parse_bounded_timing(os.environ.get("ATTEMPT_COOLDOWN_MINUTES"), 45, "ATTEMPT_COOLDOWN_MINUTES", 5, 360)
+        overdue_threshold_seconds = (cadence_min + grace_min) * 60
+        attempt_cooldown_seconds = attempt_cooldown_min * 60
+    except GateVerificationError as e:
+        err_msg = f"Fail-closed: {e}"
+        print(f"::error title=Timing Configuration Error::{err_msg}", file=sys.stderr)
+        write_output(True, err_msg, [])
+        return 1
 
     github_token = os.environ.get("GITHUB_TOKEN", "").strip()
     repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
@@ -326,7 +383,7 @@ def main() -> int:
         runs=runs,
         jobs_by_run_id=jobs_by_run_id,
         target_cohort=target_cohort,
-        success_cooldown_seconds=success_cooldown_seconds,
+        success_cooldown_seconds=overdue_threshold_seconds,
         attempt_cooldown_seconds=attempt_cooldown_seconds,
         verified_bootstrap=is_bootstrap,
     )

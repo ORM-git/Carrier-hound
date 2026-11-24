@@ -4,7 +4,7 @@ Use this sequence after reviewing the code. The workflow itself remains schedule
 
 1. Review the exact PR head SHA, both source cohorts, the workflow checks and the report schema. Confirm the PR is merged and deployed to the default branch before relying on its schedule. Do not dispatch from a feature branch.
 2. Separately approve an owner-run manual workflow execution. The existing schedule and manual entry point retain write, production and expiry authority; each cohort has a separate source-failure veto and report. A failing cohort leaves the aggregate run red while the other cohort still executes.
-3. Inspect both uploaded JSON reports. Check selected/completed/failed source IDs, fetched and deduped totals, persistence-confirmed inserted/updated/unchanged counts, expiry outcomes, guard reason, SHA, and timestamps. A dry-run projection is not a confirmed write; fetched jobs are not newly added jobs; a zero net active delta can be legitimate. Note: GitHub Actions job status inspection (e.g. checking job conclusions) confirms execution status, but is NOT full artifact report validation, which requires inspecting confirmed database write counts in the uploaded JSON artifact report.
+3. Inspect both uploaded JSON reports. Check selected/completed/failed source IDs, fetched and deduped totals, persistence-confirmed inserted/updated/unchanged counts, expiry outcomes, guard reason, SHA, and timestamps. A dry-run projection is not a confirmed write; fetched jobs are not newly added jobs; a zero net active delta can be legitimate.
 4. On the established CareerMonke test-account site, record timestamped before/after values from the public `/api/stats` endpoint alongside the run SHA and both reports. Missing guest-stat fields are unknown, not zero. Do not use the production database, service-role credentials, or a user's session token in a public checker.
 5. Escalate missing repository secrets, workflow permissions, inactive workflow configuration, or scheduling restrictions to the repository owner. Do not add a token, external scheduler, automatic dispatch loop, or retry that bypasses the shared lock.
 
@@ -16,32 +16,30 @@ To safeguard against dropped GitHub Actions cron events, an independent schedule
 
 ### Architecture & Dedupe Safety
 
-1. **Cadence & Cohort Freshness**:
+1. **Cadence & Shared Threshold (240 + 45 = 285 min)**:
    - The watchdog triggers every 15 minutes (`*/15 * * * *`).
-   - Freshness is derived from verified production-write cohort jobs on `main` (matching `Python ingestion [<cohort>] (write-production-expire)`).
+   - Both worker and workflow admission gate share the same timing configuration: cadence = 240 minutes, grace = 45 minutes, overdue threshold = 285 minutes.
+   - Freshness is evaluated per cohort: a successful cohort that completed 200 minutes ago is fresh (< 285m threshold) and is **never rewritten**.
    - Cohorts (`non-workday` and `workday`) are tracked independently. Dry-run jobs (`(dry-run)`), other-branch runs, and skip-only runs are strictly excluded from production freshness.
-   - If any cohort's last verified write is overdue by > 45 minutes beyond the 4-hour cadence (total > 285 minutes) and no run is active, the watchdog dispatches catch-up for the degraded cohort(s). If only one cohort is degraded, only that cohort is dispatched, avoiding rewriting healthy cohorts.
-2. **Attempt Cooldown & Concurrency Gate**:
-   - Both the watchdog worker and the workflow admission gate (`scripts/scraper/watchdog_gate.py`) enforce a 45-minute bounded attempt cooldown. If a cohort attempt recently failed, rapid re-dispatching is suppressed to prevent infinite retry loops.
+   - If only one cohort is degraded or overdue, the watchdog dispatches only that degraded cohort, preventing repeated rewrites of the healthy cohort.
+2. **Freshness Signal & Accepted PR Limitation**:
+   - For this PR, `job-name + conclusion` (`Python ingestion [<cohort>] (write-production-expire)` with `conclusion == 'success'`) is the accepted freshness signal.
+   - **Limitation & Follow-Up**: Full artifact report validation (downloading and parsing uploaded JSON artifacts to confirm database write counts) is not performed by the watchdog in this PR; this remains an intentional follow-up. Do not claim full report verification.
+3. **Attempt Cooldown (45 min) & Concurrency Gate**:
+   - Both worker and workflow admission gate enforce a 45-minute bounded attempt cooldown. If a cohort attempt recently failed or completed, rapid re-dispatching is suppressed to prevent infinite retry loops.
    - When dispatched, the workflow acquires the existing `concurrency: group: ingest-pipeline, cancel-in-progress: false` serialized lock.
-   - Inside the `plan` job, `scripts/scraper/watchdog_gate.py` evaluates recent completed runs on `main`. If all requested cohorts succeeded within the 195-minute cooldown window, or if an attempt occurred within 45 minutes, it skips execution (`skip=true`).
-   - If credentials, API responses, or cohort jobs cannot be verified (e.g. HTTP 401/403/429, timeout, network error), the gate fails closed (`skip=true`, exit 1) and never authorizes a production attempt. Verified first-run bootstrap (API 200 with zero runs) is admitted.
-3. **Stale Job Protection & Observable Alerts**:
-   - Active runs queued or running for $\ge 120$ minutes are reported via webhook alert without dispatching duplicate runs.
-   - Mandatory webhook destination validation, explicit network timeouts (15s), bounded retries with `Retry-After`, and alert deduplication (30m) prevent webhook spam.
-
-### Narrowly Scoped Credentials & Secrets
-
-The watchdog operates under least privilege:
-
-1. **Fine-Grained GitHub Personal Access Token (PAT)**:
-   - **Repository Access**: Only `ORM-git/Carrier-hound`.
-   - **Permissions**: `Actions: Read and write` (to inspect `/actions/workflows/python-ingest.yml/runs` and trigger `/dispatches`).
-   - **Contents / Pull Requests / Administration / Secrets**: No access.
-2. **Alert Destination**:
+   - Inside the `plan` job, `scripts/scraper/watchdog_gate.py` re-evaluates requested cohorts after acquiring the lock. If all requested cohorts succeeded within 285 minutes, or if an attempt occurred within 45 minutes, it skips execution (`skip=true`).
+   - If credentials, API responses, or cohort jobs cannot be verified (e.g. HTTP 401/403/429/timeout, empty jobs, malformed data), the gate fails closed (`skip=true`, exit 1) and never authorizes a production attempt. Verified first-run bootstrap (API 200 with zero runs) is admitted.
+4. **Retry-After & Ambiguous Dispatch Protection**:
+   - Full `Retry-After` is honored (supporting delta-seconds and HTTP-date). If the requested wait exceeds the worker's retry budget (30s), it defers visibly with an error rather than retrying early.
+   - If a dispatch POST encounters a network error or timeout ambiguity, the watchdog **never blindly retries** the POST. Instead, it queries the workflow runs endpoint to recheck whether a run was created; if unconfirmed, it fails closed to prevent double-dispatch.
+5. **Alert Destination & Best-Effort Deduplication**:
    - Mandatory webhook URL (`ALERT_WEBHOOK_URL`) for Slack, Discord, PagerDuty, or HTTP monitoring sink. Missing or invalid webhook URL fails closed.
-3. **Manual Dispatch Secret (Optional)**:
-   - `DISPATCH_SECRET`: If configured, allows authorized operators to trigger catch-up reconciliation via `POST /dispatch`.
+   - In-memory alert deduplication (30m TTL) is **best-effort** across Cloudflare Worker isolates (resets on worker cold starts or isolate migration).
+6. **Strictly Read-Only Endpoints**:
+   - `GET /check` and `GET /inspect` perform genuinely read-only inspection.
+   - `GET /health` returns `200 OK` only when config is valid and ingestion is healthy; it returns `503 Service Unavailable` (not-ready) for stale or unverifiable ingestion state.
+   - Manual catch-up dispatches require authenticated explicit `POST /dispatch` with `Authorization: Bearer <DISPATCH_SECRET>`.
 
 ### Activation Procedure (Owner Prerequisite)
 

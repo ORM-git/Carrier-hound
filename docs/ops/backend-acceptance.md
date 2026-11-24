@@ -10,12 +10,12 @@
 
 | Domain | Scope / Feature | Status | Evidence Type & Description | Exact Owner Action |
 | :--- | :--- | :--- | :--- | :--- |
-| **Ingestion Watchdog** | Ingest watchdog catch-up, concurrency serialized admission gate, dedupe cooldown, attempt backoff | **PASS-LOCAL** | **Reproduced Local Tests**: `python -m unittest scripts.scraper.test_watchdog_gate` (12/12 pass); `workers/ingest-watchdog/test/index.test.ts` (21/21 pass). Verified duplicate serialization, attempt cooldown, fail-closed negative controls. | Review PR #714. Once merged to `main`, configure `GITHUB_TOKEN` (fine-grained PAT with `actions:write`) and `ALERT_WEBHOOK_URL` in Cloudflare Workers per `docs/ops/python-ingest-cohorts.md`. |
+| **Ingestion Watchdog** | Ingest watchdog catch-up, concurrency serialized admission gate, dedupe cooldown, attempt backoff | **PASS-LOCAL** | **Reproduced Local Tests**: `python -m unittest scripts.scraper.test_watchdog_gate` (17/17 pass); `workers/ingest-watchdog/test/index.test.ts` (22/22 pass). Verified duplicate serialization, attempt cooldown, fail-closed negative controls, 200m freshness preservation, full Retry-After, and ambiguous POST protection. Accepted limitation: `job-name + conclusion` is the freshness signal (no artifact write-count parsing). In-memory alert dedupe is best-effort across worker isolates. | Review PR #714. Once merged to `main`, configure `GITHUB_TOKEN` (fine-grained PAT with `actions:write`) and `ALERT_WEBHOOK_URL` in Cloudflare Workers per `docs/ops/python-ingest-cohorts.md`. |
 | **AI Cover Letter & Fallback** | Deterministic cover letter duty grounding, neutral fallback notice, GROQ key leak prevention | **PASS-LOCAL** | **Reproduced Local Tests**: `npx tsx scripts/test-ai-fallback-and-cover-letter.ts` (6/6 pass). Offline mock harness verifies duty grounding and error sanitization. | None for offline logic. Ensure `GROQ_API_KEY` is provisioned for live production AI calls. |
 | **AI Resume Tailor (Live)** | Real live LLM resume tailor & job fit explanation | **BLOCKED** | **Live Evidence Blocked**: Sandbox environment denies external network access and lacks live `GROQ_API_KEY` / live Supabase credentials. Offline static rules and token limits pass, but live LLM generation cannot be verified offline. | Provision `GROQ_API_KEY` and verify live generation in staging/production environment. |
 | **Stats & Invite Gate** | Authenticated-unapproved API denial, public stats restriction, invite claim protection | **PASS-LOCAL** | **Reproduced Local Tests**: `npx tsx scripts/test-stats-and-invite-gate.ts` (8/8 pass) on local Express mock server. Authenticated unapproved users receive HTTP 403 on `/api/invite/claim`. Live production invite gate is **NOT TESTED**. | Verify on production/staging deployment with real session tokens. |
 | **Account Deletion (Contracts)** | Deletion cleanup, cancel recovery, 42501 fallback, browser lookup fail-closed | **PASS-LOCAL** | **Reproduced Local Tests**: `npx vitest run src/lib/account/__tests__/deleteThenFreshSignup.test.ts` (26/26 pass); `npx tsx scripts/test-account-delete.ts` (all pass) on mocked database. | None for application code. |
-| **Account Deletion (Prod DB)** | Tombstone DELETE permissions for `service_role` | **BLOCKED** | **Historical Live Evidence**: Production Supabase returned `42501: permission denied for table deleted_account_tombstones` during previous live testing. Live physical delete unblocking remains blocked until owner runs migration. | Execute `supabase/migrations/20261123a_grant_tombstone_delete_to_service_role.sql` on production Supabase database. |
+| **Account Deletion (Prod DB)** | Tombstone DELETE permissions for `service_role` | **NOT VERIFIED** | **Current State Not Verified**: Historical live runs encountered 42501 on tombstones, but current live production database grant status for `service_role` on `deleted_account_tombstones` has not been independently inspected under this task. Do not run migration 20261123a based on historical assumptions alone. | Owner inspects production table grants for `service_role` on `deleted_account_tombstones` to determine if DELETE permission is already granted or requires migration. |
 | **Email Unsubscribe** | RFC 8058 headers, GET confirm vs POST suppression, HMAC validation, digest skip | **PASS-LOCAL** | **Reproduced Local Tests**: `npx tsx scripts/test-email-unsubscribe.ts` (8/8 pass) on local test harness. Verifies HMAC generation and suppression logic. Live production sending is **NOT TESTED**. | Provision `UNSUBSCRIBE_SECRET` in production environment variables. |
 
 ---
@@ -26,18 +26,21 @@
 - **Architecture**:
   - Primary scheduler remains native GitHub Actions cron (`47 2-23/4 * * *`).
   - Cloudflare Worker (`workers/ingest-watchdog`) executes every 15 minutes (`*/15 * * * *`).
-  - Derives freshness from verified production-write cohort jobs on `main` (`Python ingestion [<cohort>] (write-production-expire)`).
+  - Freshness is derived from completed production-write cohort jobs on `main` (`Python ingestion [<cohort>] (write-production-expire)` with `conclusion == 'success'`).
+  - Shared cadence (240m) + grace (45m) = 285m threshold across Worker and admission gate. A cohort that succeeded 200 minutes ago is fresh (< 285m) and is **never rewritten**.
   - Dry-runs (`(dry-run)`), other-branch runs, and skip-only runs are strictly excluded from production freshness.
   - Cohorts are tracked independently: if one cohort fails or is stale, only that degraded cohort is dispatched, preventing repeated writes to the healthy cohort.
   - Both worker and workflow gate enforce a 45-minute attempt cooldown to suppress rapid retries after failure.
   - Stale jobs ($\ge 120$ minutes in queued/running state) trigger alerts without duplicate dispatch.
-  - Mandatory webhook destination validation, timeouts, bounded retries honoring `Retry-After`, and 30-minute alert deduplication.
-  - Note: GitHub Actions job status inspection (e.g. checking job conclusions) confirms execution status, but is NOT full artifact report validation, which requires inspecting confirmed database write counts in the uploaded JSON artifact report.
+  - Mandatory webhook destination validation, timeouts, bounded retries honoring `Retry-After` (seconds and HTTP-date), and 30-minute alert deduplication.
+  - In-memory alert deduplication is best-effort across worker isolates.
+  - Accepted PR limitation: `job-name + conclusion` is the freshness signal (no artifact/write-count validation). Full artifact parsing is an intentional follow-up.
 - **Workflow Admission Gate (`scripts/scraper/watchdog_gate.py`)**:
   - Runs in `plan` job *after* acquiring the `concurrency: group: ingest-pipeline, cancel-in-progress: false` serialized lock.
-  - Fails closed (`skip=true`, exit 1) if credentials, history, or cohort jobs cannot be verified (e.g. missing token/repo, HTTP 401/403/429/timeout, malformed data).
+  - Re-evaluates requested cohorts after acquiring the lock; excludes fresh cohorts and admits only overdue cohorts outside attempt cooldown.
+  - Fails closed (`skip=true`, exit 1) if credentials, history, or cohort jobs cannot be verified (e.g. missing token/repo, HTTP 401/403/429/timeout, malformed data, empty jobs for completed run).
   - Distinguishes verified first-run bootstrap (API 200 with zero runs) from API failures.
-  - Tested locally with 12 unit and negative regression tests in `scripts/scraper/test_watchdog_gate.py`.
+  - Tested locally with 17 unit and negative regression tests in `scripts/scraper/test_watchdog_gate.py`.
 
 ### 2.2 AI Fallback & Grounding (`scripts/test-ai-fallback-and-cover-letter.ts`)
 - **Evidence Type**: Reproduced Local Test (Mock Harness).
@@ -63,7 +66,7 @@
 - **Limitation**: Live production invite gate enforcement against live Supabase Auth and database tables is **NOT TESTED** and requires owner verification in staging.
 
 ### 2.4 Account Deletion & Recovery (`deleteThenFreshSignup.test.ts`, `test-account-delete.ts`)
-- **Evidence Type**: Reproduced Local Test (Mocked DB) & Historical Live Evidence.
+- **Evidence Type**: Reproduced Local Test (Mocked DB).
 - **Test Commands**:
   - `npx vitest run src/lib/account/__tests__/deleteThenFreshSignup.test.ts` (26/26 passed)
   - `npx tsx scripts/test-account-delete.ts` (all passed)
@@ -73,7 +76,7 @@
   3. Interrupted deletion resets profile on cancel, enforcing fresh setup.
   4. 42501 fallback updates `purged_at` when DELETE is denied.
   5. Browser status lookup fails closed to `/onboarding` on missing session or thrown error.
-- **Limitation**: Production physical deletion of tombstones remains **BLOCKED** on owner execution of `supabase/migrations/20261123a_grant_tombstone_delete_to_service_role.sql` on the live database.
+- **Current Production Status**: `NOT VERIFIED`. Do not execute migration 20261123a without verifying current live table permissions. Owner should inspect `deleted_account_tombstones` permissions to confirm whether DELETE grant is already present.
 
 ### 2.5 Email One-Click Unsubscribe (`scripts/test-email-unsubscribe.ts`)
 - **Evidence Type**: Reproduced Local Test (Local Mock Harness).

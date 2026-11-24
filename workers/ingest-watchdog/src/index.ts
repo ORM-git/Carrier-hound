@@ -11,9 +11,12 @@
  * 2. Manual dispatch requires authenticated explicit POST /dispatch with Bearer secret.
  * 3. Freshness is derived from verified production-write cohort jobs on main.
  * 4. Tracks cohorts independently (non-workday and workday); dry-runs, skip-only, and other branches excluded.
- * 5. Bounded attempt cooldown prevents rapid retry loops after failure.
- * 6. Mandatory alert destination validation, network timeouts, bounded retries with Retry-After, and deduplication.
- * 7. /health reports 503 when configuration is missing or invalid.
+ * 5. Bounded attempt cooldown (45m) prevents rapid retry loops after failure.
+ * 6. Shared cadence (240m) and grace (45m) = 285m threshold; 200m-old successful cohort is never rewritten.
+ * 7. Strictly validates runs/jobs API schemas; empty jobs or malformed types fail closed.
+ * 8. Full Retry-After honored (seconds or HTTP-date); exceeding budget defers visibly without early retrying.
+ * 9. Ambiguous dispatch POST never blindly retried; rechecks run state before failing closed.
+ * 10. /health returns not-ready (503) for stale or unverifiable ingestion state.
  */
 
 export interface Env {
@@ -44,6 +47,7 @@ export interface ValidatedConfig {
   branch: string;
   cadenceMinutes: number;
   graceMinutes: number;
+  overdueThresholdMinutes: number; // cadence + grace (default 285)
   staleJobMinutes: number;
   attemptCooldownMinutes: number;
   alertWebhookUrl: string;
@@ -88,7 +92,8 @@ export interface WatchdogCheckResult {
   ref?: string;
 }
 
-// In-memory alert deduplication cache: fingerprint -> timestamp (ms)
+// In-memory alert deduplication cache: fingerprint -> timestamp (ms).
+// Best-effort across Cloudflare Worker isolates (resets on isolate recycle).
 const recentAlerts = new Map<string, number>();
 const ALERT_DEDUPE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -96,6 +101,9 @@ export function clearAlertCache(): void {
   recentAlerts.clear();
 }
 
+/**
+ * Validates environment configuration and enforces timing value bounds.
+ */
 export function validateConfig(env: Env): ValidatedConfig {
   const token = env.GITHUB_TOKEN?.trim();
   if (!token) {
@@ -115,19 +123,27 @@ export function validateConfig(env: Env): ValidatedConfig {
     throw new Error("Invalid ALERT_WEBHOOK_URL: must be a valid URL");
   }
 
-  const parseTiming = (val: string | undefined, defaultVal: number, name: string, allowZero = false): number => {
+  const parseBoundedTiming = (
+    val: string | undefined,
+    defaultVal: number,
+    name: string,
+    minVal: number,
+    maxVal: number
+  ): number => {
     if (val === undefined || val.trim() === "") return defaultVal;
     const n = Number(val);
-    if (!Number.isFinite(n) || Number.isNaN(n) || (allowZero ? n < 0 : n <= 0)) {
-      throw new Error(`Invalid timing value for ${name}: must be a positive finite number, got "${val}"`);
+    if (!Number.isFinite(n) || Number.isNaN(n) || !Number.isInteger(n) || n < minVal || n > maxVal) {
+      throw new Error(
+        `Invalid timing value for ${name}: must be an integer between ${minVal} and ${maxVal}, got "${val}"`
+      );
     }
     return n;
   };
 
-  const cadenceMinutes = parseTiming(env.CADENCE_MINUTES, 240, "CADENCE_MINUTES");
-  const graceMinutes = parseTiming(env.OVERDUE_GRACE_MINUTES, 45, "OVERDUE_GRACE_MINUTES", true);
-  const staleJobMinutes = parseTiming(env.STALE_JOB_THRESHOLD_MINUTES, 120, "STALE_JOB_THRESHOLD_MINUTES");
-  const attemptCooldownMinutes = parseTiming(env.ATTEMPT_COOLDOWN_MINUTES, 45, "ATTEMPT_COOLDOWN_MINUTES");
+  const cadenceMinutes = parseBoundedTiming(env.CADENCE_MINUTES, 240, "CADENCE_MINUTES", 15, 1440);
+  const graceMinutes = parseBoundedTiming(env.OVERDUE_GRACE_MINUTES, 45, "OVERDUE_GRACE_MINUTES", 0, 360);
+  const staleJobMinutes = parseBoundedTiming(env.STALE_JOB_THRESHOLD_MINUTES, 120, "STALE_JOB_THRESHOLD_MINUTES", 15, 720);
+  const attemptCooldownMinutes = parseBoundedTiming(env.ATTEMPT_COOLDOWN_MINUTES, 45, "ATTEMPT_COOLDOWN_MINUTES", 5, 360);
 
   return {
     owner: env.REPO_OWNER?.trim() || "ORM-git",
@@ -137,6 +153,7 @@ export function validateConfig(env: Env): ValidatedConfig {
     branch: env.TARGET_BRANCH?.trim() || "main",
     cadenceMinutes,
     graceMinutes,
+    overdueThresholdMinutes: cadenceMinutes + graceMinutes, // 285 min
     staleJobMinutes,
     attemptCooldownMinutes,
     alertWebhookUrl: webhookUrl,
@@ -145,14 +162,35 @@ export function validateConfig(env: Env): ValidatedConfig {
 }
 
 /**
- * Fetch wrapper with explicit timeout and bounded retries honoring Retry-After.
+ * Parses Retry-After header as either delta-seconds or HTTP-date.
+ */
+export function parseRetryAfter(headerVal: string | null | undefined, nowMs: number = Date.now()): number | null {
+  if (!headerVal) return null;
+  const trimmed = headerVal.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const sec = parseInt(trimmed, 10);
+    return Number.isFinite(sec) && sec >= 0 ? sec : null;
+  }
+  const parsedDate = Date.parse(trimmed);
+  if (!Number.isNaN(parsedDate)) {
+    const diffSec = Math.ceil((parsedDate - nowMs) / 1000);
+    return Math.max(0, diffSec);
+  }
+  return null;
+}
+
+/**
+ * Fetch wrapper with explicit timeout and bounded retries honoring full Retry-After.
+ * If Retry-After exceeds maxRetryBudgetSeconds, defers visibly without early retrying.
  */
 export async function fetchWithRetry(
   url: string,
   options: RequestInit,
   fetchFn: typeof fetch = fetch,
   maxRetries = 2,
-  timeoutMs = 15000
+  timeoutMs = 15000,
+  maxRetryBudgetSeconds = 30,
+  nowMs: number = Date.now()
 ): Promise<Response> {
   let attempt = 0;
   while (true) {
@@ -170,20 +208,29 @@ export async function fetchWithRetry(
       // Check for rate limit or temporary server failure
       if ((res.status === 429 || res.status === 503) && attempt <= maxRetries) {
         const retryAfterHeader = res.headers.get("Retry-After");
-        let delayMs = 1000;
-        if (retryAfterHeader) {
-          const parsedSeconds = parseInt(retryAfterHeader, 10);
-          if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) {
-            delayMs = Math.min(parsedSeconds * 1000, 5000); // bounded to 5s
+        const retrySeconds = parseRetryAfter(retryAfterHeader, nowMs);
+
+        if (retrySeconds !== null) {
+          if (retrySeconds > maxRetryBudgetSeconds) {
+            throw new Error(
+              `Rate limited with Retry-After (${retrySeconds}s) exceeding retry budget (${maxRetryBudgetSeconds}s); deferring execution.`
+            );
           }
+          await new Promise((resolve) => setTimeout(resolve, retrySeconds * 1000));
+          continue;
         }
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+        // Standard exponential backoff when no header is present
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
         continue;
       }
 
       return res;
     } catch (err: any) {
       clearTimeout(timer);
+      if (err?.message?.includes("exceeding retry budget")) {
+        throw err;
+      }
       if (attempt <= maxRetries && err?.name !== "AbortError") {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
@@ -204,7 +251,7 @@ export async function sendAlert(
     throw new Error("Missing ALERT_WEBHOOK_URL: cannot send alert");
   }
 
-  // Deduplication
+  // Best-effort in-memory deduplication within isolate
   const dedupeKey = `${alert.type}:${alert.message}`;
   const lastSent = recentAlerts.get(dedupeKey);
   if (lastSent && nowMs - lastSent < ALERT_DEDUPE_TTL_MS) {
@@ -229,7 +276,9 @@ export async function sendAlert(
     },
     fetchFn,
     2,
-    10000
+    10000,
+    15,
+    nowMs
   );
 
   if (!res.ok) {
@@ -242,7 +291,8 @@ export async function sendAlert(
 
 /**
  * Genuinely READ-ONLY inspection of ingestion status on main.
- * NEVER mutates state or dispatches workflows.
+ * Strictly validates runs/jobs API response schemas, enforces pagination bounds,
+ * and tracks cohorts independently.
  */
 export async function inspectIngestionStatus(
   env: Env,
@@ -250,32 +300,93 @@ export async function inspectIngestionStatus(
   nowMs: number = Date.now()
 ): Promise<InspectionReport> {
   const config = validateConfig(env);
-  const { owner, repo, token, workflow, branch, cadenceMinutes, graceMinutes, staleJobMinutes, attemptCooldownMinutes } = config;
-  const overdueThresholdMinutes = cadenceMinutes + graceMinutes; // 240 + 45 = 285 min
+  const { owner, repo, token, workflow, branch, overdueThresholdMinutes, staleJobMinutes, attemptCooldownMinutes } = config;
 
-  const runsUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=15`;
-  const runsRes = await fetchWithRetry(
-    runsUrl,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "carrier-hound-ingest-watchdog",
+  const MAX_PAGES = 3;
+  const PER_PAGE = 30;
+  let page = 1;
+  const allRuns: any[] = [];
+  let totalCount = 0;
+
+  while (page <= MAX_PAGES) {
+    const runsUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=${PER_PAGE}&page=${page}`;
+    const runsRes = await fetchWithRetry(
+      runsUrl,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "carrier-hound-ingest-watchdog",
+        },
       },
-    },
-    fetchFn
-  );
+      fetchFn,
+      2,
+      15000,
+      30,
+      nowMs
+    );
 
-  if (!runsRes.ok) {
-    const errText = await runsRes.text().catch(() => "");
-    throw new Error(`GitHub API request failed with status ${runsRes.status}: ${errText}`);
+    if (!runsRes.ok) {
+      const errText = await runsRes.text().catch(() => "");
+      throw new Error(`GitHub API request failed with status ${runsRes.status}: ${errText}`);
+    }
+
+    let runsData: any;
+    try {
+      runsData = await runsRes.json();
+    } catch (err: any) {
+      throw new Error(`Invalid JSON in runs API response: ${err?.message}`);
+    }
+
+    // Strict schema validation of runs API response
+    if (typeof runsData !== "object" || runsData === null || Array.isArray(runsData)) {
+      throw new Error("Invalid runs API response schema: expected object, got non-object");
+    }
+    if (!Array.isArray(runsData.workflow_runs)) {
+      throw new Error("Invalid runs API response schema: missing or malformed 'workflow_runs' array");
+    }
+    if (typeof runsData.total_count !== "number" || !Number.isFinite(runsData.total_count)) {
+      throw new Error("Invalid runs API response schema: missing or non-numeric 'total_count'");
+    }
+
+    totalCount = runsData.total_count;
+    const pageRuns = runsData.workflow_runs;
+
+    // Detect inconsistent API state: nonzero total_count with empty page
+    if (page === 1 && totalCount > 0 && pageRuns.length === 0) {
+      throw new Error(`Inconsistent runs API response: nonzero total_count (${totalCount}) with empty page.`);
+    }
+
+    // Validate each run in page
+    for (const r of pageRuns) {
+      if (typeof r !== "object" || r === null) {
+        throw new Error("Invalid run schema: run entry is not an object");
+      }
+      if (typeof r.id !== "number" || typeof r.head_branch !== "string" || typeof r.status !== "string") {
+        throw new Error(`Invalid run schema: missing required fields in run #${r?.id}`);
+      }
+      allRuns.push(r);
+    }
+
+    // Stop paginating if page is incomplete or we have received all runs
+    if (pageRuns.length < PER_PAGE || allRuns.length >= totalCount) {
+      break;
+    }
+    page++;
   }
 
-  const runsData = (await runsRes.json()) as { workflow_runs?: any[] };
-  const allRuns = runsData.workflow_runs || [];
-
-  // Strictly filter to runs on target branch (main)
+  // Filter strictly to runs on target branch (main)
   const runs = allRuns.filter((r) => r.head_branch === branch);
+
+  // Verified bootstrap check: total_count === 0, or zero runs on main after exhausting all runs
+  const isVerifiedBootstrap = (totalCount === 0 && allRuns.length === 0) || (allRuns.length >= totalCount && runs.length === 0);
+
+  // If bound blocked verification without finding main runs while more runs exist
+  if (!isVerifiedBootstrap && runs.length === 0 && allRuns.length < totalCount) {
+    throw new Error(
+      `History verification truncated at pagination bound (max ${MAX_PAGES} pages, ${allRuns.length}/${totalCount} runs); failing closed to not-ready.`
+    );
+  }
 
   // 1. Check for active (queued or in_progress) runs
   const activeRun = runs.find((r) => r.status === "queued" || r.status === "in_progress");
@@ -302,13 +413,12 @@ export async function inspectIngestionStatus(
   };
 
   const failedCohortsSet = new Set<string>();
-  let mostRecentAttemptMs: number | undefined;
 
   for (const run of completedRuns) {
     const runTime = new Date(run.updated_at || run.created_at).getTime();
 
     // Fetch jobs for this run to verify actual cohort jobs
-    const jobsUrl = `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/jobs`;
+    const jobsUrl = `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/jobs?per_page=100`;
     const jobsRes = await fetchWithRetry(
       jobsUrl,
       {
@@ -318,21 +428,50 @@ export async function inspectIngestionStatus(
           "User-Agent": "carrier-hound-ingest-watchdog",
         },
       },
-      fetchFn
+      fetchFn,
+      2,
+      15000,
+      30,
+      nowMs
     );
 
     if (!jobsRes.ok) {
       throw new Error(`Failed to fetch jobs for run #${run.id}: HTTP ${jobsRes.status}`);
     }
 
-    const jobsData = (await jobsRes.json()) as { jobs?: any[] };
-    const jobs = jobsData.jobs || [];
+    let jobsData: any;
+    try {
+      jobsData = await jobsRes.json();
+    } catch (err: any) {
+      throw new Error(`Invalid JSON in jobs API response for run #${run.id}: ${err?.message}`);
+    }
+
+    // Strict schema validation of jobs API response
+    if (typeof jobsData !== "object" || jobsData === null || Array.isArray(jobsData)) {
+      throw new Error(`Invalid jobs API schema for run #${run.id}: expected object`);
+    }
+    if (!Array.isArray(jobsData.jobs)) {
+      throw new Error(`Invalid jobs API schema for run #${run.id}: missing or malformed 'jobs' array`);
+    }
+
+    const jobs = jobsData.jobs;
+
+    // Fail closed if completed run has empty jobs
+    if (jobs.length === 0) {
+      throw new Error(`Unverifiable history: completed run #${run.id} has empty jobs list.`);
+    }
+
+    for (const j of jobs) {
+      if (typeof j !== "object" || j === null || typeof j.name !== "string" || typeof j.status !== "string") {
+        throw new Error(`Invalid job schema in run #${run.id}: missing name or status`);
+      }
+    }
 
     // Check each cohort job in this run
     for (const c of ["non-workday", "workday"] as const) {
       // Find production write job for this cohort:
       // Pattern: "Python ingestion [cohort] (write-production-expire)"
-      const prodJob = jobs.find((j) =>
+      const prodJob = jobs.find((j: any) =>
         j.name.includes(`[${c}]`) && j.name.includes("(write-production-expire)")
       );
 
@@ -341,9 +480,6 @@ export async function inspectIngestionStatus(
         if (!cohorts[c].lastAttemptMs || runTime > cohorts[c].lastAttemptMs!) {
           cohorts[c].lastAttemptMs = runTime;
           cohorts[c].lastAttemptMinutesAgo = Math.max(0, Math.floor((nowMs - runTime) / 60000));
-        }
-        if (!mostRecentAttemptMs || runTime > mostRecentAttemptMs) {
-          mostRecentAttemptMs = runTime;
         }
 
         if (prodJob.conclusion === "success") {
@@ -355,7 +491,7 @@ export async function inspectIngestionStatus(
           failedCohortsSet.add(c);
         }
       }
-      // Note: Jobs matching "(dry-run)" or skip-only runs are deliberately excluded
+      // Note: Jobs matching "(dry-run)" or skip-only runs have no prodJob and are ignored
     }
 
     // Stop searching once both cohorts have found their most recent success
@@ -376,7 +512,6 @@ export async function inspectIngestionStatus(
       ch.status = "healthy";
     } else {
       staleCohorts.push(c);
-      // If this stale cohort had an attempt recently (< attemptCooldownMinutes), mark attempt cooldown
       if (ch.lastAttemptMinutesAgo !== undefined && ch.lastAttemptMinutesAgo < attemptCooldownMinutes) {
         ch.status = "attempt_cooldown";
         attemptCooldownActive = true;
@@ -428,6 +563,9 @@ export async function inspectIngestionStatus(
 /**
  * Reconcile ingestion: performs inspection, sends necessary alerts, and if overdue
  * and outside cooldown, dispatches catch-up workflow on main for the stale cohort(s).
+ *
+ * Guarantees that ambiguous dispatch POSTs (timeouts/network drops) are never blindly retried;
+ * instead rechecks run state and fails closed if uncertain.
  */
 export async function checkAndReconcileIngestion(
   env: Env,
@@ -438,7 +576,6 @@ export async function checkAndReconcileIngestion(
   try {
     inspection = await inspectIngestionStatus(env, fetchFn, nowMs);
   } catch (err: any) {
-    // Send alert on config or GitHub API failure if webhook is available
     if (env.ALERT_WEBHOOK_URL) {
       await sendAlert(
         env,
@@ -464,7 +601,11 @@ export async function checkAndReconcileIngestion(
       {
         type: "stale_job",
         message: inspection.reason,
-        details: { runId: inspection.activeRun.id, status: inspection.activeRun.status, durationMinutes: inspection.activeRun.durationMinutes },
+        details: {
+          runId: inspection.activeRun.id,
+          status: inspection.activeRun.status,
+          durationMinutes: inspection.activeRun.durationMinutes,
+        },
       },
       fetchFn,
       nowMs
@@ -530,9 +671,12 @@ export async function checkAndReconcileIngestion(
       },
     };
 
-    const dispatchRes = await fetchWithRetry(
-      dispatchUrl,
-      {
+    let dispatchRes: Response;
+    try {
+      // Dispatch POST has a strict 15s timeout and is NOT blindly retried on network failure
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      dispatchRes = await fetchFn(dispatchUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -541,9 +685,59 @@ export async function checkAndReconcileIngestion(
           "User-Agent": "carrier-hound-ingest-watchdog",
         },
         body: JSON.stringify(dispatchPayload),
-      },
-      fetchFn
-    );
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+    } catch (postErr: any) {
+      // Network drop or timeout ambiguity: NEVER blindly retry dispatch POST!
+      console.warn("[Watchdog] Ambiguous dispatch POST error; rechecking workflow run state...", postErr);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Recheck run state
+      try {
+        const verifyRes = await fetchFn(
+          `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=5`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "User-Agent": "carrier-hound-ingest-watchdog",
+            },
+          }
+        );
+        if (verifyRes.ok) {
+          const vData = (await verifyRes.json()) as any;
+          const latestRun = vData.workflow_runs?.[0];
+          if (latestRun) {
+            const ageSec = Math.floor((Date.now() - new Date(latestRun.created_at).getTime()) / 1000);
+            if (ageSec < 120 && (latestRun.status === "queued" || latestRun.status === "in_progress")) {
+              return {
+                action: "dispatched",
+                targetCohort,
+                ref: branch,
+                runId: latestRun.id,
+                reason: "Dispatch confirmed via state recheck after ambiguous network response.",
+              };
+            }
+          }
+        }
+      } catch {
+        // Fall through to fail closed
+      }
+
+      const alertMsg = `Ambiguous dispatch POST outcome: ${postErr?.message || postErr}; run state unconfirmed. Failing closed to prevent double-dispatch.`;
+      await sendAlert(
+        env,
+        {
+          type: "dispatch_failed",
+          message: alertMsg,
+          details: { url: dispatchUrl },
+        },
+        fetchFn,
+        nowMs
+      ).catch(() => {});
+      throw new Error(alertMsg);
+    }
 
     if (dispatchRes.status !== 204 && !dispatchRes.ok) {
       const errText = await dispatchRes.text().catch(() => "");
@@ -589,28 +783,72 @@ export default {
   async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
     const url = new URL(request.url);
 
-    // 1. Health endpoint: validates configuration and readiness
+    // 1. Health endpoint: strictly read-only; returns not-ready (503) for stale/unverifiable state
     if (url.pathname === "/health") {
+      if (request.method !== "GET") {
+        return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
+          status: 405,
+          headers: { "Content-Type": "application/json", Allow: "GET" },
+        });
+      }
+
       try {
         validateConfig(env);
+      } catch (cfgErr: any) {
+        return new Response(
+          JSON.stringify({
+            status: "unhealthy",
+            ready: false,
+            service: "carrier-hound-ingest-watchdog",
+            issue: cfgErr?.message || String(cfgErr),
+          }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      try {
+        const inspection = await inspectIngestionStatus(env);
+        if (!inspection.healthy) {
+          return new Response(
+            JSON.stringify({
+              status: "not_ready",
+              ready: false,
+              service: "carrier-hound-ingest-watchdog",
+              reason: inspection.reason,
+              staleCohorts: inspection.staleCohorts,
+              failedCohorts: inspection.failedCohorts,
+              activeRun: inspection.activeRun,
+              cohorts: inspection.cohorts,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
         return new Response(
           JSON.stringify({
             status: "healthy",
             ready: true,
             service: "carrier-hound-ingest-watchdog",
+            cohorts: inspection.cohorts,
           }),
           {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }
         );
-      } catch (err: any) {
+      } catch (inspErr: any) {
         return new Response(
           JSON.stringify({
             status: "unhealthy",
             ready: false,
             service: "carrier-hound-ingest-watchdog",
-            issue: err?.message || String(err),
+            issue: `Ingestion state unverifiable: ${inspErr?.message || String(inspErr)}`,
           }),
           {
             status: 503,
