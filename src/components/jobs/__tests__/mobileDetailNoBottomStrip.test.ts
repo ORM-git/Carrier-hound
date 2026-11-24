@@ -11,7 +11,7 @@ describe("mobile detail without duplicate bottom strip (item 16)", () => {
     expect(detail).not.toContain('data-testid="mobile-share-job-button"');
     expect(page).not.toContain('"pb-44"');
     // The detail root's 7rem strip clearance stays on desktop only.
-    expect(detail).toContain("pb-[calc(var(--cookie-h)+1rem)] md:pb-[calc(var(--cookie-h)+7rem)]");
+    expect(detail).toContain("pb-[calc(var(--cookie-h)+5rem)] md:pb-[calc(var(--cookie-h)+7rem)]");
     expect(detail).not.toContain("paddingBottom: `calc(${cookieNoticeHeight}px + 7rem)`");
   });
 

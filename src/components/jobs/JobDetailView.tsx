@@ -280,9 +280,9 @@ export default function JobDetailView({
 
   return (
     <div
-      // Mobile: no bottom strip to clear any more (item 16); desktop keeps its 7rem tail.
+      // Mobile: clear the 64px bottom nav (shown during detail, item 16) + 1rem; desktop keeps its 7rem tail.
       style={{ "--cookie-h": `${cookieNoticeHeight}px` } as React.CSSProperties}
-      className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+1rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
+      className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+5rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
     >
       {/* Expired Job Banner */}
       {(isExpired || job.isExpired) && (

@@ -707,27 +707,6 @@ function JobsPageInner() {
     };
   }, [mobileFiltersOpen]);
 
-  // Hide mobile bottom nav while full-screen job detail is open
-  useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("careermonke_detail_open", { detail: { isOpen: Boolean(selectedJob) } })
-    );
-    if (typeof document !== "undefined") {
-      if (selectedJob) {
-        document.body.classList.add("cm-job-detail-open");
-      } else {
-        document.body.classList.remove("cm-job-detail-open");
-      }
-    }
-    return () => {
-      window.dispatchEvent(
-        new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } })
-      );
-      if (typeof document !== "undefined") {
-        document.body.classList.remove("cm-job-detail-open");
-      }
-    };
-  }, [selectedJob]);
 
   // Synchronize browser back/forward buttons with all filters, tab, and in-place detail view
   useEffect(() => {
