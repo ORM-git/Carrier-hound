@@ -74,11 +74,12 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    // Versioned URLs only: explicit unversioned icon links are cache-pinned by browsers
+    // and would keep showing the pre-rebrand mark. /favicon.ico still exists for agents
+    // that request it by convention, and the Next file-convention icon adds its own
+    // content-hashed link.
+    icon: [{ url: "/icon-v2.png", sizes: "512x512", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon-v2.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
