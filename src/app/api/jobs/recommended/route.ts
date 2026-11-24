@@ -443,40 +443,95 @@ export async function GET(req: Request) {
 
     let paginatedJobs: any[] = [];
     let totalCount = 0;
+    let hasNextPage = false;
+    let nextCursor: number | null = null;
+
+    const hasResume = hasResumeSignals(answers.resumeProfile);
+
+    // Beyond-pool continuation cursor: an opaque DB offset into the SAME ordered, filtered
+    // query. The ranked pool is exactly the first RECOMMENDED_POOL_SIZE rows of this ordering,
+    // so chunks at offsets >= RECOMMENDED_POOL_SIZE never repeat or skip a pool row.
+    const rawCursor = parseInt(searchParams.get("cursor") || "", 10);
+    const cursor = Number.isFinite(rawCursor) && rawCursor >= RECOMMENDED_POOL_SIZE ? Math.floor(rawCursor) : null;
 
     // Use a fixed candidate set per request (fixed pool size, not growing with page)
     // with deterministic tie-breaks (score desc, posted_at desc, id).
     // Bounded candidate pool ensures zero duplicates and zero skips between adjacent pages.
     query = query
       .order("posted_at", { ascending: false, nullsFirst: false })
-      .order("id", { ascending: false })
-      .range(0, RECOMMENDED_POOL_SIZE - 1);
+      .order("id", { ascending: false });
 
-    const { data: rawJobs, error } = await query;
+    if (cursor !== null) {
+      // Continuation chunk: keep serving page-sized chunks in the same deterministic order
+      // until the domain's matching jobs are genuinely exhausted. One extra row probes for a
+      // next chunk. Ranking, the relevance gate and the per-company cap apply inside each
+      // chunk exactly as inside the pool; a chunk that filters down to empty is skipped
+      // (bounded lookahead) so the client never sees an empty page mid-stream.
+      let dbOffset = cursor;
+      let fetched = 0;
+      const MAX_CHUNKS_PER_REQUEST = 4;
+      while (fetched < MAX_CHUNKS_PER_REQUEST) {
+        fetched += 1;
+        const { data: rawJobs, error } = await query.range(dbOffset, dbOffset + pageSize);
+        if (error) {
+          log.error("Failed to query continuation jobs for recommendations", { error: error.message || error });
+          return NextResponse.json(
+            { error: "Database service unavailable", jobs: [], totalCount: 0 },
+            { status: 503 }
+          );
+        }
+        const rows = rawJobs || [];
+        hasNextPage = rows.length > pageSize;
+        const chunk = rows.slice(0, pageSize);
+        const rankedJobs = isPersonalized || hasResume
+          ? rankJobsByRecommendation(chunk, answers)
+          : rankJobsByRecommendation(chunk, null);
+        const qualifyingJobs = isPersonalized
+          ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
+          : rankedJobs;
+        paginatedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
+        dbOffset += pageSize;
+        if (paginatedJobs.length > 0 || !hasNextPage) break;
+      }
+      // totalCount stays 0 on continuation chunks: the domain-wide total is not verified
+      // here and a chunk count must never be presented as one. The client keeps its last
+      // known total and relies on hasNextPage for continuation.
+      nextCursor = hasNextPage ? dbOffset : null;
+    } else {
+      query = query.range(0, RECOMMENDED_POOL_SIZE - 1);
 
-    if (error) {
-      log.error("Failed to query candidate jobs for recommendations", { error: error.message || error });
-      return NextResponse.json(
-        { error: "Database service unavailable", jobs: [], totalCount: 0 },
-        { status: 503 }
-      );
+      const { data: rawJobs, error } = await query;
+
+      if (error) {
+        log.error("Failed to query candidate jobs for recommendations", { error: error.message || error });
+        return NextResponse.json(
+          { error: "Database service unavailable", jobs: [], totalCount: 0 },
+          { status: 503 }
+        );
+      }
+
+      const candidateJobs = rawJobs || [];
+      const rankedJobs = isPersonalized || hasResume
+        ? rankJobsByRecommendation(candidateJobs, answers)
+        : rankJobsByRecommendation(candidateJobs, null);
+
+      // Drop rows with matchScore <= 0 (ineligible under saved preferences or not relevant to the user's role).
+      // A saved "remote" preference is additive and is handled in ranking.
+      const qualifyingJobs = isPersonalized
+        ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
+        : rankedJobs;
+
+      const cappedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
+      totalCount = cappedJobs.length; // Honestly reports the bounded pool total after exclusions
+      paginatedJobs = cappedJobs.slice(from, to + 1);
+
+      // The stream continues while this page is not the pool's end; when the pool came back
+      // full, the corpus likely holds more rows beyond it, so the stream continues past the
+      // pool through the continuation cursor instead of stopping at an artificial boundary.
+      const poolFull = candidateJobs.length === RECOMMENDED_POOL_SIZE;
+      hasNextPage = to + 1 < cappedJobs.length || poolFull;
+      nextCursor = poolFull && to + 1 >= cappedJobs.length ? RECOMMENDED_POOL_SIZE : null;
     }
-
-    const candidateJobs = rawJobs || [];
-    const hasResume = hasResumeSignals(answers.resumeProfile);
-    const rankedJobs = isPersonalized || hasResume
-      ? rankJobsByRecommendation(candidateJobs, answers)
-      : rankJobsByRecommendation(candidateJobs, null);
-
-    // Drop rows with matchScore <= 0 (ineligible under saved preferences or not relevant to the user's role).
-    // A saved "remote" preference is additive and is handled in ranking.
-    const qualifyingJobs = isPersonalized
-      ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
-      : rankedJobs;
-
-    const cappedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
-    totalCount = cappedJobs.length; // Honestly reports the bounded pool total after exclusions
-    paginatedJobs = cappedJobs.slice(from, to + 1);
 
     // Build company group ID map for non-Pro responses to prevent company_id leakage
     // Fails closed with 503 if HMAC secret is missing or unavailable
@@ -568,6 +623,8 @@ export async function GET(req: Request) {
       isPro,
       page,
       pageSize,
+      hasNextPage,
+      nextCursor,
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });

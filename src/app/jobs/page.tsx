@@ -2758,7 +2758,7 @@ function JobsPageInner() {
             isOpen={welcomeOpen}
             onClose={() => finishWelcome(null)}
             onConfirm={(levels) => finishWelcome(levels)}
-            recommendedCount={isDegraded ? null : Math.min(totalCount || liveJobs.length, 30)}
+            recommendedCount={isDegraded ? null : totalCount || liveJobs.length}
             initialLevels={selectedLevel}
             savedExperienceLevel={preferences?.experienceLevel}
           />

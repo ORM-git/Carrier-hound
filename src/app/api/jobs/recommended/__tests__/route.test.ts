@@ -1269,3 +1269,93 @@ describe('item 18 saved profile revision lifecycle', () => {
     expect(oldJobReload.jobs[0].matchScore).not.toBe(oldFeed.jobs[0].matchScore);
   });
 });
+
+describe("beyond-pool continuation (scroll until the domain is exhausted)", () => {
+  const seed = (count: number) => {
+    const corpus = generateTestCorpus(count);
+    state.tables.jobs = corpus;
+    state.tables.jobs_public = corpus;
+  };
+
+  it("last pool page hands out a continuation cursor when the corpus exceeds the pool", async () => {
+    seed(1400);
+    const res = await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?page=40&pageSize=25", "tok-user-no-answers")
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.jobs.length).toBe(25);
+    expect(body.totalCount).toBe(1000); // bounded pool total, honestly reported
+    expect(body.hasNextPage).toBe(true);
+    expect(body.nextCursor).toBe(1000);
+  });
+
+  it("mid-pool pages keep hasNextPage without a cursor", async () => {
+    seed(1400);
+    const body = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?page=20&pageSize=25", "tok-user-no-answers")
+    )).json();
+    expect(body.jobs.length).toBe(25);
+    expect(body.hasNextPage).toBe(true);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("cursor chunks continue past the pool in order with no overlap, until exhaustion", async () => {
+    seed(1400);
+    const seen = new Set<string>();
+    for (let p = 1; p <= 40; p++) {
+      const body = await (await recommendedRoute(
+        req(`http://localhost/api/jobs/recommended?page=${p}&pageSize=25`, "tok-user-no-answers")
+      )).json();
+      for (const j of body.jobs) seen.add(j.id);
+    }
+    expect(seen.size).toBe(1000);
+
+    let cursor: number | null = 1000;
+    let chunks = 0;
+    while (cursor !== null) {
+      const body = await (await recommendedRoute(
+        req(`http://localhost/api/jobs/recommended?cursor=${cursor}&pageSize=25`, "tok-user-no-answers")
+      )).json();
+      chunks += 1;
+      expect(body.totalCount).toBe(0); // chunk counts are never presented as a domain-wide total
+      for (const j of body.jobs) {
+        expect(seen.has(j.id)).toBe(false); // zero duplicates across the pool boundary
+        seen.add(j.id);
+      }
+      expect(body.hasNextPage).toBe(body.nextCursor !== null);
+      cursor = body.nextCursor;
+    }
+    expect(seen.size).toBe(1400); // the full corpus was served: the stream ends only at genuine exhaustion
+    expect(chunks).toBeGreaterThanOrEqual(16); // 400 beyond-pool rows / 25 per chunk
+  });
+
+  it("cursor at or past the corpus end returns an empty page with hasNextPage false", async () => {
+    seed(1400);
+    const body = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?cursor=1400&pageSize=25", "tok-user-no-answers")
+    )).json();
+    expect(body.jobs.length).toBe(0);
+    expect(body.hasNextPage).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("a cursor inside the pool range is ignored and the normal pool page is served", async () => {
+    seed(1400);
+    const body = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?cursor=50&page=1&pageSize=25", "tok-user-no-answers")
+    )).json();
+    expect(body.jobs.length).toBe(25);
+    expect(body.totalCount).toBe(1000);
+  });
+
+  it("pool path reports hasNextPage false when the corpus fits inside the pool (genuine end)", async () => {
+    seed(320);
+    const body = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?page=13&pageSize=25", "tok-user-no-answers")
+    )).json();
+    expect(body.jobs.length).toBe(20); // 320 rows = 12 full pages + 20
+    expect(body.hasNextPage).toBe(false);
+    expect(body.nextCursor).toBeNull();
+  });
+});
