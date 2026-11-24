@@ -853,7 +853,16 @@ function JobsPageInner() {
       });
     };
 
+    const handlePreferencesUpdate = () => {
+      getAuthUser().then(async (currentUser) => {
+        if (!currentUser) return;
+        const nextPreferences = await getUserPreferences(currentUser.id);
+        if (!cancelled) setPreferences(nextPreferences);
+      }).catch((error) => console.warn("Failed to refresh job preferences:", error));
+    };
+
     const handleProfileUpdate = () => {
+      handlePreferencesUpdate();
       getCandidateProfile().then((cp) => {
         if (cp && cp.confirmedAt) {
           setCandidate(cp);
@@ -879,12 +888,14 @@ function JobsPageInner() {
     window.addEventListener("careermonke_pro_updated", handleSubUpdate);
     window.addEventListener("careermonke_auth_updated", handleSubUpdate);
     window.addEventListener("careermonke_profile_updated", handleProfileUpdate);
+    window.addEventListener("careermonke_preferences_updated", handlePreferencesUpdate);
     window.addEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     return () => {
       cancelled = true;
       window.removeEventListener("careermonke_pro_updated", handleSubUpdate);
       window.removeEventListener("careermonke_auth_updated", handleSubUpdate);
       window.removeEventListener("careermonke_profile_updated", handleProfileUpdate);
+      window.removeEventListener("careermonke_preferences_updated", handlePreferencesUpdate);
       window.removeEventListener("careermonke_tracker_updated", handleTrackerUpdate);
     };
     // Mount-once bootstrap + event subscriptions. user?.id is read inside the

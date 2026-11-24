@@ -1248,3 +1248,24 @@ describe('item 18 real recommended, detail and reload route agreement', () => {
 
   });
 });
+
+describe('item 18 saved profile revision lifecycle', () => {
+  it.each(['tok-pro-with-answers', 'tok-free-with-answers'])('feed and reloaded detail agree after saved preference change for %s', async token => {
+    const searchRoute=(await import('@/app/api/jobs/search/route')).GET;
+    const oldFeed=await (await recommendedRoute(req('http://localhost/api/jobs/recommended?pageSize=25',token))).json();
+    const id=oldFeed.jobs[0].id;
+    const userId=state.users[token].id;
+    const preferences=state.tables.user_preferences.find((p:any)=>p.user_id===userId)!;
+    preferences.experience_level='entry';preferences.remote_preference='onsite';
+    const feed=await (await recommendedRoute(req('http://localhost/api/jobs/recommended?pageSize=500',token))).json();
+    const currentId=feed.jobs[0].id;
+    const detail=await (await searchRoute(req(`http://localhost/api/jobs/search?id=${currentId}`,token))).json();
+    const reload=await (await searchRoute(req(`http://localhost/api/jobs/search?id=${currentId}`,token))).json();
+    expect(detail.jobs[0].matchScore).toBe(reload.jobs[0].matchScore);
+    const matching=feed.jobs[0];
+    expect(matching).toBeTruthy();
+    expect(matching.matchScore).toBe(detail.jobs[0].matchScore);
+    const oldJobReload=await (await searchRoute(req(`http://localhost/api/jobs/search?id=${id}`,token))).json();
+    expect(oldJobReload.jobs[0].matchScore).not.toBe(oldFeed.jobs[0].matchScore);
+  });
+});

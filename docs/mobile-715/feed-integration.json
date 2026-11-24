@@ -33,6 +33,11 @@
   },
   {
     "width": 360,
+    "profileRevisionRefreshAndDetail": true,
+    "scoreValuesSynthetic": true
+  },
+  {
+    "width": 360,
     "manualRetryRecovery": true
   },
   {
@@ -97,6 +102,11 @@
   },
   {
     "width": 390,
+    "profileRevisionRefreshAndDetail": true,
+    "scoreValuesSynthetic": true
+  },
+  {
+    "width": 390,
     "manualRetryRecovery": true
   },
   {
@@ -158,6 +168,11 @@
       1,
       2
     ]
+  },
+  {
+    "width": 430,
+    "profileRevisionRefreshAndDetail": true,
+    "scoreValuesSynthetic": true
   },
   {
     "width": 430,
