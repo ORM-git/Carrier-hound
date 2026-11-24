@@ -37,12 +37,21 @@
   },
   {
     "width": 360,
+    "browserBackRestoresListAndScroll": true
+  },
+  {
+    "width": 360,
     "transition": "saved",
     "abortedStaleRequest": true
   },
   {
     "width": 360,
     "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "transition": "filter",
     "abortedStaleRequest": true
   },
   {
@@ -92,12 +101,21 @@
   },
   {
     "width": 390,
+    "browserBackRestoresListAndScroll": true
+  },
+  {
+    "width": 390,
     "transition": "saved",
     "abortedStaleRequest": true
   },
   {
     "width": 390,
     "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "transition": "filter",
     "abortedStaleRequest": true
   },
   {
@@ -147,12 +165,21 @@
   },
   {
     "width": 430,
+    "browserBackRestoresListAndScroll": true
+  },
+  {
+    "width": 430,
     "transition": "saved",
     "abortedStaleRequest": true
   },
   {
     "width": 430,
     "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "transition": "filter",
     "abortedStaleRequest": true
   },
   {

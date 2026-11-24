@@ -46,14 +46,14 @@ export function validateAndNormalizeLinkedInUrl(rawUrl: unknown): LinkedInValida
     return { valid: false, error: "Please paste your plain LinkedIn profile URL." };
   }
   if (!ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) {
-    return { valid: false, error: "URL must be on linkedin.com (e.g. https://www.linkedin.com/in/yourname)." };
+    return { valid: false, error: "URL must be on linkedin.com." };
   }
 
   const match = parsed.pathname.match(/^\/in\/([^/]+)\/?$/);
   if (!match) {
     return {
       valid: false,
-      error: "URL must be a personal profile like linkedin.com/in/yourname (not a company, job or post).",
+      error: "Use your personal LinkedIn profile URL, not a company, job or post URL.",
     };
   }
   const handle = match[1];

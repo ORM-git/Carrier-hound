@@ -1,0 +1,65 @@
+[
+  {
+    "width": 360,
+    "plan": "weekly",
+    "key": "ArrowLeft",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 360,
+    "plan": "monthly",
+    "key": "ArrowRight",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 360,
+    "plan": "quarterly",
+    "key": "ArrowRight",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 390,
+    "plan": "weekly",
+    "key": "ArrowLeft",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 390,
+    "plan": "monthly",
+    "key": "ArrowRight",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 390,
+    "plan": "quarterly",
+    "key": "ArrowRight",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 430,
+    "plan": "weekly",
+    "key": "ArrowLeft",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 430,
+    "plan": "monthly",
+    "key": "ArrowRight",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  },
+  {
+    "width": 430,
+    "plan": "quarterly",
+    "key": "ArrowRight",
+    "selectionOnly": true,
+    "checkoutStarted": false
+  }
+]
