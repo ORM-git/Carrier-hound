@@ -316,11 +316,14 @@ function CircularMatchRing({
   score,
   size = 56,
   strokeWidth = 4.5,
+  light = false,
 }: {
   score: number;
   size?: number;
   strokeWidth?: number;
   isPro?: boolean; // accepted for call-site compatibility; not rendered
+  /** White-card variant (mobile list): CM-blue arc on a pale track, dark text. */
+  light?: boolean;
 }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -337,7 +340,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#1E293B"
+          stroke={light ? "#DBEAFE" : "#1E293B"}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
@@ -345,7 +348,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#2DD4BF"
+          stroke={light ? "#2563EB" : "#2DD4BF"}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -355,7 +358,7 @@ function CircularMatchRing({
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`${textClass} text-white leading-none tracking-tight`}>
+        <span className={`${textClass} ${light ? "text-[#0F172A]" : "text-white"} leading-none tracking-tight`}>
           {score}%
         </span>
       </div>
@@ -2312,7 +2315,7 @@ function JobsPageInner() {
 
                             {/* MOBILE VIEW (under sm: 390px, 360px) */}
                             <div className="flex sm:hidden flex-col justify-between w-full space-y-3">
-                              {/* Top Row: 32px logo beside company & industry, compact match-percentage badge (roughly 54x30) at top right */}
+                              {/* Top Row: 32px logo beside company & industry, 52px match ring (J01 weight) and menu at top right */}
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                   <CompanyLogo
@@ -2343,11 +2346,13 @@ function JobsPageInner() {
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {matchScore !== null ? (
                                     <div
-                                      className="w-[54px] h-[30px] rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-xs font-bold text-emerald-600"
+                                      data-testid="mobile-card-score"
+                                      className="flex"
+                                      role="img"
                                       title={`Fit Match: ${matchScore}%`}
                                       aria-label={`Fit Match: ${matchScore}%`}
                                     >
-                                      {matchScore}%
+                                      <CircularMatchRing score={matchScore} size={52} strokeWidth={5} light />
                                     </div>
                                   ) : (
                                     <Link
