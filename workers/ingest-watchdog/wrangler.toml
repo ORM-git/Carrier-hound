@@ -1,0 +1,22 @@
+name = "carrier-hound-ingest-watchdog"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[triggers]
+# Check every 15 minutes
+crons = ["*/15 * * * *"]
+
+[vars]
+REPO_OWNER = "ORM-git"
+REPO_NAME = "Carrier-hound"
+WORKFLOW_FILE = "python-ingest.yml"
+TARGET_BRANCH = "main"
+CADENCE_MINUTES = "240"
+OVERDUE_GRACE_MINUTES = "45"
+STALE_JOB_THRESHOLD_MINUTES = "120"
+ATTEMPT_COOLDOWN_MINUTES = "45"
+
+# Cloudflare Secrets to configure via 'wrangler secret put':
+# - GITHUB_TOKEN: GitHub PAT with 'actions:write' permission on ORM-git/Carrier-hound
+# - ALERT_WEBHOOK_URL: Webhook URL (Slack/Discord/Pager/monitoring) for watchdog alerts (mandatory)
+# - DISPATCH_SECRET: Optional secret required for authenticated POST /dispatch manual triggers

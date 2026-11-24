@@ -104,7 +104,7 @@ def normalize_aggregator_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     currency: str = "USD",
-    salary_period: str = "year",
+    salary_period: str | None = None,
     ats_logo_url: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -474,6 +474,7 @@ async def fetch_adzuna(
                         salary_min=float(sal_min) if isinstance(sal_min, (int, float)) else None,
                         salary_max=float(sal_max) if isinstance(sal_max, (int, float)) else None,
                         currency=currency,
+                        # Adzuna's response states no pay period: salary_period stays null (never invented).
                     )
                 )
 

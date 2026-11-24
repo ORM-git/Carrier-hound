@@ -15,6 +15,8 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
+import { evaluateCompanyProfileFreshness } from "@/lib/company-profile/enrichment";
+import { isEligibleCompanyJob, sanitizeCompanyProfile, type CompanyProfile } from "@/lib/company-profile/types";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/pro" } });
 
@@ -121,6 +123,48 @@ async function loadJobDescriptionsMap(supabaseAdmin: any, ids: string[]): Promis
   return map;
 }
 
+async function loadCompanyProfiles(supabaseAdmin: any, jobs: any[], currentJobId?: string) {
+  const companyIds = Array.from(new Set(jobs.map((job) => job?.company_id).filter((id): id is string => typeof id === "string" && id.length > 0)));
+  if (!companyIds.length) return new Map<string, CompanyProfile>();
+  const [factsResult, leadersResult, newsResult, refreshResult] = await Promise.all([
+    supabaseAdmin.from("company_profile_facts").select("company_id,fact_key,fact_value,source_url,source_kind,retrieved_at,observed_at,fact_status,conflict_value,conflict_source_url,conflict_source_kind,conflict_retrieved_at,conflict_observed_at").in("company_id", companyIds),
+    supabaseAdmin.from("company_profile_leadership").select("id,company_id,name,role,role_as_of,source_url,retrieved_at").in("company_id", companyIds).order("role_as_of", { ascending: false, nullsFirst: false }).limit(120),
+    supabaseAdmin.from("company_profile_news").select("id,company_id,headline,published_at,source_url,excerpt,retrieved_at").in("company_id", companyIds).order("published_at", { ascending: false }).limit(80),
+    supabaseAdmin.from("company_profile_refresh_state").select("company_id,status,last_attempted_at,last_succeeded_at,next_refresh_at,last_error").in("company_id", companyIds),
+  ]);
+  const jobsByCompany = new Map<string, CompanyProfile["jobs"]>();
+  if (currentJobId && companyIds.length === 1) {
+    const companyId = companyIds[0];
+    try {
+      const { data: sameCompanyJobs, error } = await supabaseAdmin.from("jobs")
+        .select("id,company_id,status,is_active,title,company,location,posted_at,companies(logo_url)")
+        .eq("company_id", companyId).eq("status", "active").eq("is_active", true).neq("id", currentJobId)
+        .order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(5);
+      jobsByCompany.set(companyId, error ? { status: "error", jobs: [] } : {
+        status: "ready",
+        jobs: (sameCompanyJobs || []).filter((job: any) => isEligibleCompanyJob(job, companyId, currentJobId)).slice(0, 5).map((job: any) => ({ id: job.id, title: job.title || "Untitled Position", company: job.company || "", location: job.location || "", postedAt: job.posted_at || null, logoUrl: job.companies?.logo_url || null })),
+      });
+    } catch {
+      jobsByCompany.set(companyId, { status: "error", jobs: [] });
+    }
+  }
+  const result = new Map<string, CompanyProfile>();
+  for (const companyId of companyIds) {
+    const facts: Record<string, any> = {};
+    for (const row of factsResult.data || []) if (row.company_id === companyId) facts[row.fact_key] = { value: row.fact_value, sourceUrl: row.source_url, sourceKind: row.source_kind, retrievedAt: row.retrieved_at, observedAt: row.observed_at, status: row.fact_status, conflict: row.conflict_value ? { value: row.conflict_value, sourceUrl: row.conflict_source_url, sourceKind: row.conflict_source_kind, retrievedAt: row.conflict_retrieved_at, observedAt: row.conflict_observed_at } : null };
+    const leaderRows = (leadersResult.data || []).filter((row: any) => row.company_id === companyId);
+    const newsRows = (newsResult.data || []).filter((row: any) => row.company_id === companyId);
+    const leadership = leaderRows.slice(0, 12).map((row: any) => ({ id: row.id, name: row.name, role: row.role, roleAsOf: row.role_as_of, sourceUrl: row.source_url, retrievedAt: row.retrieved_at }));
+    const news = newsRows.slice(0, 8).map((row: any) => ({ id: row.id, headline: row.headline, publishedAt: row.published_at, sourceUrl: row.source_url, excerpt: row.excerpt }));
+    const jobs = jobsByCompany.get(companyId) || { status: "unknown" as const, jobs: [] };
+    const refreshState = (refreshResult.data || []).find((row: any) => row.company_id === companyId);
+    const freshness = evaluateCompanyProfileFreshness({ now: new Date().toISOString(), state: refreshState, facts: Object.fromEntries(Object.entries(facts).map(([key, fact]: [string, any]) => [key, { retrievedAt: fact.retrievedAt, status: fact.status }])), leadership: leaderRows.map((row: any) => ({ retrievedAt: row.retrieved_at })), news: newsRows.map((row: any) => ({ publishedAt: row.published_at, retrievedAt: row.retrieved_at })) });
+    result.set(companyId, sanitizeCompanyProfile({ companyId, facts, leadership, news, jobs, freshness: freshness.status })!);
+  }
+  return result;
+}
+
+
 // GET: Unlocks a single job by id or returns filtered jobs for a verified Pro subscriber
 export async function GET(req: Request) {
   return withRouteSpan("/api/jobs/pro", req, async () => {
@@ -163,7 +207,7 @@ export async function GET(req: Request) {
         const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
         let query = supabaseAdmin
           .from("jobs")
-          .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
+          .select("id, company_id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
           .eq("status", "active")
           .eq("is_active", true);
 
@@ -181,6 +225,7 @@ export async function GET(req: Request) {
 
         const rawJobs = jobs || [];
         const descMap = await loadJobDescriptionsMap(supabaseAdmin, rawJobs.map((j: any) => j.id));
+        const profileMap = await loadCompanyProfiles(supabaseAdmin, rawJobs);
 
         const formattedJobs = rawJobs.map((j: any) => {
           const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -190,6 +235,7 @@ export async function GET(req: Request) {
           const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
           return {
             ...j,
+            companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
             description: resolvedDesc,
             scoreRevision: scoreInputRevision(j, true),
             matchScore: sharedDisplayScore(j, displayAnswers),
@@ -214,7 +260,7 @@ export async function GET(req: Request) {
 
     const { data: job, error }: any = await (supabaseAdmin as any)
       .from("jobs")
-      .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
+      .select("id, company_id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
       .eq("id", id)
       .maybeSingle();
 
@@ -223,6 +269,7 @@ export async function GET(req: Request) {
     }
 
     const descMap = await loadJobDescriptionsMap(supabaseAdmin, [job.id]);
+    const profileMap = await loadCompanyProfiles(supabaseAdmin, [job], job.id);
 
     const row: any = job;
     const originalSalary = formatSalary(row.salary_min, job.salary_max, job.currency, job.salary_period) || job.salary_text || null;
@@ -233,6 +280,7 @@ export async function GET(req: Request) {
     const resolvedSingleDesc = resolveDescription(job.description, descMap.get(job.id));
     const formattedJob = {
       ...job,
+      companyProfile: job.company_id ? profileMap.get(job.company_id) || null : null,
       description: resolvedSingleDesc,
       scoreRevision: scoreInputRevision(row, true),
       matchScore: sharedDisplayScore(row, displayAnswers),
@@ -313,7 +361,7 @@ export async function POST(req: Request) {
 
     const { data: jobs, error }: any = await (supabaseAdmin as any)
       .from("jobs")
-      .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
+      .select("id, company_id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
       .in("id", ids.slice(0, 100));
 
     if (error) {
@@ -322,6 +370,7 @@ export async function POST(req: Request) {
 
     const rawJobs = jobs || [];
     const descMap = await loadJobDescriptionsMap(supabaseAdmin, rawJobs.map((j: any) => j.id));
+    const profileMap = await loadCompanyProfiles(supabaseAdmin, rawJobs);
 
     const formattedJobs = rawJobs.map((j: any) => {
       const originalSalary = formatSalary(j.salary_min, j.salary_max, j.currency, j.salary_period) || j.salary_text || null;
@@ -331,6 +380,7 @@ export async function POST(req: Request) {
       const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
       return {
         ...j,
+      companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
         description: resolvedDesc,
         scoreRevision: scoreInputRevision(j, true),
             matchScore: sharedDisplayScore(j, displayAnswers),
