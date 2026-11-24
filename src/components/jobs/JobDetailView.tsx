@@ -1076,8 +1076,9 @@ export default function JobDetailView({
                 </div>
                 {job.location && (
                   <div className="text-xs text-[#475569] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-[#64748B]" />
-                    <span>{isUnlocked ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
+                    <MapPin className="w-3.5 h-3.5 text-[#64748B]" aria-hidden="true" />
+                    {/* This is the job's location, not the company's headquarters (that is the sourced HQ fact below). */}
+                    <span><span className="text-[#64748B]">Job location: </span>{isUnlocked ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
                   </div>
                 )}
               </div>

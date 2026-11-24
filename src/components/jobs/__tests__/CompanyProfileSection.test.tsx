@@ -40,6 +40,9 @@ describe("Company section", () => {
     expect(website.className).not.toContain("break-all");
     expect(screen.getByText(/Alex Example/)).toBeTruthy();
     expect(screen.getByText("Acme announces a product")).toBeTruthy();
+    // The job's own location is labelled as such inside the Company card; HQ only comes from the sourced fact.
+    expect(document.getElementById("company-section")!.textContent).toContain("Job location: Remote US");
+    expect(screen.getByText("Headquarters")).toBeTruthy();
     expect(screen.getByText("Design Engineer")).toBeTruthy();
   });
 
