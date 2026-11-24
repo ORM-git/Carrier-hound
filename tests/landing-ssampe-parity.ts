@@ -140,7 +140,7 @@ function check(x: Input) {
   // uses the approved ssampe@3386250 ascending m/a/x/x treatment (same words, accessible name on the h1).
   const topBody = topSrc
     .match(/<body>([\s\S]*?)<script>/)![1]
-    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="534" height="232">Career Monke</a>')
+    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="534" height="232"></a>')
     .replace(
       SRC_H1,
       '<h1 aria-label="Start jobmaxxing with AI">Start <span class="nw">job<span class="mx"><span class="m1" aria-hidden="true">m</span><span class="m2" aria-hidden="true">a</span><span class="m3" aria-hidden="true">x</span><span class="m4" aria-hidden="true">x</span></span>ing</span> with&nbsp;AI</h1>'
@@ -157,8 +157,8 @@ function check(x: Input) {
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
-    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="534" height="232" ?\/> ?Career Monke ?<\/a>/,
-    "header must use the final CareerMonke wordmark (534x232, decorative alt, link named 'CareerMonke home')"
+    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="534" height="232" ?\/> ?<\/a>/,
+    "header must use the final CareerMonke wordmark alone (534x232, decorative alt, no adjacent text, link named 'CareerMonke home')"
   );
   assert.ok(!top.includes("brand-mark"), "header CM badge must be gone");
   const logo = x.asset(LIVE.headerLogo.src);

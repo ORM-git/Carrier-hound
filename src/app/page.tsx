@@ -45,7 +45,6 @@ export default function HomePage() {
                     width="534"
                     height="232"
                   />
-                  Career Monke
                 </a>
                 <div className="nav-actions">
                   <a href="/login" className="btn-ghost">
