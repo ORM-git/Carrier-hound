@@ -13,7 +13,7 @@ vi.mock("@/lib/billing/checkout", () => ({
   handleProCheckout: (...a: any[]) => mockHandleProCheckout(...a),
   openRazorpaySubscription: (...a: any[]) => mockOpenSubscription(...a),
 }));
-vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { getSession: async () => ({ data: { session: null } }) } }) }));
+vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: "fixture-user" } } } }) } }) }));
 vi.mock("@/lib/billing/subscription", () => ({ getProAccessStatus: async () => ({ isPro: false }) }));
 vi.mock("@/components/shell/LoggedInAppShell", () => ({ default: ({ children }: { children: React.ReactNode }) => createElement("div", null, children) }));
 vi.mock("@/components/Footer", () => ({ default: () => null }));
@@ -79,4 +79,27 @@ describe("mobile plan picker (item 23)", () => {
     expect(container.querySelectorAll("[data-plan-card]").length).toBe(3); // desktop cards all still rendered
     for (const r of radios()) expect(r.closest("label")?.textContent).toMatch(/₹/);
   });
+  it.each(["weekly", "monthly", "quarterly"])("explicit Buy %s uses correct checkout and cancellation unlocks retry", async (plan) => {
+    const radio = radios().find(r => r.value === plan)!;
+    await act(async () => radio.click());
+    if (plan === "monthly") {
+      const consent = container.querySelector<HTMLInputElement>('[data-testid="autorenew-consent-checkbox"]')!;
+      expect(consent.checked).toBe(false);
+      await act(async () => consent.click());
+    }
+    expect(mockHandleProCheckout).not.toHaveBeenCalled();
+    expect(mockOpenSubscription).not.toHaveBeenCalled();
+    const buy = card(plan).querySelector<HTMLButtonElement>('button[data-plan-code]')!;
+    await act(async () => { buy.click(); buy.click(); });
+    const checkout = plan === "monthly" ? mockOpenSubscription : mockHandleProCheckout;
+    expect(checkout).toHaveBeenCalledTimes(1);
+    expect(checkout.mock.calls[0][0].planCode).toBe(plan);
+    await act(async () => checkout.mock.calls[0][0].onDismiss());
+    expect(buy.disabled).toBe(false);
+    await act(async () => buy.click());
+    expect(checkout).toHaveBeenCalledTimes(2);
+    await act(async () => checkout.mock.calls[1][0].onError("Fixture error"));
+    expect(buy.disabled).toBe(false);
+  });
+
 });

@@ -480,6 +480,25 @@ describe("Onboarding phone: no Copilot persona; step 2 Profile layout", () => {
   });
 });
 
+describe("Step2 pending writes never finish early", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("waits for an outstanding LinkedIn save and preserves the saved result", async () => {
+    let resolve!: (r: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(r => { resolve = r; })));
+    const finish = vi.fn(), saved = vi.fn();
+    render(<OnboardingStep2 onBack={() => {}} onFinish={finish} isSaving={false} authToken="t" onLinkedinSaved={saved} />);
+    fireEvent.change(screen.getByTestId("input-linkedin-url-mobile"), { target: { value: "https://linkedin.com/in/fixture" } });
+    fireEvent.click(screen.getByTestId("btn-save-linkedin-mobile"));
+    const btn = screen.getByTestId("btn-onboarding-finish-mobile");
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(btn); expect(finish).not.toHaveBeenCalled();
+    resolve(new Response(JSON.stringify({ linkedinUrl: "https://linkedin.com/in/fixture" }), { status: 200 }));
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(false));
+    expect(saved).toHaveBeenCalledTimes(1);
+    fireEvent.click(btn); expect(finish).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("Step 2 phone: one bottom-right 'Skip for now' for LinkedIn and CV", () => {
   const URL_IN = "https://www.linkedin.com/in/test-user";
   let fetchMock: ReturnType<typeof vi.fn>;
