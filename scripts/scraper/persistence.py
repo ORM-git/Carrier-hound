@@ -66,8 +66,12 @@ def validate_job_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if field not in out or out[field] is None:
             continue
         value = out[field]
-        if isinstance(value, bool) or value not in allowed:
-            problems.append(f"{field}: {str(value)[:40]!r} not allowed")
+        scalar = int if field == "source_priority" else str
+        # Shape first: list/dict are unhashable and would raise on set membership. Never echo the value.
+        if isinstance(value, bool) or not isinstance(value, scalar):
+            problems.append(f"{field}: invalid type {type(value).__name__[:20]}")
+        elif value not in allowed:
+            problems.append(f"{field}: value not allowed")
     lo, hi = out.get("salary_min"), out.get("salary_max")
     for field, value in (("salary_min", lo), ("salary_max", hi)):
         if value is not None and _number(value) is None:

@@ -80,6 +80,20 @@ class ValidatorTests(unittest.TestCase):
             self.assertEqual(validate_job_row(good_row(**{nullable: None}))[1], [], nullable)
         self.assertEqual(validate_job_row({"source_id": "x", "source_job_id": "1"})[1], [], "missing keys use DB defaults")
 
+    def test_list_and_dict_in_constrained_fields_are_rejected_not_raised(self):
+        for field in ("status", "job_type", "remote_scope", "remote_eligibility", "role_category", "seniority",
+                      "source_type", "source_priority", "salary_period"):
+            for bad in ([], {}, ["active"], {"v": "SECRET-VALUE"}, 1.5):
+                with self.subTest(field=field, bad=bad):
+                    problems = validate_job_row(good_row(**{field: bad}))[1]
+                    self.assertEqual(len(problems), 1)
+                    self.assertTrue(problems[0].startswith(f"{field}: invalid type"))
+                    self.assertNotIn("SECRET", problems[0])
+        self.assertTrue(validate_job_row(good_row(source_priority="1"))[1], "a string priority is the wrong shape")
+        valid, rejected = prevalidate_jobs([good_row(1), good_row(2, status=[]), good_row(3, job_type={})])
+        self.assertEqual([r["source_job_id"] for r in valid], ["1"])
+        self.assertEqual(len(rejected), 2)
+
     def test_reversed_and_non_finite_salary_bounds(self):
         self.assertEqual(validate_job_row(good_row(salary_min=100, salary_max=100))[1], [])
         self.assertIn("salary_min > salary_max", validate_job_row(good_row(salary_min=200, salary_max=100))[1])
@@ -117,7 +131,7 @@ class AdapterAuditTests(unittest.TestCase):
                     title=t, location="Bengaluru, India" if i % 2 else "Remote", apply_url="https://e.com/x",
                     remote_eligibility=fetchers._greenhouse_remote_eligibility("Remote", True, set()) if st == "greenhouse" else None,
                     source_layer="layer2" if st in ("workday", "amazon", "microsoft") else "layer1"))
-        for st, period in (("jobspy", None), ("arbeitnow", None), ("adzuna", "year")):
+        for st, period in (("jobspy", None), ("arbeitnow", None), ("adzuna", None)):
             for i, t in enumerate(titles):
                 rows.append(normalize_aggregator_job(
                     raw_company="Infosys", title=t, location="Pune", apply_url="https://e.com/y", source=st,
@@ -127,8 +141,29 @@ class AdapterAuditTests(unittest.TestCase):
         rows.append(good_row(99, **gh))
         valid, rejected = prevalidate_jobs(rows)
         self.assertEqual(rejected, [])
-        self.assertEqual({r["salary_period"] for r in valid}, {None, "yearly", "hourly"})
+        self.assertEqual({r["salary_period"] for r in valid}, {None, "hourly"})
         self.assertEqual({r["job_type"] for r in valid}, {"internship", "full-time"})
+
+    def test_adzuna_response_states_no_period_so_it_stays_null(self):
+        from scripts.scraper.fetch_aggregators_and_india import fetch_adzuna
+        # Shape of a real Adzuna /jobs/{cc}/search response: salary_min/max (+ salary_is_predicted), no period field.
+        item = {"id": "4890001", "title": "Data Analyst", "company": {"display_name": "Acme"},
+                "redirect_url": "https://www.adzuna.in/land/ad/4890001", "location": {"display_name": "Bengaluru"},
+                "created": "2026-11-23T08:00:00Z", "salary_min": 600000.0, "salary_max": 900000.0,
+                "salary_is_predicted": "0", "description": "SQL and dashboards"}
+
+        def handle(req):
+            return httpx.Response(200, json={"count": 1, "results": [item]})
+
+        async def go():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                return await fetch_adzuna(client, AsyncMock(), app_id="id", app_key="key", countries=("in",), roles=("Data Analyst",))
+
+        jobs, err = asyncio.run(go())
+        self.assertIsNone(err)
+        self.assertEqual((jobs[0]["salary_min"], jobs[0]["salary_max"]), (600000.0, 900000.0))
+        self.assertIsNone(jobs[0]["salary_period"], "period is not stated by Adzuna: never labelled yearly")
+        self.assertEqual(validate_job_row(jobs[0])[1], [])
 
     def test_amazon_prime_air_row_is_persistable(self):
         async def fake_request(*_a, **_k):
@@ -207,6 +242,27 @@ class WriterTests(unittest.TestCase):
         self.assertFalse(stats["persistence_failed"])
         self.assertNotIn("SECRET", json.dumps(stats))
 
+    def test_update_failures_other_than_400_23514_stop_all_writes(self):
+        existing = [{**good_row(n), "id": f"ex-{n}", "title": "Old"} for n in (1, 2)]
+
+        def timeout(req, _body):
+            raise httpx.ReadTimeout("timed out", request=req)
+
+        cases = (("503+23514", lambda *_: httpx.Response(503, text=CHECK_BODY)),
+                 ("500", lambda *_: httpx.Response(500, text="upstream")),
+                 ("timeout", timeout))
+        for name, patch_ in cases:
+            with self.subTest(name):
+                rec = Recorder(existing=existing, post=ok_insert, patch_=patch_)
+                stats, writer = run_writer(rec, [good_row(1), good_row(2)])
+                patches = [c for c in rec.calls if c[0] == "PATCH"]
+                self.assertEqual(len(patches), 1, "the first ambiguous/5xx update stops all further writes")
+                self.assertTrue(stats["persistence_failed"])
+                self.assertEqual(stats["failed_writes"], 1)
+                self.assertEqual(stats["updated"], 0)
+                self.assertEqual(stats["rejected"], [], "only 400 + 23514 is a definitive row rejection")
+                self.assertNotIn("SECRET", json.dumps(stats))
+
     def test_23514_batch_rejection_is_isolated_row_by_row(self):
         def post(_req, body):
             if len(body) > 1 or body[0]["source_job_id"] == "2":
@@ -252,13 +308,13 @@ class RunTests(unittest.TestCase):
         self.seeds = tmp.name
         self.patches: list[str] = []
 
-    def run_non_workday(self, rows, *, expire=True, dry_run=False):
+    def run_non_workday(self, rows, *, expire=True, dry_run=False, sync_result=None):
         writer_cls = MagicMock()
         inst = writer_cls.return_value
         inst.persistence_failed, inst.failed_writes, inst.write_errors = False, 0, []
         inst.base_url, inst.headers = f"{FAKE_URL}/rest/v1", {}
         inst.sync_companies = AsyncMock(return_value={})
-        inst.sync_jobs_set_diff = AsyncMock(side_effect=lambda _c, jobs, _m: {
+        inst.sync_jobs_set_diff = AsyncMock(side_effect=lambda _c, jobs, _m: sync_result or {
             "inserted": len(jobs), "updated": 0, "skipped_unchanged": 0, "persisted_ids": [], "rejected": [],
             "persisted_source_keys": [[j["source_id"], j["source_job_id"]] for j in jobs]})
 
@@ -285,7 +341,7 @@ class RunTests(unittest.TestCase):
         report, writer = self.run_non_workday([good_row(1), good_row(2, job_type="fulltime")])
         sent = writer.sync_jobs_set_diff.await_args.args[1]
         self.assertEqual([j["source_job_id"] for j in sent], ["1"])
-        self.assertEqual((report["fetched"], report["selected"], report["validated"], report["rejected_count"]), (2, 2, 1, 1))
+        self.assertEqual((report["fetched"], report["validated"], report["rejected_count"], report["selected"]), (2, 1, 1, 1))
         self.assertEqual(report["failed_sources"], [], "a rejected row is not a failed source: valid rows still write")
         self.assertEqual(self.patches, [], "no expiry for a board with unpersisted rows")
         self.assertEqual(report["expiry_reports"][0]["status"], "skipped_incomplete_source")
@@ -297,6 +353,25 @@ class RunTests(unittest.TestCase):
         self.assertIn("validated / rejected | 1 / 1", text)
         self.assertIn("greenhouse:acme/2", text)
         self.assertTrue(any("row rejected" in a for a in ingest_report.annotations(s)))
+
+    def test_list_or_dict_values_reject_only_that_row(self):
+        rows = [good_row(1), good_row(2, status=[]), good_row(3, job_type={}), good_row(4, source_priority=[])]
+        report, writer = self.run_non_workday(rows)
+        sent = writer.sync_jobs_set_diff.await_args.args[1]
+        self.assertEqual([j["source_job_id"] for j in sent], ["1"], "the valid sibling still persists")
+        self.assertEqual(report["rejected_count"], 3)
+        self.assertEqual(self.patches, [], "board expiry withheld")
+        self.assertEqual(report["expiry_reports"][0]["status"], "skipped_incomplete_source")
+        self.assertTrue(engine.ingestion_has_errors(report), "cohort result nonzero")
+        self.assertTrue(all("invalid type" in r["reason"] for r in report["rejected"]))
+
+    def test_persistence_failure_on_update_vetoes_expiry(self):
+        writer_stats = {"inserted": 0, "updated": 0, "skipped_unchanged": 0, "persistence_failed": True, "failed_writes": 1,
+                        "write_errors": ["Job update error on ex-1: HTTP 503 code 23514"], "rejected": [], "persisted_source_keys": []}
+        report, _ = self.run_non_workday([good_row(1), good_row(2)], sync_result=writer_stats)
+        self.assertTrue(report["expiry_vetoed"])
+        self.assertEqual(self.patches, [])
+        self.assertTrue(engine.ingestion_has_errors(report))
 
     def test_clean_run_still_expires_and_reports_zero_rejected(self):
         report, _ = self.run_non_workday([good_row(1), good_row(2)])

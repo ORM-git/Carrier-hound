@@ -474,7 +474,7 @@ async def fetch_adzuna(
                         salary_min=float(sal_min) if isinstance(sal_min, (int, float)) else None,
                         salary_max=float(sal_max) if isinstance(sal_max, (int, float)) else None,
                         currency=currency,
-                        salary_period="year",  # Adzuna salary_min/max are annual figures
+                        # Adzuna's response states no pay period: salary_period stays null (never invented).
                     )
                 )
 

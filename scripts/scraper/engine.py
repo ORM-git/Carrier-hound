@@ -748,7 +748,7 @@ class SupabaseSetDiffWriter:
                                 persisted_source_keys.add((sid, sjid))
                     else:
                         code, reason = db_error_diagnostic(upd_resp.status_code, upd_resp.text)
-                        if code == "23514":  # definitive CHECK rejection of this one row: report it, keep going
+                        if code == "23514" and upd_resp.status_code == 400:  # definitive CHECK rejection of this row only
                             stats["rejected"].append(rejection(row, "update", reason, code))
                         else:
                             self.failed_writes += 1
@@ -852,10 +852,11 @@ async def run_ingestion(
                 all_jobs.extend(res)
 
         fetched_count = len(all_jobs)
+        all_jobs, rejected = prevalidate_jobs(all_jobs)  # before dedupe: dedupe ranks on int(source_priority)
+        validated_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
         selected_count = len(all_jobs)
-        all_jobs, rejected = prevalidate_jobs(all_jobs)
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
@@ -912,7 +913,7 @@ async def run_ingestion(
         "unique_after_dedupe": db_stats["inserted"] + db_stats["updated"] + db_stats["skipped_unchanged"],
         "db": db_stats,
         "errors": errors,
-        "validated": len(all_jobs),
+        "validated": validated_count,
         "rejected": rejected + list(db_stats.get("rejected") or []),
         "sample": all_jobs[0] if all_jobs else None,
     }

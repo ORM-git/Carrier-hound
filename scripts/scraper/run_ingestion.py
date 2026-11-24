@@ -356,10 +356,11 @@ async def run_master_ingestion(
             }
 
         fetched_count = len(all_jobs)
+        all_jobs, rejected = prevalidate_jobs(all_jobs)  # before dedupe: dedupe ranks on int(source_priority)
+        validated_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
         selected_count = len(all_jobs)
-        all_jobs, rejected = prevalidate_jobs(all_jobs)
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
@@ -597,7 +598,7 @@ async def run_master_ingestion(
             "dry_run": dry_run,
             "fetched": fetched_count,
             "selected": selected_count,
-            "validated": len(all_jobs),
+            "validated": validated_count,
             "rejected": rejected[:200],
             "rejected_count": len(rejected),
             "skipped_by_cap": max(0, len(unique_jobs) - selected_count),
