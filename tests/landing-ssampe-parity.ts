@@ -30,7 +30,7 @@ const SOURCES: Record<string, string> = {
 const ASSETS: Record<string, string> = {
   "/mascot.png": "030e3eadbef1d86115adc7ac423ae2ef5882727b",
   "/owner.jpg": "29fdee8bc59472ea8e5bcf326d27a4134eb1bcb8",
-  "/careermonke-logo.png": "63f897f7ecf829fb692d85d5f8a82e0da132979e", // owner-supplied final wordmark (2026-11-24)
+  "/careermonke-logo-v2.png": "63f897f7ecf829fb692d85d5f8a82e0da132979e", // owner-supplied final wordmark (2026-11-24)
 };
 // The only copy change below the fold: the five CareerMonke Way cells, in order.
 const CELLS: [string, string][] = [
@@ -140,7 +140,7 @@ function check(x: Input) {
   // uses the approved ssampe@3386250 ascending m/a/x/x treatment (same words, accessible name on the h1).
   const topBody = topSrc
     .match(/<body>([\s\S]*?)<script>/)![1]
-    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="534" height="232"></a>')
+    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo-v2.png" alt="" width="534" height="232"></a>')
     .replace(
       SRC_H1,
       '<h1 aria-label="Start jobmaxxing with AI">Start <span class="nw">job<span class="mx"><span class="m1" aria-hidden="true">m</span><span class="m2" aria-hidden="true">a</span><span class="m3" aria-hidden="true">x</span><span class="m4" aria-hidden="true">x</span></span>ing</span> with&nbsp;AI</h1>'
@@ -157,12 +157,12 @@ function check(x: Input) {
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
-    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="534" height="232" ?\/> ?<\/a>/,
+    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo-v2\.png" alt="" width="534" height="232" ?\/> ?<\/a>/,
     "header must use the final CareerMonke wordmark alone (534x232, decorative alt, no adjacent text, link named 'CareerMonke home')"
   );
   assert.ok(!top.includes("brand-mark"), "header CM badge must be gone");
   const logo = x.asset(LIVE.headerLogo.src);
-  assert.ok(logo && sha256(logo) === LIVE.headerLogo.sha256, "header logo must be the live careermonke-logo.png bytes");
+  assert.ok(logo && sha256(logo) === LIVE.headerLogo.sha256, "header logo must be the live careermonke-logo-v2.png bytes");
 
   // --- 2. lower page: 3386250 stats row .. sticky bar, hero/header/job cards excluded ---
   const lowSrc = read("tests/landing-ssampe-parity.lower.source.html");
@@ -236,10 +236,10 @@ function check(x: Input) {
   );
   assert.ok(!/<dl\b/.test(fdSec), "founder stat row must be removed");
 
-  // --- 3d. unchanged: footer logo and favicon ---
-  assert.match(squash(lower), /<img src="\/careermonke-logo\.png" alt="Career Monke" width="66" height="80" loading="lazy" \/>/, "footer monkey logo must be unchanged");
+  // --- 3d. footer logo and favicon: both on the new brand assets ---
+  assert.match(squash(lower), /<img src="\/careermonke-logo-v2\.png" alt="Career Monke" width="66" height="80" loading="lazy" \/>/, "footer monkey logo must be unchanged");
   const fav = x.asset(LIVE.unchanged.favicon.path);
-  assert.ok(fav && sha256(fav) === LIVE.unchanged.favicon.sha256, "favicon must be unchanged");
+  assert.ok(fav && sha256(fav) === LIVE.unchanged.favicon.sha256, "favicon must be the new brand icon");
 
   // --- 4. CSS: top = f21504b scoped .cm-top; lower = 3386250 scoped .landing-wrapper; nothing else ---
   const topWant = decls(topSrc.match(/<style>([\s\S]*?)<\/style>/)![1])
@@ -459,7 +459,7 @@ const WHY: Record<string, RegExp> = {
   "header logo CSS stretched": /size the header logo to 32px without distortion/,
   "live CSS styles something else": /may not style anything else/,
   "avatar file swapped": /avatar \/images\/avatars\/male-1\.webp for Rohan S\. must be the live file/,
-  "favicon changed": /favicon must be unchanged/,
+  "favicon changed": /favicon must be the new brand icon/,
   "maxx letters flattened": /top fold classes|headline must be/,
   "with AI split": /top fold text|headline must be/,
   "jobmaxxing may wrap": /approved 3386250 treatment: \.cm-top h1 \.nw/,

@@ -70,7 +70,7 @@ async function main() {
   assert.ok(org, "Graph must contain an Organization entity");
   assert.strictEqual(org.name, "CareerMonke", "Organization name must be 'CareerMonke'");
   assert.strictEqual(org.url, "https://careermonke.com", "Organization url must match canonical site URL");
-  assert.ok(org.logo.endsWith("/careermonke-logo.png"), "Organization logo must point to /careermonke-logo.png");
+  assert.ok(org.logo.endsWith("/careermonke-logo-v2.png"), "Organization logo must point to /careermonke-logo-v2.png");
 
   // Verify that the logo asset physically exists in public/
   const logoRelative = org.logo.replace(/^https?:\/\/[^/]+/, "");
