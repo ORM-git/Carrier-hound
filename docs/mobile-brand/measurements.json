@@ -1,0 +1,377 @@
+[
+  {
+    "width": 360,
+    "label": "SETTINGS",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 360,
+    "label": "PROFILE",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 360,
+    "label": "RESUME",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 360,
+    "label": "TRACKER",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 360,
+    "label": "RADAR",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 360,
+    "label": "PRICING",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 360,
+    "label": "JOBS",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": [
+      {
+        "text": "For You",
+        "x": 116,
+        "w": 76,
+        "clipped": false
+      },
+      {
+        "text": "Saved\n0",
+        "x": 192,
+        "w": 76,
+        "clipped": false
+      },
+      {
+        "text": "Applied\n0",
+        "x": 268,
+        "w": 76,
+        "clipped": false
+      }
+    ]
+  },
+  {
+    "width": 390,
+    "label": "SETTINGS",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 390,
+    "label": "PROFILE",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 390,
+    "label": "RESUME",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 390,
+    "label": "TRACKER",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 390,
+    "label": "RADAR",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 390,
+    "label": "PRICING",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 390,
+    "label": "JOBS",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": [
+      {
+        "text": "For You",
+        "x": 116,
+        "w": 86,
+        "clipped": false
+      },
+      {
+        "text": "Saved\n0",
+        "x": 202,
+        "w": 86,
+        "clipped": false
+      },
+      {
+        "text": "Applied\n0",
+        "x": 288,
+        "w": 86,
+        "clipped": false
+      }
+    ]
+  },
+  {
+    "width": 640,
+    "label": "SETTINGS",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 640,
+    "label": "PROFILE",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 640,
+    "label": "RESUME",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 640,
+    "label": "TRACKER",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 640,
+    "label": "RADAR",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 640,
+    "label": "PRICING",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 640,
+    "label": "JOBS",
+    "overflow": false,
+    "brandVisible": true,
+    "imageLoaded": true,
+    "tabs": [
+      {
+        "text": "For You",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      },
+      {
+        "text": "Saved0",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      },
+      {
+        "text": "Applied0",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      }
+    ]
+  },
+  {
+    "width": 768,
+    "label": "SETTINGS",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 768,
+    "label": "PROFILE",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 768,
+    "label": "RESUME",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 768,
+    "label": "TRACKER",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 768,
+    "label": "RADAR",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 768,
+    "label": "PRICING",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 768,
+    "label": "JOBS",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": [
+      {
+        "text": "For You",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      },
+      {
+        "text": "Saved0",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      },
+      {
+        "text": "Applied0",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      }
+    ]
+  },
+  {
+    "width": 1440,
+    "label": "SETTINGS",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 1440,
+    "label": "PROFILE",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 1440,
+    "label": "RESUME",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 1440,
+    "label": "TRACKER",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 1440,
+    "label": "RADAR",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 1440,
+    "label": "PRICING",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": []
+  },
+  {
+    "width": 1440,
+    "label": "JOBS",
+    "overflow": false,
+    "brandVisible": false,
+    "imageLoaded": true,
+    "tabs": [
+      {
+        "text": "For You",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      },
+      {
+        "text": "Saved0",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      },
+      {
+        "text": "Applied0",
+        "x": 0,
+        "w": 0,
+        "clipped": false
+      }
+    ]
+  }
+]
