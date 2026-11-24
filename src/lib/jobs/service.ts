@@ -120,6 +120,13 @@ export interface GetJobsOptions {
   sourceType?: string | null;
   company?: string | null;
   cursor?: string | null;
+  // Immutable pool anchor handed out by the server at stream start; echoed on every
+  // subsequent recommended request so inserts cannot shift pool slices.
+  poolAnchor?: string | null;
+  // Immutable pool floor: raw-key lower bound of the frozen pool window; echoed with the
+  // anchor so deletions cannot refill the window and the beyond-pool continuation starts
+  // exactly where the original pool ended.
+  poolFloor?: string | null;
   eligibility?: "on" | "off" | string;
   currency?: string;
 }
@@ -129,6 +136,10 @@ export interface GetJobsResult {
   totalCount: number;
   nextCursor?: string | null;
   hasNextPage?: boolean;
+  continuation?: boolean;
+  totalIsLowerBound?: boolean;
+  poolAnchor?: string | null;
+  poolFloor?: string | null;
   isDegraded?: boolean;
   error?: string | null;
   appliedEligibility?: { countries: string[]; filteredOut: number } | null;
@@ -456,6 +467,11 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (sourceType && sourceType !== "all") recParams.set("sourceType", sourceType);
         if (company && company.trim() && company.toLowerCase() !== "all") recParams.set("company", company.trim());
         if (search && search.trim()) recParams.set("search", search.trim());
+        // Beyond-pool continuation: the server hands an opaque DB-offset cursor when the
+        // ranked pool is exhausted but the corpus likely has more; pass it back verbatim.
+        if (cursor) recParams.set("cursor", cursor);
+        if (options.poolAnchor) recParams.set("poolAnchor", options.poolAnchor);
+        if (options.poolFloor) recParams.set("poolFloor", options.poolFloor);
 
         // A failed request is a retryable error, never a silently unpersonalized or empty feed.
         const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers, signal: options.signal }).catch(() => null);
@@ -488,8 +504,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         return {
           jobs: json.jobs || [],
           totalCount: count,
-          nextCursor: null,
-          hasNextPage: (page * pageSize) < count,
+          nextCursor: json.nextCursor != null ? String(json.nextCursor) : null,
+          // The server owns continuation once it hands out cursors; fall back to the
+          // page-arithmetic guess only for older responses without the field.
+          hasNextPage: typeof json.hasNextPage === "boolean" ? json.hasNextPage : (page * pageSize) < count,
+          continuation: json.continuation === true,
+          totalIsLowerBound: json.totalIsLowerBound === true,
+          poolAnchor: json.poolAnchor ?? null,
+          poolFloor: json.poolFloor ?? null,
           isDegraded: false,
         };
       }

@@ -153,6 +153,173 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(loadMoreButton()).not.toBeNull();
   });
 
+  it("an initial empty continuation chunk auto-chains to the first real page (regression: initial filtered-region dead end)", async () => {
+    // The first pool/continuation chunks can legitimately contain zero eligible jobs
+    // (filtered regions). The feed must keep loading on its own: no sentinel, no manual
+    // button press, and no false empty state.
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:chunk-1", continuation: true };
+      return page(jobs(range(1, 25)), false, 25, "k:chunk-2");
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(uniqueTitles()).toHaveLength(25);
+    expect(uniqueTitles()[0]).toBe("Fixture Analyst 1");
+  });
+
+  it("a failed initial continuation chain surfaces an error alert with a working Retry (regression: reviewer recovery repro)", async () => {
+    let failNext = true;
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:initial", continuation: true };
+      if (failNext) {
+        failNext = false;
+        return { jobs: [], totalCount: 0, isDegraded: true, error: "degraded" };
+      }
+      return page(jobs(range(1, 25)), false, 100, null);
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    // Zero jobs rendered, yet the failure must be visible and recoverable without refresh.
+    expect(screen.getByTestId("jobs-initial-recovery")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+    expect(uniqueTitles()).toHaveLength(25); // the chain resumed from the failed cursor
+  });
+
+  it("a cycling initial empty continuation shows manual recovery instead of the bare empty state (regression: reviewer recovery repro)", async () => {
+    h.transport = async ({ page: p }: any) =>
+      p <= 2
+        ? { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:initial", continuation: true }
+        : page(jobs(range(1, 25)), false, 100, null);
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    // The non-advancing cursor paused the chain with zero jobs shown: a visible control must
+    // remain (no refresh required), and the bare empty state must not render.
+    expect(screen.getByTestId("jobs-initial-recovery")).toBeTruthy();
+    expect(screen.queryByText("No positions match your active filters")).toBeNull();
+    const resume = screen.getByRole("button", { name: "Load More Verified Positions" });
+    fireEvent.click(resume);
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(uniqueTitles()).toHaveLength(25);
+  });
+
+  it("a thrown request mid initial chain clears chaining and shows recovery (regression: network throw)", async () => {
+    let throwNext = true;
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:initial", continuation: true };
+      if (throwNext) {
+        throwNext = false;
+        throw new Error("network down");
+      }
+      return page(jobs(range(1, 25)), false, 100, null);
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    // The chain flag must not stay stuck on a throw: recovery controls render immediately.
+    expect(screen.getByTestId("jobs-initial-recovery")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+    expect(uniqueTitles()).toHaveLength(25);
+  });
+
+  it("multiple advancing empty continuation chunks chain until jobs arrive (regression: advancing-scan pause)", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p <= 3) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:chunk-${p}`, continuation: true };
+      if (p === 4) return page(jobs(range(1, 25)), true, 100, "k:chunk-4");
+      return page(jobs(range(26, 50)), false, 100, "k:chunk-5");
+    };
+    await mount();
+    await flush();
+    // No observer entry needed: the chain runs from the initial response to the first
+    // non-empty chunk, and the sentinel then continues the stream.
+    await act(async () => io.enter());
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3, 4, 5]);
+    expect(uniqueTitles()).toHaveLength(50);
+  });
+
+  it("all-duplicate continuation chunks (the frozen-window sweep) chain until unseen jobs arrive", async () => {
+    // The terminal sweep re-serves frozen-window rows; the client dedupes them, so each
+    // chunk appends nothing. These chunks must chain like empty ones, or auto-load would
+    // pause before the stream reaches unseen rows (reviewer caveat: sweep duplicates must
+    // not trip the append-nothing pause).
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 1000, "s:top");
+      if (p === 2) return { ...page(jobs(range(1, 25)), true, 0, "s:chunk-2"), continuation: true }; // all duplicates
+      if (p === 3) return { ...page(jobs(range(1, 25)), true, 0, "s:chunk-3"), continuation: true }; // all duplicates
+      return page(jobs(range(26, 50)), false, 0, null); // unseen rows, genuine end
+    };
+    await mount();
+    await flush();
+    await act(async () => io.enter());
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+    expect(uniqueTitles()).toHaveLength(50); // every job rendered exactly once
+  });
+
+  it("empty continuation chunks chain until genuine stream exhaustion, then stop", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p <= 3) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:chunk-${p}`, continuation: true };
+      // Exhaustion: server reports the end of the anchored stream.
+      return { jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null, continuation: true };
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+    for (let k = 0; k < 3; k++) {
+      await act(async () => io.enter());
+      await flush();
+    }
+    // The stream ended: no background refetching, and the true empty state can render.
+    expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+  });
+
+  it("a cycling continuation cursor (A then B then A) pauses auto-load immediately", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 100, "k:A");
+      if (p === 2) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:B", continuation: true };
+      return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:A", continuation: true };
+    };
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    // k:B advanced onto an unseen cursor so the chain continued; the response cycling
+    // back to the already-served k:A is non-advancing and pauses instead of spinning.
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    for (let k = 0; k < 4; k++) {
+      await act(async () => io.enter());
+      await flush();
+    }
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(loadMoreButton()).not.toBeNull();
+  });
+
+  it("a non-advancing continuation cursor pauses auto-load immediately", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 25);
+      return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:same-cursor", continuation: true };
+    };
+    await mount();
+    for (let k = 0; k < 6; k++) {
+      await act(async () => io.enter());
+      await flush();
+    }
+    // One chunk advances onto the new cursor; the next response repeats it, so the loader
+    // pauses instead of requesting the same position forever.
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(loadMoreButton()).not.toBeNull();
+  });
+
   it("a slow page that returns after a filter change is never applied", async () => {
     const slow = deferred<any>();
     h.transport = async ({ page: p, search }) => {
