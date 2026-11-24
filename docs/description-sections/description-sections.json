@@ -1,0 +1,58 @@
+[
+  {
+    "width": 360,
+    "hasSections": true,
+    "order": [
+      "Match Insights",
+      "Job description",
+      "Responsibilities",
+      "Qualifications",
+      "Benefits",
+      "Company",
+      "Similar jobs"
+    ],
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "hasSections": true,
+    "order": [
+      "Match Insights",
+      "Job description",
+      "Responsibilities",
+      "Qualifications",
+      "Benefits",
+      "Company",
+      "Similar jobs"
+    ],
+    "overflow": false
+  },
+  {
+    "width": 768,
+    "hasSections": true,
+    "order": [
+      "Match Insights",
+      "Job description",
+      "Responsibilities",
+      "Qualifications",
+      "Benefits",
+      "Company",
+      "Similar jobs"
+    ],
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "hasSections": true,
+    "order": [
+      "Match Insights",
+      "Job description",
+      "Responsibilities",
+      "Qualifications",
+      "Benefits",
+      "Company",
+      "Similar jobs"
+    ],
+    "overflow": false
+  }
+]

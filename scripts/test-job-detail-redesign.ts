@@ -22,6 +22,7 @@ function run() {
     // Inject intentional corruptions to verify negative control failure detection
     detailCode = detailCode.replace(/sticky top-14/g, "static");
     detailCode = detailCode.replace(/Overview/g, "BadTab1");
+    detailCode = detailCode.replace(/>Responsibilities<\/h2>/g, ">BadResponsibilities</h2>");
     detailCode = detailCode.replace(/Company/g, "BadTab2");
     detailCode = detailCode.replace(/const isUnlocked = isPro && !job.proUnlockError;/g, "const isUnlocked = false;");
     detailCode = detailCode.replace(/lg:grid-cols-12/g, "block");
@@ -76,18 +77,28 @@ function run() {
     console.log("  [PASS] two-column layout: clean two-column grid on desktop (lg:grid-cols-12 with 7/5 column ratio), single column on mobile");
   }
 
-  // 4. Content Order: Summary + tags, Responsibilities, Qualifications, Benefits, Company
-  const hasContentOrder =
-    detailCode.includes("Job description") &&
-    detailCode.includes("Responsibilities") &&
-    detailCode.includes("Requirements") &&
-    detailCode.includes("Benefits") &&
-    detailCode.includes('id="company-section"');
+  // 4. Existing Overview cards must precede Company. Source order is intentional:
+  // only render grounded lists and do not reintroduce a separate sections tab.
+  const contentStart = detailCode.indexOf("(3) CONTENT ORDER");
+  const contentCode = detailCode.slice(contentStart);
+  const orderedMarkers = [
+    ">Job description</h2>",
+    ">Responsibilities</h2>",
+    ">Qualifications</h2>",
+    ">Benefits</h2>",
+    'id="company-section"',
+  ];
+  const markerPositions = orderedMarkers.map((marker) => contentCode.indexOf(marker));
+  const hasContentOrder = contentStart >= 0 && markerPositions.every(
+    (position, index) => position >= 0 && (index === 0 || position > markerPositions[index - 1]),
+  ) && contentCode.includes("responsibilitiesList.length > 0") &&
+    contentCode.includes("requirementsList.length > 0 || preferredList.length > 0") &&
+    contentCode.includes("benefitsList.length > 0");
 
   if (!hasContentOrder) {
-    failures.push("CONTENT ORDER FAIL: Must render summary + tags, Responsibilities, Qualifications, Benefits, and Company section in order.");
+    failures.push("CONTENT ORDER FAIL: Must render Job description, data-backed Responsibilities, Qualifications, Benefits, then Company in Overview order.");
   } else {
-    console.log("  [PASS] content order: summary + tags, Responsibilities, Qualifications, Benefits, and Company section");
+    console.log("  [PASS] content order: Job description, Responsibilities, Qualifications, Benefits, then Company; lists require data");
   }
 
   // 5. Right Rail with Stacked Cards. Product restore (#665): the Tailor Resume card was removed (no AI
@@ -116,32 +127,52 @@ function run() {
     console.log("  [PASS] unlock logic: preserves isUnlocked (isPro && !job.proUnlockError), error retry banner, and onRetryUnlock prop");
   }
 
-  // 7. Mobile compact score (CM mobile item 17): main score line + one row of the three component scores, 11px+ labels
+  // 7. Mobile match score: heading + highlighted overall card (big %, band label) + one grid-cols-3 row of
+  // component score cards (Experience/Skill/Industry, dropped when no data), 11px+ labels
   const mobileScore = detailCode.slice(detailCode.indexOf('data-testid="mobile-match-score"'), detailCode.indexOf("(3) CONTENT ORDER"));
   const hasMobileMatchRow =
     mobileScore.includes("Match Score") &&
-    mobileScore.includes("grid grid-cols-3 gap-2") &&
+    mobileScore.includes("matchLabel") &&
+    mobileScore.includes("grid grid-cols-3") &&
+    mobileScore.includes("Pro Match") &&
     ["Experience", "Skill", "Industry"].every((l) => mobileScore.includes(l)) &&
     !/text-\[(9|10)px\]/.test(mobileScore);
 
   if (!hasMobileMatchRow) {
-    failures.push("MOBILE MATCH ROW FAIL: Mobile must render match score as compact cards in a main score line plus one grid-cols-3 row of Experience/Skill/Industry with 11px+ labels.");
+    failures.push("MOBILE MATCH ROW FAIL: Mobile must render Match Score as a highlighted overall card (big %, band label) plus one grid-cols-3 row of Experience/Skill/Industry cards with 11px+ labels.");
   } else {
-    console.log("  [PASS] mobile match layout: match scores rendered in one row with wrap-friendly text so labels are not truncated");
+    console.log("  [PASS] mobile match layout: highlighted overall card plus component score cards with readable labels");
   }
 
-  // 8. Mobile Two-Row Sticky Strip
-  const hasMobileTwoRowStrip =
+  // 8. Mobile Single-Row Sticky Strip: X (close) left, Overview/Company tabs centered, "..." menu right
+  const hasMobileStrip =
     detailCode.includes('data-testid="mobile-sticky-header-strip"') &&
-    detailCode.includes("md:hidden flex flex-col gap-2") &&
+    detailCode.includes("md:hidden flex items-center justify-between gap-2") &&
     detailCode.includes("Overview") &&
     detailCode.includes("Company") &&
-    detailCode.includes("mobile-header-share-button");
+    detailCode.includes("Close job details") &&
+    detailCode.includes("<JobCardMenu");
 
-  if (!hasMobileTwoRowStrip) {
-    failures.push("MOBILE TWO-ROW STRIP FAIL: Mobile header must use a two-row sticky strip (Row 1 = Back, Overview/Company tabs, Share; Row 2 = logo, Hide, Heart, Apply).");
+  if (!hasMobileStrip) {
+    failures.push("MOBILE STRIP FAIL: Mobile header must be a single sticky row: X (close) left, Overview/Company tabs centered, '...' menu right.");
   } else {
-    console.log("  [PASS] mobile two-row strip: two rows on mobile with full Overview/Company tabs, Share, and row 2 action buttons");
+    console.log("  [PASS] mobile strip: X left, Overview/Company tabs centered, '...' menu right");
+  }
+
+  // 8b. Mobile overview restyle details: 64px logo action row, posted/category pills, grey summary card with
+  // company name, salary always listed ("Not disclosed" when empty, never masked on mobile)
+  const mobileFacts = detailCode.slice(detailCode.indexOf('data-testid="mobile-job-facts"'), detailCode.indexOf('data-testid="overview-chips"'));
+  const hasMobileOverviewRestyle =
+    detailCode.includes("w-16 h-16 rounded-2xl") &&
+    detailCode.includes("{/* Mobile pills: posted time + category (real data only) */}") &&
+    detailCode.includes("max-md:bg-[#F1F5F9]") &&
+    mobileFacts.includes("Not disclosed") &&
+    !mobileFacts.includes("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
+
+  if (!hasMobileOverviewRestyle) {
+    failures.push("MOBILE OVERVIEW FAIL: Mobile overview must have the 64px-logo action row, posted/category pills, the grey summary card, and an always-visible salary row (never masked).");
+  } else {
+    console.log("  [PASS] mobile overview: action row, pills, grey summary card, always-visible salary row");
   }
 
   // 9. Sanitized Company Website URL

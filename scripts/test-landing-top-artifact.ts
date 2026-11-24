@@ -66,16 +66,18 @@ async function main() {
     "page.tsx must contain lead copy about verified employer jobs"
   );
   assert.ok(
-    pageSrc.includes("Sign up free"),
-    "page.tsx must contain 'Sign up free'"
+    pageSrc.includes("Sign up for free"),
+    "page.tsx must contain 'Sign up for free'"
   );
 
   // 2. Working Navigation and CTAs wired to real routes
-  assert.ok(pageSrc.includes('href="/signup" className="btn-dark"'), "Top nav Sign up free must link to /signup");
+  assert.ok(pageSrc.includes('href="/signup" className="btn-dark"'), "Top nav Sign up for free must link to /signup");
   assert.ok(pageSrc.includes('href="/login" className="btn-ghost"'), "Top nav Sign in must link to /login");
   assert.ok(pageSrc.includes('href="/radar"'), "Lower page must link to /radar");
   assert.ok(pageSrc.includes('href="/jobs" className="btn-cta"'), "Top-fold View Jobs must link to /jobs");
   assert.ok(!pageSrc.includes('id="try-demo"'), "Old hero #try-demo button must not come back");
+
+  assert.equal((pageSrc.match(/href="\/jobs" className="btn-apply"/g) || []).length, 2, "Both preview Apply links must use View Jobs destination /jobs");
 
   // 3. Top fold structure: one full job card and a half-visible second card (peek) above the CTA
   assert.ok(pageSrc.includes('id="first-card"'), "Top fold must include the full first job card");

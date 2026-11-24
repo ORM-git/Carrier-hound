@@ -930,15 +930,10 @@ export function computeRecommendedRankingScore(
   return Math.round(clamp0to100(weighted));
 }
 
-/**
- * True when the Recommended-feed ranking score should order the list: either the
- * Recommended tab is the effective view (same condition the jobs list fetch uses),
- * or the user explicitly chose Sort: Recommended. Never gated on the local sort
- * state's default value ("newest") alone, so the ranking still applies on the
- * default Recommended tab even before the user ever touches the Sort control.
- */
+/** The explicit sort controls ranking, including on the For You tab. */
 export function shouldApplyRecommendedRanking(activeTab: string, sortBy: string): boolean {
-  return activeTab === "recommended" || sortBy === "match";
+  void activeTab;
+  return sortBy === "match";
 }
 
 /**
