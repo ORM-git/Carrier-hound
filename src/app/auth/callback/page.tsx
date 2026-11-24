@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl } from "@/lib/auth/returnTo";
@@ -9,14 +9,24 @@ import { clearCandidateProfileMemoryCache } from "@/lib/resume/storage";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
 import BrandIcon from "@/components/BrandIcon";
 import { Card } from "@/components/ui/card";
+import { buttonClasses } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+
+// Hard ceiling for the whole callback: it always ends in a redirect or the error state, never a spinner.
+const CALLBACK_DEADLINE_MS = 10_000;
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  // The callback runs exactly once per mount: showing the error state must not restart it.
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let resolved = false;
     let cancelled = false;
+    let navigated = false;
+    let signedIn = false;
 
     // Read search params via window.location (safe for static export)
     const search = typeof window !== "undefined" ? window.location.search : "";
@@ -32,13 +42,15 @@ export default function AuthCallbackPage() {
     let deferTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const navigate = (destination: string) => {
-      if (cancelled) return;
+      if (cancelled || navigated) return;
+      navigated = true;
       clearCandidateProfileMemoryCache();
       if (typeof window !== "undefined") {
         try {
           localStorage.removeItem("careermonke_candidate_profile");
         } catch {}
       }
+      const router = routerRef.current;
       router.replace(destination);
     };
 
@@ -56,6 +68,7 @@ export default function AuthCallbackPage() {
     const finishSignedIn = (userId: string | null | undefined, defer = false) => {
       if (cancelled || resolved) return;
       resolved = true;
+      signedIn = true;
       const run = () => {
         if (cancelled) return;
         resolvePostAuthDestination(supabase, userId, next)
@@ -82,6 +95,17 @@ export default function AuthCallbackPage() {
     let hashTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
+    // Anything that stalls or throws (code exchange, session read, the post-sign-in status lookup) ends here:
+    // a signed-in user fails closed to onboarding (same as a failed status lookup), everyone else sees the error.
+    const deadlineId = setTimeout(() => {
+      if (cancelled || navigated) return;
+      if (signedIn) navigate(onboardingRedirectFor(next));
+      else {
+        resolved = true;
+        setFailed(true);
+      }
+    }, CALLBACK_DEADLINE_MS);
+
     const handleAuth = async () => {
       // 2. PKCE code exchange
       if (code) {
@@ -89,6 +113,16 @@ export default function AuthCallbackPage() {
         if (cancelled || resolved) return;
         if (!error) {
           finishSignedIn(data?.session?.user?.id);
+          return;
+        }
+        // The client may already have exchanged this single-use code itself (detectSessionInUrl); then the
+        // second exchange fails although the user is signed in.
+        const {
+          data: { session: existing },
+        } = await supabase.auth.getSession();
+        if (cancelled || resolved) return;
+        if (existing) {
+          finishSignedIn(existing.user?.id);
           return;
         }
         console.error("[Auth Callback] exchangeCodeForSession error:", error.message || error);
@@ -112,15 +146,18 @@ export default function AuthCallbackPage() {
         if (cancelled || resolved) return;
         hashTimeoutId = setTimeout(() => {
           if (cancelled || resolved) return;
-          supabase.auth.getSession().then(({ data }: any) => {
-            if (cancelled || resolved) return;
-            const hashSession = data?.session;
-            if (hashSession) {
-              finishSignedIn(hashSession.user?.id);
-            } else {
-              finish(`/login?error=${encodeURIComponent("Could not authenticate magic link. Please try again.")}`);
-            }
-          });
+          supabase.auth
+            .getSession()
+            .then(({ data }: any) => {
+              if (cancelled || resolved) return;
+              const hashSession = data?.session;
+              if (hashSession) {
+                finishSignedIn(hashSession.user?.id);
+              } else {
+                finish(`/login?error=${encodeURIComponent("Could not authenticate magic link. Please try again.")}`);
+              }
+            })
+            .catch(onUnexpected);
         }, 1500);
         return;
       }
@@ -134,17 +171,25 @@ export default function AuthCallbackPage() {
       }, 1000);
     };
 
-    handleAuth();
+    function onUnexpected(err: unknown) {
+      console.error("[Auth Callback] sign-in did not complete:", err instanceof Error ? err.message : err);
+      if (cancelled || navigated || signedIn) return; // a signed-in user is still routed by the deadline
+      resolved = true;
+      setFailed(true);
+    }
+
+    handleAuth().catch(onUnexpected);
 
     return () => {
       cancelled = true;
       resolved = true;
+      clearTimeout(deadlineId);
       if (hashTimeoutId !== null) clearTimeout(hashTimeoutId);
       if (fallbackTimeoutId !== null) clearTimeout(fallbackTimeoutId);
       if (deferTimeoutId !== null) clearTimeout(deferTimeoutId);
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, []);
 
   return (
     <div
@@ -159,13 +204,25 @@ export default function AuthCallbackPage() {
         <div className="w-14 h-14 rounded-tk-xl bg-surface-muted border border-line flex items-center justify-center mx-auto p-2">
           <BrandIcon className="w-10 h-10" />
         </div>
-        <div className="space-y-1.5" role="status" aria-label="Signing you in">
-          <Loader2 aria-hidden="true" className="w-6 h-6 text-brand-600 animate-spin mx-auto" />
-          <h1 className="text-tk-body font-bold text-ink">Signing you in to CareerMonke…</h1>
-          <p className="text-tk-caption text-ink-muted">
-            Verifying your secure credentials. This only takes a moment.
-          </p>
-        </div>
+        {failed ? (
+          <div className="space-y-3" role="alert" data-testid="auth-callback-error">
+            <h1 className="text-tk-body font-bold text-ink">We couldn&apos;t sign you in</h1>
+            <p className="text-tk-caption text-ink-muted">
+              The sign-in link may have expired or was opened in a different browser. Please try again.
+            </p>
+            <a href="/login" className={buttonClasses({ variant: "primary", fullWidth: true })}>
+              Back to sign in
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-1.5" role="status" aria-label="Signing you in">
+            <Loader2 aria-hidden="true" className="w-6 h-6 text-brand-600 animate-spin mx-auto" />
+            <h1 className="text-tk-body font-bold text-ink">Signing you in to CareerMonke…</h1>
+            <p className="text-tk-caption text-ink-muted">
+              Verifying your secure credentials. This only takes a moment.
+            </p>
+          </div>
+        )}
       </Card>
       <footer className="py-2 text-center text-xs text-ink-subtle">
         © 2026 Olive Ridley Media Private Limited. All rights reserved.
