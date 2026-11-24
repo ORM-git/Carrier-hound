@@ -75,6 +75,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_API_URL: ${{ github.api_url }}
+          TARGET_COHORT: ${{ inputs.cohort }}
         run: python -m scripts.scraper.watchdog_gate
 
       - name: Validate inputs
@@ -84,6 +85,7 @@ jobs:
           IS_WATCHDOG: ${{ inputs.watchdog }}
           SKIP: ${{ steps.gate.outputs.skip }}
           SKIP_REASON: ${{ steps.gate.outputs.skip_reason }}
+          ADMITTED_COHORTS: ${{ steps.gate.outputs.admitted_cohorts }}
           IN_COHORT: ${{ inputs.cohort }}
           IN_MODE: ${{ inputs.mode }}
           IN_CONFIRM: ${{ inputs.confirm }}
@@ -103,11 +105,24 @@ jobs:
             cohort="$IN_COHORT"
             mode="$IN_MODE"
           fi
-          case "$cohort" in
-            both) cohorts='["non-workday","workday"]'; expect='non-workday,workday' ;;
-            non-workday|workday) cohorts="[\"$cohort\"]"; expect="$cohort" ;;
-            *) echo "::error title=Invalid input::cohort must be both, non-workday or workday"; exit 2 ;;
-          esac
+          if [ "$IS_WATCHDOG" = "true" ] && [ -n "${ADMITTED_COHORTS:-}" ] && [ "$ADMITTED_COHORTS" != "[]" ]; then
+            cohorts="$ADMITTED_COHORTS"
+            if [ "$cohorts" = '["non-workday","workday"]' ] || [ "$cohorts" = '["workday","non-workday"]' ]; then
+              expect='non-workday,workday'
+            elif [ "$cohorts" = '["non-workday"]' ]; then
+              expect='non-workday'
+            elif [ "$cohorts" = '["workday"]' ]; then
+              expect='workday'
+            else
+              expect='non-workday,workday'
+            fi
+          else
+            case "$cohort" in
+              both) cohorts='["non-workday","workday"]'; expect='non-workday,workday' ;;
+              non-workday|workday) cohorts="[\"$cohort\"]"; expect="$cohort" ;;
+              *) echo "::error title=Invalid input::cohort must be both, non-workday or workday"; exit 2 ;;
+            esac
+          fi
           case "$mode" in
             dry-run) ;;
             write-production-expire)

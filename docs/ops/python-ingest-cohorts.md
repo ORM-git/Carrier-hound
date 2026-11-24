@@ -4,7 +4,7 @@ Use this sequence after reviewing the code. The workflow itself remains schedule
 
 1. Review the exact PR head SHA, both source cohorts, the workflow checks and the report schema. Confirm the PR is merged and deployed to the default branch before relying on its schedule. Do not dispatch from a feature branch.
 2. Separately approve an owner-run manual workflow execution. The existing schedule and manual entry point retain write, production and expiry authority; each cohort has a separate source-failure veto and report. A failing cohort leaves the aggregate run red while the other cohort still executes.
-3. Inspect both uploaded JSON reports. Check selected/completed/failed source IDs, fetched and deduped totals, persistence-confirmed inserted/updated/unchanged counts, expiry outcomes, guard reason, SHA, and timestamps. A dry-run projection is not a confirmed write; fetched jobs are not newly added jobs; a zero net active delta can be legitimate.
+3. Inspect both uploaded JSON reports. Check selected/completed/failed source IDs, fetched and deduped totals, persistence-confirmed inserted/updated/unchanged counts, expiry outcomes, guard reason, SHA, and timestamps. A dry-run projection is not a confirmed write; fetched jobs are not newly added jobs; a zero net active delta can be legitimate. Note: GitHub Actions job status inspection (e.g. checking job conclusions) confirms execution status, but is NOT full artifact report validation, which requires inspecting confirmed database write counts in the uploaded JSON artifact report.
 4. On the established CareerMonke test-account site, record timestamped before/after values from the public `/api/stats` endpoint alongside the run SHA and both reports. Missing guest-stat fields are unknown, not zero. Do not use the production database, service-role credentials, or a user's session token in a public checker.
 5. Escalate missing repository secrets, workflow permissions, inactive workflow configuration, or scheduling restrictions to the repository owner. Do not add a token, external scheduler, automatic dispatch loop, or retry that bypasses the shared lock.
 
@@ -16,27 +16,32 @@ To safeguard against dropped GitHub Actions cron events, an independent schedule
 
 ### Architecture & Dedupe Safety
 
-1. **Cadence Threshold**: The watchdog triggers every 15 minutes (`*/15 * * * *`). If the 4-hour cadence is overdue by > 45 minutes (total > 285 minutes since the last completed successful ingestion) and no workflow run is currently active, it dispatches `python-ingest.yml` on `main`.
-2. **Serialized Concurrency & Cooldown Gate**:
-   - The dispatch passes `inputs.watchdog = true`.
-   - The workflow acquires the existing `concurrency: group: ingest-pipeline, cancel-in-progress: false` lock.
-   - Inside the `plan` job, `scripts/scraper/watchdog_gate.py` evaluates recent completed runs. If any successful ingestion run completed within the bounded 195-minute cooldown window (e.g. an earlier cron or queued catch-up run just finished), the gate sets `skip=true`.
-   - The workflow completes green without running scraper jobs or writing to the database.
-   - Zero database migrations or Cloudflare KV atomicity assumptions; deduplication safety is enforced within the concurrency-serialized workflow.
-3. **Stale Job Protection & Cohort Inspection**:
-   - Active runs queued or running for $\ge 120$ minutes are reported via alert without dispatching duplicate runs.
-   - Actual per-cohort outcomes (`jobs` endpoint) are inspected; partial failures trigger alert diagnostics.
+1. **Cadence & Cohort Freshness**:
+   - The watchdog triggers every 15 minutes (`*/15 * * * *`).
+   - Freshness is derived from verified production-write cohort jobs on `main` (matching `Python ingestion [<cohort>] (write-production-expire)`).
+   - Cohorts (`non-workday` and `workday`) are tracked independently. Dry-run jobs (`(dry-run)`), other-branch runs, and skip-only runs are strictly excluded from production freshness.
+   - If any cohort's last verified write is overdue by > 45 minutes beyond the 4-hour cadence (total > 285 minutes) and no run is active, the watchdog dispatches catch-up for the degraded cohort(s). If only one cohort is degraded, only that cohort is dispatched, avoiding rewriting healthy cohorts.
+2. **Attempt Cooldown & Concurrency Gate**:
+   - Both the watchdog worker and the workflow admission gate (`scripts/scraper/watchdog_gate.py`) enforce a 45-minute bounded attempt cooldown. If a cohort attempt recently failed, rapid re-dispatching is suppressed to prevent infinite retry loops.
+   - When dispatched, the workflow acquires the existing `concurrency: group: ingest-pipeline, cancel-in-progress: false` serialized lock.
+   - Inside the `plan` job, `scripts/scraper/watchdog_gate.py` evaluates recent completed runs on `main`. If all requested cohorts succeeded within the 195-minute cooldown window, or if an attempt occurred within 45 minutes, it skips execution (`skip=true`).
+   - If credentials, API responses, or cohort jobs cannot be verified (e.g. HTTP 401/403/429, timeout, network error), the gate fails closed (`skip=true`, exit 1) and never authorizes a production attempt. Verified first-run bootstrap (API 200 with zero runs) is admitted.
+3. **Stale Job Protection & Observable Alerts**:
+   - Active runs queued or running for $\ge 120$ minutes are reported via webhook alert without dispatching duplicate runs.
+   - Mandatory webhook destination validation, explicit network timeouts (15s), bounded retries with `Retry-After`, and alert deduplication (30m) prevent webhook spam.
 
 ### Narrowly Scoped Credentials & Secrets
 
-The watchdog uses the principle of least privilege:
+The watchdog operates under least privilege:
 
 1. **Fine-Grained GitHub Personal Access Token (PAT)**:
    - **Repository Access**: Only `ORM-git/Carrier-hound`.
-   - **Permissions**: `Actions: Read and write` (required only to inspect `/actions/workflows/python-ingest.yml/runs` and trigger `/dispatches`).
-   - **Contents / PRs / Administration / Secrets**: No access.
+   - **Permissions**: `Actions: Read and write` (to inspect `/actions/workflows/python-ingest.yml/runs` and trigger `/dispatches`).
+   - **Contents / Pull Requests / Administration / Secrets**: No access.
 2. **Alert Destination**:
-   - Webhook URL (Slack, Discord, PagerDuty, or HTTP monitoring sink) to receive immediate notifications on dispatch errors, stale jobs, or missing configuration. Missing credentials fail visibly (never silently healthy).
+   - Mandatory webhook URL (`ALERT_WEBHOOK_URL`) for Slack, Discord, PagerDuty, or HTTP monitoring sink. Missing or invalid webhook URL fails closed.
+3. **Manual Dispatch Secret (Optional)**:
+   - `DISPATCH_SECRET`: If configured, allows authorized operators to trigger catch-up reconciliation via `POST /dispatch`.
 
 ### Activation Procedure (Owner Prerequisite)
 
@@ -48,13 +53,18 @@ To activate the watchdog once approved:
 # 1. Set required secrets in workers/ingest-watchdog
 npx wrangler secret put GITHUB_TOKEN --cwd workers/ingest-watchdog
 npx wrangler secret put ALERT_WEBHOOK_URL --cwd workers/ingest-watchdog
+npx wrangler secret put DISPATCH_SECRET --cwd workers/ingest-watchdog  # optional
 
 # 2. Deploy to Cloudflare Workers
 npx wrangler deploy --cwd workers/ingest-watchdog
 
-# 3. Verify health and dry check endpoints
-curl -f https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/health
-curl -f https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/check
+# 3. Verify health and read-only inspection (dry-check)
+curl -s https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/health
+curl -s https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/check
+
+# 4. Optional manual catch-up trigger (requires DISPATCH_SECRET)
+curl -X POST https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/dispatch \
+  -H "Authorization: Bearer <DISPATCH_SECRET>"
 ```
 
 ### Rollback & Deactivation
@@ -63,10 +73,9 @@ curl -f https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/check
    ```bash
    npx wrangler secret delete GITHUB_TOKEN --cwd workers/ingest-watchdog
    ```
-   Or disable the Cron Trigger in the Cloudflare Dashboard under **Workers & Pages > carrier-hound-ingest-watchdog > Triggers > Cron Triggers**.
+   Or disable the Cron Trigger in Cloudflare Dashboard under **Workers & Pages > carrier-hound-ingest-watchdog > Triggers > Cron Triggers**.
 2. **Full Teardown**:
    ```bash
    npx wrangler delete carrier-hound-ingest-watchdog --cwd workers/ingest-watchdog
    ```
    Native GitHub Actions scheduled cron runs continue unaffected.
-
