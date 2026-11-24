@@ -610,6 +610,8 @@ class SupabaseSetDiffWriter:
             "rejected": [],
         }
         persisted_source_keys: set[tuple[str, str]] = set()
+        inserted_keys: set[tuple[str, str]] = set()
+        updated_keys: set[tuple[str, str]] = set()
         batch_size = 50
         # Shared CHECK-constraint validator: invalid rows are reported individually, valid rows continue.
         jobs, stats["rejected"] = prevalidate_jobs(jobs)
@@ -717,6 +719,7 @@ class SupabaseSetDiffWriter:
                     sjid = str(row.get("source_job_id") or "")
                     if sid and sjid:
                         persisted_source_keys.add((sid, sjid))
+                        inserted_keys.add((sid, sjid))
 
             if self.persistence_failed:
                 break
@@ -746,6 +749,7 @@ class SupabaseSetDiffWriter:
                             sjid = str(row.get("source_job_id") or "")
                             if sid and sjid:
                                 persisted_source_keys.add((sid, sjid))
+                                updated_keys.add((sid, sjid))
                     else:
                         code, reason = db_error_diagnostic(upd_resp.status_code, upd_resp.text)
                         if code == "23514" and upd_resp.status_code == 400:  # definitive CHECK rejection of this row only
@@ -765,6 +769,8 @@ class SupabaseSetDiffWriter:
                 break
 
         stats["persisted_source_keys"] = [list(k) for k in persisted_source_keys]
+        stats["inserted_source_keys"] = [list(k) for k in inserted_keys]
+        stats["updated_source_keys"] = [list(k) for k in updated_keys]
         stats["failed_writes"] = self.failed_writes
         stats["persistence_failed"] = self.persistence_failed
         stats["write_errors"] = self.write_errors

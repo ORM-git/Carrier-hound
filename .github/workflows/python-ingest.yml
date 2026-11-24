@@ -11,7 +11,9 @@ name: Python Job Ingestion (every 4 hours)
 #
 # Safety: inside each cohort the runner's guard is untouched. If any of that cohort's sources fails, the
 # runner withholds every database write (company sync included) and all expiry for that cohort and exits 1.
-# Workday is partial coverage and never expires jobs.
+# Workday is partial coverage and never expires jobs. Workday is isolated per board instead: a 429/timeout/
+# malformed board writes nothing while completed boards still write; per-board cooldowns (Retry-After honoured
+# across runs) and fair rotation live in a JSON state file carried between runs by actions/cache (no DB table).
 on:
   schedule:
     # 02:47, 06:47, 10:47, 14:47, 18:47, 22:47 UTC: both cohorts, write + production + expire (unchanged authority)
@@ -167,6 +169,14 @@ jobs:
       - name: Install scraper requirements
         run: pip install -r scripts/scraper/requirements.txt
 
+      - name: Restore Workday cooldown state
+        if: matrix.cohort == 'workday'
+        uses: actions/cache/restore@v4
+        with:
+          path: .ingest-state/workday-sources.json
+          key: workday-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: workday-state-
+
       - name: Run ingestion
         id: run
         env:
@@ -176,6 +186,8 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          # Missing/corrupt state is treated conservatively by the runner (cold start: one board only).
+          WORKDAY_STATE_PATH: .ingest-state/workday-sources.json
         run: |
           mkdir -p reports
           case "$COHORT" in non-workday|workday) ;; *) echo "::error::invalid cohort"; exit 2 ;; esac
@@ -200,6 +212,13 @@ jobs:
           # stderr carries only the runner's own (redacted) messages / tracebacks
           tail -n 40 "reports/python-ingest-$COHORT-stderr.log"
           exit $code
+
+      - name: Save Workday cooldown state
+        if: always() && matrix.cohort == 'workday'
+        uses: actions/cache/save@v4
+        with:
+          path: .ingest-state/workday-sources.json
+          key: workday-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Cohort summary
         if: always()

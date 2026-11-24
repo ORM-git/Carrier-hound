@@ -49,6 +49,16 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
             for r in (report.get("rejected") or [])[:10] if isinstance(r, dict)
         ],
         "failed_writes": int(db.get("failed_writes") or 0),
+        "workday": report.get("workday"),
+        "deferred_sources": [
+            {"source": str(d.get("source")), "reason": str(d.get("reason") or "")[:120], "next_eligible_at": d.get("next_eligible_at")}
+            for d in (report.get("deferred_sources") or []) if isinstance(d, dict)
+        ],
+        "per_source": [
+            {k: src.get(k) for k in ("source", "status", "fetched", "validated", "rejected", "inserted", "updated",
+                                     "cooldown_reason", "next_eligible_at", "last_success_at")}
+            for src in (report.get("sources") or []) if isinstance(src, dict) and src.get("source_type") == "workday"
+        ],
         "projected": report.get("projected_counts") if dry_run else None,
         "confirmed_writes": None if dry_run or not isinstance(persisted, dict) else {
             "inserted": persisted.get("inserted"),
@@ -84,6 +94,11 @@ def render_cohort(s: dict[str, Any]) -> str:
         ("fetched (not new jobs)", s.get("fetched")), ("unique after dedupe", s.get("deduped")),
         ("validated / rejected", f"{s.get('validated')} / {s.get('rejected', 0)}"),
     ]
+    wd = s.get("workday")
+    if isinstance(wd, dict):
+        rows.append(("workday selected / attempted / completed / failed / deferred",
+                     f"{wd.get('selected')} / {wd.get('attempted')} / {wd.get('completed')} / {wd.get('failed')} / {wd.get('deferred')}"))
+        rows.append(("workday cooldown state", f"{wd.get('state_status')} (request cap {wd.get('request_cap')})"))
     if s["dry_run"]:
         p = s.get("projected") or {}
         rows.append(("projected insert / update / unchanged", f"{p.get('inserted')} / {p.get('updated')} / {p.get('unchanged')}"))
@@ -104,6 +119,15 @@ def render_cohort(s: dict[str, Any]) -> str:
     if s["failed_sources"]:
         lines += ["", "**Failed sources (this cohort's writes and expiry withheld):**", ""]
         lines += [f"- `{f['source']}`: {f['error']}" for f in s["failed_sources"]]
+    if s.get("per_source"):
+        lines += ["", "| workday board | status | fetched | validated | rejected | inserted | updated | cooldown | next eligible | last success |",
+                  "|---|---|---|---|---|---|---|---|---|---|"]
+        lines += ["| " + " | ".join(str(p.get(k) if p.get(k) is not None else "-") for k in (
+            "source", "status", "fetched", "validated", "rejected", "inserted", "updated",
+            "cooldown_reason", "next_eligible_at", "last_success_at")) + " |" for p in s["per_source"]]
+    if s.get("deferred_sources"):
+        lines += ["", "**Deferred Workday boards (not attempted this run; not a success):**", ""]
+        lines += [f"- `{d['source']}`: {d['reason']} (next eligible {d['next_eligible_at'] or 'next run'})" for d in s["deferred_sources"]]
     if s.get("rejected_samples"):
         lines += ["", f"**Rejected rows ({s.get('rejected', 0)}; not persisted, board expiry withheld):**", ""]
         lines += [f"- `{r['source_key']}` [{r['stage']}] {r['reason']}" for r in s["rejected_samples"]]
