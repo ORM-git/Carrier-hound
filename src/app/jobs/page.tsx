@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, LatestJobSelectionGate, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -395,6 +395,8 @@ function JobsPageInner() {
 
   // In-place Selected Job for Detail View
   const [selectedJob, setSelectedJob] = useState<LiveJob | null>(null);
+  const jobSelectionGateRef = useRef<LatestJobSelectionGate | null>(null);
+  if (!jobSelectionGateRef.current) jobSelectionGateRef.current = new LatestJobSelectionGate();
   const pendingJobIdRef = useRef<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const [viewHiddenJobs, setViewHiddenJobs] = useState(false);
@@ -1486,10 +1488,11 @@ function JobsPageInner() {
   };
 
   const handleRetryUnlock = async (jobId: string) => {
+    const selectionToken = jobSelectionGateRef.current!.begin();
     setIsRetryingUnlock(true);
     try {
       const fullJob = await getLiveJobById(jobId, isPro);
-      if (fullJob) {
+      if (fullJob && jobSelectionGateRef.current!.isCurrent(selectionToken)) {
         setSelectedJob(fullJob);
         if (!fullJob.proUnlockError) {
           toast.success("Job details unlocked!");
@@ -1504,7 +1507,19 @@ function JobsPageInner() {
     }
   };
 
+  const handleLoadCompanyProfile = async () => {
+    if (!isPro || !selectedJob || selectedJob.companyProfile?.jobs.status === "ready" || selectedJob.companyProfile?.jobs.status === "error") return;
+    const jobId = selectedJob.id;
+    try {
+      const fullJob = await getLiveJobById(jobId, true);
+      if (fullJob && selectedJob?.id === jobId) setSelectedJob((current) => current?.id === jobId ? { ...current, ...fullJob } : current);
+    } catch (error) {
+      console.warn("Failed to load company profile", error);
+    }
+  };
+
   const handleSelectJob = async (job: LiveJob) => {
+    const selectionToken = jobSelectionGateRef.current!.begin();
     pendingJobIdRef.current = null;
     if (typeof window !== "undefined") {
       scrollPositionRef.current = window.scrollY;
@@ -1523,7 +1538,7 @@ function JobsPageInner() {
     if (!job.description || job.description.length < 50 || job.proUnlockError) {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
-        if (fullJob) {
+        if (fullJob && jobSelectionGateRef.current!.isCurrent(selectionToken)) {
           if (typeof job.matchScore === "number") {
             fullJob.matchScore = job.matchScore;
           }
@@ -1534,6 +1549,7 @@ function JobsPageInner() {
   };
 
   const handleBackToList = () => {
+    jobSelectionGateRef.current!.cancel();
     pendingJobIdRef.current = null;
     setSelectedJob(null);
     setDetailLoading(false);
@@ -1854,10 +1870,11 @@ function JobsPageInner() {
                 isRetryingUnlock={isRetryingUnlock}
                 similarJobs={similarJobs}
                 onSelectJob={(job) => {
-                  setSelectedJob(job);
+                  void handleSelectJob(job);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 isExpired={detailStatus === "expired" || selectedJob.isExpired}
+                onLoadCompanyProfile={handleLoadCompanyProfile}
               />
             </div>
           ) : (

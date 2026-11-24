@@ -14,7 +14,7 @@ the uncovered-table count rises above the baseline. New migrations
 that create tables must extend `schema.sql` (preferred) or this file
 in the same PR.
 
-Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 18 Nov 2026 for `20261118_onboarding_resume_uploads.sql` (migration-only: pointer table with preflight, marker comments, and transactional rollback guards): 46 tables, 46 covered only by migrations. Updated 19 Nov 2026 for `20261119_onboarding_resume_profiles.sql` (migration-only: parsed resume profile for ranking, owner-read only, preflight + marker + guarded rollback): 47 tables, 47 covered only by migrations. Updated 19 Nov 2026 (rehearsal merge of #643) for `20261116b_ten_million_system_design_schema.sql` (not applied): 57 tables, 57 covered only by migrations. Updated 20 Nov 2026 for the #643 rollback-provenance table `internal_ingestion.schema_migration_provenance` (`20261116b`, not applied): 58 tables, 58 covered only by migrations. Updated 21 Nov 2026 for `20261121a_error_events.sql` (not applied): 59 tables, 59 covered only by migrations.
+Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql, 42 covered only by migrations. Updated 7 Nov 2026 for `20261107b_search_alert_dispatches.sql` (not applied): 43 tables, 43 covered only by migrations. Updated again for `20261107c_outbox_queue.sql` (not applied): 44 tables, 44 covered only by migrations. Updated for `20261107f_search_alert_send_windows.sql` (not applied): 45 tables, 45 covered only by migrations. Updated 18 Nov 2026 for `20261118_onboarding_resume_uploads.sql` (migration-only: pointer table with preflight, marker comments, and transactional rollback guards): 46 tables, 46 covered only by migrations. Updated 19 Nov 2026 for `20261119_onboarding_resume_profiles.sql` (migration-only: parsed resume profile for ranking, owner-read only, preflight + marker + guarded rollback): 47 tables, 47 covered only by migrations. Updated 19 Nov 2026 (rehearsal merge of #643) for `20261116b_ten_million_system_design_schema.sql` (not applied): 57 tables, 57 covered only by migrations. Updated 20 Nov 2026 for the #643 rollback-provenance table `internal_ingestion.schema_migration_provenance` (`20261116b`, not applied): 58 tables, 58 covered only by migrations. Updated 21 Nov 2026 for `20261121a_error_events.sql` (not applied): 59 tables, 59 covered only by migrations. Updated 22 Nov 2026 for `20261122a_company_profile_data.sql` (not applied): 62 tables, 62 covered only by migrations.
 
 | Table | Owning migration |
 | --- | --- |
@@ -32,6 +32,9 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 | `companies` | `20261001_phase1_storage_optimization.sql` |
 | `company_aliases` | `20261116b_ten_million_system_design_schema.sql` |
 | `company_boards` | `20261001_phase1_storage_optimization.sql` |
+| `company_profile_facts` | `20261122a_company_profile_data.sql` |
+| `company_profile_leadership` | `20261122a_company_profile_data.sql` |
+| `company_profile_news` | `20261122a_company_profile_data.sql` |
 | `company_token_registry` | `20261028_ats_board_ingestion.sql` |
 | `consent_logs` | `20261116b_ten_million_system_design_schema.sql` |
 | `cron_run_logs` | `20261008_phase2_daily_digest_cron.sql` |
@@ -81,7 +84,7 @@ Measured 7 Nov 2026: 42 tables created by migrations, 0 duplicated in schema.sql
 
 <!-- guard-entries: one per line, parsed by schemaDriftBaseline.test.ts -->
 ```guard
-baseline-count: 60
+baseline-count: 63
 table: addon_packs | 20261103_plans_addons_usage.sql
 table: admin_audit_log | 20261020_admin_audit_log.sql
 table: ai_concurrency_leases | 20261104a_global_ai_budget.sql
@@ -96,6 +99,10 @@ table: category_overrides | 20261116b_ten_million_system_design_schema.sql
 table: companies | 20261001_phase1_storage_optimization.sql
 table: company_aliases | 20261116b_ten_million_system_design_schema.sql
 table: company_boards | 20261001_phase1_storage_optimization.sql
+table: company_profile_facts | 20261122a_company_profile_data.sql
+table: company_profile_leadership | 20261122a_company_profile_data.sql
+table: company_profile_news | 20261122a_company_profile_data.sql
+table: company_profile_refresh_state | 20261122a_company_profile_data.sql
 table: company_token_registry | 20261028_ats_board_ingestion.sql
 table: consent_logs | 20261116b_ten_million_system_design_schema.sql
 table: cron_run_logs | 20261008_phase2_daily_digest_cron.sql

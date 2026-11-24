@@ -6,6 +6,7 @@ import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 import { getCountryFilterClause } from "@/lib/countries";
 import { singleFlight } from "@/lib/cache/singleFlight";
+import { sanitizeCompanyProfile, type CompanyProfile } from "@/lib/company-profile/types";
 import {
   detectRoleCategory,
   extractTopKeywords,
@@ -62,6 +63,29 @@ export interface LiveJob {
   salary_original?: string | null;
   matchScore?: number | null;
   matchReasons?: string[];
+  companyProfile?: CompanyProfile | null;
+}
+
+export function mapCompanyProfilePayload(value: unknown, companyId?: string | null): CompanyProfile | null {
+  return sanitizeCompanyProfile(value, companyId || undefined);
+}
+
+/** Prevents an older detail lookup from replacing a newer in-place selection. */
+export class LatestJobSelectionGate {
+  private requestVersion = 0;
+
+  begin(): number {
+    this.requestVersion += 1;
+    return this.requestVersion;
+  }
+
+  isCurrent(token: number): boolean {
+    return token === this.requestVersion;
+  }
+
+  cancel(): void {
+    this.requestVersion += 1;
+  }
 }
 
 export interface ProUnlockError {
@@ -935,6 +959,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                     const u = unlockedMap.get(job.id);
                     if (u) {
                       if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
+                      if (u.companyProfile) job.companyProfile = mapCompanyProfilePayload(u.companyProfile, job.companyId);
                       if (u.salary_text || u.salary_min != null) {
                         job.salary = stripHtmlAndExecutableMarkup(u.salary_display || formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");
                         job.salary_display = u.salary_display || null;
@@ -1067,6 +1092,9 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 status: isInactive ? "expired" : (job.status || "active"),
                 logoUrl: job.logo_url || job.logoUrl || null,
                 logo_url: job.logo_url || job.logoUrl || null,
+                companyId: job.company_id || job.companyId || job.companyProfile?.companyId || null,
+                company_id: job.company_id || job.companyId || job.companyProfile?.companyId || null,
+                companyProfile: mapCompanyProfilePayload(job.companyProfile, job.company_id),
                 matchScore: typeof job.matchScore === "number" ? job.matchScore : null,
               };
             }

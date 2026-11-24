@@ -1,0 +1,889 @@
+{
+  "kind": "company-profile-candidate-inventory",
+  "format": 1,
+  "read_only": true,
+  "writes": 0,
+  "crawled": false,
+  "authorizes_canary": false,
+  "generated_at": "2026-11-22T10:00:00Z",
+  "code_sha": "0000000000000000000000000000000000000000",
+  "target": "local",
+  "window": {
+    "after_id": null,
+    "limit": 1000,
+    "scanned": 15,
+    "next_cursor": null,
+    "scope": "Counts, holds and the shortlist cover only the companies scanned in this window. Domain ownership is checked against every company in the table; ATS boards, active jobs and profile rows are read in full for the scanned companies. Separate windows are not merged into one ranking."
+  },
+  "definitions": {
+    "scanned": "Companies read in this window (cursor order by UUID).",
+    "eligible": "Scanned companies with none of the hold categories: a usable, unique domain, at least one enabled ATS board, and a refresh that is due.",
+    "missing_domain": "No canonical domain, or one that is not a plain hostname. Review queue: never inferred from the company name.",
+    "ambiguous_identity": "Another company row holds the same canonical domain (www. ignored). Review queue.",
+    "no_enabled_ats": "No enabled ATS board. The crawl requires ATS evidence, so it would stop with no_ats_evidence. Disabled boards are counted separately.",
+    "fresh_cache_hit": "Profile is fresh and its refresh is not due: the canary would skip it (cache_hit).",
+    "refresh_not_due": "Stale or conflicted, but a recent failed attempt is still cooling down (next_refresh_at in the future).",
+    "stale": "Freshness evaluates to stale, including never enriched. Overlaps with the missing_* categories.",
+    "conflict": "At least one fact or the refresh state is in conflict.",
+    "never_enriched": "No refresh-state row and no profile rows at all.",
+    "missing_facts": "Zero fact rows. An empty section is coverage, not a failure.",
+    "missing_leadership": "Zero leadership rows. An empty section is coverage, not a failure.",
+    "missing_news": "Zero news rows. An empty section is coverage, not a failure.",
+    "error": "This company's stored rows could not be read or validated. Not a crawl failure: inventory never crawls."
+  },
+  "ranking": [
+    "1. More active jobs first: those are the job pages Pro users open.",
+    "2. More missing sections first (facts, leadership and news each count as one).",
+    "3. Never enriched first, then oldest last successful refresh.",
+    "4. Company UUID ascending, as a stable tie-break."
+  ],
+  "counts": {
+    "companies": {
+      "missing_domain": 2,
+      "ambiguous_identity": 4,
+      "no_enabled_ats": 2,
+      "fresh_cache_hit": 1,
+      "refresh_not_due": 1,
+      "stale": 12,
+      "conflict": 1,
+      "never_enriched": 11,
+      "missing_facts": 11,
+      "missing_leadership": 12,
+      "missing_news": 12,
+      "error": 1,
+      "scanned": 15,
+      "eligible": 4
+    },
+    "rows": {
+      "company_profile_facts": 3,
+      "company_profile_leadership": 2,
+      "company_profile_news": 2,
+      "company_profile_refresh_state": 3
+    }
+  },
+  "shortlist": [
+    {
+      "rank": 1,
+      "company_id": "c0000000-0000-4000-8000-000000000001",
+      "name": "Northwind Robotics",
+      "canonical_domain": "northwind-robotics.example",
+      "active_jobs": 9,
+      "ats_evidence": [
+        {
+          "id": "b0000000-0000-4000-8000-000000000001",
+          "ats_type": "greenhouse",
+          "slug": "slug-01",
+          "careers_url": "https://boards.greenhouse.io/slug-01"
+        }
+      ],
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "reasons": [
+        "9 active jobs",
+        "missing facts, leadership, news",
+        "never enriched",
+        "enabled ATS evidence: greenhouse:slug-01"
+      ],
+      "proposed_source_urls": [
+        "https://northwind-robotics.example/robots.txt",
+        "https://northwind-robotics.example/",
+        "up to 3 same-host about/leadership/team/news/press links found on that homepage and allowed by robots.txt (known only after the read-only plan)"
+      ],
+      "estimated_requests": {
+        "minimum": 2,
+        "maximum": 5,
+        "maximum_with_retries": 15
+      }
+    },
+    {
+      "rank": 2,
+      "company_id": "c0000000-0000-4000-8000-000000000002",
+      "name": "Tie Alpha",
+      "canonical_domain": "tie-alpha.example",
+      "active_jobs": 3,
+      "ats_evidence": [
+        {
+          "id": "b0000000-0000-4000-8000-000000000002",
+          "ats_type": "greenhouse",
+          "slug": "slug-02",
+          "careers_url": "https://boards.greenhouse.io/slug-02"
+        }
+      ],
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "reasons": [
+        "3 active jobs",
+        "missing facts, leadership, news",
+        "never enriched",
+        "enabled ATS evidence: greenhouse:slug-02"
+      ],
+      "proposed_source_urls": [
+        "https://tie-alpha.example/robots.txt",
+        "https://tie-alpha.example/",
+        "up to 3 same-host about/leadership/team/news/press links found on that homepage and allowed by robots.txt (known only after the read-only plan)"
+      ],
+      "estimated_requests": {
+        "minimum": 2,
+        "maximum": 5,
+        "maximum_with_retries": 15
+      }
+    },
+    {
+      "rank": 3,
+      "company_id": "c0000000-0000-4000-8000-000000000015",
+      "name": "Tie Gamma",
+      "canonical_domain": "tie-gamma.example",
+      "active_jobs": 3,
+      "ats_evidence": [
+        {
+          "id": "b0000000-0000-4000-8000-000000000015",
+          "ats_type": "greenhouse",
+          "slug": "slug-15",
+          "careers_url": "https://boards.greenhouse.io/slug-15"
+        }
+      ],
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "reasons": [
+        "3 active jobs",
+        "missing facts, leadership, news",
+        "never enriched",
+        "enabled ATS evidence: greenhouse:slug-15"
+      ],
+      "proposed_source_urls": [
+        "https://tie-gamma.example/robots.txt",
+        "https://tie-gamma.example/",
+        "up to 3 same-host about/leadership/team/news/press links found on that homepage and allowed by robots.txt (known only after the read-only plan)"
+      ],
+      "estimated_requests": {
+        "minimum": 2,
+        "maximum": 5,
+        "maximum_with_retries": 15
+      }
+    },
+    {
+      "rank": 4,
+      "company_id": "c0000000-0000-4000-8000-000000000004",
+      "name": "Harbor Signal",
+      "canonical_domain": "harbor-signal.example",
+      "active_jobs": 2,
+      "ats_evidence": [
+        {
+          "id": "b0000000-0000-4000-8000-000000000004",
+          "ats_type": "greenhouse",
+          "slug": "slug-04",
+          "careers_url": "https://boards.greenhouse.io/slug-04"
+        }
+      ],
+      "coverage": {
+        "facts": 1,
+        "fact_keys": [
+          "headquarters"
+        ],
+        "leadership": 1,
+        "news": 1,
+        "refresh_status": "conflict",
+        "last_succeeded_at": "2026-11-01T00:00:00Z",
+        "next_refresh_at": "2026-11-15T00:00:00Z",
+        "last_error": null
+      },
+      "freshness": "conflict",
+      "reasons": [
+        "2 active jobs",
+        "all three sections have rows",
+        "last successful refresh 2026-11-01",
+        "has a conflict to re-check",
+        "enabled ATS evidence: greenhouse:slug-04"
+      ],
+      "proposed_source_urls": [
+        "https://harbor-signal.example/robots.txt",
+        "https://harbor-signal.example/",
+        "up to 3 same-host about/leadership/team/news/press links found on that homepage and allowed by robots.txt (known only after the read-only plan)"
+      ],
+      "estimated_requests": {
+        "minimum": 2,
+        "maximum": 5,
+        "maximum_with_retries": 15
+      }
+    }
+  ],
+  "review_queue": [
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000003",
+      "name": "Tie Beta",
+      "canonical_domain": "tie-beta.example",
+      "active_jobs": 3,
+      "reasons": [
+        "ambiguous_identity"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000007",
+      "name": "Nameonly Inc",
+      "canonical_domain": null,
+      "active_jobs": 7,
+      "reasons": [
+        "missing_domain"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000008",
+      "name": "Bad Domain",
+      "canonical_domain": "https://user@bad:8080/x",
+      "active_jobs": 0,
+      "reasons": [
+        "missing_domain"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000009",
+      "name": "Twin One",
+      "canonical_domain": "twins.example",
+      "active_jobs": 0,
+      "reasons": [
+        "ambiguous_identity"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000010",
+      "name": "Twin Two",
+      "canonical_domain": "www.twins.example",
+      "active_jobs": 0,
+      "reasons": [
+        "ambiguous_identity"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000014",
+      "name": "Tie Beta Holdings",
+      "canonical_domain": "HTTPS://WWW.Tie-Beta.example/careers",
+      "active_jobs": 0,
+      "reasons": [
+        "ambiguous_identity"
+      ]
+    }
+  ],
+  "holds": [
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000005",
+      "name": "Fresh Fields",
+      "reasons": [
+        "fresh_cache_hit"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000006",
+      "name": "Cooling Co",
+      "reasons": [
+        "refresh_not_due"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000011",
+      "name": "Disabled Board",
+      "reasons": [
+        "no_enabled_ats"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000012",
+      "name": "No Board",
+      "reasons": [
+        "no_enabled_ats"
+      ]
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000013",
+      "name": "Bad Rows",
+      "reasons": [
+        "error"
+      ]
+    }
+  ],
+  "companies": [
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000001",
+      "name": "Northwind Robotics",
+      "canonical_domain": "northwind-robotics.example",
+      "active_jobs": 9,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000001",
+            "ats_type": "greenhouse",
+            "slug": "slug-01",
+            "careers_url": "https://boards.greenhouse.io/slug-01"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": true,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000002",
+      "name": "Tie Alpha",
+      "canonical_domain": "tie-alpha.example",
+      "active_jobs": 3,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000002",
+            "ats_type": "greenhouse",
+            "slug": "slug-02",
+            "careers_url": "https://boards.greenhouse.io/slug-02"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": true,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000003",
+      "name": "Tie Beta",
+      "canonical_domain": "tie-beta.example",
+      "active_jobs": 3,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000003",
+            "ats_type": "greenhouse",
+            "slug": "slug-03",
+            "careers_url": "https://boards.greenhouse.io/slug-03"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "ambiguous_identity",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000004",
+      "name": "Harbor Signal",
+      "canonical_domain": "harbor-signal.example",
+      "active_jobs": 2,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000004",
+            "ats_type": "greenhouse",
+            "slug": "slug-04",
+            "careers_url": "https://boards.greenhouse.io/slug-04"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 1,
+        "fact_keys": [
+          "headquarters"
+        ],
+        "leadership": 1,
+        "news": 1,
+        "refresh_status": "conflict",
+        "last_succeeded_at": "2026-11-01T00:00:00Z",
+        "next_refresh_at": "2026-11-15T00:00:00Z",
+        "last_error": null
+      },
+      "freshness": "conflict",
+      "categories": [
+        "conflict"
+      ],
+      "eligible": true,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000005",
+      "name": "Fresh Fields",
+      "canonical_domain": "fresh-fields.example",
+      "active_jobs": 5,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000005",
+            "ats_type": "greenhouse",
+            "slug": "slug-05",
+            "careers_url": "https://boards.greenhouse.io/slug-05"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 1,
+        "fact_keys": [
+          "overview"
+        ],
+        "leadership": 1,
+        "news": 1,
+        "refresh_status": "fresh",
+        "last_succeeded_at": "2026-11-20T00:00:00Z",
+        "next_refresh_at": "2026-11-27T00:00:00Z",
+        "last_error": null
+      },
+      "freshness": "fresh",
+      "categories": [
+        "fresh_cache_hit"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000006",
+      "name": "Cooling Co",
+      "canonical_domain": "cooling.example",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000006",
+            "ats_type": "greenhouse",
+            "slug": "slug-06",
+            "careers_url": "https://boards.greenhouse.io/slug-06"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 1,
+        "fact_keys": [
+          "overview"
+        ],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": "stale",
+        "last_succeeded_at": "2025-01-01T00:00:00Z",
+        "next_refresh_at": "2026-11-22T12:00:00Z",
+        "last_error": "HTTP 503 from [external URL] apikey=[redacted]"
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_leadership",
+        "missing_news",
+        "refresh_not_due",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000007",
+      "name": "Nameonly Inc",
+      "canonical_domain": null,
+      "active_jobs": 7,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000007",
+            "ats_type": "greenhouse",
+            "slug": "slug-07",
+            "careers_url": "https://boards.greenhouse.io/slug-07"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_domain",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000008",
+      "name": "Bad Domain",
+      "canonical_domain": "https://user@bad:8080/x",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000008",
+            "ats_type": "greenhouse",
+            "slug": "slug-08",
+            "careers_url": "https://boards.greenhouse.io/slug-08"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_domain",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000009",
+      "name": "Twin One",
+      "canonical_domain": "twins.example",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000009",
+            "ats_type": "greenhouse",
+            "slug": "slug-09",
+            "careers_url": "https://boards.greenhouse.io/slug-09"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "ambiguous_identity",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000010",
+      "name": "Twin Two",
+      "canonical_domain": "www.twins.example",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000010",
+            "ats_type": "greenhouse",
+            "slug": "slug-10",
+            "careers_url": "https://boards.greenhouse.io/slug-10"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "ambiguous_identity",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000011",
+      "name": "Disabled Board",
+      "canonical_domain": "disabled.example",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 0,
+        "disabled": 1,
+        "boards": []
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "no_enabled_ats",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000012",
+      "name": "No Board",
+      "canonical_domain": "noboard.example",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 0,
+        "disabled": 0,
+        "boards": []
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "no_enabled_ats",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000013",
+      "name": "Bad Rows",
+      "canonical_domain": "badrows.example",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000013",
+            "ats_type": "greenhouse",
+            "slug": "slug-13",
+            "careers_url": "https://boards.greenhouse.io/slug-13"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": null,
+      "categories": [
+        "error"
+      ],
+      "eligible": false,
+      "error": "Schema mismatch: company_profile_refresh_state.next_refresh_at missing from row"
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000014",
+      "name": "Tie Beta Holdings",
+      "canonical_domain": "HTTPS://WWW.Tie-Beta.example/careers",
+      "active_jobs": 0,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000014",
+            "ats_type": "greenhouse",
+            "slug": "slug-14",
+            "careers_url": "https://boards.greenhouse.io/slug-14"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "ambiguous_identity",
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": false,
+      "error": null
+    },
+    {
+      "company_id": "c0000000-0000-4000-8000-000000000015",
+      "name": "Tie Gamma",
+      "canonical_domain": "tie-gamma.example",
+      "active_jobs": 3,
+      "ats": {
+        "enabled": 1,
+        "disabled": 0,
+        "boards": [
+          {
+            "id": "b0000000-0000-4000-8000-000000000015",
+            "ats_type": "greenhouse",
+            "slug": "slug-15",
+            "careers_url": "https://boards.greenhouse.io/slug-15"
+          }
+        ]
+      },
+      "coverage": {
+        "facts": 0,
+        "fact_keys": [],
+        "leadership": 0,
+        "news": 0,
+        "refresh_status": null,
+        "last_succeeded_at": null,
+        "next_refresh_at": null,
+        "last_error": null
+      },
+      "freshness": "stale",
+      "categories": [
+        "missing_facts",
+        "missing_leadership",
+        "missing_news",
+        "never_enriched",
+        "stale"
+      ],
+      "eligible": true,
+      "error": null
+    }
+  ]
+}

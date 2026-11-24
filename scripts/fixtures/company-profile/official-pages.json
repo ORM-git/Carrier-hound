@@ -1,0 +1,20 @@
+{
+  "affirm": {
+    "pageUrl": "https://affirm.com/about/news",
+    "canonicalDomain": "affirm.com",
+    "companyName": "Affirm",
+    "html": "<!doctype html><html><head><meta name=\"description\" content=\"Affirm helps consumers pay over time\"></head><body><a href=\"https://www.linkedin.com/company/affirm\">LinkedIn</a><a href=\"https://boards.greenhouse.io/affirm\">Careers</a><script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"Organization\",\"@id\":\"https://affirm.com/#organization\",\"name\":\"Affirm\",\"url\":\"https://affirm.com\",\"description\":\"Affirm helps consumers pay over time\",\"foundingDate\":\"2012-01-01\",\"headquarters\":{\"addressLocality\":\"San Francisco\",\"addressRegion\":\"California\",\"addressCountry\":\"US\"},\"sameAs\":[\"https://www.linkedin.com/company/affirm\",\"https://x.com/affirm\"]},{\"@type\":\"Person\",\"name\":\"Max Levchin\",\"jobTitle\":\"CEO\",\"roleAsOf\":\"2026-01-01\",\"worksFor\":{\"@id\":\"https://affirm.com/#organization\",\"name\":\"Affirm\"}},{\"@type\":\"NewsArticle\",\"headline\":\"Company update\",\"datePublished\":\"2026-10-01\",\"url\":\"https://affirm.com/news/update\",\"description\":\"An official update.\"}]}</script></body></html>"
+  },
+  "affirmSubpage": {
+    "pageUrl": "https://affirm.com/about/leadership-news",
+    "canonicalDomain": "affirm.com",
+    "companyName": "Affirm",
+    "html": "<!doctype html><html><body><script type=\"application/ld+json\">{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"Organization\",\"@id\":\"https://affirm.com/#organization\",\"name\":\"Affirm\",\"url\":\"https://affirm.com\"},{\"@type\":\"Person\",\"name\":\"Max Levchin\",\"jobTitle\":\"CEO\",\"roleAsOf\":\"2026-01-01\",\"worksFor\":{\"@id\":\"https://affirm.com/#organization\",\"name\":\"Affirm\"}},{\"@type\":\"NewsArticle\",\"headline\":\"Company update\",\"datePublished\":\"2026-10-01\",\"url\":\"https://affirm.com/news/update\",\"description\":\"An official update.\"}]}</script></body></html>"
+  },
+  "namesake": {
+    "pageUrl": "https://affirm.com/about",
+    "canonicalDomain": "affirm.com",
+    "companyName": "Affirm",
+    "html": "<script type=\"application/ld+json\">{\"@type\":\"Organization\",\"name\":\"Affirm Holdings Unrelated\"}</script>"
+  }
+}

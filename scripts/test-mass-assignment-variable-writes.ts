@@ -30,6 +30,8 @@ const BASELINE: Record<string, string> = {
   "src/lib/early-access/gmail.ts :: insert(row)": "send-log row built from server values",
   "src/lib/billing/razorpay.ts :: update(rawBody)": "NOT a DB write: crypto HMAC update",
   "src/lib/resume/storage.ts :: upsert(payload)": "payload built from the validated candidate profile (two sites: first try and retry)",
+  "src/lib/company-profile/canary.ts :: update(text)": "NOT a DB write: sha256 hash update for plan digests and source hashes",
+  "src/lib/company-profile/canary.ts :: insert(action)": "row is action.after from the owner-reviewed plan, only after digest, allowlist, schema, baseline and source checks pass",
 };
 const EXPECTED_COUNTS: Record<string, number> = { "src/lib/resume/storage.ts :: upsert(payload)": 2 };
 

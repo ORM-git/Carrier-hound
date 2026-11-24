@@ -1,0 +1,580 @@
+{
+  "kind": "company-profile-canary-plan",
+  "format": 1,
+  "atomic": false,
+  "target_project": "szakevhxhwpeskidvtfs",
+  "company_ids": [
+    "11111111-1111-4111-8111-111111111111",
+    "22222222-2222-4222-8222-222222222222",
+    "33333333-3333-4333-8333-333333333333"
+  ],
+  "max_companies": 3,
+  "code_sha": "0123456789abcdef0123456789abcdef01234567",
+  "schema_version": "20261122a_company_profile_data",
+  "created_at": "2026-11-22T10:00:00Z",
+  "expires_at": "2026-11-23T10:00:00Z",
+  "sources": [
+    {
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "kind": "robots",
+      "requested_url": "https://affirm.com/robots.txt",
+      "final_url": "https://affirm.com/robots.txt",
+      "status": 200,
+      "fetched_at": "2026-11-22T10:00:00Z",
+      "bytes": 23,
+      "sha256": "16ceb5ee3e0dc13aa9adf31a3ebbe45a1d965b8c2b9f72eaf84e5911e140ed95"
+    },
+    {
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "kind": "page",
+      "requested_url": "https://affirm.com/",
+      "final_url": "https://affirm.com/",
+      "status": 200,
+      "fetched_at": "2026-11-22T10:00:00Z",
+      "bytes": 1111,
+      "sha256": "ab485837d9693280875ae64fdef9cfa1bbfd24d7d69ec23fd3fc1c50875d6f47"
+    },
+    {
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "kind": "page",
+      "requested_url": "https://affirm.com/about/leadership-news",
+      "final_url": "https://affirm.com/about/leadership-news",
+      "status": 200,
+      "fetched_at": "2026-11-22T10:00:00Z",
+      "bytes": 545,
+      "sha256": "68f5eb8865eea4152f63b355d6eda2ba66dd56ae79983f9f2f6e97e6df599a47"
+    },
+    {
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "kind": "page",
+      "requested_url": "https://affirm.com/about/team",
+      "final_url": "https://affirm.com/about/team",
+      "status": 200,
+      "fetched_at": "2026-11-22T10:00:00Z",
+      "bytes": 545,
+      "sha256": "68f5eb8865eea4152f63b355d6eda2ba66dd56ae79983f9f2f6e97e6df599a47"
+    },
+    {
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "kind": "page",
+      "requested_url": "https://affirm.com/news/update",
+      "final_url": "https://affirm.com/news/update",
+      "status": 200,
+      "fetched_at": "2026-11-22T10:00:00Z",
+      "bytes": 545,
+      "sha256": "68f5eb8865eea4152f63b355d6eda2ba66dd56ae79983f9f2f6e97e6df599a47"
+    }
+  ],
+  "companies": [
+    {
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "name": "Affirm",
+      "canonical_domain": "affirm.com",
+      "ats_boards": [
+        {
+          "id": "66666666-6666-4666-8666-666666666661",
+          "ats_type": "greenhouse",
+          "slug": "affirm",
+          "careers_url": "https://boards.greenhouse.io/affirm"
+        }
+      ],
+      "freshness": {
+        "status": "stale",
+        "should_refresh": true
+      },
+      "outcome": "verified",
+      "error": null,
+      "proposed": {
+        "facts": [
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "overview",
+            "fact_value": "Old overview",
+            "source_url": "https://affirm.com/old",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "conflict",
+            "conflict_value": "Affirm helps consumers pay over time",
+            "conflict_source_url": "https://affirm.com/",
+            "conflict_source_kind": "official_site",
+            "conflict_retrieved_at": "2026-11-22T10:00:00Z",
+            "conflict_observed_at": null,
+            "retrieved_at": "2025-01-01T00:00:00Z"
+          },
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "website",
+            "fact_value": "https://affirm.com/",
+            "source_url": "https://affirm.com/news/update",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "headquarters",
+            "fact_value": "San Francisco, California, US",
+            "source_url": "https://affirm.com/",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "founded_year",
+            "fact_value": "2012",
+            "source_url": "https://affirm.com/",
+            "source_kind": "official_site",
+            "observed_at": "2012-01-01T00:00:00Z",
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "linkedin_url",
+            "fact_value": "https://www.linkedin.com/company/affirm",
+            "source_url": "https://affirm.com/",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "twitter_url",
+            "fact_value": "https://x.com/affirm",
+            "source_url": "https://affirm.com/",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          }
+        ],
+        "leadership": [
+          {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "name": "Max Levchin",
+            "role": "CEO",
+            "role_as_of": "2026-01-01",
+            "source_url": "https://affirm.com/about/leadership-news",
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          }
+        ],
+        "news": [
+          {
+            "id": "aaaaaaaa-0000-4000-8000-000000000001",
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "headline": "Company update",
+            "published_at": "2026-10-01T00:00:00Z",
+            "source_url": "https://affirm.com/news/update",
+            "excerpt": "An official update.",
+            "retrieved_at": "2026-11-22T10:00:00Z"
+          }
+        ]
+      },
+      "current": {
+        "company_profile_facts": [
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "fact_key": "overview",
+            "fact_value": "Old overview",
+            "source_url": "https://affirm.com/old",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2025-01-01T00:00:00Z"
+          }
+        ],
+        "company_profile_leadership": [
+          {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "name": "Max Levchin",
+            "role": "CEO",
+            "role_as_of": "2026-01-01",
+            "source_url": "https://affirm.com/about/leadership-news",
+            "retrieved_at": "2026-09-01T00:00:00Z"
+          }
+        ],
+        "company_profile_news": [],
+        "company_profile_refresh_state": [
+          {
+            "company_id": "11111111-1111-4111-8111-111111111111",
+            "status": "stale",
+            "last_attempted_at": "2026-10-31T00:00:00Z",
+            "last_succeeded_at": "2025-01-01T00:00:00Z",
+            "next_refresh_at": "2026-11-01T00:00:00Z",
+            "last_error": "HTTP 503"
+          }
+        ]
+      }
+    },
+    {
+      "company_id": "22222222-2222-4222-8222-222222222222",
+      "name": "Fresh Co",
+      "canonical_domain": "fresh.example",
+      "ats_boards": [
+        {
+          "id": "66666666-6666-4666-8666-666666666662",
+          "ats_type": "greenhouse",
+          "slug": "fresh",
+          "careers_url": "https://boards.greenhouse.io/fresh"
+        }
+      ],
+      "freshness": {
+        "status": "fresh",
+        "should_refresh": false
+      },
+      "outcome": "cache_hit",
+      "error": null,
+      "proposed": {
+        "facts": [],
+        "leadership": [],
+        "news": []
+      },
+      "current": {
+        "company_profile_facts": [
+          {
+            "company_id": "22222222-2222-4222-8222-222222222222",
+            "fact_key": "overview",
+            "fact_value": "Fresh overview",
+            "source_url": "https://fresh.example/about",
+            "source_kind": "official_site",
+            "observed_at": null,
+            "fact_status": "fresh",
+            "conflict_value": null,
+            "conflict_source_url": null,
+            "conflict_source_kind": null,
+            "conflict_retrieved_at": null,
+            "conflict_observed_at": null,
+            "retrieved_at": "2026-11-20T00:00:00Z"
+          }
+        ],
+        "company_profile_leadership": [],
+        "company_profile_news": [],
+        "company_profile_refresh_state": [
+          {
+            "company_id": "22222222-2222-4222-8222-222222222222",
+            "status": "fresh",
+            "last_attempted_at": "2026-11-20T00:00:00Z",
+            "last_succeeded_at": "2026-11-20T00:00:00Z",
+            "next_refresh_at": "2026-11-27T00:00:00Z",
+            "last_error": null
+          }
+        ]
+      }
+    },
+    {
+      "company_id": "33333333-3333-4333-8333-333333333333",
+      "name": "Quiet Co",
+      "canonical_domain": "quiet.example",
+      "ats_boards": [],
+      "freshness": {
+        "status": "stale",
+        "should_refresh": true
+      },
+      "outcome": "no_ats_evidence",
+      "error": null,
+      "proposed": {
+        "facts": [],
+        "leadership": [],
+        "news": []
+      },
+      "current": {
+        "company_profile_facts": [],
+        "company_profile_leadership": [],
+        "company_profile_news": [],
+        "company_profile_refresh_state": []
+      }
+    }
+  ],
+  "actions": [
+    {
+      "seq": 1,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_facts",
+      "op": "update",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "overview"
+      },
+      "before": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "overview",
+        "fact_value": "Old overview",
+        "source_url": "https://affirm.com/old",
+        "source_kind": "official_site",
+        "observed_at": null,
+        "fact_status": "fresh",
+        "conflict_value": null,
+        "conflict_source_url": null,
+        "conflict_source_kind": null,
+        "conflict_retrieved_at": null,
+        "conflict_observed_at": null,
+        "retrieved_at": "2025-01-01T00:00:00Z"
+      },
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "overview",
+        "fact_value": "Old overview",
+        "source_url": "https://affirm.com/old",
+        "source_kind": "official_site",
+        "observed_at": null,
+        "fact_status": "conflict",
+        "conflict_value": "Affirm helps consumers pay over time",
+        "conflict_source_url": "https://affirm.com/",
+        "conflict_source_kind": "official_site",
+        "conflict_retrieved_at": "2026-11-22T10:00:00Z",
+        "conflict_observed_at": null,
+        "retrieved_at": "2025-01-01T00:00:00Z"
+      }
+    },
+    {
+      "seq": 2,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_facts",
+      "op": "insert",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "website"
+      },
+      "before": null,
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "website",
+        "fact_value": "https://affirm.com/",
+        "source_url": "https://affirm.com/news/update",
+        "source_kind": "official_site",
+        "observed_at": null,
+        "fact_status": "fresh",
+        "conflict_value": null,
+        "conflict_source_url": null,
+        "conflict_source_kind": null,
+        "conflict_retrieved_at": null,
+        "conflict_observed_at": null,
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 3,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_facts",
+      "op": "insert",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "headquarters"
+      },
+      "before": null,
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "headquarters",
+        "fact_value": "San Francisco, California, US",
+        "source_url": "https://affirm.com/",
+        "source_kind": "official_site",
+        "observed_at": null,
+        "fact_status": "fresh",
+        "conflict_value": null,
+        "conflict_source_url": null,
+        "conflict_source_kind": null,
+        "conflict_retrieved_at": null,
+        "conflict_observed_at": null,
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 4,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_facts",
+      "op": "insert",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "founded_year"
+      },
+      "before": null,
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "founded_year",
+        "fact_value": "2012",
+        "source_url": "https://affirm.com/",
+        "source_kind": "official_site",
+        "observed_at": "2012-01-01T00:00:00Z",
+        "fact_status": "fresh",
+        "conflict_value": null,
+        "conflict_source_url": null,
+        "conflict_source_kind": null,
+        "conflict_retrieved_at": null,
+        "conflict_observed_at": null,
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 5,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_facts",
+      "op": "insert",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "linkedin_url"
+      },
+      "before": null,
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "linkedin_url",
+        "fact_value": "https://www.linkedin.com/company/affirm",
+        "source_url": "https://affirm.com/",
+        "source_kind": "official_site",
+        "observed_at": null,
+        "fact_status": "fresh",
+        "conflict_value": null,
+        "conflict_source_url": null,
+        "conflict_source_kind": null,
+        "conflict_retrieved_at": null,
+        "conflict_observed_at": null,
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 6,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_facts",
+      "op": "insert",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "twitter_url"
+      },
+      "before": null,
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "fact_key": "twitter_url",
+        "fact_value": "https://x.com/affirm",
+        "source_url": "https://affirm.com/",
+        "source_kind": "official_site",
+        "observed_at": null,
+        "fact_status": "fresh",
+        "conflict_value": null,
+        "conflict_source_url": null,
+        "conflict_source_kind": null,
+        "conflict_retrieved_at": null,
+        "conflict_observed_at": null,
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 7,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_leadership",
+      "op": "update",
+      "key": {
+        "id": "44444444-4444-4444-8444-444444444444"
+      },
+      "before": {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "name": "Max Levchin",
+        "role": "CEO",
+        "role_as_of": "2026-01-01",
+        "source_url": "https://affirm.com/about/leadership-news",
+        "retrieved_at": "2026-09-01T00:00:00Z"
+      },
+      "after": {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "name": "Max Levchin",
+        "role": "CEO",
+        "role_as_of": "2026-01-01",
+        "source_url": "https://affirm.com/about/leadership-news",
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 8,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_news",
+      "op": "insert",
+      "key": {
+        "id": "aaaaaaaa-0000-4000-8000-000000000001"
+      },
+      "before": null,
+      "after": {
+        "id": "aaaaaaaa-0000-4000-8000-000000000001",
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "headline": "Company update",
+        "published_at": "2026-10-01T00:00:00Z",
+        "source_url": "https://affirm.com/news/update",
+        "excerpt": "An official update.",
+        "retrieved_at": "2026-11-22T10:00:00Z"
+      }
+    },
+    {
+      "seq": 9,
+      "company_id": "11111111-1111-4111-8111-111111111111",
+      "table": "company_profile_refresh_state",
+      "op": "update",
+      "key": {
+        "company_id": "11111111-1111-4111-8111-111111111111"
+      },
+      "before": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "status": "stale",
+        "last_attempted_at": "2026-10-31T00:00:00Z",
+        "last_succeeded_at": "2025-01-01T00:00:00Z",
+        "next_refresh_at": "2026-11-01T00:00:00Z",
+        "last_error": "HTTP 503"
+      },
+      "after": {
+        "company_id": "11111111-1111-4111-8111-111111111111",
+        "status": "conflict",
+        "last_attempted_at": "2026-11-22T10:00:00Z",
+        "last_succeeded_at": "2026-11-22T10:00:00Z",
+        "next_refresh_at": "2026-12-22T10:00:00Z",
+        "last_error": null
+      }
+    }
+  ],
+  "summary": {
+    "companies": 3,
+    "planned_companies": 1,
+    "inserts": 6,
+    "updates": 3,
+    "by_table": {
+      "company_profile_facts": 6,
+      "company_profile_leadership": 1,
+      "company_profile_news": 1,
+      "company_profile_refresh_state": 1
+    }
+  },
+  "plan_digest": "1499d20632122da52a76898f00ae265cda9563e4c456be6624dcab721c46cac0"
+}
