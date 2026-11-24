@@ -3,7 +3,8 @@
 The file at WORKDAY_STATE_PATH survives between runs (CI keeps it in actions/cache). Missing or corrupt state
 never permits a burst: the run is capped to WORKDAY_COLD_START_BOARDS boards. A rate-limited or failed board
 gets next_eligible_at = now + max(Retry-After, exponential backoff), so a later run defers it instead of
-retrying early. A completed board waits WORKDAY_MIN_INTERVAL_SECONDS, so a duplicate trigger sends nothing.
+retrying early. A board whose rows were all confirmed persisted waits WORKDAY_MIN_INTERVAL_SECONDS, so a duplicate
+trigger sends nothing; a fetched-but-unpersisted board stays eligible. Dry runs read the state but never write it.
 """
 
 from __future__ import annotations
@@ -121,6 +122,11 @@ def defer_until(boards: dict[str, dict[str, Any]], sid: str, until: datetime, re
     if current is None or until > current:
         entry["next_eligible_at"] = _iso(until)
         entry["last_reason"] = reason[:120]
+
+
+def note_attempt(boards: dict[str, dict[str, Any]], sid: str, now: datetime) -> None:
+    """Fetched but not (yet) confirmed persisted: counts for rotation fairness only, never as completion."""
+    boards.setdefault(sid, {"consecutive_failures": 0, "last_success_at": None})["last_attempt_at"] = _iso(now)
 
 
 def mark_persisted(boards: dict[str, dict[str, Any]], sid: str, now: datetime) -> None:

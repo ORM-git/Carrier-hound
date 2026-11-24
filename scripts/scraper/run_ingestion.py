@@ -337,7 +337,8 @@ async def run_master_ingestion(
                 if cooldown > fetchers_mod.WORKDAY_MAX_COOLDOWN_SECONDS:  # an earlier board hit a long 429
                     until = datetime.now(timezone.utc) + timedelta(seconds=cooldown)
                     for rest in wd_chosen[i:]:
-                        workday_schedule.defer_until(wd_boards, rest, until, "workday cooldown (429 this run)")
+                        if not dry_run:
+                            workday_schedule.defer_until(wd_boards, rest, until, "workday cooldown (429 this run)")
                         wd_deferred.append({"source": rest, "reason": "workday cooldown (429 this run)", "next_eligible_at": until.isoformat()})
                     break
                 if time.monotonic() - started + per_board_worst > wd_lim["run_budget_seconds"]:
@@ -353,13 +354,19 @@ async def run_master_ingestion(
                         raise
 
                 rep = await run_isolated_source(sid, "workday", fetch, is_full_coverage=False)
-                workday_schedule.record_attempt(
-                    wd_boards, sid, datetime.now(timezone.utc), wd_lim, ok=rep["completed"],
-                    reason="rate_limited" if "retry_after" in seen else (rep["error"] or "failed")[:80],
-                    retry_after=seen.get("retry_after"),
-                )
+                if dry_run:
+                    pass  # dry runs never change the durable cooldown/rotation state
+                elif rep["completed"]:
+                    workday_schedule.note_attempt(wd_boards, sid, datetime.now(timezone.utc))  # completion only once persisted
+                else:
+                    workday_schedule.record_attempt(
+                        wd_boards, sid, datetime.now(timezone.utc), wd_lim, ok=False,
+                        reason="rate_limited" if "retry_after" in seen else (rep["error"] or "failed")[:80],
+                        retry_after=seen.get("retry_after"),
+                    )
                 reports.append(rep)
-            workday_schedule.save_state(wd_state_path, wd_boards)  # cooldowns persist even if writes fail later
+            if not dry_run:
+                workday_schedule.save_state(wd_state_path, wd_boards)  # failures/cooldowns persist even if writes fail later
             return reports
 
         other_tasks = [
@@ -597,6 +604,7 @@ async def run_master_ingestion(
                     for name in ("inserted_source_keys", "updated_source_keys", "persisted_source_keys")}
         rejected_keys = {r["source_key"] for r in rejected}
         now_dt = datetime.now(timezone.utc)
+        wd_persisted = 0
         for rep, src in zip(task_reports, source_reports):
             keys = {(str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) for j in rep["jobs"]}
             rej = sum(1 for k in keys if f"{k[0]}/{k[1]}"[:160] in rejected_keys)
@@ -604,13 +612,15 @@ async def run_master_ingestion(
                        inserted=len(keys & key_sets["inserted_source_keys"]), updated=len(keys & key_sets["updated_source_keys"]))
             if (src["source_type"] == "workday" and rep["completed"] and writes_attempted and not rej
                     and not db_stats.get("persistence_failed") and keys <= key_sets["persisted_source_keys"]):
+                workday_schedule.record_attempt(wd_boards, src["source"], now_dt, wd_lim, ok=True)
                 workday_schedule.mark_persisted(wd_boards, src["source"], now_dt)
+                wd_persisted += 1
         for src in source_reports:
             if src["source_type"] == "workday":
                 entry = wd_boards.get(src["source"], {})
                 src.update(next_eligible_at=entry.get("next_eligible_at"), last_success_at=entry.get("last_success_at"),
                            cooldown_reason=entry.get("last_reason"))
-        if wd_plan:
+        if wd_plan and not dry_run:
             workday_schedule.save_state(wd_state_path, wd_boards)
 
         category_counts: dict[str, int] = {}
@@ -666,6 +676,14 @@ async def run_master_ingestion(
             )
         else:
             guard_block_reason = None
+        # A Workday write run where no board was confirmed persisted (all deferred) is not a successful write:
+        # it exits 3 so the job is not green and never refreshes the watchdog's freshness signal.
+        noop = cohort == "workday" and not dry_run and not failed_sources and wd_persisted == 0
+        if noop:
+            guard_block_reason = (
+                f"noop_deferred: no Workday board was fetched and persisted this run ({len(wd_deferred)} deferred); "
+                "not a successful write"
+            )
         failed_ids = {f["source"] for f in failed_sources}
         return {
             "cohort": cohort or ("all" if source_filter == {"all"} else "custom"),
@@ -682,10 +700,12 @@ async def run_master_ingestion(
                 "completed": sum(1 for r in workday_reports if r["completed"]),
                 "failed": sum(1 for r in workday_reports if not r["completed"]),
                 "deferred": len(wd_deferred),
+                "persisted": wd_persisted,
                 "request_cap": len(wd_chosen) * (fetchers_mod.WORKDAY_MAX_RETRIES + 1),  # 1 page/board, bounded retries
                 "limits": wd_lim,
             },
             "guard_block_reason": guard_block_reason,
+            "outcome": "noop_deferred" if noop else None,
             "dry_run": dry_run,
             "fetched": fetched_count,
             "selected": selected_count,
@@ -714,6 +734,15 @@ async def run_master_ingestion(
                 else None
             ) or {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None},
         }
+
+
+NOOP_EXIT_CODE = 3  # distinct from failure (1) and refusal (2): nothing was written, so never "success"
+
+
+def exit_code_for(report: dict[str, Any]) -> int:
+    if ingestion_has_errors(report):
+        return 1
+    return NOOP_EXIT_CODE if report.get("outcome") == "noop_deferred" else 0
 
 
 def main() -> None:
@@ -756,9 +785,13 @@ def main() -> None:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)
     print(json.dumps(report, indent=2))
-    if ingestion_has_errors(report):
+    code = exit_code_for(report)
+    if code == 1:
         print("ingestion failed: source, persistence, or expiry errors were reported", file=sys.stderr)
-        raise SystemExit(1)
+    elif code == NOOP_EXIT_CODE:
+        print("ingestion no-op: every Workday board was deferred; nothing was written", file=sys.stderr)
+    if code:
+        raise SystemExit(code)
 
 
 if __name__ == "__main__":

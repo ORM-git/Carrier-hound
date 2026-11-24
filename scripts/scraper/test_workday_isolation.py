@@ -72,7 +72,8 @@ class Base(unittest.TestCase):
         inst.sync_jobs_set_diff = AsyncMock(side_effect=sync_jobs)
         return writer_cls
 
-    def ingest(self, boards: dict, writer_cls=None, *, cohort="workday", expire=True, greenhouse_error=None, env=None):
+    def ingest(self, boards: dict, writer_cls=None, *, cohort="workday", expire=True, greenhouse_error=None, env=None,
+               dry_run=False):
         """boards: tenant letter -> handler(request) for that Workday tenant."""
         def handle(request: httpx.Request) -> httpx.Response:
             if request.url.host == FAKE_HOST:
@@ -102,7 +103,8 @@ class Base(unittest.TestCase):
                 patch.object(run_ingestion, "fetch_adzuna", empty), \
                 patch.object(rate_limiter.asyncio, "sleep", no_sleep):
             report = asyncio.run(run_ingestion.run_master_ingestion(
-                seeds_path=self.seeds, dry_run=False, allow_uncapped=True, no_expire=not expire, allow_expire=expire,
+                seeds_path=self.seeds, dry_run=dry_run, allow_uncapped=not dry_run, no_expire=not expire or dry_run,
+                allow_expire=expire and not dry_run,
                 cohort=cohort, sources=None, transport=httpx.MockTransport(handle)))
         return report, writer_cls.return_value
 
@@ -196,7 +198,11 @@ class IsolationTests(Base):
         report, _ = self.ingest({s: ok_page for s in BOARDS}, self.make_writer(persistence_failed=True))
         self.assertTrue(report["db"]["persistence_failed"])
         self.assertTrue(engine.ingestion_has_errors(report))
-        self.assertTrue(all(v["last_success_at"] is None for v in self.saved().values()))
+        state = self.saved()
+        self.assertTrue(all(v["last_success_at"] is None for v in state.values()))
+        now = datetime.now(timezone.utc)
+        self.assertTrue(all(v.get("next_eligible_at") is None or datetime.fromisoformat(v["next_eligible_at"]) <= now
+                            for v in state.values()), "fetched-but-unpersisted boards stay eligible for the next run")
         self.assertFalse([c for c in self.db_calls if c[0] == "PATCH"])
 
     def test_non_workday_guard_is_unchanged_in_a_mixed_run(self):
@@ -244,7 +250,58 @@ class RotationAndStateTests(Base):
         report, _ = self.ingest(handlers)
         self.assertEqual(self.requests, [], "boards completed moments ago are not eligible again")
         self.assertEqual(len(report["deferred_sources"]), 3)
-        self.assertFalse(engine.ingestion_has_errors(report))
+        self.assert_noop(report)
+
+    def assert_noop(self, report):
+        """All deferred, nothing written: never a green 'success' that the watchdog would count as fresh."""
+        self.assertEqual(report["outcome"], "noop_deferred")
+        self.assertIn("noop_deferred", report["guard_block_reason"])
+        self.assertEqual(report["workday"]["persisted"], 0)
+        self.assertEqual(run_ingestion.exit_code_for(report), run_ingestion.NOOP_EXIT_CODE)
+        self.assertNotEqual(run_ingestion.NOOP_EXIT_CODE, 0)
+        s = ingest_report.cohort_summary(report, run_ingestion.NOOP_EXIT_CODE, "workday")
+        self.assertEqual(s["status"], "deferred_noop")
+        self.assertEqual(ingest_report.aggregate([{"cohort": "non-workday", "status": "ok"}, s], ["non-workday", "workday"])[0], "degraded")
+        self.assertTrue(any("no-op" in a for a in ingest_report.annotations(s)))
+
+    def test_all_deferred_after_a_prior_429_is_a_noop_not_success(self):
+        self.seed_state_all_ok()
+        self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
+        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        self.requests.clear()
+        report, writer = self.ingest({s: ok_page for s in BOARDS})
+        self.assertEqual(self.requests, [])
+        self.assertEqual(report["failed_sources"], [])
+        self.assertEqual(report["workday"]["attempted"], 0)
+        self.assert_noop(report)
+
+    def test_dry_run_never_writes_state_then_production_runs_every_board(self):
+        # 1) no state at all: a dry run must not create one
+        self.ingest({s: ok_page for s in BOARDS}, dry_run=True)
+        self.assertFalse(self.state.exists())
+        # 2) existing production state is left byte-for-byte unchanged by dry runs (success and 429 alike)
+        self.seed_state_all_ok()
+        before = self.state.read_bytes()
+        self.ingest({s: ok_page for s in BOARDS}, dry_run=True)
+        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS}, dry_run=True)
+        self.assertEqual(self.state.read_bytes(), before)
+        # 3) the next production run is not deferred by anything the dry runs did
+        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        self.requests.clear()
+        report, writer = self.ingest({s: ok_page for s in BOARDS})
+        self.assertEqual(sorted(self.requests), BOARDS)
+        self.assertEqual(report["deferred_sources"], [])
+        self.assertEqual(report["workday"]["persisted"], 3)
+        self.assertIsNone(report["outcome"])
+        self.assertEqual(run_ingestion.exit_code_for(report), 0)
+        self.assertTrue(all(v["last_success_at"] for v in self.saved().values()))
+
+    def test_workflow_saves_state_only_for_production_writes(self):
+        wf = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "python-ingest.yml").read_text(encoding="utf-8")
+        save = wf[wf.index("Save Workday cooldown state"):wf.index("Cohort summary")]
+        self.assertIn("needs.plan.outputs.mode == 'write-production-expire'", save)
+        self.assertIn("WORKDAY_STATE_PATH", wf)
 
     def test_backoff_grows_and_honours_retry_after(self):
         boards: dict = {}

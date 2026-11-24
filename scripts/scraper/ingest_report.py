@@ -31,7 +31,8 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
     ]
     return {
         "cohort": cohort,
-        "status": "ok" if code == "0" else "failed",
+        # exit 3 = deferred no-op (nothing written): explicitly not ok, so the aggregate is never green on it
+        "status": "ok" if code == "0" else ("deferred_noop" if code == "3" else "failed"),
         "exit_code": code,
         "dry_run": dry_run,
         "git_sha": report.get("git_sha"),
@@ -138,6 +139,8 @@ def annotations(s: dict[str, Any]) -> list[str]:
     out = [f"::error title=Ingestion source failed [{s['cohort']}]::{f['source']}: {f['error']}" for f in s.get("failed_sources") or []]
     out += [f"::error title=Ingestion write error [{s['cohort']}]::{e}" for e in s.get("write_errors") or []]
     out += [f"::error title=Ingestion row rejected [{s['cohort']}]::{r['source_key']}: {r['reason']}" for r in s.get("rejected_samples") or []]
+    if s["status"] == "deferred_noop":
+        out.append(f"::warning title=Ingestion no-op [{s['cohort']}]::every selected Workday board was deferred; nothing written")
     if s["status"] == "no_report":
         out.append(f"::error title=Ingestion report missing [{s['cohort']}]::exit {s['exit_code']}")
     return out
