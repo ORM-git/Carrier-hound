@@ -377,6 +377,7 @@ export default function JobDetailView({
               >
                 <CompanyLogo
                   company={job.company}
+                  locked={!isUnlocked}
                   applyUrl={job.applyUrl}
                   logoUrl={job.logoUrl}
                   className="w-6 h-6 rounded object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
@@ -571,12 +572,13 @@ export default function JobDetailView({
             <div className="flex items-center gap-2 min-w-0">
               <CompanyLogo
                 company={job.company}
+                locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
                 className="w-7 h-7 rounded-lg object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
               />
               <span className={`text-xs font-bold text-[#0F172A] truncate max-w-[120px] ${!isUnlocked ? "filter blur-[3.5px] select-none" : ""}`}>
-                {job.company || "Verified Employer"}
+                {(isUnlocked && job.company) || "Verified Employer"}
               </span>
             </div>
 
@@ -656,6 +658,7 @@ export default function JobDetailView({
             <div className="flex items-center gap-3">
               <CompanyLogo
                 company={job.company}
+                locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
@@ -663,7 +666,7 @@ export default function JobDetailView({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-[14px] text-[#475569] font-semibold ${!isUnlocked ? "filter blur-[4.5px] select-none" : ""}`}>
-                    {job.company || "Verified Employer"}
+                    {(isUnlocked && job.company) || "Verified Employer"}
                   </span>
                   <span className="text-xs text-[#64748B] flex items-center gap-1">
                     <Clock className="w-3 h-3 text-[#94A3B8]" />
@@ -1018,6 +1021,7 @@ export default function JobDetailView({
             <div className="flex items-start gap-3.5">
               <CompanyLogo
                 company={job.company}
+                locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
@@ -1025,7 +1029,7 @@ export default function JobDetailView({
               <div className="space-y-1 min-w-0 flex-1">
                 <div className="font-bold text-[16px] text-[#0F172A] truncate">
                   <span className={!isUnlocked ? "filter blur-[4.5px] select-none" : ""}>
-                    {job.company || "Verified Employer"}
+                    {(isUnlocked && job.company) || "Verified Employer"}
                   </span>
                 </div>
                 {job.location && (
@@ -1113,6 +1117,7 @@ export default function JobDetailView({
                   >
                     <CompanyLogo
                       company={simJob.company}
+                      locked={!isUnlocked}
                       applyUrl={simJob.applyUrl}
                       logoUrl={simJob.logoUrl}
                       className="w-9 h-9 rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
@@ -1122,7 +1127,7 @@ export default function JobDetailView({
                         {simJob.title}
                       </div>
                       <div className="text-[11px] text-[#475569] truncate">
-                        {simJob.company || "Verified Employer"}
+                        {(isUnlocked && simJob.company) || "Verified Employer"}
                       </div>
                     </div>
                   </button>

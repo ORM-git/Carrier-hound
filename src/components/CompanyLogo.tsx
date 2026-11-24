@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
+import { Building2 } from "lucide-react";
 
 export interface CompanyLogoProps {
   company: string;
@@ -10,6 +11,9 @@ export interface CompanyLogoProps {
   /** Company website domain from companies.domain */
   domain?: string | null;
   className?: string;
+  /** Locked (free/guest) job: render a neutral silhouette built only from constants, so no company
+   * name, initial, logo URL or alt text reaches the DOM or the network. */
+  locked?: boolean;
 }
 
 const ATS_HOSTS = [
@@ -65,6 +69,7 @@ export default function CompanyLogo({
   logoUrl,
   domain: companyDomain,
   className = "w-10 h-10",
+  locked = false,
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
@@ -106,6 +111,18 @@ export default function CompanyLogo({
   ];
   const charCode = (cleanCompany.charCodeAt(0) || 0) + (cleanCompany.charCodeAt(1) || 0);
   const gradient = gradients[charCode % gradients.length];
+
+  if (locked) {
+    return (
+      <div
+        data-testid="company-logo-locked"
+        aria-hidden="true"
+        className={`rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0 select-none border border-slate-200 ${className}`}
+      >
+        <Building2 className="w-1/2 h-1/2 blur-[1.5px]" />
+      </div>
+    );
+  }
 
   if (!src) {
     return (

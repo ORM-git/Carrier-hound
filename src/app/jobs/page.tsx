@@ -2144,6 +2144,7 @@ function JobsPageInner() {
                                   {/* 72px company logo square, radius 8, minimal padding */}
                                   <CompanyLogo
                                     company={job.company}
+                                    locked={!isPro}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     domain={job.companyDomain}
@@ -2192,7 +2193,7 @@ function JobsPageInner() {
                                     {/* Company and category/type pills */}
                                     <div className="flex items-center gap-1.5 text-[13px] text-[#475569] min-w-0 flex-wrap h-5">
                                       <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-medium text-[#334155]" : "font-medium text-[#334155]"}`}>
-                                        {job.company || "Verified Employer"}
+                                        {(isPro && job.company) || "Verified Employer"}
                                       </span>
                                       {companyPills.length > 0 && (
                                         <div className="inline-flex items-center gap-1.5 min-w-0" data-testid="job-card-category-pills">
@@ -2405,6 +2406,7 @@ function JobsPageInner() {
                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                   <CompanyLogo
                                     company={job.company}
+                                    locked={!isPro}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     domain={job.companyDomain}
@@ -2413,7 +2415,7 @@ function JobsPageInner() {
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 text-[14px] text-[#475569] truncate h-5">
                                       <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-semibold text-[#0F172A]" : "font-semibold text-[#0F172A]"}`}>
-                                        {job.company || "Verified Employer"}
+                                        {(isPro && job.company) || "Verified Employer"}
                                       </span>
                                     </div>
                                     {(job.category || job.remote) ? (
