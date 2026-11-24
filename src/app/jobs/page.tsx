@@ -1,4 +1,5 @@
 "use client";
+import { compactSalaryDisplay } from "@/lib/salary/display";
 
 import React, { useState, useMemo, useEffect, useRef, useId, Suspense, startTransition } from "react";
 import dynamic from "next/dynamic";
@@ -2230,7 +2231,7 @@ function JobsPageInner() {
                                 {/* Role, tags and metadata remain one uninterrupted group. */}
 
                                 {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
-                                <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
+                                <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
                                   {/* Row 1, Col 1: Location */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
@@ -2260,15 +2261,15 @@ function JobsPageInner() {
 
                                   {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
                                   <div
-                                    className="flex items-center gap-1.5 min-w-0 truncate h-5"
-                                    title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
+                                    className="flex items-start gap-1.5 min-w-0 flex-wrap"
+                                    title={job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className={`truncate ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
-                                      {job.salary ? (isPro ? job.salary : "••••••••") : "Salary unlisted"}
+                                    <span className={`whitespace-normal break-words ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
+                                      {compactSalaryDisplay(job.salary)}
                                     </span>
-                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
-                                      <span className="text-[11px] text-[#64748B] truncate hidden sm:inline">
+                                    {job.salary_original && job.salary_original !== job.salary && (
+                                      <span className="text-[11px] text-[#64748B] whitespace-normal break-words hidden sm:inline">
                                         ({job.salary_original})
                                       </span>
                                     )}
@@ -2513,19 +2514,17 @@ function JobsPageInner() {
                                     Early applicant
                                   </span>
                                 )}
-                                {job.salary && (
                                   <span
                                     className="min-h-6 h-auto max-w-full flex-wrap whitespace-normal break-words px-2.5 py-1 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
-                                    title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
+                                    title={job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
-                                    {isPro ? job.salary : "••••••••"}
+                                    {compactSalaryDisplay(job.salary)}
                                     {/* Original-currency value visible on touch, not only in a hover title */}
-                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
+                                    {job.salary_original && job.salary_original !== job.salary && (
                                       <span className="font-normal text-[#64748B]">({job.salary_original})</span>
                                     )}
                                   </span>
-                                )}
                               </div>
 
                               {/* Footer divider, posted time on left, existing actions on right with 44px targets */}

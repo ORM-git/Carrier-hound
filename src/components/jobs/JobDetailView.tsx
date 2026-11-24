@@ -1,5 +1,6 @@
 "use client";
 import { descriptionSections, structuredDescriptionList } from "@/lib/jobs/descriptionSections";
+import { compactSalaryDisplay } from "@/lib/salary/display";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
@@ -716,17 +717,15 @@ export default function JobDetailView({
                   <span className="truncate">{job.category}</span>
                 </li>
               )}
-              {Boolean(job.salary && String(job.salary).trim()) && (
                 <li data-testid="mobile-job-salary" className="inline-flex items-center gap-1 min-h-7 py-1 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
                   <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
                   <span className="whitespace-normal break-words min-w-0">
-                    {isUnlocked ? job.salary : "••••••••"}
-                    {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
+                    {compactSalaryDisplay(job.salary)}
+                    {job.salary_original && job.salary_original !== job.salary && (
                       <span className="font-normal text-[#64748B]"> ({job.salary_original})</span>
                     )}
                   </span>
                 </li>
-              )}
               {expText && (
                 <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
                   <Calendar className="w-3.5 h-3.5 text-[#475569] shrink-0" />
@@ -797,20 +796,18 @@ export default function JobDetailView({
                   </div>
                 )}
 
-                {Boolean(job.salary && String(job.salary).trim()) && (
                   <div
                     className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]"
-                    title={isUnlocked && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
+                    title={job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                   >
                     <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
-                    <span className="truncate font-medium text-[#0F172A]">
-                      {isUnlocked ? job.salary : "••••••••"}
+                    <span className="whitespace-normal break-words font-medium text-[#0F172A]">
+                      {compactSalaryDisplay(job.salary)}
                     </span>
-                    {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
-                      <span className="text-xs text-[#64748B] truncate">({job.salary_original})</span>
+                    {job.salary_original && job.salary_original !== job.salary && (
+                      <span className="text-xs text-[#64748B] whitespace-normal break-words">({job.salary_original})</span>
                     )}
                   </div>
-                )}
 
                 {expText && (
                   <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
