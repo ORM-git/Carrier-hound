@@ -455,7 +455,6 @@ function JobsPageInner() {
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isRetryingUnlock, setIsRetryingUnlock] = useState(false);
   const [page, setPage] = useState(1);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasNextPage, setHasNextPage] = useState<boolean>(false);
 
   // Live Supabase Jobs Data
@@ -907,8 +906,12 @@ function JobsPageInner() {
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
+  const [autoLoadPaused, setAutoLoadPaused] = useState(false);
   // One next-page request at a time; reset (abort + stale) when the list query (filters/tab/search/sort) changes.
   const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
+  const loadedPageRef = useRef(1);
+  const cursorRef = useRef<string | null>(null);
+  const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => () => pageLoaderRef.current.reset(), []);
 
@@ -954,9 +957,12 @@ function JobsPageInner() {
     pageLoaderRef.current.reset();
     setLoadingMore(false);
     setLoadMoreError(false);
+    setAutoLoadPaused(false);
     setLoadingJobs(true);
     setPage(1);
-    setNextCursor(null);
+    loadedPageRef.current = 1;
+    cursorRef.current = null;
+    hasNextPageRef.current = false;
 
     getLiveJobs({
       page: 1,
@@ -983,8 +989,9 @@ function JobsPageInner() {
         if (queryKey === lastQueryKeyRef.current) {
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
-          setNextCursor(res.nextCursor ?? null);
           setHasNextPage(Boolean(res.hasNextPage));
+          cursorRef.current = res.nextCursor ?? null;
+          hasNextPageRef.current = Boolean(res.hasNextPage);
           setIsDegraded(Boolean(res.isDegraded || res.error === "degraded"));
           setAppliedEligibility(res.appliedEligibility || null);
           setLoadingJobs(false);
@@ -1023,8 +1030,8 @@ function JobsPageInner() {
 
   const handleLoadMore = async () => {
     const loader = pageLoaderRef.current;
-    if (loader.busy) return;
-    const nextPage = page + 1;
+    if (loader.busy || !hasNextPageRef.current) return;
+    const nextPage = loadedPageRef.current + 1;
     const isRecommended = activeTab === "recommended";
     const effectiveSortBy = isRecommended ? "match" : sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
@@ -1037,7 +1044,7 @@ function JobsPageInner() {
         getLiveJobs({
           page: nextPage,
           pageSize: 25,
-          cursor: nextCursor ?? undefined,
+          cursor: cursorRef.current ?? undefined,
           category: selectedCategory,
           search: debouncedSearch,
           remoteOnly,
@@ -1063,10 +1070,14 @@ function JobsPageInner() {
           return;
         }
         // Server order kept; ids already shown or repeated within this page are skipped.
+        // liveJobs is current here: one request at a time, and a query change makes this response stale.
+        setAutoLoadPaused(appendPage(liveJobs, res.jobs).length === liveJobs.length);
         setLiveJobs((prev) => appendPage(prev, res.jobs));
-        setNextCursor(res.nextCursor ?? null);
         setHasNextPage(Boolean(res.hasNextPage));
         setPage(nextPage);
+        loadedPageRef.current = nextPage;
+        cursorRef.current = res.nextCursor ?? null;
+        hasNextPageRef.current = Boolean(res.hasNextPage);
         if (res.totalCount) setTotalCount(res.totalCount);
       }
     );
@@ -1084,7 +1095,7 @@ function JobsPageInner() {
   // Pauses on error (manual Retry) and at the end; re-armed after each page, never loops on its own.
   useEffect(() => {
     const el = loadMoreSentinelRef.current;
-    if (!el || !canLoadMore || loadMoreError || loadingJobs || typeof IntersectionObserver === "undefined") return;
+    if (!el || !canLoadMore || loadMoreError || autoLoadPaused || loadingJobs || typeof IntersectionObserver === "undefined") return;
     if (!window.matchMedia("(max-width: 639px)").matches) return;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -1096,7 +1107,7 @@ function JobsPageInner() {
     return () => observer.disconnect();
     // handleLoadMore reads current state; re-arm when the list grows or the load state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canLoadMore, loadMoreError, loadingJobs, loadingMore, liveJobs.length]);
+  }, [canLoadMore, loadMoreError, autoLoadPaused, loadingJobs, loadingMore, liveJobs.length]);
 
   const savedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "saved"), [trackedApplications]);
   const appliedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "applied"), [trackedApplications]);
@@ -1350,7 +1361,6 @@ function JobsPageInner() {
     setViewHiddenJobs(false);
     setSortBy("newest");
     setPage(1);
-    setNextCursor(null);
     setMobileFiltersOpen(false);
     setAllFiltersDrawerOpen(false);
     setOpenDropdown(null);
@@ -1722,7 +1732,6 @@ function JobsPageInner() {
     if (patch.hidden !== undefined) setViewHiddenJobs(patch.hidden);
     if (patch.sort !== undefined) setSortBy(patch.sort);
     setPage(1);
-    setNextCursor(null);
   };
 
   const handleApplyAllFilters = (updated: JobFilterValues) => {
@@ -1745,7 +1754,6 @@ function JobsPageInner() {
     setViewHiddenJobs(updated.hidden);
     setSortBy(updated.sort);
     setPage(1);
-    setNextCursor(null);
     setAllFiltersDrawerOpen(false);
     setMobileFiltersOpen(false);
   };
@@ -2157,6 +2165,7 @@ function JobsPageInner() {
                                       </div>
                                       <JobCardMenu
                                         job={job}
+                                        locked={!isPro}
                                         onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
                                         onAlreadyApplied={() => handleToggleApplied(job)}
                                       />
@@ -2430,6 +2439,7 @@ function JobsPageInner() {
 
                                   <JobCardMenu
                                     job={job}
+                                    locked={!isPro}
                                     onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
                                     onAlreadyApplied={() => handleToggleApplied(job)}
                                   />

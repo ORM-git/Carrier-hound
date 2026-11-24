@@ -7,6 +7,7 @@ import GuideHeader from "@/components/GuideHeader";
 import Footer from "@/components/Footer";
 import { createClient } from "@/lib/supabase/client";
 import { getValidReturnUrl, getAuthUser } from "@/lib/auth/session";
+import { onboardingRedirectFor, resolvePostAuthDestination } from "@/lib/auth/onboarding";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { trackFunnelEvent } from "@/lib/analytics/funnel";
 import { validateEmail, validateNewPassword, friendlyAuthError } from "@/lib/auth/passwordAuth";
@@ -72,14 +73,26 @@ export default function SignupPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router]);
 
-  // Auto-redirect if already logged in
+  // Auto-redirect if already logged in: one navigation, same onboarding rule as /login and /auth/callback.
+  // Reads the destination itself so it never navigates with the initial "/onboarding" before params load.
   useEffect(() => {
-    getAuthUser().then((user) => {
-      if (user) {
-        router.replace(next);
-      }
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    const destination = getValidReturnUrl(
+      params.get("returnTo") || params.get("return_to") || params.get("next"),
+      "/onboarding"
+    );
+    getAuthUser().then(async (user) => {
+      if (cancelled || !user) return;
+      const target = await resolvePostAuthDestination(createClient(), user.id, destination).catch(() =>
+        onboardingRedirectFor(destination)
+      );
+      if (!cancelled) router.replace(target);
     });
-  }, [next, router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   // Resend cooldown timer
   useEffect(() => {

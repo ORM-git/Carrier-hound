@@ -21,6 +21,9 @@ interface OnboardingStep2Props {
   onResumeSaved?: (fileName: string, parse: ResumeParseSummary | null) => void;
   initialLinkedinUrl?: string | null;
   onLinkedinSaved?: (url: string) => void;
+  /** Typed (possibly unsaved) LinkedIn URL kept by the page so Back does not lose it. */
+  linkedinDraft?: string | null;
+  onLinkedinDraftChange?: (value: string) => void;
   initialResumeFile?: File | null;
   onResumeFileSaved?: (file: File) => void;
 }
@@ -94,13 +97,18 @@ export default function OnboardingStep2({
   onResumeSaved,
   initialLinkedinUrl = null,
   onLinkedinSaved,
+  linkedinDraft = null,
+  onLinkedinDraftChange,
   initialResumeFile = null,
   onResumeFileSaved,
 }: OnboardingStep2Props) {
   const isFeatureEnabled = isOnboardingStep2EnabledClient();
 
-  const [linkedinInput, setLinkedinInput] = useState(initialLinkedinUrl ?? "");
-  const [linkedinSaved, setLinkedinSaved] = useState(Boolean(initialLinkedinUrl));
+  const [linkedinInput, setLinkedinInput] = useState(linkedinDraft ?? initialLinkedinUrl ?? "");
+  // A draft that differs from the saved URL is shown but not reported as saved.
+  const [linkedinSaved, setLinkedinSaved] = useState(
+    Boolean(initialLinkedinUrl) && (linkedinDraft === null || linkedinDraft === initialLinkedinUrl)
+  );
   const [linkedinEverSaved, setLinkedinEverSaved] = useState(Boolean(initialLinkedinUrl));
   const [showLinkedinHelp, setShowLinkedinHelp] = useState(false);
   const [resumeFile, setResumeFile] = useState<File | null>(initialResumeFile);
@@ -124,6 +132,7 @@ export default function OnboardingStep2({
 
   const handleSaveLinkedIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (linkedinSaving) return; // Enter submits the form even while the Save button is disabled
     const check = validateAndNormalizeLinkedInUrl(linkedinInput);
     if (!check.valid || !check.normalizedUrl) {
       setLinkedinError(check.error || "Invalid LinkedIn URL.");
@@ -145,6 +154,7 @@ export default function OnboardingStep2({
       if (!res.ok) throw new Error(data?.error || "Couldn't save your LinkedIn URL.");
       const savedUrl = data.linkedinUrl || check.normalizedUrl;
       setLinkedinInput(savedUrl);
+      onLinkedinDraftChange?.(savedUrl);
       setLinkedinSaved(true);
       setLinkedinEverSaved(true);
       onLinkedinSaved?.(savedUrl);
@@ -255,7 +265,7 @@ export default function OnboardingStep2({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-[max(7rem,5em)] md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto flex flex-col pb-[max(7rem,5em)] md:pb-12 pt-3 md:pt-8 px-4 sm:px-6 md:px-8 [&_*]:scroll-mb-[calc(8rem_+_var(--cm-cookie-notice-height,0px))] md:[&_*]:scroll-mb-0">
         {/* Profile-style header: back control + title */}
         <div className="relative flex items-center justify-center min-h-[44px] mb-2 md:mb-6">
           <button
@@ -315,6 +325,7 @@ export default function OnboardingStep2({
                     value={linkedinInput}
                     onChange={(e) => {
                       setLinkedinInput(e.target.value);
+                      onLinkedinDraftChange?.(e.target.value);
                       setLinkedinError(null);
                       setLinkedinSaved(false);
                     }}
@@ -336,7 +347,7 @@ export default function OnboardingStep2({
                     data-testid="linkedin-error-mobile"
                     className="text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5 [overflow-wrap:anywhere]"
                   >
-                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {linkedinError}
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /><span className="min-w-0 [overflow-wrap:anywhere]">{linkedinError}</span>
                   </p>
                 )}
                 <button
@@ -387,7 +398,7 @@ export default function OnboardingStep2({
               </div>
               <div>
                 <h3 id="resume-card-title-mobile" className="text-base font-bold text-zinc-900 dark:text-zinc-100 break-all">
-                  {resumeName || "Upload resume"}
+                  {resumeName || "Upload CV/resume"}
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">PDF or DOCX, up to 5 MB. Stored privately.</p>
               </div>
@@ -452,7 +463,8 @@ export default function OnboardingStep2({
                   data-testid="resume-error-mobile"
                   className="text-xs text-red-700 dark:text-red-300 flex items-center justify-center gap-1.5"
                 >
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {resumeError}
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{resumeError}</span>
                 </p>
               )}
               {resumeName && !resumeError && (
@@ -474,12 +486,12 @@ export default function OnboardingStep2({
           </div>
         )}
 
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+        <div className="fixed bottom-[var(--cm-cookie-notice-height,0px)] inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
           <div className="max-w-lg md:max-w-none mx-auto space-y-2.5 md:space-y-4">
             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
               <div className="bg-[#0082FF] h-full rounded-full" style={{ width: "100%" }} />
             </div>
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <span className="text-xs md:text-sm font-semibold text-zinc-400 dark:text-zinc-500">Step 2 of 2</span>
               <button
                 type="button"
@@ -751,6 +763,7 @@ export default function OnboardingStep2({
                             value={linkedinInput}
                             onChange={(e) => {
                               setLinkedinInput(e.target.value);
+                              onLinkedinDraftChange?.(e.target.value);
                               setLinkedinError(null);
                               setLinkedinSaved(false);
                             }}

@@ -6,9 +6,10 @@ All screenshots are isolated fixtures with synthetic data and outbound requests 
 
 ## Current checks
 
-- Latest local typecheck passed, lint 0 errors / 252 pre-existing warnings.
-- Full unit suite rerun across four shards: 311 + 394 + 383 + 398 = 1,486 tests, 157 files. One earlier 2-worker inventory-preflight timeout passed on serial shard retry without a timeout change. Two additional saved-preference-revision route tests passed separately after shards 2-4, the complete recommended route suite is 40/40.
-- Local full build was killed twice by the execution memory limit. This is not a build pass. Actual-head GitHub CI remains required. Older92ce CI build passed but test:all failed12 exact-copy scripts. All12 reproduced on this PR, all12 passed on clean main8a9df323. Updated exact brand expectations to Career Monke, auth backdrop to the opaque surface, and spelling-only landing exception with all41negative controls preserved; all12 now pass locally.
+- November 24 port verification: typecheck passes; lint 0 errors / 252 existing warnings.
+- Full unit suite: 353 + 411 + 403 + 419 = 1,586 tests, 163 files, all pass. Privacy integration covers the extra main-branch company heading. All 20 callback-safety tests from main pass without behavioral callback edits.
+- All 265 script-suite entries were attempted in bounded batches: 242 pass, 20 DB-capable checks safely blocked without an authorized DB target, three remain unverified locally. URL-history and 400% reflow need the absent build export; onboarding-persistence is killed at the PGlite memory ceiling. These are not passes. Python identity contract passes 5/5 after installing the missing local pytest dependency. Settings-lock and signup-navigation source assertions were updated to the intended behavior with negative controls retained.
+- Latest local full build exits 137 during optimization. Earlier head f433fcc2 built successfully in CI, but that does not establish the new head. Actual-head CI, including full script suite and build, remains required.
 - `scripts/mobile-715/build.cjs` bundles the real UI with controlled service/auth/storage/checkout responses. Rebuild Tailwind before capture when adding classes.
 - `feed-integration.cjs`: actual Jobs page and controlled observer, 360/390/430 plus 1280 desktop negative control. Two transitions, within/across-page duplicates, slow single flight, error pause, manual retry, termination, Saved/Applied/filter/unmount cancellation, browser Back scroll restoration, preference-change event lifecycle. Results in `feed-integration.json`.
 - `accessibility-layout.cjs`: both onboarding steps at 360/390/430 with 200% font/line-height and 430px-height keyboard-equivalent viewports. Checks no horizontal overflow, last control above fixed footer, CTA fully inside viewport and at least 44px. This does not simulate a real OS keyboard.
@@ -41,9 +42,25 @@ All screenshots are isolated fixtures with synthetic data and outbound requests 
 | 22 | PASS fixture/tests | No mobile remaining-count text below feed; original request wins over contrary brief. |
 | 23 | PASS isolated | Monthly default, three-tier click and native radio keyboard selection. All checkout handlers separately mocked for explicit CTA, correct plan, duplicate lock, cancellation/error recovery and unchecked consent. No real checkout. |
 
+## Correction: nine gaps ported from PR #715
+
+The earlier isolated-PASS labels did not establish these edge cases. Comparison against #715 exposed nine real gaps, now adapted to #722/main rather than replacing whole files:
+
+1. Signed-in signup uses a single onboarding-aware redirect, including query destinations and cancellation on unmount.
+2. Settings enforces canonical work authorization, locks pending saves, preserves failed edits and stored employment types.
+3. Settings uses Email & password wording. Callback changes are only sign-in error and brand copy; main #720 deadline/session/error protections remain intact.
+4. Unsaved LinkedIn draft survives Back; Enter cannot duplicate a pending save. Mobile CV heading and long-error wrapping are fixed.
+5. Onboarding phone touch targets, country wrapping, adaptive job-type layout and focus clearance are fixed. Fixed footers honor cookie-notice height and existing text-relative bottom clearance.
+6. Filter remove and Clear all controls have 44px touch targets.
+7. Locked employer is omitted from report/share text and the other-open-jobs heading, in addition to logos and ordinary text.
+8. Duplicate-only pages pause automatic loading. Page/cursor/end refs guard late observers; existing unmount cancellation and score refresh remain intact.
+9. Mobile detail without a confirmed resume shows a real-match upload prompt, never a fabricated score.
+
+`accessibility-layout.cjs` now passes 24 cases: two steps, three widths, 200% text, short viewport, 96px cookie offset and short viewport plus cookie offset. Cookie checks use a controlled CSS-height contract, not a real consent workflow. The 360px short+cookie pixels and 200% text pixels were directly inspected. CTA and final control remain above the cookie notice/footer. The other three browser matrices pass after porting. No production account or DB writes, auth acceptance, uploads or payments were performed.
+
 ## Remaining gates
 
-1. Independent review of the completed isolated matrices and the open-detail revision fix.
+1. Independent review of the completed isolated matrices, open-detail revision fix and nine-gap port delta.
 2. Actual-head full CI, including build, must pass. Earlier-head check status cannot close this gate.
 3. Owner-only live auth and production flag-ON onboarding acceptance remain explicitly separate, not replaced by mocks.
 4. Independent reviewer GO and the designated merge workflow. Do not merge from this task.

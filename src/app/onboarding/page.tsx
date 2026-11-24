@@ -59,6 +59,7 @@ function OnboardingPageInner() {
   // Preserve saved Step 2 state across Back navigation
   const [savedResumeName, setSavedResumeName] = useState<string | null>(null);
   const [savedLinkedinUrl, setSavedLinkedinUrl] = useState<string | null>(null);
+  const [linkedinDraft, setLinkedinDraft] = useState<string | null>(null);
   const [savedResumeFile, setSavedResumeFile] = useState<File | null>(null);
   const [savedResumeParse, setSavedResumeParse] = useState<ResumeParseSummary | null>(null);
 
@@ -309,7 +310,10 @@ function OnboardingPageInner() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col justify-between">
+    <main
+      // While the cookie notice is up, the phone steps' fixed bars sit on it; this padding keeps the page end reachable.
+      className="min-h-screen bg-zinc-50/60 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col justify-between pb-[var(--cm-cookie-notice-height,0px)] lg:pb-0"
+    >
       <div>
         {/* Error alert banner if submission fails */}
         {processingError && (
@@ -371,6 +375,8 @@ function OnboardingPageInner() {
             }}
             initialLinkedinUrl={savedLinkedinUrl}
             onLinkedinSaved={setSavedLinkedinUrl}
+            linkedinDraft={linkedinDraft}
+            onLinkedinDraftChange={setLinkedinDraft}
             initialResumeFile={savedResumeFile}
             onResumeFileSaved={setSavedResumeFile}
           />

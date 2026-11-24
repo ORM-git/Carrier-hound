@@ -154,7 +154,7 @@ export default function AuthCallbackPage() {
               if (hashSession) {
                 finishSignedIn(hashSession.user?.id);
               } else {
-                finish(`/login?error=${encodeURIComponent("Could not authenticate magic link. Please try again.")}`);
+                finish(`/login?error=${encodeURIComponent("Could not complete sign-in. Please try again.")}`);
               }
             })
             .catch(onUnexpected);
@@ -217,7 +217,7 @@ export default function AuthCallbackPage() {
         ) : (
           <div className="space-y-1.5" role="status" aria-label="Signing you in">
             <Loader2 aria-hidden="true" className="w-6 h-6 text-brand-600 animate-spin mx-auto" />
-            <h1 className="text-tk-body font-bold text-ink">Signing you in to CareerMonke…</h1>
+            <h1 className="text-tk-body font-bold text-ink">Signing you in to Career Monke…</h1>
             <p className="text-tk-caption text-ink-muted">
               Verifying your secure credentials. This only takes a moment.
             </p>

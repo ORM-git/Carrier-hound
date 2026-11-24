@@ -84,7 +84,7 @@ export default function OnboardingStep1({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-[max(7rem,5em)] md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-[max(7rem,5em)] md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8 [&_*]:scroll-mb-[calc(8rem_+_var(--cm-cookie-notice-height,0px))] md:[&_*]:scroll-mb-0">
         {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
         <p className="mb-3 md:mb-8 text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
           {isEditMode ? (
@@ -136,7 +136,8 @@ export default function OnboardingStep1({
                         type="button"
                         onClick={() => onRemoveRole(r)}
                         aria-label={`Remove ${r}`}
-                        className="p-0.5 text-[#0020B0] hover:text-[#0020B0] dark:hover:text-brand-100 rounded-full hover:bg-[#CCE6FF]/50 dark:hover:bg-brand-800/50 transition"
+                        // 24px target; the ::after extends the touch area to 44px without growing the chip
+                        className="relative inline-flex items-center justify-center w-6 h-6 -my-1 -mr-1 shrink-0 text-[#0020B0] hover:text-[#0020B0] dark:hover:text-brand-100 rounded-full hover:bg-[#CCE6FF]/50 dark:hover:bg-brand-800/50 transition after:absolute after:-inset-2.5 after:content-['']"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -148,7 +149,7 @@ export default function OnboardingStep1({
                       setActiveJobTrigger(e.currentTarget);
                       setIsBottomSheetOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 min-h-[32px] px-1 text-xs md:text-sm font-semibold text-[#0020B0] dark:text-brand-400 hover:underline"
+                    className="inline-flex items-center gap-1.5 min-h-[44px] px-1 text-xs md:text-sm font-semibold text-[#0020B0] dark:text-brand-400 hover:underline"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add more roles</span>
@@ -164,7 +165,8 @@ export default function OnboardingStep1({
               <span className="text-[#0020B0] dark:text-brand-400 font-bold mr-1">*</span>
               Job Type
             </label>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
+            {/* Two columns on phones; one when zoomed text would not fit two (no sideways scroll) */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,8.5rem),1fr))] md:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
               {JOB_TYPE_OPTIONS.map((jt) => {
                 const isChecked = employmentTypes.includes(jt.id) || employmentTypes.includes(jt.label);
                 return (
@@ -211,10 +213,11 @@ export default function OnboardingStep1({
                 }}
                 className="w-full min-h-[44px] md:h-[52px] flex items-center justify-between px-3.5 py-2.5 md:p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-left text-sm font-medium hover:border-[#0082FF] dark:hover:border-brand-500 transition"
               >
-                <div className="flex items-center gap-2.5 truncate">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <Globe className="w-4 h-4 text-[#0020B0] flex-shrink-0" />
                   {country ? (
-                    <span className="truncate font-semibold text-zinc-900 dark:text-zinc-100">
+                    // Long country names wrap instead of hiding behind an ellipsis
+                    <span className="min-w-0 break-words font-semibold text-zinc-900 dark:text-zinc-100">
                       {country}
                     </span>
                   ) : (
@@ -251,7 +254,7 @@ export default function OnboardingStep1({
                 <button
                   type="button"
                   onClick={onToggleOpenToRemote}
-                  className="flex-1 flex items-center gap-3 text-left -my-2.5 -ml-3.5 py-2.5 pl-3.5 md:-my-4 md:-ml-4 md:py-4 md:pl-4 rounded-l-2xl"
+                  className="flex-1 flex items-center gap-3 min-h-[44px] text-left -my-2.5 -ml-3.5 py-2.5 pl-3.5 md:-my-4 md:-ml-4 md:py-4 md:pl-4 rounded-l-2xl"
                 >
                   <div
                     className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors md:flex-shrink-0 ${
@@ -333,7 +336,7 @@ export default function OnboardingStep1({
         </div>
 
         {/* Progress Indicator and Next Button (Fixed on mobile, in-flow on desktop) */}
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
+        <div className="fixed bottom-[var(--cm-cookie-notice-height,0px)] inset-x-0 z-30 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] md:static md:bg-transparent md:border-0 md:p-0 md:mt-8 md:backdrop-blur-none">
           <div className="max-w-lg md:max-w-none mx-auto space-y-2 md:space-y-4">
             {/* Progress bar (Step 1 of 2 -> 50%) */}
             <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 md:h-2 rounded-full overflow-hidden">
@@ -343,7 +346,7 @@ export default function OnboardingStep1({
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <span className="text-xs md:text-sm font-semibold text-zinc-400 dark:text-zinc-500">
                 Step 1 of 2
               </span>

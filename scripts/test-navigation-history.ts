@@ -120,7 +120,7 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
   {
     file: "src/app/signup/page.tsx",
     expectedCount: 2,
-    requiredSnippets: ["router.replace(next)", "router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`)"],
+    requiredSnippets: ["router.replace(target)", "router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`)"],
   },
   // Unauthenticated mount guard on `/tracker` replaces protected URL to prevent Back-button loop
   {
