@@ -1,0 +1,286 @@
+[
+  {
+    "width": 360,
+    "overlaps": [],
+    "misses": [],
+    "header": {
+      "left": 16,
+      "right": 344,
+      "top": 68,
+      "bottom": 175
+    },
+    "controls": [
+      {
+        "name": "Back to jobs list",
+        "left": 30,
+        "right": 66,
+        "top": 78,
+        "bottom": 114
+      },
+      {
+        "name": "Overview",
+        "left": 76,
+        "right": 159.25,
+        "top": 84,
+        "bottom": 108
+      },
+      {
+        "name": "Company",
+        "left": 163.25,
+        "right": 245.859375,
+        "top": 84,
+        "bottom": 108
+      },
+      {
+        "name": "Share position",
+        "left": 292,
+        "right": 336,
+        "top": 74,
+        "bottom": 118
+      },
+      {
+        "name": "More options for this job",
+        "left": 155.59375,
+        "right": 199.59375,
+        "top": 125,
+        "bottom": 169
+      },
+      {
+        "name": "Save job",
+        "left": 205.59375,
+        "right": 241.59375,
+        "top": 129,
+        "bottom": 165
+      },
+      {
+        "name": "Apply",
+        "left": 247.59375,
+        "right": 330,
+        "top": 129,
+        "bottom": 165
+      }
+    ],
+    "description": "Job descriptionAbout Gusto: R&D. Build accessible frontend applications with React and TypeScript. Collaborate with product and design teams.engineeringReactTypeScript",
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "overlaps": [],
+    "misses": [],
+    "header": {
+      "left": 16,
+      "right": 374,
+      "top": 68,
+      "bottom": 175
+    },
+    "controls": [
+      {
+        "name": "Back to jobs list",
+        "left": 30,
+        "right": 66,
+        "top": 78,
+        "bottom": 114
+      },
+      {
+        "name": "Overview",
+        "left": 76,
+        "right": 159.25,
+        "top": 84,
+        "bottom": 108
+      },
+      {
+        "name": "Company",
+        "left": 163.25,
+        "right": 245.859375,
+        "top": 84,
+        "bottom": 108
+      },
+      {
+        "name": "Share position",
+        "left": 322,
+        "right": 366,
+        "top": 74,
+        "bottom": 118
+      },
+      {
+        "name": "More options for this job",
+        "left": 185.59375,
+        "right": 229.59375,
+        "top": 125,
+        "bottom": 169
+      },
+      {
+        "name": "Save job",
+        "left": 235.59375,
+        "right": 271.59375,
+        "top": 129,
+        "bottom": 165
+      },
+      {
+        "name": "Apply",
+        "left": 277.59375,
+        "right": 360,
+        "top": 129,
+        "bottom": 165
+      }
+    ],
+    "description": "Job descriptionAbout Gusto: R&D. Build accessible frontend applications with React and TypeScript. Collaborate with product and design teams.engineeringReactTypeScript",
+    "overflow": false
+  },
+  {
+    "width": 768,
+    "overlaps": [],
+    "misses": [],
+    "header": {
+      "left": 96,
+      "right": 744,
+      "top": 72,
+      "bottom": 192
+    },
+    "controls": [
+      {
+        "name": "Back to jobs list",
+        "left": 116,
+        "right": 160,
+        "top": 82,
+        "bottom": 126
+      },
+      {
+        "name": "Overview",
+        "left": 172,
+        "right": 261.78125,
+        "top": 88,
+        "bottom": 120
+      },
+      {
+        "name": "Company",
+        "left": 265.78125,
+        "right": 354.828125,
+        "top": 88,
+        "bottom": 120
+      },
+      {
+        "name": "Share",
+        "left": 383.828125,
+        "right": 452.46875,
+        "top": 86,
+        "bottom": 122
+      },
+      {
+        "name": "Report issue",
+        "left": 460.46875,
+        "right": 568.890625,
+        "top": 86,
+        "bottom": 122
+      },
+      {
+        "name": "Original Job Post",
+        "left": 576.890625,
+        "right": 709.09375,
+        "top": 86,
+        "bottom": 122
+      },
+      {
+        "name": "Hide position",
+        "left": 116,
+        "right": 160,
+        "top": 138,
+        "bottom": 182
+      },
+      {
+        "name": "Save job",
+        "left": 168,
+        "right": 212,
+        "top": 138,
+        "bottom": 182
+      },
+      {
+        "name": "Apply",
+        "left": 220,
+        "right": 318.40625,
+        "top": 138,
+        "bottom": 182
+      }
+    ],
+    "description": "Job descriptionAbout Gusto: R&D. Build accessible frontend applications with React and TypeScript. Collaborate with product and design teams.engineeringReactTypeScript",
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "overlaps": [],
+    "misses": [],
+    "header": {
+      "left": 316,
+      "right": 1196,
+      "top": 72,
+      "bottom": 136
+    },
+    "controls": [
+      {
+        "name": "Back to jobs list",
+        "left": 336,
+        "right": 380,
+        "top": 82,
+        "bottom": 126
+      },
+      {
+        "name": "Overview",
+        "left": 392,
+        "right": 481.78125,
+        "top": 88,
+        "bottom": 120
+      },
+      {
+        "name": "Company",
+        "left": 485.78125,
+        "right": 574.828125,
+        "top": 88,
+        "bottom": 120
+      },
+      {
+        "name": "Share",
+        "left": 603.828125,
+        "right": 672.46875,
+        "top": 86,
+        "bottom": 122
+      },
+      {
+        "name": "Report issue",
+        "left": 680.46875,
+        "right": 788.890625,
+        "top": 86,
+        "bottom": 122
+      },
+      {
+        "name": "Original Job Post",
+        "left": 796.890625,
+        "right": 929.09375,
+        "top": 86,
+        "bottom": 122
+      },
+      {
+        "name": "Hide position",
+        "left": 973.59375,
+        "right": 1017.59375,
+        "top": 82,
+        "bottom": 126
+      },
+      {
+        "name": "Save job",
+        "left": 1025.59375,
+        "right": 1069.59375,
+        "top": 82,
+        "bottom": 126
+      },
+      {
+        "name": "Apply",
+        "left": 1077.59375,
+        "right": 1176,
+        "top": 82,
+        "bottom": 126
+      }
+    ],
+    "description": "Job descriptionAbout Gusto: R&D. Build accessible frontend applications with React and TypeScript. Collaborate with product and design teams.engineeringReactTypeScript",
+    "overflow": false
+  }
+]

@@ -6,7 +6,8 @@ import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, displayMatchScore, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
-import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
+import { sanitizeExternalUrl } from "@/lib/security/xss";
+import { jobDescriptionText } from "@/lib/jobs/descriptionText";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
 import { workModelLabel } from "@/lib/jobs/workModel";
@@ -384,9 +385,9 @@ export default function JobDetailView({
         className="sticky top-14 z-20 bg-white/95 backdrop-blur-md rounded-[16px] ring-1 ring-[#E2E8F0] px-3.5 sm:px-5 py-2.5 shadow-sm transition-all duration-200"
       >
         {/* DESKTOP SINGLE-ROW STRIP (md: and above) */}
-        <div className="hidden md:flex items-center justify-between gap-3">
+        <div className="hidden md:flex md:max-lg:flex-wrap items-center justify-between gap-3">
           {/* Left strip: Back/close, Scrolled Chip OR Tabs + Utility links */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 md:max-lg:w-full md:max-lg:flex-wrap">
             <button
               type="button"
               onClick={onBack}
@@ -414,7 +415,7 @@ export default function JobDetailView({
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 md:max-lg:flex-wrap">
                 {/* Overview and Company tabs */}
                 <div className="flex items-center gap-1 border-r border-[#E2E8F0] pr-3">
                   <button
@@ -447,7 +448,7 @@ export default function JobDetailView({
                 </div>
 
                 {/* Utility actions (Desktop) */}
-                <div className="flex items-center gap-2 text-xs text-[#64748B]">
+                <div className="flex items-center gap-2 text-xs text-[#64748B] md:max-lg:flex-wrap md:max-lg:[&>a]:whitespace-nowrap md:max-lg:[&>button]:whitespace-nowrap">
                   <button
                     type="button"
                     onClick={handleShare}
@@ -996,7 +997,7 @@ export default function JobDetailView({
             <h2 className="text-[18px] font-bold text-[#0F172A]">Job description</h2>
             {job.description ? (
               <div className="text-[15px] leading-[24px] text-[#0F172A] max-w-[720px] whitespace-pre-wrap break-words">
-                {stripHtmlAndExecutableMarkup(job.description)}
+                {jobDescriptionText(job.description)}
               </div>
             ) : (
               <p className="text-[#475569] text-[15px] leading-[24px]">
