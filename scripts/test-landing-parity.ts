@@ -212,7 +212,8 @@ async function runParityTests() {
   assert.ok(pageSrc.includes("higher callback rate"), "Stats must include 'higher callback rate'");
   assert.ok(pageSrc.includes("<b>94%</b>"), "Stats must include 94%");
   assert.ok(pageSrc.includes("ATS keyword alignment"), "Stats must include 'ATS keyword alignment'");
-  assert.ok(pageSrc.includes("<b>1,200+</b>"), "Stats must include 1,200+");
+  // Owner-requested copy change (2026-11-24): the stats-row figure renders as "1Lakh+". Display copy only.
+  assert.ok(pageSrc.includes("<b>1Lakh+</b>"), "Stats must include 1Lakh+");
   assert.ok(pageSrc.includes('fresh roles <span className="sbr">active</span>'), "Stats must include 'fresh roles active'");
   assert.ok(pageSrc.includes("*Based on early access user surveys"), "Stats must include survey note");
 
