@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Job Details | CareerMonke",
-  description: "View this role on CareerMonke.",
+  title: "Job Details | Career Monke",
+  description: "View this role on Career Monke.",
   alternates: {
     canonical: "/job-detail",
   },
   openGraph: {
-    title: "Job Details | CareerMonke",
-    description: "View this role on CareerMonke.",
+    title: "Job Details | Career Monke",
+    description: "View this role on Career Monke.",
     url: "https://careermonke.com/job-detail",
   },
 };

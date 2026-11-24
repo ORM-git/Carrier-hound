@@ -375,7 +375,7 @@ export default function OnboardingStep1({
               </div>
               <div>
                 <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
-                  CareerMonke
+                  Career Monke
                 </span>
                 <span className="block text-[11px] font-semibold text-brand-700 dark:text-brand-400">
                   {isEditMode ? "Preferences Editor" : "Job Discovery"}
@@ -390,7 +390,7 @@ export default function OnboardingStep1({
             <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-zinc-800/80 border border-brand-200/80 dark:border-brand-800/50 shadow-xs">
               <div className="w-2 h-2 rounded-full bg-brand-500" />
               <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                CareerMonke Guide
+                Career Monke Guide
               </span>
             </div>
 

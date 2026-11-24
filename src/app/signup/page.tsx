@@ -198,7 +198,7 @@ export default function SignupPage() {
           data-testid="auth-backdrop"
           aria-hidden="true"
           onClick={() => router.push("/")}
-          className="fixed inset-0 bg-black/40 z-[70] animate-auth-backdrop cursor-pointer"
+          className="fixed inset-0 bg-[#F8FAFC] z-[70] animate-auth-backdrop cursor-pointer"
         />
 
         {/* Modal-style white surface:

@@ -508,7 +508,7 @@ export default function OnboardingStep2({
               </div>
               <div>
                 <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
-                  CareerMonke
+                  Career Monke
                 </span>
                 <span className="block text-[11px] font-semibold text-brand-700 dark:text-brand-400">
                   Profile & Resume

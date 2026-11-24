@@ -4,9 +4,9 @@ import Footer from "@/components/Footer";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
-  title: "About Us | CareerMonke",
+  title: "About Us | Career Monke",
   description:
-    "CareerMonke is a small team building an AI job-search tool for job seekers to find jobs, tailor resumes per job, and track applications.",
+    "Career Monke is a small team building an AI job-search tool for job seekers to find jobs, tailor resumes per job, and track applications.",
   alternates: {
     canonical: "https://careermonke.com/about",
   },
@@ -29,13 +29,13 @@ export default function AboutUsPage() {
             About Us
           </h1>
           <p>
-            We are a small team building an AI job-search tool for job seekers. Searching for a new role takes time and focus, so we built CareerMonke to bring the everyday steps of a job search into one straightforward workspace.
+            We are a small team building an AI job-search tool for job seekers. Searching for a new role takes time and focus, so we built Career Monke to bring the everyday steps of a job search into one straightforward workspace.
           </p>
         </div>
 
         <div className="space-y-3">
           <h2 className="text-base sm:text-lg font-semibold text-[#09090B]">
-            What CareerMonke Helps You Do
+            What Career Monke Helps You Do
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
             <div className="rounded-xl border border-gray-200 bg-[#F8F9FA] p-4 space-y-1.5">

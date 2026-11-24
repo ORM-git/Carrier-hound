@@ -99,11 +99,11 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
           {/* SIDEBAR HEADER: LOGO + ACCESSIBLE EXPAND / COLLAPSE TOGGLE         */}
           {/* =================================================================== */}
           {isExpanded ? (
-            /* Expanded Mode Header: Brand Mark + CareerMonke Text + Collapse Button */
+            /* Expanded Mode Header: Brand Mark + Career Monke Text + Collapse Button */
             <div className="flex items-center justify-between w-full pb-3 border-b border-[#E2E8F0] px-1">
               <Link
                 href="/jobs"
-                aria-label="CareerMonke Jobs"
+                aria-label="Career Monke Jobs"
                 className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
               >
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">
@@ -129,7 +129,7 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
             <div className="flex flex-col items-center gap-2 w-full">
               <Link
                 href="/jobs"
-                aria-label="CareerMonke Jobs"
+                aria-label="Career Monke Jobs"
                 className="w-[48px] h-[48px] flex items-center justify-center rounded-xl hover:bg-[#F8FAFC] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
               >
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-0.5 border border-[#E2E8F0] shadow-xs shrink-0">

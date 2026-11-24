@@ -186,7 +186,7 @@ export default function PricingPage() {
   const faqItems: Array<{ q: string; a: React.ReactNode }> = [
     {
       q: "What do I get?",
-      a: "Full access to CareerMonke job listings: every verified unindexed remote job, with filters, salary data where the employer publishes it, and direct apply links.",
+      a: "Full access to Career Monke job listings: every verified unindexed remote job, with filters, salary data where the employer publishes it, and direct apply links.",
     },
     {
       q: "Does my plan renew automatically?",
@@ -333,7 +333,7 @@ export default function PricingPage() {
                         className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                       />
                       <span>
-                        I authorize CareerMonke to charge ₹499/month until cancelled. I can cancel anytime from Settings.
+                        I authorize Career Monke to charge ₹499/month until cancelled. I can cancel anytime from Settings.
                       </span>
                     </label>
                   </div>

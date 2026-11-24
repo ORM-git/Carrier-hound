@@ -556,7 +556,7 @@ function SettingsPageInner() {
                   Subscription & Billing
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Manage your CareerMonke Pro access, invoices, and renewal.
+                  Manage your Career Monke Pro access, invoices, and renewal.
                 </p>
               </div>
 
@@ -575,13 +575,13 @@ function SettingsPageInner() {
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">
-                    {isPro ? "CareerMonke Pro Plan" : "CareerMonke Free Tier"}
+                    {isPro ? "Career Monke Pro Plan" : "Career Monke Free Tier"}
                   </h3>
                   <p className="text-xs text-slate-500">
                     {isPro
                       ? formattedPlanText
                         ? `${formattedPlanText}. Full direct apply unlocked.`
-                        : "CareerMonke Pro Plan. Full direct apply unlocked."
+                        : "Career Monke Pro Plan. Full direct apply unlocked."
                       : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
                   </p>
                 </div>
@@ -744,7 +744,7 @@ function SettingsPageInner() {
         open={isPaywallOpen}
         onOpenChange={setIsPaywallOpen}
         user={user}
-        featureTitle="Upgrade to CareerMonke Pro"
+        featureTitle="Upgrade to Career Monke Pro"
       />
     </LoggedInAppShell>
   );

@@ -29,7 +29,7 @@ interface PaywallModalProps {
 export default function PaywallModal({
   open,
   onOpenChange,
-  title = "Unlock CareerMonke Pro Access",
+  title = "Unlock Career Monke Pro Access",
   subtitle = "Direct access to unlisted company career endpoints, verified compensation bands, and official application links.",
   user: initialUser,
   redirectUrl,

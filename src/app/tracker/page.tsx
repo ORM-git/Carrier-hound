@@ -286,7 +286,7 @@ export default function TrackerPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
           <ProUpgradeScreen
             title="Unlock Application Tracker"
-            subtitle="Upgrade to CareerMonke Pro to save jobs, track interview stages, and manage your pipeline."
+            subtitle="Upgrade to Career Monke Pro to save jobs, track interview stages, and manage your pipeline."
           />
         </div>
               </LoggedInAppShell>

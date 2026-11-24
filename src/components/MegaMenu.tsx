@@ -25,7 +25,7 @@ export default function MegaMenu({ isOpen, onClose }: MegaMenuProps) {
         {/* Top Header line */}
         <div className="bg-gray-50/80 px-6 sm:px-8 py-3.5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm">
-            <span className="font-bold text-[#09090B]">Explore CareerMonke Guides</span>
+            <span className="font-bold text-[#09090B]">Explore Career Monke Guides</span>
             <span className="text-gray-400">•</span>
             <span className="text-gray-500 hidden sm:inline">Tactical intel for bypassing public queues</span>
           </div>

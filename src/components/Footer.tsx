@@ -23,8 +23,9 @@ function LandingFooter() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-tk-4 pb-tk-4 border-b border-line">
           {/* Brand */}
           <div className="lg:col-span-4">
-            <Link href="/" aria-label="CareerMonke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
+            <Link href="/" aria-label="Career Monke Home" className="inline-flex items-center min-h-[44px] rounded-tk-lg">
               <BrandIcon variant="full" width={36} height={44} className="h-9 w-auto" />
+              <span className="ml-2 text-lg font-bold">Career Monke</span>
             </Link>
           </div>
 

@@ -46,7 +46,7 @@ import {
   Clock,
   Lock,
   ArrowRight,
-  Ban,
+  EyeOff,
   DollarSign,
   AlertCircle,
   ArrowLeft,
@@ -2230,7 +2230,7 @@ function JobsPageInner() {
                                     title="Hide position"
                                     className="w-8 h-8 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
                                   >
-                                    <Ban className="w-4 h-4" />
+                                    <EyeOff className="w-4 h-4" />
                                   </button>
 
                                   <button
@@ -2434,7 +2434,7 @@ function JobsPageInner() {
                                 )}
                                 {job.salary && (
                                   <span
-                                    className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
+                                    className="min-h-6 h-auto max-w-full flex-wrap whitespace-normal break-words px-2.5 py-1 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
                                     title={isPro && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />

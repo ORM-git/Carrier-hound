@@ -33,7 +33,7 @@ import {
   Flag,
   X,
   RotateCw,
-  Ban,
+  EyeOff,
   Laptop,
   TrendingUp,
   Calendar,
@@ -453,7 +453,7 @@ export default function JobDetailView({
                 title="Hide position"
                 className="w-9 h-9 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer"
               >
-                <Ban className="w-4 h-4" />
+                <EyeOff className="w-4 h-4" />
               </button>
             )}
 
@@ -707,9 +707,9 @@ export default function JobDetailView({
                 </li>
               )}
               {Boolean(job.salary && String(job.salary).trim()) && (
-                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                <li className="inline-flex items-center gap-1 min-h-7 py-1 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
                   <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
-                  <span className="truncate">
+                  <span className="whitespace-normal break-words min-w-0">
                     {isUnlocked ? job.salary : "••••••••"}
                     {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
                       <span className="font-normal text-[#64748B]"> ({job.salary_original})</span>

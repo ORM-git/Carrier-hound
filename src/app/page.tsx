@@ -36,7 +36,7 @@ export default function HomePage() {
           <header className="hero">
             <div className="container">
               <nav className="nav">
-                <a href="#" className="brand" aria-label="CareerMonke home">
+                <a href="#" className="brand" aria-label="Career Monke home">
                   <img
                     className="brand-logo"
                     src="/careermonke-logo.png"
@@ -44,7 +44,7 @@ export default function HomePage() {
                     width="617"
                     height="749"
                   />
-                  CareerMonke
+                  Career Monke
                 </a>
                 <div className="nav-actions">
                   <a href="/login" className="btn-ghost">
@@ -486,7 +486,7 @@ export default function HomePage() {
             </g>
           </symbol>
         </svg>
-        <section className="wrap s stats-row" aria-label="CareerMonke in numbers">
+        <section className="wrap s stats-row" aria-label="Career Monke in numbers">
           <dl className="stats" aria-describedby="stats-note">
             <div>
               <dd>
@@ -729,16 +729,16 @@ export default function HomePage() {
 
         <section className="wrap s" aria-labelledby="cmp-h">
           <h2 className="h2" id="cmp-h">
-            The Usual Grind vs The CareerMonke Way
+            The Usual Grind vs The Career Monke Way
           </h2>
           <table className="vs" id="vs">
-            <caption className="sr">The usual grind compared with the CareerMonke way</caption>
+            <caption className="sr">The usual grind compared with the Career Monke way</caption>
             <thead>
               <tr>
                 <th scope="col">The Usual Grind</th>
                 <th scope="col">
                   <img src="/mascot.png" alt="" width="22" height="22" />
-                  The CareerMonke Way
+                  The Career Monke Way
                 </th>
               </tr>
             </thead>
@@ -1941,21 +1941,21 @@ export default function HomePage() {
           <div className="founder">
             <img
               src="/owner.jpg"
-              alt="Orissa Lee Patnaik, founder of CareerMonke"
+              alt="Orissa Lee Patnaik, founder of Career Monke"
               width="112"
               height="112"
               loading="lazy"
             />
             <div className="founder-body">
               <h2 id="fd-h">Orissa here!</h2>
-              <p className="role">Creator of CareerMonke</p>
+              <p className="role">Creator of Career Monke</p>
               <p className="bio">
                 Growing up in the US and living in India showed me the friction of job hunting is
                 universal. Broken software discards qualified people, and legacy sites make every
                 role a cattle call.
               </p>
               <p className="bio">
-                I built CareerMonke to cut through the noise, give candidates leverage back, and
+                I built Career Monke to cut through the noise, give candidates leverage back, and
                 land your story directly with real people without the unnecessary hollow hustle
                 rhetoric.
               </p>
@@ -2031,10 +2031,10 @@ export default function HomePage() {
           </h2>
           <div className="faq">
             <details>
-              <summary>How is CareerMonke different from LinkedIn or Indeed?</summary>
+              <summary>How is Career Monke different from LinkedIn or Indeed?</summary>
               <p>
                 Conventional job boards rely on sponsored placements, which creates huge applicant
-                backlogs and ghost listings. CareerMonke focuses on verified, active openings so you
+                backlogs and ghost listings. Career Monke focuses on verified, active openings so you
                 spend your time on roles that are actually hiring.
               </p>
             </details>
@@ -2064,7 +2064,7 @@ export default function HomePage() {
             <details>
               <summary>Do I apply directly on the company website?</summary>
               <p>
-                Yes, 100% of the time. Every job on CareerMonke links directly to the official
+                Yes, 100% of the time. Every job on Career Monke links directly to the official
                 company careers page or official ATS application form. There are no middleman forms,
                 third-party redirects, or spam filters between you and the hiring team.
               </p>
@@ -2635,10 +2635,10 @@ export default function HomePage() {
         <footer>
           <div className="wrap">
             <div className="f-top">
-              <a href="/" aria-label="CareerMonke home">
+              <a href="/" aria-label="Career Monke home">
                 <img
                   src="/careermonke-logo.png"
-                  alt="CareerMonke"
+                  alt="Career Monke"
                   width="66"
                   height="80"
                   loading="lazy"
@@ -2671,9 +2671,9 @@ export default function HomePage() {
         </footer>
 
         <aside className="sb" aria-label="View jobs">
-          <img src="/careermonke-logo.png" alt="CareerMonke logo" width="56" height="56" />
+          <img src="/careermonke-logo.png" alt="Career Monke logo" width="56" height="56" />
           <p>
-            <b>CareerMonke</b>
+            <b>Career Monke</b>
             <span>Verified jobs, direct from employers</span>
           </p>
           <a href="/jobs">

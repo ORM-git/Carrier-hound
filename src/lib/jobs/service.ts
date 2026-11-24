@@ -939,6 +939,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                   mappedJobs.forEach((job) => {
                     const u = unlockedMap.get(job.id);
                     if (u) {
+                      if (typeof u.matchScore === "number") job.matchScore = u.matchScore;
+                      if (u.scoreRevision) job.scoreRevision = u.scoreRevision;
                       if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
                       if (u.salary_text || u.salary_min != null) {
                         job.salary = stripHtmlAndExecutableMarkup(u.salary_display || formatSalary(u.salary_min, u.salary_max, u.currency, u.salary_period) || u.salary_text || "");

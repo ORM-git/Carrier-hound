@@ -8,7 +8,7 @@ import { BookOpen, ArrowRight, ShieldCheck, Compass, Briefcase, FileText } from 
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 
 export const metadata = {
-  title: "Career Resources & Hiring Guides | CareerMonke",
+  title: "Career Resources & Hiring Guides | Career Monke",
   description: "Explore in-depth analysis on direct employer hiring, salary benchmarks, and remote job search strategies.",
 };
 
@@ -28,7 +28,7 @@ export default function ResourcesIndexPage() {
             Knowledge Hub
           </span>
           <h1 className="text-[18px] font-bold uppercase tracking-wider text-[#0F172A]">
-            CareerMonke Guides & Resources
+            Career Monke Guides & Resources
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
             Data-backed breakdowns of direct employer application strategies, compensation benchmarks, and hiring trends.

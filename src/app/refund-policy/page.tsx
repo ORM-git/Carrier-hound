@@ -6,8 +6,8 @@ import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { PREPAID_PRICE_SUMMARY } from "@/config/plans";
 
 export const metadata = {
-  title: "Cancellation & Refund Policy | CareerMonke",
-  description: "Cancellation and refund policy for CareerMonke prepaid subscription plans and add-on credit packs.",
+  title: "Cancellation & Refund Policy | Career Monke",
+  description: "Cancellation and refund policy for Career Monke prepaid subscription plans and add-on credit packs.",
   alternates: {
     canonical: "https://careermonke.com/refund-policy",
   },
@@ -26,14 +26,14 @@ export default function RefundPolicyPage() {
         <p className="text-xs text-gray-500 font-mono">Last updated: November 6, 2026</p>
 
         <p className="mb-2">
-          CareerMonke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
+          Career Monke is operated by Olive Ridley Media Private Limited. All purchases are prepaid fixed-duration plans and add-on packs. As digital services, all sales are final. Only a duplicate or failed-but-debited payment is reviewed and refunded to the original payment method within 5-7 business days.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">
           1. Plans, Pricing, and Auto-Renewal
         </h2>
         <p className="mb-2">
-          CareerMonke offers prepaid plans (Weekly and Quarterly) as one-time, flat amounts: {PREPAID_PRICE_SUMMARY}. For these prepaid plans, there are no recurring charges and access ends when the period expires. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month for up to 12 monthly cycles unless cancelled earlier. For the Monthly auto-renew subscription, your account is charged automatically at the end of each monthly billing cycle until cancelled or the 12-cycle maximum is reached. You can view your current cycle and cancel anytime before the next renewal date from Settings &gt; Billing.
+          Career Monke offers prepaid plans (Weekly and Quarterly) as one-time, flat amounts: {PREPAID_PRICE_SUMMARY}. For these prepaid plans, there are no recurring charges and access ends when the period expires. The Monthly plan is available as an auto-renewing subscription at flat ₹499 per month for up to 12 monthly cycles unless cancelled earlier. For the Monthly auto-renew subscription, your account is charged automatically at the end of each monthly billing cycle until cancelled or the 12-cycle maximum is reached. You can view your current cycle and cancel anytime before the next renewal date from Settings &gt; Billing.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">2. Cancellation and Access After Cancellation</h2>
@@ -46,7 +46,7 @@ export default function RefundPolicyPage() {
             . Cancellation takes effect at the end of your current monthly paid period. You will retain full Pro access until that date, and no further renewal charges will occur.
           </li>
           <li>
-            If you decide to stop using CareerMonke before your paid period ends, you keep full premium access until the end of the period you already paid for. We do not provide prorated or partial-month refunds.
+            If you decide to stop using Career Monke before your paid period ends, you keep full premium access until the end of the period you already paid for. We do not provide prorated or partial-month refunds.
           </li>
           <li>
             When a plan period ends, premium features and remaining plan quotas expire automatically. Your account, profile, resumes, and saved jobs stay available on the free tier.
@@ -65,7 +65,7 @@ export default function RefundPolicyPage() {
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">3. Digital Services &amp; All Sales Final</h2>
         <p className="mb-2">
-          CareerMonke provides instant digital access to job discovery tools and AI generation credits. Because our products are digital services delivered immediately, all sales are final once access or credits are granted. We do not provide refunds or credits for unused time, unused generation sets, or expired add-on packs.
+          Career Monke provides instant digital access to job discovery tools and AI generation credits. Because our products are digital services delivered immediately, all sales are final once access or credits are granted. We do not provide refunds or credits for unused time, unused generation sets, or expired add-on packs.
         </p>
 
         <h2 className="text-base font-semibold text-[#09090B] mt-6 mb-2">4. Exceptions: Duplicate or Failed-But-Debited Payments</h2>
