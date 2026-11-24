@@ -25,7 +25,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
-from .persistence import db_error_diagnostic, prevalidate_jobs, rejection
+from .persistence import db_error_diagnostic, is_duplicate_apply_url, prevalidate_jobs, rejection, sanitize_salaries
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 DEFAULT_SEEDS_PATH = Path(__file__).resolve().parent / "company_seeds.json"
@@ -549,6 +549,8 @@ class SupabaseSetDiffWriter:
             return "error", f"Job insert exception: {redact_sensitive_params(str(exc))}"
         if resp.status_code >= 300:
             code, reason = db_error_diagnostic(resp.status_code, resp.text)
+            if is_duplicate_apply_url(resp.status_code, resp.text):
+                return "duplicate", reason
             return ("check" if code == "23514" and resp.status_code == 400 else "error"), reason
         try:
             data = resp.json()
@@ -563,11 +565,12 @@ class SupabaseSetDiffWriter:
         db_columns: set[str],
         stats: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Inserts a batch; returns the source rows confirmed persisted. A definitive 23514 rejection of the
-        atomic batch is isolated row by row (bounded by the batch size); every other failure stops writes."""
+        """Inserts a batch; returns the source rows confirmed persisted. A definitive 23514 (CHECK) or
+        jobs_apply_url_unique 23505 rejection of the atomic batch is isolated row by row (bounded by the batch
+        size); every other failure stops writes."""
         clean = [{k: v for k, v in row.items() if k in db_columns} for row in to_insert]
         outcome, payload = await self._post_jobs(client, clean)
-        if outcome == "check" and len(clean) > 1:
+        if outcome in ("check", "duplicate") and len(clean) > 1:
             persisted: list[dict[str, Any]] = []
             for row in to_insert:
                 persisted += await self._insert_jobs(client, [row], db_columns, stats)
@@ -576,6 +579,9 @@ class SupabaseSetDiffWriter:
             return persisted
         if outcome == "check":
             stats["rejected"].append(rejection(to_insert[0], "insert", payload, "23514"))
+            return []
+        if outcome == "duplicate":
+            stats["duplicate_skipped"].append(rejection(to_insert[0], "insert", payload, "23505"))
             return []
         if outcome == "error":
             self.failed_writes += len(clean)
@@ -590,6 +596,29 @@ class SupabaseSetDiffWriter:
             self.write_errors.append("Job insert response did not confirm every row")
             return []
         return list(to_insert)
+
+    async def _existing_apply_urls(self, client: httpx.AsyncClient, urls: list[Any]) -> set[str]:
+        """apply_urls already owned by some row (any source). A failed lookup stops writes, never guesses."""
+        wanted = sorted({u for u in urls if isinstance(u, str) and u})
+        found: set[str] = set()
+        for k in range(0, len(wanted), 20):  # 20 URLs per GET keeps the query string bounded
+            quoted = ",".join('"' + u.replace("\\", "\\\\").replace('"', '\\"') + '"' for u in wanted[k:k + 20])
+            try:
+                resp = await client.get(f"{self.base_url}/jobs", headers=self.headers,
+                                        params={"select": "id,apply_url", "apply_url": f"in.({quoted})"})
+                rows = resp.json() if resp.status_code == 200 else None
+            except Exception as exc:
+                self.failed_writes += 1
+                self.persistence_failed = True
+                self.write_errors.append(f"Jobs apply_url lookup exception: {redact_sensitive_params(str(exc))}")
+                return found
+            if not isinstance(rows, list):
+                self.failed_writes += 1
+                self.persistence_failed = True
+                self.write_errors.append(f"Jobs apply_url lookup error {resp.status_code if resp.status_code != 200 else 'invalid response'}")
+                return found
+            found.update(str(r.get("apply_url")) for r in rows if isinstance(r, dict) and r.get("apply_url"))
+        return found
 
     async def sync_jobs_set_diff(
         self,
@@ -608,12 +637,15 @@ class SupabaseSetDiffWriter:
             "persisted_ids": [],
             "persisted_source_keys": [],
             "rejected": [],
+            "duplicate_skipped": [],
+            "salary_sanitized": [],
         }
         persisted_source_keys: set[tuple[str, str]] = set()
         inserted_keys: set[tuple[str, str]] = set()
         updated_keys: set[tuple[str, str]] = set()
         batch_size = 50
         # Shared CHECK-constraint validator: invalid rows are reported individually, valid rows continue.
+        jobs, stats["salary_sanitized"] = sanitize_salaries(jobs)
         jobs, stats["rejected"] = prevalidate_jobs(jobs)
 
         db_columns = {
@@ -663,15 +695,35 @@ class SupabaseSetDiffWriter:
             })
             return stats
 
+        partitions: dict[int, tuple[list[dict[str, Any]], list[tuple[str, dict[str, Any]]], list[str]]] = {}
         for i in range(0, len(jobs), batch_size):
             chunk = jobs[i : i + batch_size]
             for j in chunk:
                 slug = j.get("company_slug")
                 if slug and slug in company_id_map:
                     j["company_id"] = company_id_map[slug]
+            partitions[i] = partition_set_diff(chunk, existing_by_start[i])
 
-            existing_rows = existing_by_start[i]
-            to_insert, to_update, unchanged_ids = partition_set_diff(chunk, existing_rows)
+        # Identity is the source key; apply_url is unique too. A planned insert whose apply_url another row
+        # already owns (or an earlier row of this run claims) is that existing job: skip it, never a second row.
+        existing_urls = await self._existing_apply_urls(client, [row.get("apply_url") for p in partitions.values() for row in p[0]])
+        if self.persistence_failed:
+            stats.update({"failed_writes": self.failed_writes, "persistence_failed": True, "write_errors": self.write_errors})
+            return stats
+        claimed_urls: set[str] = set()
+
+        for i in range(0, len(jobs), batch_size):
+            chunk = jobs[i : i + batch_size]
+            planned_inserts, to_update, unchanged_ids = partitions[i]
+            to_insert = []
+            for row in planned_inserts:
+                url = row.get("apply_url")
+                if isinstance(url, str) and url and (url in existing_urls or url in claimed_urls):
+                    stats["duplicate_skipped"].append(rejection(row, "prelookup", "apply_url already owned by another job"))
+                    continue
+                if isinstance(url, str) and url:
+                    claimed_urls.add(url)
+                to_insert.append(row)
 
             # Unchanged jobs must still refresh last_seen_at
             if unchanged_ids:
@@ -754,6 +806,8 @@ class SupabaseSetDiffWriter:
                         code, reason = db_error_diagnostic(upd_resp.status_code, upd_resp.text)
                         if code == "23514" and upd_resp.status_code == 400:  # definitive CHECK rejection of this row only
                             stats["rejected"].append(rejection(row, "update", reason, code))
+                        elif is_duplicate_apply_url(upd_resp.status_code, upd_resp.text):  # another row owns the URL
+                            stats["duplicate_skipped"].append(rejection(row, "update", reason, code))
                         else:
                             self.failed_writes += 1
                             self.persistence_failed = True
@@ -858,6 +912,7 @@ async def run_ingestion(
                 all_jobs.extend(res)
 
         fetched_count = len(all_jobs)
+        all_jobs, sanitized = sanitize_salaries(all_jobs)
         all_jobs, rejected = prevalidate_jobs(all_jobs)  # before dedupe: dedupe ranks on int(source_priority)
         validated_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
@@ -921,6 +976,8 @@ async def run_ingestion(
         "errors": errors,
         "validated": validated_count,
         "rejected": rejected + list(db_stats.get("rejected") or []),
+        "salary_sanitized_count": len(sanitized),
+        "duplicate_skipped_count": len(db_stats.get("duplicate_skipped") or []),
         "sample": all_jobs[0] if all_jobs else None,
     }
 
