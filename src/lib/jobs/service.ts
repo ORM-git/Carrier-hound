@@ -72,6 +72,8 @@ export interface ProUnlockError {
 
 export interface GetJobsOptions {
   baseUrl?: string;
+  /** Aborts the list request (e.g. a stale next-page load after filters change). */
+  signal?: AbortSignal;
   page?: number;
   pageSize?: number;
   category?: string;
@@ -430,7 +432,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (search && search.trim()) recParams.set("search", search.trim());
 
         // A failed request is a retryable error, never a silently unpersonalized or empty feed.
-        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers }).catch(() => null);
+        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers, signal: options.signal }).catch(() => null);
         if (!recRes) return DEGRADED_JOBS_RESULT;
         if (recRes.status === 403) {
           return {
@@ -491,7 +493,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (options.eligibility) params.set("eligibility", options.eligibility);
       if (options.currency) params.set("currency", options.currency);
 
-      const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers });
+      const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers, signal: options.signal });
       if (res.status === 403) {
         return {
           jobs: [],

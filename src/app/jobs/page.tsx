@@ -916,6 +916,10 @@ function JobsPageInner() {
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
+  // One next-page request at a time; aborted when the list query (filters/tab/search/sort) changes.
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
@@ -956,6 +960,10 @@ function JobsPageInner() {
     }
     lastQueryKeyRef.current = queryKey;
 
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = null;
+    setLoadingMore(false);
+    setLoadMoreError(false);
     setLoadingJobs(true);
     setPage(1);
     setNextCursor(null);
@@ -1024,9 +1032,13 @@ function JobsPageInner() {
   ]);
 
   const handleLoadMore = async () => {
-    if (loadingMore) return;
+    if (loadMoreAbortRef.current) return; // a page is already in flight
+    const controller = new AbortController();
+    loadMoreAbortRef.current = controller;
+    const queryKey = lastQueryKeyRef.current;
     const nextPage = page + 1;
     setLoadingMore(true);
+    setLoadMoreError(false);
     try {
       const isRecommended = activeTab === "recommended";
       const effectiveSortBy = isRecommended ? "match" : sortBy;
@@ -1054,18 +1066,54 @@ function JobsPageInner() {
         sortBy: effectiveSortBy,
         candidate: effectiveCandidate,
         preferences: effectivePreferences,
+        signal: controller.signal,
       });
-      setLiveJobs((prev) => [...prev, ...res.jobs]);
+      // Stale: the list query changed while this page was loading; its reset already cleared state.
+      if (controller.signal.aborted || queryKey !== lastQueryKeyRef.current) return;
+      if (res.isDegraded || res.error) {
+        setLoadMoreError(true);
+        return;
+      }
+      // Keep server order; skip ids already shown (overlapping pages after inserts).
+      setLiveJobs((prev) => {
+        const seen = new Set(prev.map((j) => j.id));
+        return [...prev, ...res.jobs.filter((j) => !seen.has(j.id))];
+      });
       setNextCursor(res.nextCursor ?? null);
       setHasNextPage(Boolean(res.hasNextPage));
       setPage(nextPage);
       if (res.totalCount) setTotalCount(res.totalCount);
     } catch (e) {
+      if (controller.signal.aborted || queryKey !== lastQueryKeyRef.current) return;
       console.warn("Failed to load more jobs", e);
+      setLoadMoreError(true);
     } finally {
-      setLoadingMore(false);
+      if (loadMoreAbortRef.current === controller) {
+        loadMoreAbortRef.current = null;
+        setLoadingMore(false);
+      }
     }
   };
+
+  const canLoadMore = activeTab === "recommended" && (hasNextPage || (totalCount > 0 && liveJobs.length < totalCount));
+
+  // Mobile only: load the next page when the sentinel above the manual button scrolls into view.
+  // Pauses on error (manual Retry) and at the end; re-armed after each page, never loops on its own.
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el || !canLoadMore || loadMoreError || loadingJobs || typeof IntersectionObserver === "undefined") return;
+    if (!window.matchMedia("(max-width: 639px)").matches) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) handleLoadMore();
+      },
+      { rootMargin: "400px 0px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+    // handleLoadMore reads current state; re-arm when the list grows or the load state changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canLoadMore, loadMoreError, loadingJobs, loadingMore, liveJobs.length]);
 
   const savedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "saved"), [trackedApplications]);
   const appliedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "applied"), [trackedApplications]);
@@ -2484,9 +2532,16 @@ function JobsPageInner() {
                         );
                       })}
 
-                      {/* Load More Pagination: strictly scoped to tabs with active server-side pagination */}
-                      {activeTab === "recommended" && (hasNextPage || (totalCount > 0 && liveJobs.length < totalCount)) && (
-                        <div className="pt-4 text-center">
+                      {/* Load More Pagination: strictly scoped to tabs with active server-side pagination.
+                          Mobile auto-loads via the sentinel; the button stays as the accessible manual fallback. */}
+                      {canLoadMore && (
+                        // overflow-anchor:none: otherwise scroll anchoring keeps this block in view as cards are
+                        // inserted above it, the sentinel stays visible and pages chain-load.
+                        <div className="pt-4 text-center [overflow-anchor:none]" aria-live="polite">
+                          <div ref={loadMoreSentinelRef} data-testid="jobs-load-more-sentinel" aria-hidden="true" />
+                          {loadMoreError && (
+                            <p className="text-xs text-[#B91C1C] pb-2" role="alert">Couldn&apos;t load more jobs.</p>
+                          )}
                           <button
                             type="button"
                             onClick={handleLoadMore}
@@ -2495,11 +2550,18 @@ function JobsPageInner() {
                           >
                             {loadingMore
                               ? "Loading Positions..."
+                              : loadMoreError
+                              ? "Retry"
                               : totalCount > liveJobs.length
                               ? `Load More Verified Positions (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`
                               : "Load More Verified Positions"}
                           </button>
                         </div>
+                      )}
+                      {activeTab === "recommended" && !canLoadMore && page > 1 && (
+                        <p data-testid="jobs-list-end" className="pt-4 text-center text-xs text-[#475569]">
+                          You&apos;ve reached the end of this list.
+                        </p>
                       )}
                     </div>
                   )}
