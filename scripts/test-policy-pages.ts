@@ -1,7 +1,7 @@
 /**
  * scripts/test-policy-pages.ts
  *
- * Verification suite for the 4 CareerMonke legal & policy routes:
+ * Verification suite for the 4 Career Monke legal & policy routes:
  * 1. /terms-and-conditions (Google Doc Tab 1)
  * 2. /privacy-policy and /privacy (Google Doc Tab 2)
  * 3. /contact (Google Doc Tab 3)
@@ -100,7 +100,7 @@ async function main() {
   const termsPhrases = [
     "Terms and Conditions",
     "Olive Ridley Media Private Limited",
-    "CareerMonke",
+    "Career Monke",
     "1. Services Provided",
     "2. Eligibility and User Accounts",
     "3. Plans, Pricing, and Add-ons",
@@ -204,7 +204,7 @@ async function main() {
   const contactPhrases = [
     "Contact Us",
     "Brand Platform",
-    "CareerMonke",
+    "Career Monke",
     "Corporate Legal Entity",
     "Olive Ridley Media Private Limited",
     "Registered Office:",
@@ -254,8 +254,8 @@ async function main() {
     "Footer legal line must feature exact line '© 2026 Olive Ridley Media Private Limited. All rights reserved.'"
   );
   assert.ok(
-    !footerContent.includes("CareerMonke Inc. All rights reserved."),
-    "Footer legal line must NOT feature CareerMonke Inc."
+    !footerContent.includes("Career Monke Inc. All rights reserved."),
+    "Footer legal line must NOT feature Career Monke Inc."
   );
   console.log("  [PASS-LOCAL] Footer contains links to /refund-policy and /contact, and excludes /shipping-and-delivery");
   console.log("  [PASS-LOCAL] Footer legal line features Olive Ridley Media Private Limited");

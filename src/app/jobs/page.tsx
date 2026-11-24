@@ -1622,6 +1622,19 @@ function JobsPageInner() {
   // One score per job + candidate snapshot + scoring version: remember what each card showed, and give the
   // detail the feed score, else that remembered score (reload / job not on this page), else its computed fallback.
   const scoreSnap = matchScoreSnapshot(candidate, preferences?.updatedAt);
+  // A saved-input revision also refreshes an already-open detail. Never replace a different selection.
+  useEffect(() => {
+    const id = selectedJob?.id;
+    if (!id) return;
+    let cancelled = false;
+    getLiveJobById(id, isPro).then((fresh) => {
+      if (cancelled || !fresh) return;
+      setSelectedJob((current) => current?.id === id ? { ...current, ...fresh } : current);
+    }).catch((error) => console.warn("Failed to refresh selected job score:", error));
+    return () => { cancelled = true; };
+    // selectedJob identity, rather than the full object, avoids a refresh loop after the result is set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoreSnap, selectedJob?.id, isPro]);
   useEffect(() => {
     rememberMatchScores(scoreSnap, liveJobs);
   }, [scoreSnap, liveJobs]);

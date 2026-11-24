@@ -49,12 +49,12 @@ function run() {
   // -------------------------------------------------------------------------
   // 1. MODAL CARD DIMENSIONS, PADDING, BACKDROP & MOBILE DRAWER SPEC
   // -------------------------------------------------------------------------
-  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-black/40") && loginCode.includes("z-[70]");
-  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-black/40") && signupCode.includes("z-[70]");
+  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-[#F8FAFC]") && loginCode.includes("z-[70]");
+  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-[#F8FAFC]") && signupCode.includes("z-[70]");
   if (!hasLoginBackdrop || !hasSignupBackdrop) {
-    failures.push("BACKDROP FAIL: Both /login and /signup must render a dimmed backdrop with z-[70] (above CookieNotice z-50 and nav z-[60]).");
+    failures.push("BACKDROP FAIL: Both /login and /signup must render an opaque backdrop with z-[70] (above CookieNotice z-50 and nav z-[60]).");
   } else {
-    console.log("  [PASS] dimmed backdrop: Dimmed backdrop present with z-[70] over auth route page");
+    console.log("  [PASS] opaque backdrop: Opaque backdrop present with z-[70] over auth route page");
   }
 
   const hasLoginCardZ = loginCode.includes("z-[71]");

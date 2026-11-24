@@ -74,12 +74,12 @@ function run() {
     console.log("  [PASS] dual-mode dimensions: narrow 72px (w-[72px]) and expanded 240px (w-[240px]) desktop modes supported");
   }
 
-  // 1b. CareerMonke logo mark at the top
-  const hasBrandIcon = railCode.includes("BrandIcon") && railCode.includes("CareerMonke");
+  // 1b. Career Monke logo mark at the top
+  const hasBrandIcon = railCode.includes("BrandIcon") && railCode.includes('aria-label="Career Monke Jobs"');
   if (!hasBrandIcon) {
-    failures.push("RAIL FAIL: Rail must have CareerMonke logo mark at the top.");
+    failures.push("RAIL FAIL: Rail must have Career Monke logo mark at the top.");
   } else {
-    console.log("  [PASS] rail branding: small CareerMonke logo mark at top");
+    console.log("  [PASS] rail branding: small Career Monke logo mark at top");
   }
 
   // 1c. Vertical nav items: Jobs, Resume, Profile, Tracker, Radar (Dashboard was retired; Jobs is home)
@@ -133,7 +133,7 @@ function run() {
   }
 
   // -------------------------------------------------------------------------
-  // 2. COACHING-STYLE HOVER & KEYBOARD FOCUS TREATMENT (CareerMonke Blue Branding)
+  // 2. COACHING-STYLE HOVER & KEYBOARD FOCUS TREATMENT (Career Monke Blue Branding)
   // -------------------------------------------------------------------------
   // 2a. Inactive hover: soft light-blue tint background #F0F7FF, vibrant blue text #2563EB
   const hasCoachingHoverBg = railCode.includes("hover:bg-[#F0F7FF]");

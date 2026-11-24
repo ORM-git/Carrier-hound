@@ -42,15 +42,15 @@ async function main() {
   // Test 1: Page Placement in src/app/page.tsx
   console.log("\nTEST 1: Section Placement in src/app/page.tsx...");
   assert(
-    pageContent.includes('aria-label="CareerMonke in numbers"'),
-    "src/app/page.tsx must contain stats section with aria-label='CareerMonke in numbers'"
+    pageContent.includes('aria-label="Career Monke in numbers"'),
+    "src/app/page.tsx must contain stats section with aria-label='Career Monke in numbers'"
   );
 
   // Composite page: the new top fold (kicker + View Jobs CTA) replaced the old hero and demo.
   const heroIdx = pageContent.indexOf('<p className="kicker">Skip LinkedIn competition</p>');
   const demoIdx = pageContent.indexOf('className="btn-cta"');
   const stripIdx = pageContent.indexOf('<section className="ls"');
-  const statsIdx = pageContent.indexOf('aria-label="CareerMonke in numbers"');
+  const statsIdx = pageContent.indexOf('aria-label="Career Monke in numbers"');
   const featuresIdx = pageContent.indexOf('id="feat-h"');
 
   assert(heroIdx !== -1, "Hero must be present in src/app/page.tsx");
