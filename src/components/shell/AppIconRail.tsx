@@ -79,15 +79,6 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
   const pathname = usePathname() || currentRoute || "/jobs";
   const { isExpanded, toggle } = useSidebarMode();
   const cookieNoticeHeight = useCookieNoticeHeight();
-  const [isDetailOpen, setIsDetailOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    const handleDetailToggle = (e: any) => {
-      setIsDetailOpen(Boolean(e.detail?.isOpen));
-    };
-    window.addEventListener("careermonke_detail_open", handleDetailToggle);
-    return () => window.removeEventListener("careermonke_detail_open", handleDetailToggle);
-  }, []);
 
   return (
     <>
@@ -277,9 +268,8 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
         style={{
           bottom: `${cookieNoticeHeight}px`,
         }}
-        className={`fixed inset-x-0 h-16 bg-white border-t border-[#E2E8F0] z-40 items-center justify-around px-2 shadow-sm transition-[bottom] duration-200 ${
-          isDetailOpen ? "hidden" : "flex md:hidden"
-        }`}
+        // Always shown below md, including while a job detail is open (CM mobile item 16).
+        className="fixed inset-x-0 h-16 bg-white border-t border-[#E2E8F0] z-40 flex md:hidden items-center justify-around px-2 shadow-sm transition-[bottom] duration-200"
       >
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;

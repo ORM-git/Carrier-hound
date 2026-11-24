@@ -38,6 +38,25 @@ secret, notify address). Whether each host has every variable set is unproven fr
   That is a plan, not an existing environment.
 - `.env.example` sets `NEXT_PUBLIC_BILLING_ENABLED=true` and `NEXT_PUBLIC_AUTORENEW_ENABLED=false` (prepaid one-time Razorpay checkout active, auto-renew mandates disabled).
 
+### Pointing Cloudflare Pages previews at a staging Supabase project
+
+Observed 2026-11-23: the branch preview `cm-mobile-jobright-fixes.carrier-hound.pages.dev` is built against the
+same Supabase project as careermonke.com, so sign-ups, password resets and rate-limit tests on a preview hit
+production auth. To separate them (owner-side, dashboard only, no code change):
+
+1. Create a separate Supabase project for staging (fake data only). In it, enable the Email provider with
+   "Confirm email" on (plus Google if needed), and add `https://*.carrier-hound.pages.dev/auth/callback` under
+   Authentication → URL Configuration → Redirect URLs.
+2. Cloudflare Pages → `carrier-hound` → Settings → Variables and Secrets → **Preview** environment (not
+   Production). Set these names to the staging project's values; encrypt the service-role ones:
+   - `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`: staging project URL
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_ANON_KEY`: staging anon key
+   - `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SERVICE_KEY`: staging service-role key (secret)
+3. `NEXT_PUBLIC_*` values are compiled into the build: after saving, retry the latest preview deployment (or push
+   a commit), then confirm the preview's JS bundle references the staging project ref, not production's.
+4. Payments, Redis, email and other services also inherit production values unless their Preview variables are
+   overridden. Review them before running any preview check that writes data or sends mail.
+
 ## Parity (partial)
 
 - Production is Cloudflare Pages with the edge build; the Netlify backup uses the static export plus functions

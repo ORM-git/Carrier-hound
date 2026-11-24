@@ -6,6 +6,7 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { createLogger } from "@/lib/observability/logger";
 import { COUNTRY_CODE_TO_NAME, SUPPORTED_COUNTRIES } from "@/lib/countries";
 import { COUNTRY_MIGRATION, isMissingCountryColumnError } from "@/lib/auth/countryColumns";
+import { parseWorkAuth, serializeWorkAuth } from "@/lib/onboarding/workAuth";
 
 const log = createLogger({ context: { route: "/api/onboarding" } });
 
@@ -194,11 +195,12 @@ export async function POST(req: Request) {
     );
   }
 
-  // 4. Validate Work Authorization (Required, never defaulted)
-  if (typeof body.workAuth !== "string" || !body.workAuth.trim()) {
+  // 4. Validate Work Authorization (Required, never defaulted): only {1}, {2}, {3} or {2,3}
+  const workAuthIds = parseWorkAuth(body.workAuth);
+  if (!workAuthIds || workAuthIds.length === 0) {
     return jsonResponse({ error: "Work authorization status is required" }, 400);
   }
-  const sanitizedWorkAuth = body.workAuth.trim().slice(0, 100);
+  const sanitizedWorkAuth = serializeWorkAuth(workAuthIds);
 
   // Fetch existing DB preferences to preserve old locations, experience level, currency, and work model.
   // Only query live (non-soft-deleted) preferences; a soft-deleted row from an interrupted deletion must not leak old data.

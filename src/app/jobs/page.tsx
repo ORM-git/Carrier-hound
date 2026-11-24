@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, LiveJob, isEarlyApplicant, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -31,14 +31,14 @@ import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
-import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, displayMatchScore, toFitInput } from "@/lib/matcher/scoring";
+import { matchScoreSnapshot, recallMatchScore, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
   MapPin,
   Laptop,
   RotateCcw,
-  X,
   Heart,
   Sparkles,
   Briefcase,
@@ -63,6 +63,8 @@ import {
 } from "@/lib/jobs/experienceLevels";
 import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
+import { workModelLabel } from "@/lib/jobs/workModel";
+import { appendPage, createNextPageLoader } from "@/lib/jobs/pagination";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -262,47 +264,21 @@ function getCompanyTagPills(category?: string | null): string[] {
   return pills;
 }
 
+// Card score: the same displayMatchScore contract as the detail header and Match Insights.
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
-  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) {
-    return Math.max(10, Math.min(99, Math.round(job.matchScore)));
+  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) return displayMatchScore(job, null);
+  if (!candidate || !candidate.confirmedAt) return null;
+  try {
+    return displayMatchScore(job, computeFitDiagnostics(candidate, toFitInput(job)));
+  } catch {
+    return null;
   }
-  if (candidate && candidate.confirmedAt) {
-    try {
-      const res = computeFitDiagnostics(candidate, {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
-        category: job.category,
-        skills: job.skills,
-        description: job.description,
-        salary_text: job.salary,
-        apply_url: job.applyUrl,
-      });
-      if (res && typeof res.score === "number" && !isNaN(res.score)) {
-        return Math.max(10, Math.min(99, Math.round(res.score)));
-      }
-    } catch {}
-  }
-  return null;
 }
 
 function getJobDiagnostics(job: LiveJob, candidate: CandidateProfile | null): FitDiagnosticsResult | null {
   if (candidate && candidate.confirmedAt) {
     try {
-      const res = computeFitDiagnostics(candidate, {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
-        category: job.category,
-        skills: job.skills,
-        description: job.description,
-        salary_text: job.salary,
-        apply_url: job.applyUrl,
-      });
+      const res = computeFitDiagnostics(candidate, toFitInput(job));
       if (res && typeof res.score === "number" && !isNaN(res.score)) {
         return res;
       }
@@ -338,11 +314,14 @@ function CircularMatchRing({
   score,
   size = 56,
   strokeWidth = 4.5,
+  light = false,
 }: {
   score: number;
   size?: number;
   strokeWidth?: number;
   isPro?: boolean; // accepted for call-site compatibility; not rendered
+  /** White-card variant (mobile list): CM-blue arc on a pale track, dark text. */
+  light?: boolean;
 }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -359,7 +338,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#1E293B"
+          stroke={light ? "#DBEAFE" : "#1E293B"}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
@@ -367,7 +346,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#2DD4BF"
+          stroke={light ? "#2563EB" : "#2DD4BF"}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -377,7 +356,7 @@ function CircularMatchRing({
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`${textClass} text-white leading-none tracking-tight`}>
+        <span className={`${textClass} ${light ? "text-[#0F172A]" : "text-white"} leading-none tracking-tight`}>
           {score}%
         </span>
       </div>
@@ -470,7 +449,6 @@ function JobsPageInner() {
   const inFlightSaveRef = useRef<Set<string>>(new Set());
   const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const filterDialogRef = useRef<HTMLDivElement | null>(null);
-  const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const hasInitializedFromUrl = useRef(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isRetryingUnlock, setIsRetryingUnlock] = useState(false);
@@ -595,10 +573,6 @@ function JobsPageInner() {
           if (job) {
             if (job.isExpired || job.status === "expired" || job.status === "closed") {
               setDetailStatus("expired");
-            }
-            if (typeof job.matchScore !== "number" && candidate) {
-              const score = getJobMatchScore(job, candidate);
-              if (score !== null) job.matchScore = score;
             }
             setSelectedJob(job);
           } else {
@@ -731,33 +705,6 @@ function JobsPageInner() {
     };
   }, [mobileFiltersOpen]);
 
-  // Keep active tab in view and hide mobile bottom nav while full-screen job detail is open
-  useEffect(() => {
-    if (activeTabRef.current) {
-      activeTabRef.current.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("careermonke_detail_open", { detail: { isOpen: Boolean(selectedJob) } })
-    );
-    if (typeof document !== "undefined") {
-      if (selectedJob) {
-        document.body.classList.add("cm-job-detail-open");
-      } else {
-        document.body.classList.remove("cm-job-detail-open");
-      }
-    }
-    return () => {
-      window.dispatchEvent(
-        new CustomEvent("careermonke_detail_open", { detail: { isOpen: false } })
-      );
-      if (typeof document !== "undefined") {
-        document.body.classList.remove("cm-job-detail-open");
-      }
-    };
-  }, [selectedJob]);
 
   // Synchronize browser back/forward buttons with all filters, tab, and in-place detail view
   useEffect(() => {
@@ -946,6 +893,10 @@ function JobsPageInner() {
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
+  // One next-page request at a time; reset (abort + stale) when the list query (filters/tab/search/sort) changes.
+  const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
@@ -986,6 +937,9 @@ function JobsPageInner() {
     }
     lastQueryKeyRef.current = queryKey;
 
+    pageLoaderRef.current.reset();
+    setLoadingMore(false);
+    setLoadMoreError(false);
     setLoadingJobs(true);
     setPage(1);
     setNextCursor(null);
@@ -1054,48 +1008,81 @@ function JobsPageInner() {
   ]);
 
   const handleLoadMore = async () => {
-    if (loadingMore) return;
+    const loader = pageLoaderRef.current;
+    if (loader.busy) return;
     const nextPage = page + 1;
+    const isRecommended = activeTab === "recommended";
+    const effectiveSortBy = isRecommended ? "match" : sortBy;
+    const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
+    const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
     setLoadingMore(true);
-    try {
-      const isRecommended = activeTab === "recommended";
-      const effectiveSortBy = isRecommended ? "match" : sortBy;
-      const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
-      const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
+    setLoadMoreError(false);
 
-      const res = await getLiveJobs({
-        page: nextPage,
-        pageSize: 25,
-        cursor: nextCursor ?? undefined,
-        category: selectedCategory,
-        search: debouncedSearch,
-        remoteOnly,
-        location: selectedLocation,
-        level: selectedLevel,
-        jobType: selectedJobType,
-        countryCode: selectedCountryCode,
-        workModel: selectedWorkModel,
-        datePosted: selectedDatePosted,
-        experience: selectedExperience,
-        salaryMin: selectedSalaryMin,
-        sourceType: selectedSourceType,
-        company: selectedCompany,
-        isPro,
-        sortBy: effectiveSortBy,
-        candidate: effectiveCandidate,
-        preferences: effectivePreferences,
-      });
-      setLiveJobs((prev) => [...prev, ...res.jobs]);
-      setNextCursor(res.nextCursor ?? null);
-      setHasNextPage(Boolean(res.hasNextPage));
-      setPage(nextPage);
-      if (res.totalCount) setTotalCount(res.totalCount);
-    } catch (e) {
-      console.warn("Failed to load more jobs", e);
-    } finally {
-      setLoadingMore(false);
-    }
+    const outcome = await loader.load(
+      (signal) =>
+        getLiveJobs({
+          page: nextPage,
+          pageSize: 25,
+          cursor: nextCursor ?? undefined,
+          category: selectedCategory,
+          search: debouncedSearch,
+          remoteOnly,
+          location: selectedLocation,
+          level: selectedLevel,
+          jobType: selectedJobType,
+          countryCode: selectedCountryCode,
+          workModel: selectedWorkModel,
+          datePosted: selectedDatePosted,
+          experience: selectedExperience,
+          salaryMin: selectedSalaryMin,
+          sourceType: selectedSourceType,
+          company: selectedCompany,
+          isPro,
+          sortBy: effectiveSortBy,
+          candidate: effectiveCandidate,
+          preferences: effectivePreferences,
+          signal,
+        }),
+      (res) => {
+        if (res.isDegraded || res.error) {
+          setLoadMoreError(true);
+          return;
+        }
+        // Server order kept; ids already shown or repeated within this page are skipped.
+        setLiveJobs((prev) => appendPage(prev, res.jobs));
+        setNextCursor(res.nextCursor ?? null);
+        setHasNextPage(Boolean(res.hasNextPage));
+        setPage(nextPage);
+        if (res.totalCount) setTotalCount(res.totalCount);
+      }
+    );
+    // A stale outcome means the query changed; its reset already cleared loading/error state.
+    if (outcome === "stale") return;
+    if (outcome === "error") setLoadMoreError(true);
+    setLoadingMore(false);
   };
+
+  // getLiveJobs always reports hasNextPage; a totalCount fallback would show a phantom button once
+  // duplicates are dropped (shown < total while the server has no next page).
+  const canLoadMore = activeTab === "recommended" && hasNextPage;
+
+  // Mobile only: load the next page when the sentinel above the manual button scrolls into view.
+  // Pauses on error (manual Retry) and at the end; re-armed after each page, never loops on its own.
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el || !canLoadMore || loadMoreError || loadingJobs || typeof IntersectionObserver === "undefined") return;
+    if (!window.matchMedia("(max-width: 639px)").matches) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) handleLoadMore();
+      },
+      { rootMargin: "400px 0px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+    // handleLoadMore reads current state; re-arm when the list grows or the load state changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canLoadMore, loadMoreError, loadingJobs, loadingMore, liveJobs.length]);
 
   const savedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "saved"), [trackedApplications]);
   const appliedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "applied"), [trackedApplications]);
@@ -1524,7 +1511,8 @@ function JobsPageInner() {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
         if (fullJob) {
-          if (typeof job.matchScore === "number") {
+          // Reuse the list score only for the same score-input revision; otherwise the inputs changed.
+          if (typeof job.matchScore === "number" && fullJob.scoreRevision && fullJob.scoreRevision === job.scoreRevision) {
             fullJob.matchScore = job.matchScore;
           }
           setSelectedJob(fullJob);
@@ -1603,6 +1591,24 @@ function JobsPageInner() {
     ["Posted", selectedDatePosted],
     ["Company", selectedCompany],
   ].filter((row): row is [string, string] => Boolean(row[1]));
+
+  // One score per job + candidate snapshot + scoring version: remember what each card showed, and give the
+  // detail the feed score, else that remembered score (reload / job not on this page), else its computed fallback.
+  const scoreSnap = matchScoreSnapshot(candidate, preferences?.updatedAt);
+  useEffect(() => {
+    rememberMatchScores(scoreSnap, liveJobs);
+  }, [scoreSnap, liveJobs]);
+  // A detail fetch with a newer score-input revision makes that card's feed score stale: invalidate it there too.
+  useEffect(() => {
+    if (selectedJob) setLiveJobs((prev) => reconcileFeedWithDetail(prev, selectedJob));
+  }, [selectedJob]);
+  const detailJob = useMemo(() => {
+    if (!selectedJob) return null;
+    const job = withFeedScore(selectedJob, liveJobs);
+    if (typeof job.matchScore === "number") return job;
+    const remembered = recallMatchScore(scoreSnap, job);
+    return remembered === null ? job : { ...job, matchScore: remembered };
+  }, [selectedJob, liveJobs, scoreSnap]);
 
   // The listing view (not detail/loading) uses the desktop two-column grid with the right panel.
   const isListView = !detailLoading && !(detailStatus === "not-found" && !selectedJob) && !selectedJob;
@@ -1775,11 +1781,13 @@ function JobsPageInner() {
           user={user}
           isPro={isPro}
           hidePlanPill
+          // Mobile feed: Recommended / Saved / Applied only (External and search stay on sm+).
+          mobileTabs={isListView ? jobTabs.filter((tab) => tab.id !== "external") : undefined}
         />
         <main
           id="main-content"
           data-testid="jobs-main-content"
-          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:pt-4 space-y-4 sm:space-y-3 pb-44 sm:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
+          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 pb-4 sm:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
           {detailLoading ? (
             <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">
@@ -1829,7 +1837,7 @@ function JobsPageInner() {
             /* In-place job detail swap inside the same shell */
             <div className="max-w-[880px] w-full mx-auto">
               <JobDetailView
-                job={withFeedScore(selectedJob, liveJobs)}
+                job={detailJob ?? selectedJob}
                 candidate={candidate}
                 user={user}
                 isPro={isPro}
@@ -1862,76 +1870,7 @@ function JobsPageInner() {
             </div>
           ) : (
             <>
-              {/* Header Row: Tabs with Count Badges (compact mobile view <640px) */}
-              <div className="space-y-3 sm:hidden max-w-full">
-                {/* Mobile tabs (<640px) */}
-                <div className="relative max-w-full">
-                  <div className="flex items-center gap-1 p-1 pr-8 rounded-xl bg-slate-200/80 border border-slate-300/70 overflow-x-auto scrollbar-thin">
-                    {jobTabs.map((tab) => (
-                      <button
-                        key={tab.id}
-                        ref={tab.active ? activeTabRef : undefined}
-                        type="button"
-                        onClick={tab.onClick}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] shrink-0 ${
-                          tab.active
-                            ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                            : "text-[#334155] hover:text-[#0F172A]"
-                        }`}
-                      >
-                        <span>{tab.label}</span>
-                        {tab.id === "external" ? (
-                          !loadingJobs && externalJobsCount > 0 && (
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                                tab.active ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-[#334155]"
-                              }`}
-                            >
-                              {tab.count}
-                            </span>
-                          )
-                        ) : (
-                          tab.count !== undefined && (
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                                tab.active ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-[#334155]"
-                              }`}
-                            >
-                              {tab.count}
-                            </span>
-                          )
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-200 to-transparent rounded-r-xl" />
-                </div>
-
-                {/* Mobile search bar (<640px) */}
-                <div className="relative w-full">
-                  <Search className="w-4 h-4 text-[#475569] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    aria-label="Search by job title, company, or keyword"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by job title, company, or keyword..."
-                    className="w-full text-xs sm:text-sm pl-10 pr-11 py-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A] placeholder:text-[#475569] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shadow-none min-h-[44px]"
-                  />
-                  {search && (
-                    <button
-                      type="button"
-                      onClick={() => setSearch("")}
-                      aria-label="Clear search text"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-4 sm:space-y-3 lg:col-start-1">
+              <div className="space-y-2 sm:space-y-3 lg:col-start-1">
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
                 <JobFilterBar
@@ -1977,7 +1916,7 @@ function JobsPageInner() {
               </div>
 
               {/* Jobs List Feed & Right Rail (Main Column ~973px, Right Rail ~316px, Gap 32px on Desktop) */}
-              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 pt-2 sm:pt-0 lg:col-start-1">
+              <div className="flex flex-col lg:flex-row gap-8 items-start w-full min-w-0 lg:col-start-1">
                 {/* Left Feed Column: about 973px max on wide desktop, flex-1 */}
                 <div className="w-full lg:max-w-[973px] flex-1 space-y-3 min-w-0">
                   {loadingJobs ? (
@@ -2012,7 +1951,7 @@ function JobsPageInner() {
                     </div>
                   ) : isDegraded ? (
                     /* Degraded / HTTP 503 error state */
-                    <div data-testid="search-degraded-state" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-10 sm:p-14 text-center space-y-3 shadow-none">
+                    <div data-testid="search-degraded-state" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 sm:p-14 text-center space-y-3 shadow-none">
                       <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
                         <AlertCircle className="w-6 h-6" />
                       </div>
@@ -2037,7 +1976,7 @@ function JobsPageInner() {
                     </div>
                   ) : displayedJobs.length === 0 ? (
                     /* Empty state distinguishing no saved vs filtered vs no applied */
-                    <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-10 sm:p-14 text-center space-y-3 shadow-none">
+                    <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 sm:p-14 text-center space-y-3 shadow-none">
                       <div className="w-12 h-12 rounded-full bg-[#F1F5F9] text-[#475569] flex items-center justify-center mx-auto">
                         {activeTab === "saved" || activeTab === "liked" ? (
                           <Heart className="w-6 h-6 text-[#475569]" />
@@ -2103,9 +2042,6 @@ function JobsPageInner() {
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
-                        if (matchScore !== null) {
-                          job.matchScore = matchScore;
-                        }
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
@@ -2144,6 +2080,7 @@ function JobsPageInner() {
                                   {/* 72px company logo square, radius 8, minimal padding */}
                                   <CompanyLogo
                                     company={job.company}
+                                    locked={!isPro}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     domain={job.companyDomain}
@@ -2192,7 +2129,7 @@ function JobsPageInner() {
                                     {/* Company and category/type pills */}
                                     <div className="flex items-center gap-1.5 text-[13px] text-[#475569] min-w-0 flex-wrap h-5">
                                       <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-medium text-[#334155]" : "font-medium text-[#334155]"}`}>
-                                        {job.company || "Verified Employer"}
+                                        {(isPro && job.company) || "Verified Employer"}
                                       </span>
                                       {companyPills.length > 0 && (
                                         <div className="inline-flex items-center gap-1.5 min-w-0" data-testid="job-card-category-pills">
@@ -2400,11 +2337,12 @@ function JobsPageInner() {
 
                             {/* MOBILE VIEW (under sm: 390px, 360px) */}
                             <div className="flex sm:hidden flex-col justify-between w-full space-y-3">
-                              {/* Top Row: 32px logo beside company & industry, compact match-percentage badge (roughly 54x30) at top right */}
+                              {/* Top Row: 32px logo beside company & industry, 52px match ring (J01 weight) and menu at top right */}
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                   <CompanyLogo
                                     company={job.company}
+                                    locked={!isPro}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     domain={job.companyDomain}
@@ -2413,7 +2351,7 @@ function JobsPageInner() {
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 text-[14px] text-[#475569] truncate h-5">
                                       <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-semibold text-[#0F172A]" : "font-semibold text-[#0F172A]"}`}>
-                                        {job.company || "Verified Employer"}
+                                        {(isPro && job.company) || "Verified Employer"}
                                       </span>
                                     </div>
                                     {(job.category || job.remote) ? (
@@ -2430,11 +2368,13 @@ function JobsPageInner() {
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {matchScore !== null ? (
                                     <div
-                                      className="w-[54px] h-[30px] rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-xs font-bold text-emerald-600"
+                                      data-testid="mobile-card-score"
+                                      className="flex"
+                                      role="img"
                                       title={`Fit Match: ${matchScore}%`}
                                       aria-label={`Fit Match: ${matchScore}%`}
                                     >
-                                      {matchScore}%
+                                      <CircularMatchRing score={matchScore} size={52} strokeWidth={5} light />
                                     </div>
                                   ) : (
                                     <Link
@@ -2476,10 +2416,20 @@ function JobsPageInner() {
                                     {formattedJobType}
                                   </span>
                                 )}
-                                {job.remote && (
-                                  <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
-                                    <Laptop className="w-3 h-3 text-[#475569]" />
-                                    Remote
+                                {/* Work model always shown, from remoteScope (Remote / Hybrid / On-site / Flexible) */}
+                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
+                                  <Laptop className="w-3 h-3 text-[#475569]" />
+                                  {workModelLabel(job)}
+                                </span>
+                                {jobLevel && (
+                                  <span data-testid="mobile-card-level" className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
+                                    <TrendingUp className="w-3 h-3 text-[#475569]" />
+                                    {jobLevel}
+                                  </span>
+                                )}
+                                {isRecent && (
+                                  <span className="h-6 px-2.5 py-0.5 rounded-md text-[12px] font-semibold bg-[#EFF6FF] text-[#1E40AF] inline-flex items-center">
+                                    Early applicant
                                   </span>
                                 )}
                                 {job.salary && (
@@ -2489,6 +2439,10 @@ function JobsPageInner() {
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
                                     {isPro ? job.salary : "••••••••"}
+                                    {/* Original-currency value visible on touch, not only in a hover title */}
+                                    {isPro && job.salary_original && job.salary_original !== job.salary && (
+                                      <span className="font-normal text-[#64748B]">({job.salary_original})</span>
+                                    )}
                                   </span>
                                 )}
                               </div>
@@ -2497,20 +2451,12 @@ function JobsPageInner() {
                               <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0] mt-1">
                                 <span className="text-xs text-[#475569] truncate">
                                   {job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added"}
+                                  {/* Source provenance, as in the desktop card panel */}
+                                  <span> · {job.directSource ? "Direct feed" : "Active feed"}</span>
                                 </span>
 
+                                {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}
                                 <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleHideJob(e, job.id);
-                                    }}
-                                    aria-label="Hide position"
-                                    className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition cursor-pointer"
-                                  >
-                                    <Ban className="w-4 h-4" />
-                                  </button>
 
                                   <button
                                     type="button"
@@ -2560,22 +2506,42 @@ function JobsPageInner() {
                         );
                       })}
 
-                      {/* Load More Pagination: strictly scoped to tabs with active server-side pagination */}
-                      {activeTab === "recommended" && (hasNextPage || (totalCount > 0 && liveJobs.length < totalCount)) && (
-                        <div className="pt-4 text-center">
+                      {/* Load More Pagination: strictly scoped to tabs with active server-side pagination.
+                          Mobile auto-loads via the sentinel; the button stays as the accessible manual fallback. */}
+                      {canLoadMore && (
+                        // overflow-anchor:none: otherwise scroll anchoring keeps this block in view as cards are
+                        // inserted above it, the sentinel stays visible and pages chain-load.
+                        <div className="pt-4 text-center [overflow-anchor:none]" aria-live="polite">
+                          <div ref={loadMoreSentinelRef} data-testid="jobs-load-more-sentinel" aria-hidden="true" />
+                          {loadMoreError && (
+                            <p className="text-xs text-[#B91C1C] pb-2" role="alert">Couldn&apos;t load more jobs.</p>
+                          )}
                           <button
                             type="button"
                             onClick={handleLoadMore}
                             disabled={loadingMore}
                             className="px-6 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-bold transition shadow-none cursor-pointer disabled:opacity-60 min-h-[44px]"
                           >
-                            {loadingMore
-                              ? "Loading Positions..."
-                              : totalCount > liveJobs.length
-                              ? `Load More Verified Positions (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`
-                              : "Load More Verified Positions"}
+                            {loadingMore ? (
+                              "Loading Positions..."
+                            ) : loadMoreError ? (
+                              "Retry"
+                            ) : (
+                              <>
+                                Load More Verified Positions
+                                {/* Inventory count is desktop-only; mobile shows no remaining/total text (item 22) */}
+                                {totalCount > liveJobs.length && (
+                                  <span className="hidden sm:inline">{` (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`}</span>
+                                )}
+                              </>
+                            )}
                           </button>
                         </div>
+                      )}
+                      {activeTab === "recommended" && !canLoadMore && page > 1 && (
+                        <p data-testid="jobs-list-end" className="pt-4 text-center text-xs text-[#475569]">
+                          You&apos;ve reached the end of this list.
+                        </p>
                       )}
                     </div>
                   )}

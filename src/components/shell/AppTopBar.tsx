@@ -28,6 +28,9 @@ interface AppTopBarProps {
   /** Hides the desktop "Free"/"Pro" plan pill next to the avatar. Default false (shown), so
    * other pages using AppTopBar are unaffected; Jobs passes this true. */
   hidePlanPill?: boolean;
+  /** Jobs feed only: below sm, the bar becomes one compact hamburger + these tabs row (no page label,
+   * search or account controls; those stay in the hamburger drawer). sm and up are unchanged. */
+  mobileTabs?: TopBarTab[];
 }
 
 export default function AppTopBar({
@@ -39,7 +42,10 @@ export default function AppTopBar({
   user,
   isPro = false,
   hidePlanPill = false,
+  mobileTabs,
 }: AppTopBarProps) {
+  // Elements replaced by the compact mobile tab row are hidden below sm.
+  const mobileHide = mobileTabs ? "hidden sm:flex" : "flex";
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
@@ -139,7 +145,7 @@ export default function AppTopBar({
           {/* =================================================================== */}
           {/* LEFT: Mobile Hamburger + Page Label + Tabs (on /jobs)               */}
           {/* =================================================================== */}
-          <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1 sm:flex-initial">
+          <div className={`flex items-center ${mobileTabs ? "gap-1" : "gap-2.5"} sm:gap-4 min-w-0 flex-1 sm:flex-initial`}>
             {/* Mobile Hamburger Button */}
             <button
               ref={menuButtonRef}
@@ -154,9 +160,34 @@ export default function AppTopBar({
             </button>
 
             {/* Page Label (bold 18px uppercase) */}
-            <h1 className="font-bold text-[18px] uppercase tracking-wider text-[#0F172A] shrink-0 leading-none">
+            <h1 className={`font-bold text-[18px] uppercase tracking-wider text-[#0F172A] shrink-0 leading-none ${mobileTabs ? "sr-only sm:not-sr-only" : ""}`}>
               {pageLabel}
             </h1>
+
+            {mobileTabs && (
+              <nav aria-label="Job lists" data-testid="mobile-feed-tabs" className="sm:hidden flex flex-1 min-w-0 h-14 items-stretch">
+                {mobileTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={tab.onClick}
+                    aria-current={tab.active ? "page" : undefined}
+                    className={`relative flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 px-1 text-[13px] leading-tight whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#93C5FD] ${
+                      tab.active
+                        ? "font-bold text-[#2563EB] after:absolute after:bottom-0 after:inset-x-1 after:h-[3px] after:rounded-full after:bg-[#2563EB]"
+                        : "font-medium text-[#475569] hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {tab.count !== undefined && (
+                      <span className={`text-[11px] font-bold leading-none px-1.5 py-0.5 rounded-full ${tab.active ? "bg-[#DBEAFE] text-[#1D4ED8]" : "bg-[#F1F5F9] text-[#475569]"}`}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            )}
 
             {/* Breadcrumb separator between Page Label and Tabs */}
             {tabs && tabs.length > 0 && (
@@ -224,7 +255,7 @@ export default function AppTopBar({
           {/* FAR RIGHT: Avatar & Menu (User) OR Log In & Get Started (Guest)    */}
           {/* =================================================================== */}
           {user ? (
-            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <div className={`${mobileHide} items-center gap-2.5 sm:gap-3 shrink-0`}>
               {/* Promo pill matching signed-in reference */}
               {!isPro && (
                 <Link
@@ -328,7 +359,7 @@ export default function AppTopBar({
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            <div className={`${mobileHide} items-center gap-2 sm:gap-2.5 shrink-0`}>
               {/* Mobile search toggle if search is enabled */}
               {onSearchChange && (
                 <button

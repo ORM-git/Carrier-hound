@@ -189,7 +189,7 @@ export default function JobFilterBar({
   const workModelInfo = formatMultiLabel(filters.workModel, "Work model");
 
   return (
-    <div className="sticky top-[56px] z-tk-sticky py-2 sm:py-0 bg-[#F8FAFC]/95 lg:bg-slate-100/95 backdrop-blur-xs space-y-2">
+    <div className="sticky top-[56px] z-tk-sticky py-1.5 sm:py-0 bg-[#F8FAFC]/95 lg:bg-slate-100/95 backdrop-blur-xs space-y-2">
       {/* =================================================================== */}
       {/* 1. MOBILE FILTER ROW (< 768px)                                      */}
       {/* =================================================================== */}
@@ -405,9 +405,9 @@ export default function JobFilterBar({
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-2.5 top-1/2 -translate-y-1/2" />
                     <input
-                      aria-label="Search functions"
+                      aria-label="Search job roles"
                       type="text"
-                      placeholder="Search functions..."
+                      placeholder="Search job roles..."
                       value={roleSearchQuery}
                       onChange={(e) => setRoleSearchQuery(e.target.value)}
                       className="w-full pl-8 pr-2.5 py-1.5 rounded-lg border border-[#CBD5E1] text-[12px] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
@@ -423,7 +423,7 @@ export default function JobFilterBar({
                         !draftFilters.category ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-[#334155] hover:bg-slate-50"
                       }`}
                     >
-                      All Functions
+                      All job roles
                     </button>
                     {filteredRoles.map((r) => {
                       const slug = r === "AI & Machine Learning" ? "ai" : r.toLowerCase().replace(/ & /g, "-").replace(/\s+/g, "-");

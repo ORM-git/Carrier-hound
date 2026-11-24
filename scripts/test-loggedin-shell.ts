@@ -298,8 +298,8 @@ function run() {
   const hasHardcoded24 = jobsCode.includes('"24+"') || jobsCode.includes("24+");
   const hasExternalCountCalc = jobsCode.includes("externalJobsCount") && jobsCode.includes("job.directSource");
   const hasHideExternalWhenZero =
-    jobsCode.includes("!loadingJobs && externalJobsCount > 0 ? externalJobsCount : undefined") &&
-    jobsCode.includes("!loadingJobs && externalJobsCount > 0 &&");
+    // The mobile External chip was removed in CM mobile item 15; the desktop tab count keeps the guard.
+    jobsCode.includes("!loadingJobs && externalJobsCount > 0 ? externalJobsCount : undefined");
 
   if (hasHardcoded24 || !hasExternalCountCalc || !hasHideExternalWhenZero) {
     failures.push('DATA INTEGRITY FAIL: External tab must NOT contain hardcoded "24+" literal; must derive dynamically from job.directSource and hide when 0 or loading.');

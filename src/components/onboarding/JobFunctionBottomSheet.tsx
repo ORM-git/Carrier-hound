@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { X, Search, ChevronRight, Check, ArrowLeft } from "lucide-react";
-import { ONBOARDING_CATEGORIES, OnboardingCategory } from "@/data/onboardingCategories";
+import { X, Search, ChevronRight, ChevronDown, Check } from "lucide-react";
+import { ONBOARDING_CATEGORIES } from "@/data/onboardingCategories";
 
 interface JobFunctionBottomSheetProps {
   isOpen: boolean;
@@ -26,7 +26,15 @@ export default function JobFunctionBottomSheet({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCatId, setSelectedCatId] = useState<string>("software-internet-ai");
-  const [mobileDrilldownCat, setMobileDrilldownCat] = useState<OnboardingCategory | null>(null);
+  // Mobile accordion: several categories may be open at once; selections live in selectedRoles, not here.
+  const [expandedCatIds, setExpandedCatIds] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (id: string) =>
+    setExpandedCatIds((prev) => {
+      const nextIds = new Set(prev);
+      if (nextIds.has(id)) nextIds.delete(id);
+      else nextIds.add(id);
+      return nextIds;
+    });
 
   // Focus return handler
   const handleClose = useCallback(() => {
@@ -193,7 +201,7 @@ export default function JobFunctionBottomSheet({
               id="job-function-dialog-title"
               className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
             >
-              Job Function
+              Job roles
             </h2>
             <span className="text-xs text-zinc-500 dark:text-zinc-400 hidden sm:inline">
               (Choose roles matching your expertise)
@@ -216,11 +224,11 @@ export default function JobFunctionBottomSheet({
             <input
               ref={searchInputRef}
               type="text"
-              aria-label="Search expected job function or role"
+              aria-label="Search job roles"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Please select/enter your expected job function"
-              className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:focus:ring-brand-500"
+              placeholder="Search job roles"
+              className="w-full pl-10 pr-9 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0082FF] lg:focus:ring-brand-500"
             />
             {searchQuery && (
               <button
@@ -237,24 +245,24 @@ export default function JobFunctionBottomSheet({
 
         {/* Selected Roles Preview Row (if any selected) */}
         {selectedRoles.length > 0 && (
-          <div className="px-5 py-2.5 bg-emerald-50/50 lg:bg-brand-50/50 dark:bg-emerald-950/20 lg:dark:bg-brand-900/20 border-b border-emerald-100 lg:border-brand-100 dark:border-emerald-900/30 lg:dark:border-brand-900/30 flex items-center gap-2 overflow-x-auto">
-            <span className="text-xs font-semibold text-emerald-800 lg:text-brand-800 dark:text-emerald-300 lg:dark:text-brand-300 flex-shrink-0">
+          <div className="px-5 py-2.5 bg-[#E6F2FF]/50 lg:bg-brand-50/50 dark:bg-brand-900/20 lg:dark:bg-brand-900/20 border-b border-[#CCE6FF] lg:border-brand-100 dark:border-brand-900/30 lg:dark:border-brand-900/30 flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs font-semibold text-[#0020B0] lg:text-brand-800 dark:text-brand-300 lg:dark:text-brand-300 flex-shrink-0">
               Selected ({selectedRoles.length}):
             </span>
             <div className="flex items-center gap-1.5 flex-nowrap">
               {selectedRoles.map((role) => (
                 <span
                   key={role}
-                  className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 lg:bg-brand-100 dark:bg-emerald-900/60 lg:dark:bg-brand-900/60 text-emerald-900 lg:text-brand-900 dark:text-emerald-100 lg:dark:text-brand-100 border border-emerald-300 lg:border-brand-300 dark:border-emerald-800 lg:dark:border-brand-800 flex-shrink-0"
+                  className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-medium bg-[#E6F2FF] lg:bg-brand-100 dark:bg-brand-900/60 lg:dark:bg-brand-900/60 text-[#0020B0] lg:text-brand-900 dark:text-brand-100 lg:dark:text-brand-100 border border-[#99CDFF] lg:border-brand-300 dark:border-brand-800 lg:dark:border-brand-800 flex-shrink-0"
                 >
                   <span>{role}</span>
                   <button
                     type="button"
                     onClick={() => onToggleRole(role)}
                     aria-label={`Remove ${role}`}
-                    className="p-0.5 hover:bg-emerald-200 lg:hover:bg-brand-200 dark:hover:bg-emerald-800 lg:dark:hover:bg-brand-800 rounded-full"
+                    className="p-0.5 hover:bg-[#CCE6FF] lg:hover:bg-brand-200 dark:hover:bg-brand-800 lg:dark:hover:bg-brand-800 rounded-full"
                   >
-                    <X className="w-3 h-3 text-emerald-700 lg:text-brand-700 dark:text-emerald-200 lg:dark:text-brand-200" />
+                    <X className="w-3 h-3 text-[#0020B0] lg:text-brand-700 dark:text-brand-200 lg:dark:text-brand-200" />
                   </button>
                 </span>
               ))}
@@ -270,7 +278,7 @@ export default function JobFunctionBottomSheet({
               {searchResults && searchResults.length > 0 ? (
                 searchResults.map((cat) => (
                   <div key={cat.id} className="space-y-3">
-                    <h3 className="text-sm font-bold text-emerald-700 lg:text-brand-700 dark:text-emerald-400 lg:dark:text-brand-400 border-b border-emerald-100 lg:border-brand-100 dark:border-emerald-900/40 lg:dark:border-brand-900/40 pb-1">
+                    <h3 className="text-sm font-bold text-[#0020B0] lg:text-brand-700 dark:text-brand-400 lg:dark:text-brand-400 border-b border-[#CCE6FF] lg:border-brand-100 dark:border-brand-900/40 lg:dark:border-brand-900/40 pb-1">
                       {cat.name}
                     </h3>
                     <div className="space-y-3 pl-2">
@@ -289,7 +297,7 @@ export default function JobFunctionBottomSheet({
                                   onClick={() => onToggleRole(role)}
                                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
                                     isSelected
-                                      ? "bg-emerald-100 lg:bg-brand-100 dark:bg-emerald-900/60 lg:dark:bg-brand-900/60 text-emerald-900 lg:text-brand-900 dark:text-emerald-100 lg:dark:text-brand-100 border border-emerald-500/50 lg:border-brand-500/50 shadow-xs font-semibold"
+                                      ? "bg-[#E6F2FF] lg:bg-brand-100 dark:bg-brand-900/60 lg:dark:bg-brand-900/60 text-[#0020B0] lg:text-brand-900 dark:text-brand-100 lg:dark:text-brand-100 border border-[#0082FF]/50 lg:border-brand-500/50 shadow-xs font-semibold"
                                       : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700"
                                   }`}
                                 >
@@ -306,7 +314,7 @@ export default function JobFunctionBottomSheet({
                 ))
               ) : (
                 <div className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                  No matching job functions found for &ldquo;{searchQuery}&rdquo;.
+                  No matching job roles found for &ldquo;{searchQuery}&rdquo;.
                 </div>
               )}
             </div>
@@ -393,81 +401,75 @@ export default function JobFunctionBottomSheet({
                 </div>
               </div>
 
-              {/* MOBILE VIEW: Drill-down pattern with Back button */}
+              {/* MOBILE VIEW: inline accordion, child roles selectable under their category (no drill-down screen) */}
               <div className="lg:hidden flex-1 overflow-y-auto">
-                {mobileDrilldownCat ? (
-                  /* Drill-in View: Subgroups & Chips */
-                  <div className="p-4 space-y-4">
-                    <button
-                      type="button"
-                      onClick={() => setMobileDrilldownCat(null)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Back to categories</span>
-                    </button>
-
-                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 border-b border-zinc-100 dark:border-zinc-800 pb-2">
-                      {mobileDrilldownCat.name}
-                    </h3>
-
-                    <div className="space-y-4 pt-1">
-                      {mobileDrilldownCat.subgroups.map((sg) => (
-                        <div key={sg.name} className="space-y-2">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            {sg.name}
-                          </h4>
-                          <div className="flex flex-wrap gap-2">
-                            {sg.roles.map((role) => {
-                              const isSelected = selectedRoles.includes(role);
-                              return (
-                                <button
-                                  key={role}
-                                  type="button"
-                                  onClick={() => onToggleRole(role)}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition ${
-                                    isSelected
-                                      ? "bg-emerald-100 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100 border border-emerald-500/50 shadow-xs font-semibold"
-                                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700"
-                                  }`}
-                                >
-                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
-                                  <span>{role}</span>
-                                </button>
-                              );
-                            })}
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80 px-4 py-1">
+                  {ONBOARDING_CATEGORIES.map((cat) => {
+                    const count = roleCountsByCat.get(cat.id) || 0;
+                    const expanded = expandedCatIds.has(cat.id);
+                    const panelId = `mobile-cat-panel-${cat.id}`;
+                    return (
+                      <div key={cat.id}>
+                        <h3>
+                          <button
+                            type="button"
+                            data-testid={`mobile-cat-${cat.id}`}
+                            onClick={() => toggleExpanded(cat.id)}
+                            aria-expanded={expanded}
+                            aria-controls={panelId}
+                            className="w-full min-h-[48px] flex items-center justify-between gap-3 py-3 text-left text-sm font-semibold text-zinc-800 dark:text-zinc-200 hover:text-[#0020B0] transition"
+                          >
+                            <span>{cat.name}</span>
+                            <span className="flex items-center gap-2 flex-shrink-0">
+                              {count > 0 && (
+                                <span className="text-xs px-2 py-0.5 bg-[#E6F2FF] dark:bg-brand-900/70 text-[#0020B0] dark:text-brand-200 font-bold rounded-full">
+                                  {count}
+                                  <span className="sr-only"> selected</span>
+                                </span>
+                              )}
+                              <ChevronDown
+                                aria-hidden="true"
+                                className={`w-4 h-4 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+                              />
+                            </span>
+                          </button>
+                        </h3>
+                        {expanded && (
+                          <div id={panelId} role="region" aria-label={cat.name} className="pb-4 space-y-3">
+                            {cat.subgroups.map((sg) => (
+                              <div key={sg.name} className="space-y-2">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                                  {sg.name}
+                                </h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {sg.roles.map((role) => {
+                                    const isSelected = selectedRoles.includes(role);
+                                    return (
+                                      <button
+                                        key={role}
+                                        type="button"
+                                        onClick={() => onToggleRole(role)}
+                                        aria-pressed={isSelected}
+                                        className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl text-sm text-left font-medium transition ${
+                                          isSelected
+                                            ? "bg-[#E6F2FF] dark:bg-brand-900/60 text-[#0020B0] dark:text-brand-100 border border-[#0082FF]/50 shadow-xs font-semibold"
+                                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700"
+                                        }`}
+                                      >
+                                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5] flex-shrink-0" aria-hidden="true" />}
+                                        <span>{role}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  /* Categories List View */
-                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80 px-4 py-2">
-                    {ONBOARDING_CATEGORIES.map((cat) => {
-                      const count = roleCountsByCat.get(cat.id) || 0;
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          data-testid={`mobile-cat-${cat.id}`}
-                          onClick={() => setMobileDrilldownCat(cat)}
-                          className="w-full flex items-center justify-between py-3.5 text-left text-sm font-semibold text-zinc-800 dark:text-zinc-200 hover:text-emerald-600 transition"
-                        >
-                          <span>{cat.name}</span>
-                          <div className="flex items-center gap-2">
-                            {count > 0 && (
-                              <span className="text-xs px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/70 text-emerald-800 dark:text-emerald-200 font-bold rounded-full">
-                                {count}
-                              </span>
-                            )}
-                            <ChevronRight className="w-4 h-4 text-zinc-400" />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}
@@ -479,7 +481,7 @@ export default function JobFunctionBottomSheet({
             {selectedRoles.length === 0 ? (
               <span>Select at least 1 role</span>
             ) : (
-              <span className="font-semibold text-emerald-600 lg:text-brand-600 dark:text-emerald-400 lg:dark:text-brand-400">
+              <span className="font-semibold text-[#0020B0] lg:text-brand-600 dark:text-brand-400 lg:dark:text-brand-400">
                 {selectedRoles.length} {selectedRoles.length === 1 ? "role" : "roles"} selected
               </span>
             )}
@@ -487,7 +489,7 @@ export default function JobFunctionBottomSheet({
           <button
             type="button"
             onClick={handleClose}
-            className="px-6 py-2.5 text-sm font-bold rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 text-white shadow-sm transition"
+            className="px-6 py-2.5 min-h-[44px] text-sm font-bold rounded-full bg-[#0082FF] text-[#0F172A] hover:bg-[#0039F5] hover:text-white lg:bg-zinc-900 lg:hover:bg-zinc-800 lg:text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0082FF] focus-visible:ring-offset-2"
           >
             Done
           </button>

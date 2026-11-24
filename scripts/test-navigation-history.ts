@@ -70,11 +70,18 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
       "router.replace(newUrl, { scroll: false })",
     ],
   },
-  // Already-authenticated auto-redirect on `/login` replaces login screen so Back does not revisit it
+  // Already-authenticated auto-redirect and successful password sign-in on `/login` replace the login screen so Back does not revisit it
   {
     file: "src/app/login/page.tsx",
+    expectedCount: 2,
+    // main renamed the auto-redirect target to `target`; the branch adds the post-sign-in callback replace
+    requiredSnippets: ["router.replace(target)", "router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`)"],
+  },
+  // Successful password reset replaces the one-time reset screen with the post-auth callback
+  {
+    file: "src/app/auth/reset-password/page.tsx",
     expectedCount: 1,
-    requiredSnippets: ["router.replace(next)", "router.replace(target)"],
+    requiredSnippets: ['router.replace("/auth/callback?returnTo=%2Fjobs")'],
   },
   // Unauthenticated mount guard (guest login) and completed-account auto-redirect on `/onboarding` replace protected URL
   {
@@ -109,11 +116,11 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
     expectedCount: 1,
     requiredSnippets: ['router.replace("/login?returnTo=/settings")'],
   },
-  // Already-authenticated auto-redirect on `/signup` replaces signup screen so Back does not revisit it
+  // Already-authenticated auto-redirect on `/signup`, and signup with an immediate session (email confirmation off), replace /signup
   {
     file: "src/app/signup/page.tsx",
-    expectedCount: 1,
-    requiredSnippets: ["router.replace(next)"],
+    expectedCount: 2,
+    requiredSnippets: ["router.replace(next)", "router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`)"],
   },
   // Unauthenticated mount guard on `/tracker` replaces protected URL to prevent Back-button loop
   {

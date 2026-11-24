@@ -128,7 +128,7 @@ export async function noteAdminAuthFailure(
   }
 }
 
-/** Called for each magic-link OTP request reported by the client. */
+/** Called for each client-reported email auth request (password sign-in, reset or OTP). */
 export async function noteOtpRequest(
   req: Request | undefined,
   email: string | null,

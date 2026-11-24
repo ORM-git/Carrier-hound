@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
@@ -188,6 +189,7 @@ export async function GET(req: Request) {
           return {
             ...j,
             description: resolvedDesc,
+            scoreRevision: scoreInputRevision(j, true),
             role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
             top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
               ? j.top_keywords.slice(0, 8)
@@ -229,6 +231,7 @@ export async function GET(req: Request) {
     const formattedJob = {
       ...job,
       description: resolvedSingleDesc,
+      scoreRevision: scoreInputRevision(row, true),
       role_category: job.role_category || detectRoleCategory(job.title, job.category, job.skills),
       top_keywords: Array.isArray(job.top_keywords) && job.top_keywords.length > 0
         ? job.top_keywords.slice(0, 8)
@@ -324,6 +327,7 @@ export async function POST(req: Request) {
       return {
         ...j,
         description: resolvedDesc,
+        scoreRevision: scoreInputRevision(j, true),
         role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
         top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
           ? j.top_keywords.slice(0, 8)

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
@@ -311,6 +312,7 @@ async function getHandler(req: Request) {
         salary_display: isInactive || !isPro ? null : displaySalary,
         salary_original: isInactive || !isPro ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
+        scoreRevision: scoreInputRevision(jobRow, isPro),
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
@@ -886,6 +888,7 @@ async function getHandler(req: Request) {
           applyUrl: row.apply_url || "",
           description: row.description || "",
           skills: row.skills || [],
+          scoreRevision: scoreInputRevision(row, true),
           postedAt: row.posted_at || row.created_at,
           companyDomain: row.companies?.domain || null,
           logoUrl: resolvedLogo,
@@ -918,6 +921,7 @@ async function getHandler(req: Request) {
         applyUrl: "",
         description: "",
         skills: [],
+        scoreRevision: scoreInputRevision(row, false),
         postedAt: row.posted_at || row.created_at,
         logoUrl: null,
         logo_url: null,

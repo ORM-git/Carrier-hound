@@ -1,6 +1,6 @@
 import { createClient } from "../supabase/client";
 import { CandidateProfile } from "../resume/types";
-import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore } from "../matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
@@ -61,6 +61,8 @@ export interface LiveJob {
   salary_display?: string | null;
   salary_original?: string | null;
   matchScore?: number | null;
+  /** Server-stamped revision of this job's score inputs (scoreInputRevision); a feed score is reused only on a match. */
+  scoreRevision?: string | null;
   matchReasons?: string[];
 }
 
@@ -72,6 +74,8 @@ export interface ProUnlockError {
 
 export interface GetJobsOptions {
   baseUrl?: string;
+  /** Aborts the list request (e.g. a stale next-page load after filters change). */
+  signal?: AbortSignal;
   page?: number;
   pageSize?: number;
   category?: string;
@@ -430,7 +434,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (search && search.trim()) recParams.set("search", search.trim());
 
         // A failed request is a retryable error, never a silently unpersonalized or empty feed.
-        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers }).catch(() => null);
+        const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers, signal: options.signal }).catch(() => null);
         if (!recRes) return DEGRADED_JOBS_RESULT;
         if (recRes.status === 403) {
           return {
@@ -491,7 +495,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (options.eligibility) params.set("eligibility", options.eligibility);
       if (options.currency) params.set("currency", options.currency);
 
-      const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers });
+      const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers, signal: options.signal });
       if (res.status === 403) {
         return {
           jobs: [],
@@ -897,6 +901,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           postedAt: row.posted_at || row.created_at,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
+          scoreRevision: scoreInputRevision(row, isPro),
           matchScore: typeof row.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row.matchScore))) : (typeof row._matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row._matchScore))) : null),
         };
       });
@@ -1068,6 +1073,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 logoUrl: job.logo_url || job.logoUrl || null,
                 logo_url: job.logo_url || job.logoUrl || null,
                 matchScore: typeof job.matchScore === "number" ? job.matchScore : null,
+                scoreRevision: job.scoreRevision ?? null,
               };
             }
           } else {
@@ -1176,6 +1182,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         applyUrl: "",
         description: "",
         skills: [],
+        scoreRevision: scoreInputRevision(row, false),
         postedAt: row.posted_at || row.created_at,
         isExpired: expired,
         status: expired ? "expired" : (row.status || "active"),

@@ -20,7 +20,7 @@ import OnboardingStep2, { ResumeParseSummary } from "@/components/onboarding/Onb
 import { setFirstJobsMarker } from "@/components/onboarding/onboardingMarkers";
 import { isOnboardingActive } from "@/config/onboarding";
 import { normalizeUserCountries } from "@/lib/countries";
-import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
+import { parseWorkAuth, serializeWorkAuth } from "@/lib/onboarding/workAuth";
 
 function OnboardingPageInner() {
   const router = useRouter();
@@ -58,6 +58,8 @@ function OnboardingPageInner() {
 
   // Preserve saved Step 2 state across Back navigation
   const [savedResumeName, setSavedResumeName] = useState<string | null>(null);
+  const [savedLinkedinUrl, setSavedLinkedinUrl] = useState<string | null>(null);
+  const [savedResumeFile, setSavedResumeFile] = useState<File | null>(null);
   const [savedResumeParse, setSavedResumeParse] = useState<ResumeParseSummary | null>(null);
 
   // Funnel tracking: onboarding started on mount. Editing saved preferences is not onboarding,
@@ -118,13 +120,11 @@ function OnboardingPageInner() {
               }
             }
           }
-          // Only prefill a work authorization the form can actually show as selected
+          // Only prefill a work authorization that parses to a valid selection set
           // (legacy seeded "Authorized" is not one of the options and stays blank).
-          if (
-            prefs.workAuth &&
-            WORK_AUTH_OPTIONS.some((opt) => opt.label === prefs.workAuth || opt.id === prefs.workAuth)
-          ) {
-            setWorkAuth(prefs.workAuth);
+          const savedWorkAuth = parseWorkAuth(prefs.workAuth);
+          if (savedWorkAuth && savedWorkAuth.length > 0) {
+            setWorkAuth(serializeWorkAuth(savedWorkAuth));
           }
           if (prefs.remotePreference) {
             setOpenToRemote(prefs.remotePreference !== "onsite");
@@ -301,7 +301,7 @@ function OnboardingPageInner() {
         aria-live="polite"
         className="min-h-screen flex flex-col items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-950 text-zinc-500"
       >
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-600 lg:text-brand-600 mb-3" aria-hidden="true" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#0020B0] lg:text-brand-600 mb-3" aria-hidden="true" />
         <span className="text-sm font-medium">Checking account status...</span>
         <span className="sr-only">Checking account status</span>
       </div>
@@ -369,6 +369,10 @@ function OnboardingPageInner() {
               setSavedResumeName(name);
               setSavedResumeParse(parse);
             }}
+            initialLinkedinUrl={savedLinkedinUrl}
+            onLinkedinSaved={setSavedLinkedinUrl}
+            initialResumeFile={savedResumeFile}
+            onResumeFileSaved={setSavedResumeFile}
           />
         )}
       </div>
@@ -391,7 +395,7 @@ export default function OnboardingPage() {
           aria-live="polite"
           className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-500"
         >
-          <Loader2 className="w-8 h-8 animate-spin text-emerald-600 lg:text-brand-600" aria-hidden="true" />
+          <Loader2 className="w-8 h-8 animate-spin text-[#0020B0] lg:text-brand-600" aria-hidden="true" />
           <span className="sr-only">Loading onboarding...</span>
         </div>
       }
