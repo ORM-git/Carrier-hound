@@ -254,8 +254,9 @@ async function main() {
     "Footer legal line must feature exact line '© 2026 Olive Ridley Media Private Limited. All rights reserved.'"
   );
   assert.ok(
-    !footerContent.includes("Career Monke Inc. All rights reserved."),
-    "Footer legal line must NOT feature Career Monke Inc."
+    !footerContent.includes("Career Monke Inc. All rights reserved.") &&
+    !footerContent.includes("CareerMonke Inc. All rights reserved."),
+    "Footer legal line must NOT feature either spelling of the false Inc. company line"
   );
   console.log("  [PASS-LOCAL] Footer contains links to /refund-policy and /contact, and excludes /shipping-and-delivery");
   console.log("  [PASS-LOCAL] Footer legal line features Olive Ridley Media Private Limited");
