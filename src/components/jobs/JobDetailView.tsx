@@ -648,8 +648,8 @@ export default function JobDetailView({
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           {/* Left / Middle: Logo, Company, Title, 2x3 Metadata */}
-          <div className="flex-1 min-w-0 space-y-3.5">
-            <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0 space-y-3 md:space-y-3.5">
+            <div className="max-md:hidden flex items-center gap-3">
               <CompanyLogo
                 company={job.company}
                 locked={!isUnlocked}
@@ -671,12 +671,65 @@ export default function JobDetailView({
             </div>
 
             {/* Title */}
-            <h1 className="text-[24px] font-bold text-[#0F172A] leading-tight break-words">
+            <h1 className="text-[20px] md:text-[24px] font-bold text-[#0F172A] leading-tight break-words">
               {job.title}
             </h1>
 
             {/* Overview chips: seniority, category, job type, remote scope */}
-            <div data-testid="overview-chips" className="flex flex-wrap items-center gap-2 pt-1 pb-1">
+            {/* Mobile: every fact once, as compact chips (CM mobile item 17). The md+ chips and grid below are unchanged. */}
+            <ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden flex flex-wrap gap-1.5">
+              <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                <MapPin className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                <span className="truncate">{isUnlocked ? (job.location || "Remote") : <span className="text-[#64748B]">Location locked</span>}</span>
+              </li>
+              <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                <Laptop className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                <span className="truncate">
+                  {workModelLabel(job)}
+                  {job.remoteScope && !["remote", "hybrid", "onsite", "on-site", "any"].includes(job.remoteScope.toLowerCase()) ? ` (${job.remoteScope})` : ""}
+                </span>
+              </li>
+              {job.type && (
+                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                  <Briefcase className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                  <span className="truncate">{job.type}</span>
+                </li>
+              )}
+              {jobLevel && (
+                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                  <TrendingUp className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                  <span className="truncate">{jobLevel}</span>
+                </li>
+              )}
+              {job.category && (
+                <li className="inline-flex items-center h-7 px-2.5 rounded-md bg-[#EFF6FF] text-[#1D4ED8] text-[12px] font-semibold capitalize max-w-full">
+                  <span className="truncate">{job.category}</span>
+                </li>
+              )}
+              {Boolean(job.salary && String(job.salary).trim()) && (
+                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                  <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
+                  <span className="truncate">
+                    {isUnlocked ? job.salary : "••••••••"}
+                    {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
+                      <span className="font-normal text-[#64748B]"> ({job.salary_original})</span>
+                    )}
+                  </span>
+                </li>
+              )}
+              {expText && (
+                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                  <Calendar className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                  <span className="truncate">{expText}</span>
+                </li>
+              )}
+              <li className="inline-flex items-center gap-1 h-7 px-1 text-[12px] text-[#64748B]">
+                <Clock className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
+                <span>{formatRelativeTime(job.postedAt || job.date)}</span>
+              </li>
+            </ul>
+
+            <div data-testid="overview-chips" className="max-md:hidden flex flex-wrap items-center gap-2 pt-1 pb-1">
               {jobLevel && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
                   <TrendingUp className="w-3.5 h-3.5 text-[#64748B]" />
@@ -702,7 +755,7 @@ export default function JobDetailView({
             </div>
 
             {/* Metadata in 2 columns x 3 rows with small icons (only the ones that exist!) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0] text-[13px]">
+            <div className="max-md:hidden grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0] text-[13px]">
               {/* Col 1: location, job type, work model */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
