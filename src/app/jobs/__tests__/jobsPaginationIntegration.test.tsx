@@ -256,6 +256,27 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(uniqueTitles()).toHaveLength(30);
   });
 
+  it("append/recreated observers cannot chain pages without fresh user input", async () => {
+    h.transport = async ({ page: p }) => page(jobs(range((p - 1) * 25 + 1, p * 25)), true);
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    expect(uniqueTitles()).toHaveLength(50);
+    for (let k = 0; k < 12; k++) {
+      await act(async () => {
+        window.dispatchEvent(new Event("scroll")); // browser anchoring is not input
+        io.enter(false);
+      });
+      await flush();
+    }
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(uniqueTitles()).toHaveLength(50);
+    await act(async () => io.enter()); // a new downward gesture allows the next page
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(uniqueTitles()).toHaveLength(75);
+  });
+
   it("desktop never auto-loads: the sentinel exists but no observer is armed", async () => {
     h.desktop = true;
     h.transport = async ({ page: p }) => (p === 1 ? page(jobs(range(1, 25)), true) : page(jobs(range(26, 50)), false));

@@ -1,0 +1,44 @@
+[
+  {
+    "width": 360,
+    "realIntersectionObserver": true,
+    "keyboard": "End then PageUp, no further input for 3s",
+    "firstIdleCards": 50,
+    "subsequentFreshEndCards": 75,
+    "pages": [
+      1,
+      1,
+      2,
+      3
+    ],
+    "pass": true
+  },
+  {
+    "width": 390,
+    "realIntersectionObserver": true,
+    "keyboard": "End then PageUp, no further input for 3s",
+    "firstIdleCards": 50,
+    "subsequentFreshEndCards": 75,
+    "pages": [
+      1,
+      1,
+      2,
+      3
+    ],
+    "pass": true
+  },
+  {
+    "width": 430,
+    "realIntersectionObserver": true,
+    "keyboard": "End then PageUp, no further input for 3s",
+    "firstIdleCards": 50,
+    "subsequentFreshEndCards": 75,
+    "pages": [
+      1,
+      1,
+      2,
+      3
+    ],
+    "pass": true
+  }
+]
