@@ -406,4 +406,86 @@ describe("AuthCallbackPage completion-aware redirect (email + Google, every succ
     await settle();
     expect(mockReplace).not.toHaveBeenCalled();
   });
+
+  // Never an infinite spinner: every path ends in a redirect or the error state within ~10 seconds.
+  describe("10 second deadline", () => {
+    const errorState = () => container?.querySelector('[data-testid="auth-callback-error"]');
+    async function advance(ms: number) {
+      await act(async () => {
+        vi.advanceTimersByTime(ms);
+      });
+      await settle();
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
+
+    for (const provider of ["email", "google"] as const) {
+      it(`${provider}: a code exchange that never settles ends in the error state with Back to sign in`, async () => {
+        mockExchangeCodeForSession.mockReturnValueOnce(pending());
+        mountAt(`/auth/callback?code=${provider}-stuck`);
+        await settle();
+        await advance(9_900);
+        expect(errorState()).toBeFalsy();
+        expect(container?.querySelector('[role="status"]')).toBeTruthy();
+        await advance(200);
+        const link = errorState()?.querySelector("a");
+        expect(link?.textContent).toBe("Back to sign in");
+        expect(link?.getAttribute("href")).toBe("/login");
+        expect(container?.querySelector('[role="status"]')).toBeFalsy();
+        expect(mockReplace).not.toHaveBeenCalled();
+      });
+    }
+
+    it("signed in but the post-sign-in status lookup never answers: fails closed to onboarding at the deadline", async () => {
+      const user = fakeDb.signUp("slow@example.test");
+      globalThis.fetch = vi.fn(() => pending()) as any;
+      mockExchangeCodeForSession.mockResolvedValueOnce({ data: { session: session(user.id) }, error: null });
+      mountAt("/auth/callback?code=slow&returnTo=%2Fjobs%2Fsaved");
+      await settle();
+      expect(mockReplace).not.toHaveBeenCalled();
+      await advance(10_000);
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith("/onboarding?next=%2Fjobs%2Fsaved");
+      expect(errorState()).toBeFalsy();
+    });
+
+    it("a thrown session read (no code) shows the error state at once, not a spinner", async () => {
+      mockGetSession.mockRejectedValueOnce(new Error("Load failed"));
+      mountAt("/auth/callback");
+      await settle();
+      expect(errorState()).toBeTruthy();
+      expect(mockReplace).not.toHaveBeenCalled();
+      await advance(10_000);
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it("a late answer after the deadline never causes a second navigation", async () => {
+      const user = fakeDb.signUp("late@example.test");
+      let answer!: (v: any) => void;
+      globalThis.fetch = vi.fn(() => new Promise((r) => (answer = r))) as any;
+      mockExchangeCodeForSession.mockResolvedValueOnce({ data: { session: session(user.id) }, error: null });
+      mountAt("/auth/callback?code=late");
+      await settle();
+      await advance(10_000);
+      answer({ ok: true, status: 200, json: async () => ({ onboardingCompleted: true, deletionPending: false }) });
+      await settle();
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("code already exchanged by the client itself: the duplicate exchange error still signs the user in", async () => {
+    const user = fakeDb.signUp("dup@example.test");
+    seedCompletedAccount(fakeDb, user.id);
+    mockExchangeCodeForSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: { message: "PKCE code verifier not found in storage" },
+    });
+    mockGetSession.mockResolvedValueOnce({ data: { session: session(user.id) }, error: null });
+    mountAt("/auth/callback?code=used&returnTo=%2Fjobs");
+    await settle();
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalledWith(expect.stringContaining("/login?error"));
+  });
 });
