@@ -85,6 +85,9 @@ function run() {
           if (!cand || !cand.confirmedAt) return null;
           return { score: 85, breakdown: {} };
         };
+        // shared helpers from src/lib/matcher/scoring.ts (CM mobile item 18)
+        const toFitInput = (j) => j;
+        const clampMatchScore = (n) => Math.max(10, Math.min(99, Math.round(n)));
         ${jsFn}
         return getJobMatchScore;
       `;

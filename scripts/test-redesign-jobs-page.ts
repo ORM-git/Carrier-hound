@@ -175,6 +175,8 @@ function run() {
           if (!cand || !cand.confirmedAt) return null;
           return { score: 88, breakdown: {} };
         };
+        const toFitInput = (j) => j;
+        const clampMatchScore = (n) => Math.max(10, Math.min(99, Math.round(n)));
         ${jsFn}
         return getJobMatchScore;
       `;

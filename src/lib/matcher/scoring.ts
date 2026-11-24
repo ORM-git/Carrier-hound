@@ -694,6 +694,43 @@ export function withSharedScore(diagnostics: FitDiagnosticsResult, sharedScore: 
   return { ...diagnostics, score, scoreGrade: gradeForScore(score) };
 }
 
+/** Bump when the shared recommendation scorer or computeFitDiagnostics changes, so cached display scores are dropped. */
+export const MATCH_SCORE_VERSION = 1;
+
+/** Display clamp shared by every match-score surface (cards, detail, Match Insights). */
+export function clampMatchScore(score: number): number {
+  return Math.max(10, Math.min(99, Math.round(score)));
+}
+
+/** The one job -> fit-input mapping for cards and detail, so a fallback fit score is identical on both. */
+export function toFitInput(job: {
+  id: string;
+  title: string;
+  company?: string;
+  location?: string;
+  remote?: boolean;
+  remoteScope?: string;
+  category?: string;
+  skills?: string[];
+  description?: string;
+  salary?: string;
+  applyUrl?: string;
+}): StandardJobScoringInput {
+  return {
+    id: job.id,
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    remote: job.remote,
+    remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
+    category: job.category,
+    skills: job.skills,
+    description: job.description,
+    salary_text: job.salary,
+    apply_url: job.applyUrl,
+  };
+}
+
 /**
  * Constructs a factual, 1-2 line summary built strictly from real diagnostics
  * (matched skills, years of experience) with zero invented claims or marketing fluff.

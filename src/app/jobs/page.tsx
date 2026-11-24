@@ -31,7 +31,8 @@ import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
-import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, clampMatchScore, toFitInput } from "@/lib/matcher/scoring";
+import { matchScoreSnapshot, recallMatchScore, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -263,24 +264,13 @@ function getCompanyTagPills(category?: string | null): string[] {
 
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
   if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) {
-    return Math.max(10, Math.min(99, Math.round(job.matchScore)));
+    return clampMatchScore(job.matchScore);
   }
   if (candidate && candidate.confirmedAt) {
     try {
-      const res = computeFitDiagnostics(candidate, {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
-        category: job.category,
-        skills: job.skills,
-        description: job.description,
-        salary_text: job.salary,
-        apply_url: job.applyUrl,
-      });
+      const res = computeFitDiagnostics(candidate, toFitInput(job));
       if (res && typeof res.score === "number" && !isNaN(res.score)) {
-        return Math.max(10, Math.min(99, Math.round(res.score)));
+        return clampMatchScore(res.score);
       }
     } catch {}
   }
@@ -290,18 +280,7 @@ function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): num
 function getJobDiagnostics(job: LiveJob, candidate: CandidateProfile | null): FitDiagnosticsResult | null {
   if (candidate && candidate.confirmedAt) {
     try {
-      const res = computeFitDiagnostics(candidate, {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
-        category: job.category,
-        skills: job.skills,
-        description: job.description,
-        salary_text: job.salary,
-        apply_url: job.applyUrl,
-      });
+      const res = computeFitDiagnostics(candidate, toFitInput(job));
       if (res && typeof res.score === "number" && !isNaN(res.score)) {
         return res;
       }
@@ -593,10 +572,6 @@ function JobsPageInner() {
           if (job) {
             if (job.isExpired || job.status === "expired" || job.status === "closed") {
               setDetailStatus("expired");
-            }
-            if (typeof job.matchScore !== "number" && candidate) {
-              const score = getJobMatchScore(job, candidate);
-              if (score !== null) job.matchScore = score;
             }
             setSelectedJob(job);
           } else {
@@ -1596,6 +1571,20 @@ function JobsPageInner() {
     ["Company", selectedCompany],
   ].filter((row): row is [string, string] => Boolean(row[1]));
 
+  // One score per job + candidate snapshot + scoring version: remember what each card showed, and give the
+  // detail the feed score, else that remembered score (reload / job not on this page), else its computed fallback.
+  const scoreSnap = matchScoreSnapshot(candidate, preferences?.updatedAt);
+  useEffect(() => {
+    rememberMatchScores(scoreSnap, liveJobs);
+  }, [scoreSnap, liveJobs]);
+  const detailJob = useMemo(() => {
+    if (!selectedJob) return null;
+    const job = withFeedScore(selectedJob, liveJobs);
+    if (typeof job.matchScore === "number") return job;
+    const remembered = recallMatchScore(scoreSnap, job.id);
+    return remembered === null ? job : { ...job, matchScore: remembered };
+  }, [selectedJob, liveJobs, scoreSnap]);
+
   // The listing view (not detail/loading) uses the desktop two-column grid with the right panel.
   const isListView = !detailLoading && !(detailStatus === "not-found" && !selectedJob) && !selectedJob;
 
@@ -1823,7 +1812,7 @@ function JobsPageInner() {
             /* In-place job detail swap inside the same shell */
             <div className="max-w-[880px] w-full mx-auto">
               <JobDetailView
-                job={withFeedScore(selectedJob, liveJobs)}
+                job={detailJob ?? selectedJob}
                 candidate={candidate}
                 user={user}
                 isPro={isPro}
@@ -2028,9 +2017,6 @@ function JobsPageInner() {
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate);
-                        if (matchScore !== null) {
-                          job.matchScore = matchScore;
-                        }
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
-import { FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { clampMatchScore, FitDiagnosticsResult } from "@/lib/matcher/scoring";
 import type { User } from "@supabase/supabase-js";
 
 // Match insights + tracker actions only. AI tool entry points (resume tailoring) are
@@ -47,10 +47,11 @@ export default function JobAiToolsPanel({
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
+  // Same contract as the detail header: shared/feed score, else the fit fallback, one clamp.
   const matchScore = typeof job?.matchScore === "number" && !isNaN(job.matchScore)
-    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    ? clampMatchScore(job.matchScore)
     : diagnostics
-    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    ? clampMatchScore(diagnostics.score)
     : null;
   const matchLabel =
     matchScore !== null

@@ -5,7 +5,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
-import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { clampMatchScore, computeFitDiagnostics, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
 import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
@@ -175,28 +175,16 @@ export default function JobDetailView({
   const diagnostics: FitDiagnosticsResult | null = useMemo(() => {
     if (!hasConfirmedResume || !candidate) return null;
     try {
-      return computeFitDiagnostics(candidate, {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        location: job.location,
-        remote: job.remote,
-        remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
-        category: job.category,
-        skills: job.skills,
-        description: job.description,
-        salary_text: job.salary,
-        apply_url: job.applyUrl,
-      });
+      return computeFitDiagnostics(candidate, toFitInput(job));
     } catch {
       return null;
     }
   }, [hasConfirmedResume, candidate, job]);
 
   const matchScore = typeof job.matchScore === "number"
-    ? Math.max(10, Math.min(99, Math.round(job.matchScore)))
+    ? clampMatchScore(job.matchScore)
     : diagnostics
-    ? Math.max(10, Math.min(99, Math.round(diagnostics.score)))
+    ? clampMatchScore(diagnostics.score)
     : null;
 
   const expSubScore = diagnostics
@@ -799,7 +787,7 @@ export default function JobDetailView({
                   {isUnlocked ? (
                     `${matchScore}%`
                   ) : (
-                    <span className="filter blur-[3px] select-none text-slate-400">85%</span>
+                    <span className="select-none text-slate-400">••%</span>
                   )}
                 </div>
 
