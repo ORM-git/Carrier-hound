@@ -107,4 +107,40 @@ describe("CompanyLogo", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toBe("A");
   });
+
+  it("aggregator apply URLs never become the fallback logo domain (exact and subdomain)", () => {
+    for (const apply of [
+      "https://www.linkedin.com/jobs/view/123",
+      "https://linkedin.com/jobs/view/123",
+      "https://in.indeed.com/viewjob?jk=123",
+      "https://indeed.com/viewjob?jk=123",
+      "https://www.naukri.com/job-listings-123",
+      "https://naukri.com/job-listings-123",
+    ]) {
+      const { container, unmount } = render(
+        <CompanyLogo company="Global Payments" logoUrl={null} applyUrl={apply} />
+      );
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.textContent).toBe("G");
+      unmount();
+    }
+  });
+
+  it("employer domains are preserved: real company apply URLs still resolve to a domain logo", () => {
+    const d = dom();
+    const { container, unmount } = render(
+      <CompanyLogo company="Acme" logoUrl={null} applyUrl={`https://careers.${d}/jobs/1`} />
+    );
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(
+      `https://unavatar.io/careers.${d}?fallback=false`
+    );
+    unmount();
+    // Look-alike domains that merely contain an aggregator name are NOT excluded.
+    const { container: c2 } = render(
+      <CompanyLogo company="Acme" logoUrl={null} applyUrl="https://notlinkedin.com/jobs/1" />
+    );
+    expect(c2.querySelector("img")!.getAttribute("src")).toBe(
+      "https://unavatar.io/notlinkedin.com?fallback=false"
+    );
+  });
 });
