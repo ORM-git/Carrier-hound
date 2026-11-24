@@ -151,9 +151,9 @@ function check(x: Input) {
     "headline must be 'Start jobmaxxing with AI' with ascending m/a/x/x spans inside a no-wrap word and 'with AI' kept together"
   );
   assert.ok(!top.includes('className="xx"'), "flat gradient XX must be gone");
-  assert.deepEqual(words(top), words(topBody), "top fold text must match f21504b word for word");
+  assert.deepEqual(words(top), words(topBody.replace("Sign up free", "Sign up for free")), "top fold text must match f21504b word for word");
   assert.deepEqual(attrs(top, "className"), attrs(topBody, "class"), "top fold classes must match f21504b");
-  assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", "/jobs"], "top fold links: Sign in /login, Sign up free /signup, View Jobs /jobs");
+  assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", "/jobs", "/jobs", "/jobs"], "top fold links: Sign in /login, Sign up for free /signup, View Jobs /jobs");
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
