@@ -53,11 +53,13 @@ export function getCanonicalJobUrl(jobId: string): string {
   return `${base}/jobs?id=${encodeURIComponent(jobId)}`;
 }
 
-export function getReportJobMailto(job: { id: string; title: string; company?: string }): string {
+/** `locked`: the employer is hidden from this viewer, so it never goes into the link (support resolves it from the Job ID). */
+export function getReportJobMailto(job: { id: string; title: string; company?: string }, locked = false): string {
   const canonicalUrl = getCanonicalJobUrl(job.id);
   const subject = encodeURIComponent(`[Job Issue] ${job.title} (${job.id})`);
+  const company = locked ? "Locked" : job.company || "N/A";
   const body = encodeURIComponent(
-    `Job ID: ${job.id}\nJob Title: ${job.title}\nCompany: ${job.company || "N/A"}\nURL: ${canonicalUrl}\n\nPlease describe the issue with this job posting:`
+    `Job ID: ${job.id}\nJob Title: ${job.title}\nCompany: ${company}\nURL: ${canonicalUrl}\n\nPlease describe the issue with this job posting:`
   );
   return `mailto:${VERIFIED_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 }
@@ -419,7 +421,7 @@ export default function JobDetailView({
                   </button>
 
                   <a
-                    href={getReportJobMailto(job)}
+                    href={getReportJobMailto(job, !isUnlocked)}
                     data-testid="report-issue-link"
                     className="inline-flex items-center gap-1 text-[#475569] hover:text-[#2563EB] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 min-h-[36px]"
                   >
@@ -577,7 +579,7 @@ export default function JobDetailView({
             <div className="flex items-center gap-1.5 shrink-0">
               {onHide && (
                 // Hide is a labeled menu action (Remove From List), not a standalone ban icon
-                <JobCardMenu className="-my-1" job={job} onRemoveFromList={() => onHide()} onAlreadyApplied={() => onToggleApplied?.()} />
+                <JobCardMenu className="-my-1" job={job} locked={!isUnlocked} onRemoveFromList={() => onHide()} onAlreadyApplied={() => onToggleApplied?.()} />
               )}
 
               <button
@@ -707,9 +709,10 @@ export default function JobDetailView({
                 </li>
               )}
               {Boolean(job.salary && String(job.salary).trim()) && (
-                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
+                // Salary wraps instead of truncating so the full local + original amount stays readable (item 20)
+                <li data-testid="mobile-job-salary" className="inline-flex items-center gap-1 min-h-7 py-1 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] leading-[1.35] font-semibold max-w-full">
                   <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
-                  <span className="truncate">
+                  <span className="min-w-0 break-words">
                     {isUnlocked ? job.salary : "••••••••"}
                     {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
                       <span className="font-normal text-[#64748B]"> ({job.salary_original})</span>
@@ -903,6 +906,17 @@ export default function JobDetailView({
               ))}
             </dl>
           </div>
+        )}
+        {/* Without a confirmed resume no score is shown (never invented); phones get the same prompt desktop has (item 20). */}
+        {!hasConfirmedResume && (
+          <Link
+            href="/resume"
+            data-testid="mobile-match-resume-prompt"
+            className="lg:hidden flex items-center gap-2 min-h-[44px] pt-3 border-t border-[#E2E8F0] text-xs font-bold text-[#1D4ED8] hover:underline"
+          >
+            <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
+            <span>Upload your resume to see your real match</span>
+          </Link>
         )}
       </div>
 
@@ -1123,7 +1137,7 @@ export default function JobDetailView({
             <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#64748B]">
               <span>Notice an issue with this job posting?</span>
               <a
-                href={getReportJobMailto(job)}
+                href={getReportJobMailto(job, !isUnlocked)}
                 data-testid="report-issue-detail-link"
                 className="font-semibold text-[#2563EB] hover:underline cursor-pointer"
               >

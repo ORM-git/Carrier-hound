@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
-import { parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
+import { isWorkAuthComplete, parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
 
 function SettingsPageInner() {
   const { isExpanded } = useSidebarMode();
@@ -55,6 +55,10 @@ function SettingsPageInner() {
   const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"]>("remote");
   const [locations, setLocations] = useState<string[]>([]);
   const [workAuth, setWorkAuth] = useState("");
+  const [workAuthError, setWorkAuthError] = useState<string | null>(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  // Not editable here; loaded so a save writes the onboarding job types back instead of overwriting them.
+  const [employmentTypes, setEmploymentTypes] = useState<string[]>([]);
   const [minSalary, setMinSalary] = useState<number | undefined>(undefined);
   const [salaryCurrency, setSalaryCurrency] = useState("USD");
   // Not editable here; loaded only so a preferences save writes the stored choice back unchanged.
@@ -117,6 +121,7 @@ function SettingsPageInner() {
         setRemotePreference(p.remotePreference || "remote");
         setLocations(p.locations || []);
         setWorkAuth(p.workAuth || "");
+        setEmploymentTypes(p.employmentTypes || []);
         setMinSalary(p.minSalary);
         setSalaryCurrency(p.salaryCurrency || "USD");
         setDailyDigestOptIn(p.dailyDigestOptIn ?? false);
@@ -150,11 +155,17 @@ function SettingsPageInner() {
 
   const handleSavePreferences = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingPrefs) return;
+    // Same rule as onboarding: one of {1}, {2}, {3}, {2,3}. Never filled in for the user.
+    if (!isWorkAuthComplete(workAuth)) {
+      setWorkAuthError("Choose your work authorization before saving.");
+      return;
+    }
     const updated: UserPreferences = {
       roles,
       categories: roles.map((r) => r.toLowerCase()),
       experienceLevel,
-      employmentTypes: ["full-time"],
+      employmentTypes,
       locations,
       remotePreference,
       workAuth,
@@ -164,8 +175,16 @@ function SettingsPageInner() {
       onboardingCompleted: true,
       updatedAt: new Date().toISOString(),
     };
-    await saveUserPreferences(updated, user?.id);
-    toast.success("Job target preferences saved successfully.");
+    setSavingPrefs(true);
+    try {
+      await saveUserPreferences(updated, user?.id);
+      toast.success("Job target preferences saved successfully.");
+    } catch {
+      // The form keeps the edited values so the user can retry.
+      toast.error("Could not save your preferences. Your changes are still here, please try again.");
+    } finally {
+      setSavingPrefs(false);
+    }
   };
 
   const handleAddRole = (e: React.FormEvent) => {
@@ -338,7 +357,7 @@ function SettingsPageInner() {
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 text-xs font-semibold border border-blue-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                    Email Magic Link (Passwordless)
+                    Email &amp; password
                   </span>
                 )}
               </div>
@@ -483,12 +502,21 @@ function SettingsPageInner() {
                       <input
                         type="checkbox"
                         checked={(parseWorkAuth(workAuth) ?? []).includes(opt.id as WorkAuthId)}
-                        onChange={() => setWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId))}
+                        onChange={() => {
+                          setWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId));
+                          setWorkAuthError(null);
+                        }}
+                        aria-describedby={workAuthError ? "settings-work-auth-error" : undefined}
                         className="w-4 h-4 accent-blue-600"
                       />
                       <span>{opt.label}</span>
                     </label>
                   ))}
+                  {workAuthError && (
+                    <p id="settings-work-auth-error" role="alert" className="text-xs text-red-700 mt-1">
+                      {workAuthError}
+                    </p>
+                  )}
                 </fieldset>
               </div>
 
@@ -522,10 +550,11 @@ function SettingsPageInner() {
             <div className="pt-4 border-t border-slate-100 flex justify-end">
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm transition shadow-xs cursor-pointer"
+                disabled={savingPrefs}
+                className="inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm transition shadow-xs cursor-pointer disabled:opacity-60"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Preferences</span>
+                <span>{savingPrefs ? "Saving..." : "Save Preferences"}</span>
               </button>
             </div>
           </form>

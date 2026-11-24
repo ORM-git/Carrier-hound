@@ -85,11 +85,11 @@ check(
 
 // 1.3 Settings Page (src/app/settings/page.tsx)
 const settingsSrc = fs.readFileSync(path.join(ROOT, "src/app/settings/page.tsx"), "utf8");
-// Verify identified gaps: Preferences save and Notification save buttons lack disabled state
-const prefsButtonMatch = settingsSrc.match(/<button[^>]*type="submit"[^>]*>[\s\S]*?Save Preferences[\s\S]*?<\/button>/);
+// Gap closed (CM mobile item 8): Save Preferences locks while a save is in flight and shows a pending label.
+const prefsButtonMatch = settingsSrc.match(/<button[^>]*type="submit"[\s\S]*?Save Preferences[\s\S]*?<\/button>/);
 check(
-  Boolean(prefsButtonMatch && !prefsButtonMatch[0].includes("disabled")),
-  "Settings: Confirmed gap - Save Preferences button currently lacks disabled attribute"
+  Boolean(prefsButtonMatch && prefsButtonMatch[0].includes("disabled={savingPrefs}") && prefsButtonMatch[0].includes("Saving...")),
+  "Settings: Save Preferences button binds disabled={savingPrefs} and a Saving... label"
 );
 // The Notifications tab no longer has a save button: its only control was the AI matching
 // digest opt-in, which is intentionally not offered (stored choices are written back unchanged).

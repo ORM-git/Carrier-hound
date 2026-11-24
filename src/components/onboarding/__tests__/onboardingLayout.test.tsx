@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import OnboardingStep1 from "../OnboardingStep1";
 import OnboardingStep2 from "../OnboardingStep2";
 import JobFunctionBottomSheet from "../JobFunctionBottomSheet";
@@ -152,7 +152,7 @@ describe("Step 2 phone copy: no example helper or LinkedIn-PDF instruction", () 
     expect(linkedinCard.textContent).not.toMatch(/e\.g\./);
     expect(resumeCard.textContent).not.toMatch(/Save to PDF|LinkedIn PDF|LinkedIn profile instead/);
     expect(screen.queryByTestId("resume-linkedin-hint-mobile")).toBeNull();
-    expect(document.getElementById("resume-card-title-mobile")?.textContent?.trim()).toBe("Upload resume");
+    expect(document.getElementById("resume-card-title-mobile")?.textContent?.trim()).toBe("Upload CV/resume");
     expect(resumeCard.textContent).toContain("PDF or DOCX, up to 5 MB. Stored privately.");
     // Accessible names and accepted formats are unchanged.
     const url = screen.getByLabelText("LinkedIn profile URL (mobile)") as HTMLInputElement;
@@ -718,5 +718,184 @@ describe("OnboardingStep1 in Edit Mode", () => {
     expect((nextBtn as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(nextBtn);
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Step 2 phone behaviour (items 10/11): uploads, validation, double submit, Back, flags", () => {
+  const URL_IN = "https://www.linkedin.com/in/fixture-user";
+  const pdf = (name = "fixture-cv.pdf") => new File(["%PDF-1.4 FIXTURE"], name, { type: "application/pdf" });
+  const finish = () => screen.getByTestId("btn-onboarding-finish-mobile") as HTMLButtonElement;
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+  let fetchMock: ReturnType<typeof vi.fn>;
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("heading reads Upload CV/resume; the URL field has its own accessible label; format/size/privacy guidance stays", () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    expect(screen.getByRole("heading", { name: "Upload CV/resume" })).toBeTruthy();
+    const url = screen.getByRole("textbox", { name: "LinkedIn profile URL (mobile)" });
+    expect(url.closest("[data-testid=card-linkedin-mobile]")).toBeTruthy();
+    const card = screen.getByTestId("card-resume-mobile");
+    expect(card.textContent).toContain("PDF or DOCX, up to 5 MB. Stored privately.");
+    expect(card.textContent).not.toMatch(/Save to PDF|LinkedIn PDF|e\.g\./);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("upload pending: the button and Skip/Finish lock, so an unfinished upload is never reported as saved or skipped past", async () => {
+    const d = deferred<Response>();
+    vi.stubGlobal("fetch", (fetchMock = vi.fn(() => d.promise)));
+    const onFinish = vi.fn();
+    render(<OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" />);
+    fireEvent.change(screen.getByTestId("input-resume-file-mobile"), { target: { files: [pdf()] } });
+    await waitFor(() => expect(screen.getByTestId("resume-dropzone-mobile").textContent).toContain("Uploading and reading"));
+    expect((screen.getByTestId("resume-dropzone-mobile") as HTMLButtonElement).disabled).toBe(true);
+    expect(finish().disabled).toBe(true);
+    expect((screen.getByTestId("btn-step2-back-mobile") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(finish());
+    expect(onFinish).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("resume-success-mobile")).toBeNull();
+    await act(async () => d.resolve(new Response(JSON.stringify({ fileName: "fixture-cv.pdf", parse: null }), { status: 200 })));
+    await waitFor(() => expect(screen.getByTestId("resume-success-mobile")).toBeTruthy());
+    expect(finish().disabled).toBe(false);
+    expect(finish().textContent).toBe("Finish");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("upload failure: error shown, nothing marked saved, action stays Skip for now and still works", async () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: "Upload failed (FIXTURE)." }), { status: 500 }))));
+    const onFinish = vi.fn();
+    const onResumeSaved = vi.fn();
+    render(<OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" onResumeSaved={onResumeSaved} />);
+    fireEvent.change(screen.getByTestId("input-resume-file-mobile"), { target: { files: [pdf()] } });
+    expect((await screen.findByTestId("resume-error-mobile")).textContent).toContain("Upload failed (FIXTURE).");
+    expect(screen.queryByTestId("resume-success-mobile")).toBeNull();
+    expect(screen.queryByTestId("resume-saved-badge-mobile")).toBeNull();
+    expect(onResumeSaved).not.toHaveBeenCalled();
+    expect(finish().textContent).toBe("Skip for now");
+    fireEvent.click(finish());
+    expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["wrong type", () => new File(["x"], "fixture.txt", { type: "text/plain" }), "Please upload a PDF or DOCX file."],
+    ["empty file", () => new File([], "empty.pdf", { type: "application/pdf" }), "That file is empty."],
+  ])("invalid file (%s) is rejected locally with no request", async (_n, file, message) => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    fireEvent.change(screen.getByTestId("input-resume-file-mobile"), { target: { files: [file()] } });
+    expect((await screen.findByTestId("resume-error-mobile")).textContent).toContain(message);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a newer upload wins: the stale earlier response is never applied", async () => {
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    vi.stubGlobal("fetch", (fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    fireEvent.change(screen.getByTestId("input-resume-file-mobile"), { target: { files: [pdf("old.pdf")] } });
+    // A drop is still delivered while the button is busy, so a second upload can race the first.
+    fireEvent.drop(screen.getByTestId("resume-dropzone-mobile"), { dataTransfer: { files: [pdf("new.pdf")] } });
+    await act(async () => second.resolve(new Response(JSON.stringify({ fileName: "new.pdf" }), { status: 200 })));
+    await act(async () => first.resolve(new Response(JSON.stringify({ fileName: "old.pdf" }), { status: 200 })));
+    await waitFor(() => expect(document.getElementById("resume-card-title-mobile")?.textContent).toBe("new.pdf"));
+  });
+
+  it("invalid LinkedIn URL: inline error, no request; a valid one saves once even on a double submit", async () => {
+    const d = deferred<Response>();
+    vi.stubGlobal("fetch", (fetchMock = vi.fn(() => d.promise)));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    const input = screen.getByTestId("input-linkedin-url-mobile");
+    const save = screen.getByTestId("btn-save-linkedin-mobile") as HTMLButtonElement;
+    fireEvent.change(input, { target: { value: "https://www.linkedin.com/company/fixture" } });
+    fireEvent.click(save);
+    expect(screen.getByTestId("linkedin-error-mobile").textContent).toMatch(/personal profile/);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: URL_IN } });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    fireEvent.submit(save.closest("form")!);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => d.resolve(new Response(JSON.stringify({ linkedinUrl: URL_IN }), { status: 200 })));
+    await waitFor(() => expect(finish().textContent).toBe("Finish"));
+  });
+
+  it("LinkedIn save failure keeps the typed URL and shows the error", async () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: "Could not save (FIXTURE)." }), { status: 500 }))));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    fireEvent.change(screen.getByTestId("input-linkedin-url-mobile"), { target: { value: URL_IN } });
+    fireEvent.click(screen.getByTestId("btn-save-linkedin-mobile"));
+    expect((await screen.findByTestId("linkedin-error-mobile")).textContent).toContain("Could not save (FIXTURE).");
+    expect((screen.getByTestId("input-linkedin-url-mobile") as HTMLInputElement).value).toBe(URL_IN);
+    expect(finish().textContent).toBe("Skip for now");
+  });
+
+  it("Back keeps a typed but unsaved LinkedIn URL (the page re-passes the draft on remount)", () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    let draft: string | null = null;
+    const first = render(
+      <OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" onLinkedinDraftChange={(v) => (draft = v)} />
+    );
+    fireEvent.change(screen.getByTestId("input-linkedin-url-mobile"), { target: { value: URL_IN } });
+    fireEvent.click(screen.getByTestId("btn-step2-back-mobile"));
+    first.unmount();
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" linkedinDraft={draft} />);
+    expect((screen.getByTestId("input-linkedin-url-mobile") as HTMLInputElement).value).toBe(URL_IN);
+    // Still unsaved: it is not reported as saved and nothing was sent.
+    expect(finish().textContent).toBe("Skip for now");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a draft that differs from the saved URL is shown but not marked saved", () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    render(
+      <OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" initialLinkedinUrl={URL_IN} linkedinDraft={URL_IN + "-edited"} />
+    );
+    expect((screen.getByTestId("input-linkedin-url-mobile") as HTMLInputElement).value).toBe(URL_IN + "-edited");
+    expect(finish().textContent).toBe("Skip for now");
+    expect((screen.getByTestId("btn-save-linkedin-mobile") as HTMLButtonElement).textContent).toBe("Update your LinkedIn URL");
+  });
+
+  it("skipping with saved data never discards it: Finish hands control to the page, which keeps the saved values", () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    const onFinish = vi.fn();
+    render(
+      <OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" initialResumeName="kept.pdf" initialLinkedinUrl={URL_IN} />
+    );
+    expect(finish().textContent).toBe("Finish");
+    fireEvent.click(finish());
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getAllByText("kept.pdf").length).toBeGreaterThan(0);
+  });
+
+  it("flag OFF: no inputs, one Skip for now, zero requests", () => {
+    isStep2Enabled = false;
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    const onFinish = vi.fn();
+    render(<OnboardingStep2 onBack={() => {}} onFinish={onFinish} isSaving={false} authToken="t" />);
+    expect(screen.queryByTestId("input-linkedin-url-mobile")).toBeNull();
+    expect(screen.queryByTestId("input-resume-file-mobile")).toBeNull();
+    expect(finish().textContent).toBe("Skip for now");
+    fireEvent.click(finish());
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("flag ON: exactly one focusable Skip for now in the phone tree and no per-card skip", () => {
+    vi.stubGlobal("fetch", (fetchMock = vi.fn()));
+    render(<OnboardingStep2 onBack={() => {}} onFinish={() => {}} isSaving={false} authToken="t" />);
+    const phone = screen.getByTestId("btn-onboarding-finish-mobile").closest(".lg\\:hidden") as HTMLElement;
+    const skips = Array.from(phone.querySelectorAll("button")).filter(
+      (b) => /skip/i.test(b.textContent || "") || /skip/i.test(b.getAttribute("aria-label") || "")
+    );
+    expect(skips).toHaveLength(1);
+    skips[0].focus();
+    expect(document.activeElement).toBe(skips[0]);
   });
 });

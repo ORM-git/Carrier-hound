@@ -228,7 +228,7 @@ export default function PricingPage() {
         </h1>
         <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
           <span className="sm:block">Full access to verified unindexed remote job listings.</span>{" "}
-          <span className="sm:block whitespace-nowrap">
+          <span className="sm:block sm:whitespace-nowrap">
             {isAutoRenewEnabled ? "Flat ₹499/mo monthly auto-renew, cancel anytime." : "One-time payment, no auto-renewal."}
           </span>
         </p>

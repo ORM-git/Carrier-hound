@@ -118,7 +118,7 @@ export default function AuthCallbackPage() {
             if (hashSession) {
               finishSignedIn(hashSession.user?.id);
             } else {
-              finish(`/login?error=${encodeURIComponent("Could not authenticate magic link. Please try again.")}`);
+              finish(`/login?error=${encodeURIComponent("Could not complete sign-in. Please try again.")}`);
             }
           });
         }, 1500);

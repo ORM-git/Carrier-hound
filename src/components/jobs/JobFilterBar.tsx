@@ -1213,6 +1213,7 @@ export default function JobFilterBar({
       {/* 3. ACTIVE FILTERS STRIP (When activeCount > 0)                       */}
       {/* =================================================================== */}
       {activeCount > 0 && (
+        // Chip remove buttons extend a 44px touch area on phones (::after, no visual change)
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#E2E8F0] text-xs">
           <span className="font-bold text-[#64748B]">Active:</span>
 
@@ -1223,7 +1224,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ countryCode: "" })}
                 aria-label={`Remove country filter ${filters.countryCode}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1237,7 +1238,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ location: "" })}
                 aria-label={`Remove location filter ${filters.location}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1251,7 +1252,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ category: "" })}
                 aria-label={`Remove category filter ${filters.category}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1265,7 +1266,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ level: "" })}
                 aria-label={`Remove level filter ${filters.level}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1279,7 +1280,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ jobType: "" })}
                 aria-label={`Remove job type filter ${filters.jobType}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1293,7 +1294,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ workModel: "" })}
                 aria-label={`Remove work model filter ${filters.workModel}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1307,7 +1308,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ datePosted: "" })}
                 aria-label={`Remove date posted filter ${filters.datePosted}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1321,7 +1322,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ experience: "" })}
                 aria-label={`Remove experience filter ${filters.experience}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1335,7 +1336,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ hidden: false })}
                 aria-label="Remove hidden jobs filter"
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1349,7 +1350,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ salaryMin: "" })}
                 aria-label="Remove salary filter"
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1363,7 +1364,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ sourceType: "" })}
                 aria-label="Remove source type filter"
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1377,7 +1378,7 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => onChange({ company: "" })}
                 aria-label={`Remove company filter ${filters.company}`}
-                className="hover:text-rose-600 transition"
+                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1387,7 +1388,8 @@ export default function JobFilterBar({
           <button
             type="button"
             onClick={onClearAll}
-            className="text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] hover:underline ml-1"
+            // Phones: the ::after widens the touch area to 44px without moving the row (desktop unchanged)
+            className="relative text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] hover:underline ml-1 after:absolute after:-inset-x-2 after:-inset-y-[14px] after:content-[''] sm:after:content-none"
           >
             Clear all
           </button>
