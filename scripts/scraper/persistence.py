@@ -31,6 +31,36 @@ ALLOWED: dict[str, frozenset[Any]] = {
 
 SALARY_PERIOD_ALIASES = {"year": "yearly", "month": "monthly", "hour": "hourly"}
 
+# The only unique violation that is a row-level duplicate (another row already owns this apply URL).
+APPLY_URL_CONSTRAINT = "jobs_apply_url_unique"
+
+
+def _non_finite(value: Any) -> bool:
+    """NaN/inf as a number or as a string ("nan", "inf", "-Infinity"): not a salary anyone stated."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return not math.isfinite(float(value))
+    if isinstance(value, str):
+        try:
+            return not math.isfinite(float(value.strip()))
+        except ValueError:
+            return False
+    return False
+
+
+def sanitize_salaries(jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """A non-finite salary bound means the source stated no usable salary: keep the job, null the whole
+    salary (min, max, period) and report it. Never invents a value."""
+    out: list[dict[str, Any]] = []
+    sanitized: list[dict[str, Any]] = []
+    for job in jobs:
+        if _non_finite(job.get("salary_min")) or _non_finite(job.get("salary_max")):
+            job = {**job, "salary_min": None, "salary_max": None, "salary_period": None}
+            sanitized.append(rejection(job, "sanitize", "non-finite salary set to null"))
+        out.append(job)
+    return out, sanitized
+
 
 def normalize_salary_period(raw: Any) -> Any:
     """Canonical salary_period for a known alias; None stays None; anything else is returned unchanged
@@ -105,6 +135,12 @@ def rejection(row: dict[str, Any], stage: str, reason: str, code: str | None = N
 
 
 _CONSTRAINT = re.compile(r'constraint\s+\\?"([A-Za-z0-9_]{1,63})\\?"')
+
+
+def is_duplicate_apply_url(status: int, body: str) -> bool:
+    """Definitive row-level duplicate: 400/409 + SQLSTATE 23505 on jobs_apply_url_unique only."""
+    code, reason = db_error_diagnostic(status, body)
+    return status in (400, 409) and code == "23505" and reason.endswith(f"constraint {APPLY_URL_CONSTRAINT}")
 
 
 def db_error_diagnostic(status: int, body: str) -> tuple[str | None, str]:
