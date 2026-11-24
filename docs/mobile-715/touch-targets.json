@@ -1,0 +1,356 @@
+[
+  {
+    "width": 360,
+    "view": "step1",
+    "rows": [
+      {
+        "name": "Remove Frontend Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Backend Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Full Stack Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Machine Learning Engineer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Data Scientist",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      }
+    ],
+    "overflow": false,
+    "pass": true
+  },
+  {
+    "width": 360,
+    "view": "filters",
+    "rows": [
+      {
+        "name": "Remove country filter US",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove location filter San Francisco",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove category filter engineering",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove level filter senior",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove job type filter full-time",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove work model filter remote",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove date posted filter week",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove hidden jobs filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove salary filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove source type filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove company filter Synthetic Employer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Clear all",
+        "width": 46.703125,
+        "height": 44,
+        "misses": []
+      }
+    ],
+    "overflow": false,
+    "pass": true
+  },
+  {
+    "width": 390,
+    "view": "step1",
+    "rows": [
+      {
+        "name": "Remove Frontend Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Backend Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Full Stack Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Machine Learning Engineer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Data Scientist",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      }
+    ],
+    "overflow": false,
+    "pass": true
+  },
+  {
+    "width": 390,
+    "view": "filters",
+    "rows": [
+      {
+        "name": "Remove country filter US",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove location filter San Francisco",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove category filter engineering",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove level filter senior",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove job type filter full-time",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove work model filter remote",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove date posted filter week",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove hidden jobs filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove salary filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove source type filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove company filter Synthetic Employer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Clear all",
+        "width": 46.703125,
+        "height": 44,
+        "misses": []
+      }
+    ],
+    "overflow": false,
+    "pass": true
+  },
+  {
+    "width": 768,
+    "view": "step1",
+    "rows": [
+      {
+        "name": "Remove Frontend Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Backend Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Full Stack Developer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Machine Learning Engineer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove Data Scientist",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      }
+    ],
+    "overflow": false,
+    "pass": true
+  },
+  {
+    "width": 768,
+    "view": "filters",
+    "rows": [
+      {
+        "name": "Remove country filter US",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove location filter San Francisco",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove category filter engineering",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove level filter senior",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove job type filter full-time",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove work model filter remote",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove date posted filter week",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove hidden jobs filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove salary filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove source type filter",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Remove company filter Synthetic Employer",
+        "width": 44,
+        "height": 44,
+        "misses": []
+      },
+      {
+        "name": "Clear all",
+        "width": 46.703125,
+        "height": 44,
+        "misses": []
+      }
+    ],
+    "overflow": false,
+    "pass": true
+  }
+]

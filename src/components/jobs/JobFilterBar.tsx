@@ -1213,18 +1213,18 @@ export default function JobFilterBar({
       {/* 3. ACTIVE FILTERS STRIP (When activeCount > 0)                       */}
       {/* =================================================================== */}
       {activeCount > 0 && (
-        // Chip remove buttons extend a 44px touch area on phones (::after, no visual change)
+        // Real touch targets stay inside each chip, including when rows wrap.
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#E2E8F0] text-xs">
           <span className="font-bold text-[#64748B]">Active:</span>
 
           {filters.countryCode && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>Country: {filters.countryCode}</span>
               <button
                 type="button"
                 onClick={() => onChange({ countryCode: "" })}
                 aria-label={`Remove country filter ${filters.countryCode}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1232,13 +1232,13 @@ export default function JobFilterBar({
           )}
 
           {filters.location && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.location}</span>
               <button
                 type="button"
                 onClick={() => onChange({ location: "" })}
                 aria-label={`Remove location filter ${filters.location}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1246,13 +1246,13 @@ export default function JobFilterBar({
           )}
 
           {filters.category && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.category}</span>
               <button
                 type="button"
                 onClick={() => onChange({ category: "" })}
                 aria-label={`Remove category filter ${filters.category}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1260,13 +1260,13 @@ export default function JobFilterBar({
           )}
 
           {filters.level && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.level}</span>
               <button
                 type="button"
                 onClick={() => onChange({ level: "" })}
                 aria-label={`Remove level filter ${filters.level}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1274,13 +1274,13 @@ export default function JobFilterBar({
           )}
 
           {filters.jobType && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.jobType}</span>
               <button
                 type="button"
                 onClick={() => onChange({ jobType: "" })}
                 aria-label={`Remove job type filter ${filters.jobType}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1288,13 +1288,13 @@ export default function JobFilterBar({
           )}
 
           {filters.workModel && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.workModel}</span>
               <button
                 type="button"
                 onClick={() => onChange({ workModel: "" })}
                 aria-label={`Remove work model filter ${filters.workModel}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1302,13 +1302,13 @@ export default function JobFilterBar({
           )}
 
           {filters.datePosted && filters.datePosted !== "all" && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.datePosted}</span>
               <button
                 type="button"
                 onClick={() => onChange({ datePosted: "" })}
                 aria-label={`Remove date posted filter ${filters.datePosted}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1316,13 +1316,13 @@ export default function JobFilterBar({
           )}
 
           {filters.experience && filters.experience !== "all" && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>{filters.experience}</span>
               <button
                 type="button"
                 onClick={() => onChange({ experience: "" })}
                 aria-label={`Remove experience filter ${filters.experience}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1330,13 +1330,13 @@ export default function JobFilterBar({
           )}
 
           {filters.hidden && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>Viewing Hidden Jobs</span>
               <button
                 type="button"
                 onClick={() => onChange({ hidden: false })}
                 aria-label="Remove hidden jobs filter"
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1344,13 +1344,13 @@ export default function JobFilterBar({
           )}
 
                     {filters.salaryMin && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>Min Salary: ${parseInt(String(filters.salaryMin), 10) / 1000}k+</span>
               <button
                 type="button"
                 onClick={() => onChange({ salaryMin: "" })}
                 aria-label="Remove salary filter"
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1358,13 +1358,13 @@ export default function JobFilterBar({
           )}
 
           {filters.sourceType && filters.sourceType !== "all" && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>Source: {filters.sourceType.toUpperCase()}</span>
               <button
                 type="button"
                 onClick={() => onChange({ sourceType: "" })}
                 aria-label="Remove source type filter"
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1372,13 +1372,13 @@ export default function JobFilterBar({
           )}
 
           {filters.company && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
+            <span className="inline-flex items-center gap-1 pl-2.5 pr-0 py-0 lg:px-2.5 lg:py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#1D4ED8] font-medium text-[11px]">
               <span>Company: {filters.company}</span>
               <button
                 type="button"
                 onClick={() => onChange({ company: "" })}
                 aria-label={`Remove company filter ${filters.company}`}
-                className="relative hover:text-rose-600 transition after:absolute after:-inset-[17px] after:content-[''] sm:after:content-none"
+                className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 lg:w-auto lg:h-auto hover:text-rose-600 transition"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -1388,8 +1388,8 @@ export default function JobFilterBar({
           <button
             type="button"
             onClick={onClearAll}
-            // Phones: the ::after widens the touch area to 44px without moving the row (desktop unchanged)
-            className="relative text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] hover:underline ml-1 after:absolute after:-inset-x-2 after:-inset-y-[14px] after:content-[''] sm:after:content-none"
+            // Keep Clear all in flow as a real target too, without an overlapping extension.
+            className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] hover:underline ml-1"
           >
             Clear all
           </button>

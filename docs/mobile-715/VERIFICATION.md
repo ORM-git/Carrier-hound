@@ -58,6 +58,14 @@ The earlier isolated-PASS labels did not establish these edge cases. Comparison 
 
 `accessibility-layout.cjs` now passes 24 cases: two steps, three widths, 200% text, short viewport, 96px cookie offset and short viewport plus cookie offset. Cookie checks use a controlled CSS-height contract, not a real consent workflow. The 360px short+cookie pixels and 200% text pixels were directly inspected. CTA and final control remain above the cookie notice/footer. The other three browser matrices pass after porting. No production account or DB writes, auth acceptance, uploads or payments were performed.
 
+## Review follow-up: synchronization and non-overlapping touch targets
+
+Reviewer reproduced the stale-page test resolving its deferred request before the real search debounce had changed the query. The test now waits for the filtered page-1 request, the old page's aborted signal and the three filtered cards before resolving that old response. Its final exact three-card assertion is unchanged; stale appends are still rejected.
+
+Reviewer also found overlapping pseudo-element touch extensions across chip rows. Role-remove and active-filter remove/Clear all now use real in-flow 44px rectangular targets, not invisible extensions. Each target stays inside its chip/row; filter desktop sizing at lg+ is unchanged. This necessarily makes phone/tablet chip rows taller without changing their content or styling scheme. `touch-targets.cjs` renders the real components at 360/390/768, checks all four inset corners plus the center of every remove/Clear all target against `elementFromPoint`, verifies 44px dimensions and no horizontal overflow, and captures all six views. All 51 targets / 255 hit checks pass; all six screenshots were directly inspected. The 24-case onboarding 200%-text/short-viewport/cookie-offset matrix passes again.
+
+Two combined 2-worker runs of the new auth/jobs/settings/pricing/onboarding suites plus filter regression and callback safety pass 202/202 each after both fixes (a previous synchronization-only combined run passed 156/156). Typecheck passes; lint remains 0 errors / 252 existing warnings. The earlier build/PGlite limitations remain, and new-head CI plus reviewer GO are still required.
+
 ## Remaining gates
 
 1. Independent review of the completed isolated matrices, open-detail revision fix and nine-gap port delta.

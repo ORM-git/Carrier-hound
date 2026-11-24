@@ -129,15 +129,15 @@ export default function OnboardingStep1({
                   {roles.map((r) => (
                     <span
                       key={r}
-                      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 md:py-1.5 rounded-full text-xs md:text-sm font-semibold bg-[#E6F2FF] dark:bg-brand-900/50 text-[#0020B0] dark:text-brand-200 border border-[#0082FF]/30"
+                      className="inline-flex items-center gap-1.5 pl-3 pr-1 py-0 rounded-full text-xs md:text-sm font-semibold bg-[#E6F2FF] dark:bg-brand-900/50 text-[#0020B0] dark:text-brand-200 border border-[#0082FF]/30"
                     >
                       <span>{r}</span>
                       <button
                         type="button"
                         onClick={() => onRemoveRole(r)}
                         aria-label={`Remove ${r}`}
-                        // 24px target; the ::after extends the touch area to 44px without growing the chip
-                        className="relative inline-flex items-center justify-center w-6 h-6 -my-1 -mr-1 shrink-0 text-[#0020B0] hover:text-[#0020B0] dark:hover:text-brand-100 rounded-full hover:bg-[#CCE6FF]/50 dark:hover:bg-brand-800/50 transition after:absolute after:-inset-2.5 after:content-['']"
+                        // Keep the full touch target inside the chip so wrapped rows never overlap.
+                        className="inline-flex items-center justify-center w-[44px] h-[44px] shrink-0 text-[#0020B0] hover:text-[#0020B0] dark:hover:text-brand-100 hover:bg-[#CCE6FF]/50 dark:hover:bg-brand-800/50 transition"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>

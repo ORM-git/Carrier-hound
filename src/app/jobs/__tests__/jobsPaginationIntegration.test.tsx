@@ -2,7 +2,7 @@
 // CM mobile item 21: infinite-scroll lifecycle on the real /jobs page (FIXTURE transport + IntersectionObserver).
 import React from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   deferred,
   fixtureJob,
@@ -155,7 +155,7 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(loadMoreButton()).not.toBeNull();
   });
 
-  it("a slow page that returns after a tab change or filter change is never applied", async () => {
+  it("a slow page that returns after a filter change is never applied", async () => {
     const slow = deferred<any>();
     h.transport = async ({ page: p, search }) => {
       if (p === 1) return search ? page(jobs(range(201, 203)), false) : page(jobs(range(1, 25)), true);
@@ -165,10 +165,18 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     await act(async () => io.enter());
     await flush();
     expect(pagesRequested()).toEqual([1, 2]);
+    const oldPageSignal = h.calls[1].signal as AbortSignal;
+    expect(oldPageSignal.aborted).toBe(false);
     // Rapid filter change via the URL-driven back/forward path (same handler the filter sheet feeds).
     window.history.pushState(null, "", "/jobs?search=fixture");
     await act(async () => window.dispatchEvent(new PopStateEvent("popstate")));
-    await flush(30);
+    // Search uses a real debounce. Microtask flushing alone does not establish that
+    // the new query has started and cancelled the old next-page request.
+    await waitFor(() => {
+      expect(h.calls.some((call) => call.page === 1 && call.search === "fixture")).toBe(true);
+      expect(oldPageSignal.aborted).toBe(true);
+      expect(uniqueTitles()).toEqual(["Fixture Analyst 201", "Fixture Analyst 202", "Fixture Analyst 203"]);
+    });
     await act(async () => slow.resolve(page(jobs(range(26, 50)), false)));
     await flush();
     expect(uniqueTitles()).toEqual(["Fixture Analyst 201", "Fixture Analyst 202", "Fixture Analyst 203"]);
