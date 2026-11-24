@@ -209,10 +209,10 @@
   "headerLogo": {
     "src": "/careermonke-logo.png",
     "sourceUrl": "https://careermonke.com/careermonke-logo.png",
-    "sha256": "ecda48f5c8e4a2c56fb10447b35600aedd624c9299adf328ffe86e29828b274f",
+    "sha256": "0a7a7b94b41b16c4f4e5da7a8379e203aa41d25d194f6f7a9c0f4ce96586b279",
     "natural": [
-      617,
-      749
+      534,
+      232
     ],
     "cssHeight": 32,
     "linkLabel": "CareerMonke home"
@@ -220,7 +220,7 @@
   "unchanged": {
     "favicon": {
       "path": "/favicon.ico",
-      "sha256": "8ac21d2f333759edbba57b0f5a12a1929481cb053025fff1ffdef0bf65596dfd"
+      "sha256": "dfb0dfb448a01585fef78a3a237be22195188347c195497a96a2e9833b221917"
     },
     "footerLogo": "/careermonke-logo.png"
   }

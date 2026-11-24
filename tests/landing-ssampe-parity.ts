@@ -30,7 +30,7 @@ const SOURCES: Record<string, string> = {
 const ASSETS: Record<string, string> = {
   "/mascot.png": "030e3eadbef1d86115adc7ac423ae2ef5882727b",
   "/owner.jpg": "29fdee8bc59472ea8e5bcf326d27a4134eb1bcb8",
-  "/careermonke-logo.png": "f5d981e790b389df8719761c1bb9ef43e1c8d03b",
+  "/careermonke-logo.png": "63f897f7ecf829fb692d85d5f8a82e0da132979e", // owner-supplied final wordmark (2026-11-24)
 };
 // The only copy change below the fold: the five CareerMonke Way cells, in order.
 const CELLS: [string, string][] = [
@@ -140,7 +140,7 @@ function check(x: Input) {
   // uses the approved ssampe@3386250 ascending m/a/x/x treatment (same words, accessible name on the h1).
   const topBody = topSrc
     .match(/<body>([\s\S]*?)<script>/)![1]
-    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="617" height="749">Career Monke</a>')
+    .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo.png" alt="" width="534" height="232"></a>')
     .replace(
       SRC_H1,
       '<h1 aria-label="Start jobmaxxing with AI">Start <span class="nw">job<span class="mx"><span class="m1" aria-hidden="true">m</span><span class="m2" aria-hidden="true">a</span><span class="m3" aria-hidden="true">x</span><span class="m4" aria-hidden="true">x</span></span>ing</span> with&nbsp;AI</h1>'
@@ -157,8 +157,8 @@ function check(x: Input) {
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
-    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="617" height="749" ?\/> ?Career Monke ?<\/a>/,
-    "header must use the real CareerMonke logo (617x749, decorative alt, link named 'CareerMonke home')"
+    /<a href="#" className="brand" aria-label="Career Monke home"> ?<img className="brand-logo" src="\/careermonke-logo\.png" alt="" width="534" height="232" ?\/> ?<\/a>/,
+    "header must use the final CareerMonke wordmark alone (534x232, decorative alt, no adjacent text, link named 'CareerMonke home')"
   );
   assert.ok(!top.includes("brand-mark"), "header CM badge must be gone");
   const logo = x.asset(LIVE.headerLogo.src);
@@ -256,8 +256,8 @@ function check(x: Input) {
     .replace(/(^|\})\.cm-top\{--navy/, "$1:root{--navy")
     .replace(/(^|\})\.cm-top\{font-family/, "$1body{font-family")
     .replace(/\.cm-top /g, "");
-  // Single owner-requested exception: the CM badge rule became the logo rule (32px high, natural 617x749 ratio).
-  const LOGO_RULE = ".brand-logo{flex:none;height:32px;width:auto;aspect-ratio:617 / 749;object-fit:contain}";
+  // Owner-requested exception: the CM badge rule became the logo rule (32px high, natural 534x232 final-wordmark ratio).
+  const LOGO_RULE = ".brand-logo{flex:none;height:32px;width:auto;aspect-ratio:534 / 232;object-fit:contain}";
   const BADGE_RULE = ".brand-mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(145deg,#a0522d,#6b3519);display:grid;place-items:center;color:#fde7cf;font-size:12px;font-weight:800}";
   assert.ok(topGot.includes(LOGO_RULE), "top CSS must size the header logo to 32px without distortion");
   assert.equal(topGot.replace(LOGO_RULE, BADGE_RULE), topWant, "top CSS must equal the f21504b CSS (scoped) plus the documented host neutralisers and the header-logo rule");
@@ -287,7 +287,11 @@ function check(x: Input) {
     .replace(/(animation(?:-name)?:)([^;}]*)/g, (_, k, v) => k + prefix(v))
     .replace(/(^|[{}])body\{/g, "$1.landing-wrapper{")
     // owner-requested: the founder stat row is removed, so its stat-only rules go too
-    .replace(/(?<=^|[{}])\.landing-wrapper \.fd-stats[^{]*\{[^}]*\}/g, "");
+    .replace(/(?<=^|[{}])\.landing-wrapper \.fd-stats[^{]*\{[^}]*\}/g, "")
+    // owner-requested (2026-11-24): final wordmark — footer logo keeps 76px height at the new 534x232 ratio,
+    // and the navy sticky-bar logo gets a white chip so the blue wordmark stays readable
+    .replace(".landing-wrapper .f-top img{width:auto;height:76px;aspect-ratio:617/749}", ".landing-wrapper .f-top img{width:auto;height:76px;aspect-ratio:534/232}")
+    .replace(".landing-wrapper .sb img{width:48px;height:48px;object-fit:contain}", ".landing-wrapper .sb img{width:48px;height:48px;object-fit:contain;background:#fff;border-radius:12px;padding:5px}");
   const LIVE_MARK = "/* ---- Live review cards + founder card";
   const liveAt = x.lowerCss.indexOf(LIVE_MARK);
   assert.ok(liveAt > 0, "lower CSS must keep the live review/founder block last");
@@ -408,7 +412,7 @@ const controls: [string, Input][] = [ // each must fail for its own reason (see 
   ["founder stat row back", mut("page", '<div className="socials">', '<dl className="fd-stats"><div><dt>Stat</dt><dd>1</dd></div></dl><div className="socials">')],
   ["founder social link changed", mut("page", /target="_blank"\s+rel="noopener noreferrer"\s+aria-label="Instagram"/, 'aria-label="Instagram"')],
   ["header CM badge back", mut("page", /<img\s+className="brand-logo"[\s\S]*?\/>/, '<span className="brand-mark">CM</span>')],
-  ["header logo CSS stretched", mut("topCss", "aspect-ratio: 617 / 749;", "aspect-ratio: 1 / 1;")],
+  ["header logo CSS stretched", mut("topCss", "aspect-ratio: 534 / 232;", "aspect-ratio: 1 / 1;")],
   ["live CSS styles something else", mut("lowerCss", /$/, "\n.landing-wrapper .faq{max-width:100%}\n")],
   ["avatar file swapped", { ...real, asset: (p) => (p === "/images/avatars/male-1.webp" ? real.asset("/images/avatars/female-1.webp") : real.asset(p)) }],
   ["favicon changed", { ...real, asset: (p) => (p === "/favicon.ico" ? Buffer.from("not the favicon") : real.asset(p)) }],
