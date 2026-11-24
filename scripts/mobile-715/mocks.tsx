@@ -24,3 +24,5 @@ export function Link({href,children,prefetch,...props}:any){return <a href={href
 export function Dynamic(){return ()=>null;}
 export function Shell({children}:any){return <>{children}</>;}
 export const mockFetch=async()=>new Response(JSON.stringify({fileName:'fixture.pdf',linkedinUrl:'https://linkedin.com/in/fixture',parse:{status:'parsed'}}),{status:200,headers:{'content-type':'application/json'}});
+
+export class LatestJobSelectionGate { private serial=0; begin(){return ++this.serial;} isCurrent(token:number){return token===this.serial;} cancel(){this.serial++;} }

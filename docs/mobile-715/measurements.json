@@ -583,13 +583,23 @@
     "view": "pricing",
     "state": "populated",
     "width": 360,
-    "height": 2356,
+    "height": 2472,
     "overflow": true,
-    "text": "FIXTURE, NO LIVE DATA\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹499\nQuarterly\n₹2,199\nMonthly\nMost popular\n₹499\n/month\n\nAuto-renews mo",
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
     "controls": [
       {
+        "label": "",
+        "y": 6,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
         "label": "Buy Monthly",
-        "y": 758,
+        "y": 834,
         "h": 48
       }
     ]
@@ -1178,13 +1188,23 @@
     "view": "pricing",
     "state": "populated",
     "width": 390,
-    "height": 2284,
-    "overflow": false,
-    "text": "FIXTURE, NO LIVE DATA\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹499\nQuarterly\n₹2,199\nMonthly\nMost popular\n₹499\n/month\n\nAuto-renews mo",
+    "height": 2452,
+    "overflow": true,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
     "controls": [
       {
+        "label": "",
+        "y": 6,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
         "label": "Buy Monthly",
-        "y": 722,
+        "y": 814,
         "h": 48
       }
     ]
@@ -1773,13 +1793,23 @@
     "view": "pricing",
     "state": "populated",
     "width": 430,
-    "height": 2257,
+    "height": 2364,
     "overflow": false,
-    "text": "FIXTURE, NO LIVE DATA\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹499\nQuarterly\n₹2,199\nMonthly\nMost popular\n₹499\n/month\n\nAuto-renews mo",
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
     "controls": [
       {
+        "label": "",
+        "y": 6,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
         "label": "Buy Monthly",
-        "y": 696,
+        "y": 778,
         "h": 48
       }
     ]

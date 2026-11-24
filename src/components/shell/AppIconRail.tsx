@@ -110,7 +110,7 @@ export default function AppIconRail({ currentRoute }: AppIconRailProps) {
                   <BrandIcon className="w-6 h-6" />
                 </div>
                 <span className="text-[17px] font-bold text-[#090E34] tracking-tight truncate">
-                  Career<span className="text-[#2563EB]">Monke</span>
+                  Career <span className="text-[#2563EB]">Monke</span>
                 </span>
               </Link>
 

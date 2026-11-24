@@ -84,7 +84,7 @@ export default function OnboardingStep1({
       {/* ============================================================
           MOBILE / TABLET (<1024px): main-branch markup, unchanged.
           ============================================================ */}
-      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-10 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
+      <div className="lg:hidden w-full max-w-lg md:max-w-2xl mx-auto flex flex-col pb-28 md:pb-12 pt-4 md:pt-8 px-4 sm:px-6 md:px-8">
         {/* Step instruction (neutral copy; the former assistant persona header was removed by owner decision) */}
         <p className="mb-3 md:mb-8 text-base md:text-lg font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
           {isEditMode ? (
