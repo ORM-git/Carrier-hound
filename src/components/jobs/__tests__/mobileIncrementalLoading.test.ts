@@ -27,7 +27,7 @@ describe("mobile incremental loading (item 21)", () => {
     expect(loadMore).toContain("!canLoadMore || loadMoreError || loadingJobs");
     expect(page).toContain('data-testid="jobs-load-more-sentinel"');
     expect(page).toContain("[overflow-anchor:none]");
-    expect(page).toContain('? "Retry"');
+    expect(page).toMatch(/loadMoreError \? \(?\s*"Retry"/);
     expect(page).toContain('data-testid="jobs-list-end"');
     expect(loadMore).not.toMatch(/while\s*\(/); // no fetch-all loop
   });

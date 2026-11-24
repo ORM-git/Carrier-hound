@@ -2548,13 +2548,19 @@ function JobsPageInner() {
                             disabled={loadingMore}
                             className="px-6 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-bold transition shadow-none cursor-pointer disabled:opacity-60 min-h-[44px]"
                           >
-                            {loadingMore
-                              ? "Loading Positions..."
-                              : loadMoreError
-                              ? "Retry"
-                              : totalCount > liveJobs.length
-                              ? `Load More Verified Positions (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`
-                              : "Load More Verified Positions"}
+                            {loadingMore ? (
+                              "Loading Positions..."
+                            ) : loadMoreError ? (
+                              "Retry"
+                            ) : (
+                              <>
+                                Load More Verified Positions
+                                {/* Inventory count is desktop-only; mobile shows no remaining/total text (item 22) */}
+                                {totalCount > liveJobs.length && (
+                                  <span className="hidden sm:inline">{` (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`}</span>
+                                )}
+                              </>
+                            )}
                           </button>
                         </div>
                       )}
