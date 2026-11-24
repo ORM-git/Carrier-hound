@@ -31,6 +31,8 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "react-toastify";
+import { WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
+import { parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
 
 function SettingsPageInner() {
   const { isExpanded } = useSidebarMode();
@@ -418,17 +420,23 @@ function SettingsPageInner() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Work Authorization
-                </label>
-                <input
-                  type="text"
-                  aria-label="Work Authorization"
-                  value={workAuth}
-                  onChange={(e) => setWorkAuth(e.target.value)}
-                  placeholder="e.g. Authorized (No sponsorship needed)"
-                  className="w-full text-xs sm:text-sm py-2.5 px-3.5 rounded-xl border border-slate-200 bg-white focus:outline-blue-600 shadow-2xs"
-                />
+                {/* Same canonical 1 / 2 / 3 / 2+3 contract as onboarding; free text could save values the API rejects. */}
+                <fieldset>
+                  <legend className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Work Authorization
+                  </legend>
+                  {WORK_AUTH_OPTIONS.map((opt) => (
+                    <label key={opt.id} className="flex items-center gap-2.5 min-h-[44px] text-xs sm:text-sm text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={(parseWorkAuth(workAuth) ?? []).includes(opt.id as WorkAuthId)}
+                        onChange={() => setWorkAuth(toggleWorkAuth(workAuth, opt.id as WorkAuthId))}
+                        className="w-4 h-4 accent-blue-600"
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  ))}
+                </fieldset>
               </div>
 
               <div>
