@@ -14,7 +14,8 @@ import {
   type CanaryJournal, type CanaryPlan, type CanaryRow, type CanaryStore, type JournalIO,
 } from "../src/lib/company-profile/canary";
 import { renderCanaryPlanSummary } from "../src/lib/company-profile/review";
-import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
+import { safeFetchCompanyPage, safeFetchWikidataJson } from "../src/lib/company-profile/safeFetch";
+import { WIKIDATA_API } from "../src/lib/company-profile/wikidata";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -99,18 +100,20 @@ async function runProductionCanary(argv: string[]) {
     }
     const codeSha = resolveCodeSha(gitState(), options.codeSha);
     const store = supabaseCanaryStore(createClient(url, key, { auth: { persistSession: false } }));
-    const fetchPage = (pageUrl: string) => safeFetchCompanyPage(pageUrl);
+    // Wikidata Action API URLs (Step D, owner-approved) use the JSON fetcher; everything else is an official page.
+    const fetchWikidata = (apiUrl: string) => safeFetchWikidataJson(apiUrl);
+    const fetchPage = (pageUrl: string) => (pageUrl.startsWith(`${WIKIDATA_API}?`) ? fetchWikidata(pageUrl) : safeFetchCompanyPage(pageUrl));
     const binding = { targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, confirmDigest: options.confirmDigest || "", codeSha };
     if (options.mode === "plan") {
       const planPath = path.resolve(options.planPath);
       if (fs.existsSync(planPath)) throw new Error("--plan-out file already exists; choose a new path");
-      const plan = await buildCanaryPlan({ store: readOnlyCanaryStore(store), fetchPage, sleep: delay, now: () => new Date(), newId: randomUUID, targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, codeSha, ttlHours: options.ttlHours, secrets });
+      const plan = await buildCanaryPlan({ store: readOnlyCanaryStore(store), fetchPage, sleep: delay, now: () => new Date(), newId: randomUUID, targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, codeSha, ttlHours: options.ttlHours, secrets, fetchWikidata });
       const text = JSON.stringify(plan);
       if (secrets.some((secret) => secret && text.includes(secret))) throw new Error("Plan contains a credential value; refusing to write it");
       writeJsonDurable(planPath, plan);
       const summaryPath = `${planPath.replace(/\.json$/i, "")}.summary.md`;
       fs.writeFileSync(summaryPath, renderCanaryPlanSummary(plan), { flag: "wx" });
-      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, summary_file: summaryPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error })) }, null, 2));
+      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, summary_file: summaryPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error, wikidata: c.wikidata ?? null })) }, null, 2));
       return;
     }
     const plan = JSON.parse(fs.readFileSync(path.resolve(options.planPath), "utf8")) as CanaryPlan;

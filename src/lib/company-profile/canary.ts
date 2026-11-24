@@ -11,6 +11,7 @@ import {
   extractOfficialCompanySubpage, isAtsEvidenceLinked, reconcileCompanyFacts, robotsAllows,
   type CompanyAtsEvidence, type OfficialPageExtraction,
 } from "./enrichment";
+import { fetchWikidataProfile, type WikidataFetcher, type WikidataProfile } from "./wikidata";
 
 export const COMPANY_PROFILE_PRODUCTION_PROJECT_REF = "szakevhxhwpeskidvtfs";
 export const COMPANY_PROFILE_SCHEMA_VERSION = "20261122a_company_profile_data";
@@ -239,7 +240,7 @@ export function readOnlyCanaryStore(store: CanaryStore): CanaryStore {
 export interface FetchedPage { url: string; text: string; status: number; contentType: string }
 export type PageFetcher = (url: string) => Promise<FetchedPage>;
 export type Sleeper = (ms: number) => Promise<void>;
-export interface SourceRecord { company_id: string; kind: "robots" | "page"; requested_url: string; final_url: string; status: number; fetched_at: string; bytes: number; sha256: string }
+export interface SourceRecord { company_id: string; kind: "robots" | "page" | "wikidata"; requested_url: string; final_url: string; status: number; fetched_at: string; bytes: number; sha256: string }
 
 export async function fetchWithBackoff(fetchPage: PageFetcher, sleep: Sleeper, url: string): Promise<FetchedPage> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -326,6 +327,8 @@ export interface CanaryCompanyPlan {
   error: string | null;
   proposed: { facts: CanaryRow[]; leadership: CanaryRow[]; news: CanaryRow[] };
   current: Record<CanaryTable, CanaryRow[]>;
+  /** Present only when the plan was made with a Wikidata fetcher (Step D). */
+  wikidata?: { outcome: WikidataProfile["outcome"] | "fetch_failed"; entity_id: string | null; error: string | null };
 }
 export interface CanaryPlan {
   kind: "company-profile-canary-plan"; format: 1; atomic: false;
@@ -375,6 +378,8 @@ function factRow(companyId: string, key: string, fact: CompanyFact): CanaryRow {
 export async function buildCanaryPlan(input: {
   store: CanaryStore; fetchPage: PageFetcher; sleep: Sleeper; now: () => Date; newId: () => string;
   targetProject: string; companyIds: string[]; maxCompanies: number; codeSha: string; ttlHours?: number; secrets?: string[];
+  /** Step D: Wikidata Action API fetcher. Wikidata fills only fact keys no official source covers. */
+  fetchWikidata?: WikidataFetcher;
 }): Promise<CanaryPlan> {
   const { store, fetchPage, sleep, now, newId } = input;
   if (input.targetProject !== COMPANY_PROFILE_PRODUCTION_PROJECT_REF) throw new Error("Plan target must be the production project");
@@ -410,17 +415,32 @@ export async function buildCanaryPlan(input: {
     };
     companyPlans.push(plan);
     if (!freshness.shouldRefresh) continue;
-    let crawl: Awaited<ReturnType<typeof crawlOfficialProfile>>;
+    let crawl: Awaited<ReturnType<typeof crawlOfficialProfile>> | null = null;
     try {
       crawl = await crawlOfficialProfile({ company, boards, fetchPage, sleep, now: () => canonicalTimestamp(now())!, record: (s) => sources.push({ company_id: company.id, ...s }) });
+      plan.outcome = crawl.outcome;
     } catch (error) {
       plan.outcome = "fetch_failed";
       plan.error = redactCanaryText(error instanceof Error ? error.message : String(error), input.secrets);
-      continue;
+      if (!input.fetchWikidata) continue;
     }
-    plan.outcome = crawl.outcome;
-    if (!crawl.extracted) continue;
-    const next = reconcileCompanyFacts(existing, crawl.extracted.facts, true);
+    // Wikidata is independent of the official crawl's identity gate: its own identity rule is P856 == stored domain.
+    let wikidata: WikidataProfile | null = null;
+    if (input.fetchWikidata) {
+      plan.wikidata = { outcome: "no_match", entity_id: null, error: null };
+      try {
+        wikidata = await fetchWikidataProfile({ company, fetchJson: input.fetchWikidata, sleep, now: () => canonicalTimestamp(now())!, sha256, record: (s) => sources.push({ company_id: company.id, ...s }) });
+        plan.wikidata = { outcome: wikidata.outcome, entity_id: wikidata.entityId, error: null };
+      } catch (error) {
+        plan.wikidata = { outcome: "fetch_failed", entity_id: null, error: redactCanaryText(error instanceof Error ? error.message : String(error), input.secrets) };
+      }
+    }
+    const official = crawl?.extracted || null;
+    if (!official && !wikidata?.entityId) continue;
+    // Official sources always win: Wikidata only fills keys that no official row or observation covers.
+    const officialKeys = new Set([...Object.keys(official?.facts || {}), ...Object.entries(existing).filter(([, f]) => f!.sourceKind !== "wikidata").map(([k]) => k)]);
+    const fromWikidata = Object.fromEntries(Object.entries(wikidata?.facts || {}).filter(([k]) => !officialKeys.has(k)));
+    const next = reconcileCompanyFacts(existing, { ...fromWikidata, ...(official?.facts || {}) }, true);
     const nextFacts = Object.entries(next).map(([key, fact]) => factRow(company.id, key, fact!));
     plan.proposed.facts = nextFacts;
     if (!nextFacts.length) continue;
@@ -428,7 +448,7 @@ export async function buildCanaryPlan(input: {
       const before = rows.company_profile_facts.find((r) => r.fact_key === after.fact_key) || null;
       if (!sameRow(before, after)) actions.push({ company_id: company.id, table: "company_profile_facts", op: before ? "update" : "insert", key: keyOf("company_profile_facts", after), before, after });
     }
-    const leaders = dedupeLeadershipObservations(crawl.extracted.leadership.map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf ? p.roleAsOf.slice(0, 10) : null, source_url: p.sourceUrl, retrieved_at: canonicalTimestamp(p.retrievedAt)! })));
+    const leaders = dedupeLeadershipObservations([...(official?.leadership || []), ...(wikidata?.leadership || [])].map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf ? p.roleAsOf.slice(0, 10) : null, source_url: p.sourceUrl, retrieved_at: canonicalTimestamp(p.retrievedAt)! })));
     for (const leader of leaders) {
       const before = rows.company_profile_leadership.find((r) => r.name === leader.name && r.role === leader.role && r.role_as_of === leader.role_as_of) || null;
       // Same identity: only retrieved_at moves forward, as the observation RPC does; sourced fields stay.
@@ -438,7 +458,7 @@ export async function buildCanaryPlan(input: {
       plan.proposed.leadership.push(after);
       if (!sameRow(before, after)) actions.push({ company_id: company.id, table: "company_profile_leadership", op: before ? "update" : "insert", key: keyOf("company_profile_leadership", after), before, after });
     }
-    const news = dedupeCompanyNewsObservations(crawl.extracted.news.map((n) => ({ company_id: company.id, headline: n.headline, published_at: canonicalTimestamp(n.publishedAt)!, source_url: n.sourceUrl, excerpt: n.excerpt || null, retrieved_at: createdAt })));
+    const news = dedupeCompanyNewsObservations((official?.news || []).map((n) => ({ company_id: company.id, headline: n.headline, published_at: canonicalTimestamp(n.publishedAt)!, source_url: n.sourceUrl, excerpt: n.excerpt || null, retrieved_at: createdAt })));
     for (const item of news) {
       const before = rows.company_profile_news.find((r) => r.source_url === item.source_url) || null;
       const after = before
