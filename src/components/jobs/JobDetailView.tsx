@@ -6,6 +6,7 @@ import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult } from "@/lib/matcher/scoring";
+import { companySourceLabel, deriveIndustryTags } from "@/lib/company-profile/industryTags";
 import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
@@ -323,9 +324,10 @@ export default function JobDetailView({
   const websiteHost = (() => { try { return sanitizedWebsite ? new URL(sanitizedWebsite).hostname : null; } catch { return null; } })();
   const factLabel: Record<CompanyFactKey, string> = {
     overview: "Overview", website: "Website", headquarters: "Headquarters", founded_year: "Founded",
-    employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X",
+    employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X", funding_stage: "Funding",
   };
   const companyFact = (key: CompanyFactKey) => companyFacts[key];
+  const industryTags = deriveIndustryTags(companyFacts.overview?.value, (companyProfile?.jobs.jobs || []).map((j) => j.title));
   const hasCompanyDetails = Object.keys(companyFacts).length > 0 || Boolean(companyProfile?.leadership.length || companyProfile?.news.length);
 
   return (
@@ -1087,13 +1089,20 @@ export default function JobDetailView({
             {companyFact("overview") && (
               <div className="space-y-1">
                 <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">{companyFact("overview")?.value}</p>
-                <a href={companyFact("overview")?.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Official source · checked {new Date(companyFact("overview")!.retrievedAt).toLocaleDateString()}</a>
+                <a href={companyFact("overview")?.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">{companySourceLabel(companyFact("overview")?.sourceUrl, companyFact("overview")?.sourceKind)} · checked {new Date(companyFact("overview")!.retrievedAt).toLocaleDateString()}</a>
               </div>
             )}
 
-            {(companyFact("founded_year") || companyFact("headquarters") || companyFact("employee_count_range") || companyFact("website")) && (
+            {industryTags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {industryTags.map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#334155] font-semibold">{tag}</span>)}
+                <span className="text-[10px] text-[#64748B]">From the company description and job titles</span>
+              </div>
+            )}
+
+            {(companyFact("founded_year") || companyFact("headquarters") || companyFact("employee_count_range") || companyFact("website") || companyFact("funding_stage")) && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#E2E8F0] text-xs">
-                {(["founded_year", "headquarters", "employee_count_range", "website"] as const).map((key) => {
+                {(["founded_year", "headquarters", "employee_count_range", "funding_stage", "website"] as const).map((key) => {
                   const fact = companyFact(key);
                   if (!fact) return null;
                   const value = key === "website" ? sanitizedWebsite : fact.value;
@@ -1103,9 +1112,9 @@ export default function JobDetailView({
               </div>
             )}
 
-            {(companyFact("linkedin_url") || companyFact("twitter_url")) && <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">{(["linkedin_url", "twitter_url"] as const).map((key) => { const fact = companyFact(key); const href = fact && sanitizeExternalUrl(fact.value); return href ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline">{factLabel[key]}<span className="block text-[10px] text-[#64748B] font-normal">Official site · {new Date(fact.retrievedAt).toLocaleDateString()}</span></a> : null; })}</div>}
+            {(companyFact("linkedin_url") || companyFact("twitter_url")) && <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">{(["linkedin_url", "twitter_url"] as const).map((key) => { const fact = companyFact(key); const href = fact && sanitizeExternalUrl(fact.value); return href ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline">{factLabel[key]}<span className="block text-[10px] text-[#64748B] font-normal">{companySourceLabel(fact.sourceUrl, fact.sourceKind)} · {new Date(fact.retrievedAt).toLocaleDateString()}</span></a> : null; })}</div>}
 
-            {companyProfile?.leadership.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Leadership</h3>{companyProfile.leadership.map((leader) => <div key={leader.id} className="text-xs"><span className="font-semibold text-[#0F172A]">{leader.name}</span><span className="text-[#475569]"> · {leader.role}{leader.roleAsOf ? ` (as of ${new Date(leader.roleAsOf).toLocaleDateString()})` : ""}</span><div><a href={leader.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Official source · checked {new Date(leader.retrievedAt).toLocaleDateString()}</a></div></div>)}</div> : null}
+            {companyProfile?.leadership.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Leadership</h3>{companyProfile.leadership.map((leader) => <div key={leader.id} className="text-xs"><span className="font-semibold text-[#0F172A]">{leader.name}</span><span className="text-[#475569]"> · {leader.role}{leader.roleAsOf ? ` (as of ${new Date(leader.roleAsOf).toLocaleDateString()})` : ""}</span><div><a href={leader.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">{companySourceLabel(leader.sourceUrl)} · checked {new Date(leader.retrievedAt).toLocaleDateString()}</a></div></div>)}</div> : null}
 
             {companyProfile?.news.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Company news</h3>{companyProfile.news.map((item) => <div key={item.id} className="text-xs"><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline break-words">{item.headline}</a><div className="text-[10px] text-[#64748B]">{new Date(item.publishedAt).toLocaleDateString()}</div>{item.excerpt && <p className="mt-0.5 text-[#475569] break-words">{item.excerpt}</p>}</div>)}</div> : null}
 

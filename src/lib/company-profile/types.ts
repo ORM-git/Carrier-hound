@@ -1,11 +1,12 @@
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 
-export type CompanyFactKey = "overview" | "website" | "headquarters" | "founded_year" | "employee_count_range" | "linkedin_url" | "twitter_url";
+export type CompanyFactKey = "overview" | "website" | "headquarters" | "founded_year" | "employee_count_range" | "linkedin_url" | "twitter_url" | "funding_stage";
+export const COMPANY_FACT_SOURCE_KINDS = ["official_site", "official_report", "official_announcement", "wikidata"] as const;
 
 export interface CompanyFact<T = string> {
   value: T;
   sourceUrl: string;
-  sourceKind: "official_site" | "official_report" | "official_announcement";
+  sourceKind: (typeof COMPANY_FACT_SOURCE_KINDS)[number];
   retrievedAt: string;
   observedAt?: string | null;
   status?: "fresh" | "stale" | "conflict";
@@ -53,7 +54,7 @@ export interface CompanyProfile {
 }
 
 const factKeys = new Set<CompanyFactKey>([
-  "overview", "website", "headquarters", "founded_year", "employee_count_range", "linkedin_url", "twitter_url",
+  "overview", "website", "headquarters", "founded_year", "employee_count_range", "linkedin_url", "twitter_url", "funding_stage",
 ]);
 
 export function isEligibleCompanyJob(candidate: { id?: unknown; company_id?: unknown; status?: unknown; is_active?: unknown }, companyId: string, currentJobId: string): boolean {
@@ -82,7 +83,7 @@ export function sanitizeCompanyProfile(value: unknown, companyId?: string): Comp
     const fact = candidate as CompanyFact;
     const sourceUrl = safeCompanySourceUrl(fact.sourceUrl);
     const retrievedAt = typeof fact.retrievedAt === "string" && Number.isFinite(Date.parse(fact.retrievedAt)) ? fact.retrievedAt : null;
-    if (!sourceUrl || !retrievedAt || !["official_site", "official_report", "official_announcement"].includes(fact.sourceKind) || typeof fact.value !== "string" || !fact.value.trim()) continue;
+    if (!sourceUrl || !retrievedAt || !(COMPANY_FACT_SOURCE_KINDS as readonly string[]).includes(fact.sourceKind) || typeof fact.value !== "string" || !fact.value.trim()) continue;
     const isUrl = key.endsWith("_url") || key === "website";
     const cleanValue = isUrl ? safeCompanySourceUrl(fact.value) : stripHtmlAndExecutableMarkup(fact.value).trim().slice(0, key === "overview" ? 700 : 180);
     if (!cleanValue) continue;

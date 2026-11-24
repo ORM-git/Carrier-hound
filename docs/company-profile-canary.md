@@ -110,6 +110,26 @@ npx tsx scripts/enrich-company-profiles.ts --production --target-project szakevh
 Outside a git checkout, add `--code-sha <REVIEWED_COMMIT_SHA>` to every command.
 Keep plan and journal files outside the repository and retain the journal: it is the rollback manifest.
 
+## Step D: Wikidata as a second source (owner decisions 2026-11-24)
+
+Every production plan now also asks Wikidata (CC0) about each allowlisted company. This uses the same plan, digest, source-drift, journal, write and rollback contract as above.
+
+- **Why:** the official-site parser proves identity only when the homepage links the company's ATS board. For OpenAI, Stripe, Anthropic, Cloudflare and Datadog it stopped at `not_ats_linked`; MongoDB's fetch timed out. Six plans, zero rows.
+- **Identity:** a name-search candidate counts only if its official website (P856) is **the homepage** of the stored domain: same host, and a root path. Exactly one candidate may match; otherwise the outcome is `no_match` or `ambiguous` and nothing is used. Product entities on the same host (for example `openai.com/sora`, `www.anthropic.com/claude`) never count.
+- **What is stored:** only what a statement states, with `source_url = https://www.wikidata.org/wiki/Q…`, `source_kind = 'wikidata'` and `retrieved_at`:
+  - overview (the English description), website, founded year (P571, year precision or finer), headquarters (P159), employee band (P1128, the statement with the latest P585 date, which becomes `observed_at`)
+  - X (P2002) and LinkedIn (P4264)
+  - `funding_stage`, only when a listing (P414) has a ticker, for example "Public (NASDAQ: X)". No listing is **not** stored as "private".
+  - Leaders: the current CEO (P169 without an end time) and founders (P112) that are instances of human (Q5).
+  - Two different values with no preferred rank is ambiguity, and is dropped. Deprecated statements are ignored.
+- **Official sources win:** Wikidata fills only fact keys that no official row or observation covers, and never creates a conflict with an official value.
+- **Requests:** at most 4 + one per founder per company (at most 6 founders), 1 second apart, through the DNS-pinned transport, locked to `https://www.wikidata.org/w/api.php`. The descriptive User-Agent is `CareerMonkeBot/1.0 (https://careermonke.com; company-profile enrichment)`. No retry on 403/429; a failure is a redacted `fetch_failed` with zero actions. Wikidata's robots.txt blocks crawlers from `/w/`; the owner approved Action API use under Wikidata's data-access policy.
+- **Not included:** Google News RSS (`news.google.com/robots.txt` disallows `/rss`) and DOL H-1B data (dol.gov returns 403 to automated requests; the owner chose to skip it).
+- **Schema precondition:** migration `20261124a_company_profile_wikidata.sql` (owner-run) widens the facts allowlists. Until it is applied, the database refuses the first Wikidata row; the write stops there and journals it.
+- **Read-only pre-canary report:** this needs no database and no credentials. Names and domains come from an inventory file:
+  `npx tsx scripts/report-company-wikidata.ts --inventory ../canary/inventory-<DATE>.json --company-ids <UUID>[,…] --out ../canary/wikidata-report-<DATE>.json`
+- **Company tab:** Wikidata values show "Wikidata" as their source, and `funding_stage` shows as "Funding". Industry tags are derived deterministically from the description, or from at least 3 job titles, and are labelled as derived. Empty sections stay hidden.
+
 ## Verification (offline)
 
 `src/lib/company-profile/__tests__/enrichment.test.ts` runs on mocked official pages and a disposable in-memory Postgres
