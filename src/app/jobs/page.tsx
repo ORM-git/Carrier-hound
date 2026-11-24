@@ -1611,7 +1611,7 @@ function JobsPageInner() {
     if (!selectedJob) return null;
     const job = withFeedScore(selectedJob, liveJobs);
     if (typeof job.matchScore === "number") return job;
-    const remembered = recallMatchScore(scoreSnap, job.id);
+    const remembered = recallMatchScore(scoreSnap, job);
     return remembered === null ? job : { ...job, matchScore: remembered };
   }, [selectedJob, liveJobs, scoreSnap]);
 

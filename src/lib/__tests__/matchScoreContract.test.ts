@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { MATCH_SCORE_VERSION, clampMatchScore, computeFitDiagnostics, toFitInput } from "@/lib/matcher/scoring";
-import { matchScoreSnapshot, recallMatchScore, rememberMatchScores } from "@/lib/matcher/scoreCache";
+import { candidateProfileVersion, jobRevisionKey, matchScoreSnapshot, recallMatchScore, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { CandidateProfile } from "@/lib/resume/types";
 
 // CM mobile item 18: one score for the same job + candidate snapshot + scoring version on card, detail,
@@ -16,35 +16,49 @@ beforeEach(() => {
   };
 });
 
-const candidate = { id: "c1", confirmedAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-02T00:00:00Z" };
+// CandidateProfile has no id: the snapshot uses a version of the scoring-relevant profile content.
+const candidate = { confirmedAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-02T00:00:00Z", skills: ["React"], experience: [], headline: "Engineer" };
+const job = (over: Record<string, unknown> = {}) => ({ id: "j1", title: "Frontend Engineer", postedAt: "2026-11-20T00:00:00Z", location: "Remote", category: "engineering", remote: true, remoteScope: "worldwide", ...over });
 
-describe("score cache keyed by version + candidate + preferences", () => {
-  it("recalls the score a card showed for the same snapshot", () => {
+describe("score cache keyed by job id + job revision + candidate version + preferences + scoring version", () => {
+  it("recalls the score a card showed for the same job revision and snapshot", () => {
     const snap = matchScoreSnapshot(candidate, "p1");
-    rememberMatchScores(snap, [{ id: "j1", matchScore: 73 }, { id: "j2", matchScore: null }]);
-    expect(recallMatchScore(snap, "j1")).toBe(73);
-    expect(recallMatchScore(snap, "j2")).toBeNull();
+    rememberMatchScores(snap, [job({ matchScore: 73 }), job({ id: "j2", matchScore: null })]);
+    expect(recallMatchScore(snap, job())).toBe(73);
+    expect(recallMatchScore(snap, job({ id: "j2" }))).toBeNull();
     expect(snap).toContain(String(MATCH_SCORE_VERSION));
   });
 
-  it("invalidates every entry together when the candidate or preferences change", () => {
+  it("a revised job (re-posted, retitled, moved, re-scoped) is a miss, not a stale score", () => {
     const snap = matchScoreSnapshot(candidate, "p1");
-    rememberMatchScores(snap, [{ id: "j1", matchScore: 73 }, { id: "j9", matchScore: 50 }]);
-    const newResume = matchScoreSnapshot({ ...candidate, updatedAt: "2026-11-03T00:00:00Z" }, "p1");
+    rememberMatchScores(snap, [job({ matchScore: 73 })]);
+    for (const over of [{ postedAt: "2026-11-23T00:00:00Z" }, { title: "Senior Frontend Engineer" }, { location: "Berlin" }, { remoteScope: "hybrid" }, { category: "design" }]) {
+      expect(recallMatchScore(snap, job(over))).toBeNull();
+    }
+    expect(recallMatchScore(snap, job({ description: "longer detail text", skills: ["React"] }))).toBe(73); // detail-only fields don't miss
+  });
+
+  it("a changed candidate profile invalidates every entry, even with the same updatedAt; so do preferences", () => {
+    const snap = matchScoreSnapshot(candidate, "p1");
+    rememberMatchScores(snap, [job({ matchScore: 73 }), job({ id: "j9", matchScore: 50 })]);
+    const newSkills = matchScoreSnapshot({ ...candidate, skills: ["React", "TypeScript"] }, "p1");
     const newPrefs = matchScoreSnapshot(candidate, "p2");
-    expect(recallMatchScore(newResume, "j1")).toBeNull();
-    expect(recallMatchScore(newPrefs, "j1")).toBeNull();
-    rememberMatchScores(newPrefs, [{ id: "j1", matchScore: 61 }]);
-    expect(recallMatchScore(newPrefs, "j1")).toBe(61);
-    expect(recallMatchScore(newPrefs, "j9")).toBeNull(); // old snapshot's entries are gone, not mixed in
+    expect(newSkills).not.toBe(snap);
+    expect(recallMatchScore(newSkills, job())).toBeNull();
+    expect(recallMatchScore(newPrefs, job())).toBeNull();
+    rememberMatchScores(newPrefs, [job({ matchScore: 61 })]);
+    expect(recallMatchScore(newPrefs, job())).toBe(61);
+    expect(recallMatchScore(newPrefs, job({ id: "j9" }))).toBeNull(); // old snapshot's entries are gone, not mixed in
+    expect(candidateProfileVersion(candidate)).toBe(candidateProfileVersion({ ...candidate }));
+    expect(jobRevisionKey(job())).toMatch(/^j1\|/);
   });
 
   it("no snapshot (no confirmed resume) never stores or recalls; corrupt storage is ignored", () => {
-    expect(matchScoreSnapshot({ id: "c1", updatedAt: "x" }, "p1")).toBeNull();
-    rememberMatchScores(null, [{ id: "j1", matchScore: 80 }]);
+    expect(matchScoreSnapshot({ updatedAt: "x" }, "p1")).toBeNull();
+    rememberMatchScores(null, [job({ matchScore: 80 })]);
     expect(mem.size).toBe(0);
     mem.set("cm_match_scores", "{not json");
-    expect(recallMatchScore(matchScoreSnapshot(candidate, "p1"), "j1")).toBeNull();
+    expect(recallMatchScore(matchScoreSnapshot(candidate, "p1"), job())).toBeNull();
   });
 });
 
