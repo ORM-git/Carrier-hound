@@ -22,6 +22,7 @@ function run() {
     // Inject intentional corruptions to verify negative control failure detection
     detailCode = detailCode.replace(/sticky top-14/g, "static");
     detailCode = detailCode.replace(/Overview/g, "BadTab1");
+    detailCode = detailCode.replace(/>Responsibilities<\/h2>/g, ">BadResponsibilities</h2>");
     detailCode = detailCode.replace(/Company/g, "BadTab2");
     detailCode = detailCode.replace(/const isUnlocked = isPro && !job.proUnlockError;/g, "const isUnlocked = false;");
     detailCode = detailCode.replace(/lg:grid-cols-12/g, "block");
@@ -76,18 +77,28 @@ function run() {
     console.log("  [PASS] two-column layout: clean two-column grid on desktop (lg:grid-cols-12 with 7/5 column ratio), single column on mobile");
   }
 
-  // 4. Content Order: Summary + tags, Responsibilities, Qualifications, Benefits, Company
-  const hasContentOrder =
-    detailCode.includes("Job description") &&
-    detailCode.includes("Responsibilities") &&
-    detailCode.includes("Requirements") &&
-    detailCode.includes("Benefits") &&
-    detailCode.includes('id="company-section"');
+  // 4. Existing Overview cards must precede Company. Source order is intentional:
+  // only render grounded lists and do not reintroduce a separate sections tab.
+  const contentStart = detailCode.indexOf("(3) CONTENT ORDER");
+  const contentCode = detailCode.slice(contentStart);
+  const orderedMarkers = [
+    ">Job description</h2>",
+    ">Responsibilities</h2>",
+    ">Qualifications</h2>",
+    ">Benefits</h2>",
+    'id="company-section"',
+  ];
+  const markerPositions = orderedMarkers.map((marker) => contentCode.indexOf(marker));
+  const hasContentOrder = contentStart >= 0 && markerPositions.every(
+    (position, index) => position >= 0 && (index === 0 || position > markerPositions[index - 1]),
+  ) && contentCode.includes("responsibilitiesList.length > 0") &&
+    contentCode.includes("requirementsList.length > 0 || preferredList.length > 0") &&
+    contentCode.includes("benefitsList.length > 0");
 
   if (!hasContentOrder) {
-    failures.push("CONTENT ORDER FAIL: Must render summary + tags, Responsibilities, Qualifications, Benefits, and Company section in order.");
+    failures.push("CONTENT ORDER FAIL: Must render Job description, data-backed Responsibilities, Qualifications, Benefits, then Company in Overview order.");
   } else {
-    console.log("  [PASS] content order: summary + tags, Responsibilities, Qualifications, Benefits, and Company section");
+    console.log("  [PASS] content order: Job description, Responsibilities, Qualifications, Benefits, then Company; lists require data");
   }
 
   // 5. Right Rail with Stacked Cards. Product restore (#665): the Tailor Resume card was removed (no AI

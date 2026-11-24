@@ -50,8 +50,8 @@
   flex: none;
 }
 .cm-top .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; }
-/* Owner-requested: the real CareerMonke monkey (617x749) at the live header's 32px height, not stretched. */
-.cm-top .brand-logo { flex: none; height: 32px; width: auto; aspect-ratio: 617 / 749; object-fit: contain; }
+/* Owner-requested: the final CareerMonke wordmark (534x232) at the live header's 32px height, not stretched. */
+.cm-top .brand-logo { flex: none; height: 32px; width: auto; aspect-ratio: 534 / 232; object-fit: contain; }
 .cm-top .nav-actions { display: flex; align-items: center; gap: 6px; }
 .cm-top .btn-ghost { padding: 8px 14px; border-radius: 999px; font-weight: 600; font-size: 15px; }
 .cm-top .btn-ghost:hover { background: rgba(15,23,42,.05); }

@@ -8,7 +8,7 @@ const ENTITIES: Record<string, string> = {
 };
 
 /** Display-only text cleanup. Never insert the result as HTML or change the stored posting. */
-export function jobDescriptionText(input?: string | null): string {
+export function jobDescriptionText(input?: string | null, preserveBlocks = false): string {
   if (typeof input !== "string") return "";
   let text = input;
   // Some feeds double-escape entities. Bound the passes, then strip decoded markup too.
@@ -22,6 +22,12 @@ export function jobDescriptionText(input?: string | null): string {
     });
     if (decoded === text) break;
     text = decoded;
+  }
+  if (preserveBlocks) {
+    text = text.replace(/<(script|style|iframe|object)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+      .replace(/<li\b[^>]*>/gi, "\n• ")
+      .replace(/<br\s*\/?>|<\/?(?:p|div|h[1-6]|ul|ol|section)\b[^>]*>/gi, "\n")
+      .replace(/<\/li>/gi, "\n");
   }
   return stripHtmlAndExecutableMarkup(text).replace(/\u00a0/g, " ").trim();
 }
