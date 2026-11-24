@@ -934,7 +934,7 @@ export default function JobDetailView({
           <div data-testid="mobile-match-score" className="lg:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0] space-y-2.5">
             <h2 className="text-[16px] font-bold text-[#0F172A]">Match Score</h2>
             <div className="flex gap-2 items-stretch">
-              <div className="flex flex-col justify-between gap-2 w-[100px] shrink-0 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-3">
+              <div className="flex flex-col justify-between gap-2 w-[72px] shrink-0 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
                 <span className="text-2xl font-black text-[#0F172A] leading-none">
                   {isUnlocked ? `${matchScore}%` : <span className="select-none text-slate-400">••%</span>}
                 </span>
@@ -942,7 +942,7 @@ export default function JobDetailView({
                   {isUnlocked ? matchLabel : "Pro Match"}
                 </span>
               </div>
-              <dl className="flex-1 grid grid-cols-3 gap-1.5">
+              <dl className="flex-1 grid grid-cols-3 gap-1">
                 {([
                   ["Experience", expSubScore],
                   ["Skill", skillSubScore],
@@ -950,8 +950,8 @@ export default function JobDetailView({
                 ] as const)
                   .filter(([, value]) => !isUnlocked || value !== null)
                   .map(([label, value]) => (
-                    <div key={label} className="flex flex-col justify-between gap-1.5 rounded-xl bg-slate-50 border border-slate-200 p-2 min-w-0">
-                      <dt className="text-[11px] text-[#64748B] leading-tight break-words">{label}</dt>
+                    <div key={label} className="flex flex-col justify-between gap-1 rounded-xl bg-slate-50 border border-slate-200 px-1.5 py-2 min-w-0">
+                      <dt className="text-[11px] text-[#64748B] leading-tight tracking-tight break-words">{label}</dt>
                       <dd className="text-lg font-bold text-[#0F172A] leading-none">
                         {isUnlocked ? (value !== null ? `${value}%` : "—") : "••%"}
                       </dd>
