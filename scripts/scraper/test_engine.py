@@ -634,7 +634,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             "company": "Stripe", "company_slug": "stripe", "title": "Engineer", "location": "Remote US",
             "country": "United States", "country_code": "US", "remote": True, "is_remote": True,
             "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time",
-            "category": "engineering", "role_category": "engineering", "status": "active", "is_active": True,
+            "category": "engineering", "role_category": "SDE", "status": "active", "is_active": True,
             "verified": False, "description": "Role description", "apply_url": "https://example.test/apply",
             "salary_text": None, "salary_min": None, "salary_max": None, "salary_period": None, "currency": None,
             "source": "greenhouse", "dedupe_hash": "hash", "source_url": "https://example.test/job",
