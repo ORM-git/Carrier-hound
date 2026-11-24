@@ -606,6 +606,10 @@ WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS = 60.0    # deadline for all of a page's wa
 class WorkdayRateLimited(RuntimeError):
     """Workday rate-limited this run beyond its retry/cooldown budget; the board is reported failed."""
 
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after  # seconds the server asked for; persisted so later runs defer
+
 
 async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     """One page request under the shared budget: limiter-paced, Retry-After respected, no transport switching."""
@@ -618,7 +622,7 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
         now = time.monotonic()
         cooldown = _WORKDAY_COOLDOWN_UNTIL - now
         if cooldown > WORKDAY_MAX_COOLDOWN_SECONDS:
-            raise WorkdayRateLimited(f"Workday cooldown active for {cooldown:.0f}s more; not requesting {url}")
+            raise WorkdayRateLimited(f"Workday cooldown active for {cooldown:.0f}s more; not requesting {url}", cooldown)
         wait = max(cooldown, _WORKDAY_TENANT_NEXT.get(tenant_host, 0.0) - now, retry_at - now)
         if now + wait > deadline:
             raise WorkdayRateLimited(
@@ -642,7 +646,8 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
             _WORKDAY_COOLDOWN_UNTIL = max(_WORKDAY_COOLDOWN_UNTIL, time.monotonic() + delay)
             if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS or (time.monotonic() + delay > deadline):
                 raise WorkdayRateLimited(
-                    f"Workday HTTP {resp.status_code} for {url} (Retry-After {delay:.0f}s) after {attempt + 1} request(s)"
+                    f"Workday HTTP {resp.status_code} for {url} (Retry-After {delay:.0f}s) after {attempt + 1} request(s)",
+                    delay,
                 )
             continue
         resp.raise_for_status()
@@ -697,8 +702,10 @@ async def fetch_workday_cxs(
             offset = page_idx * 20
             body = {"limit": 20, "offset": offset, "searchText": ""}
             resp_data = await _workday_post(client, limiter, url, body, headers)
+            if not isinstance(resp_data, dict) or not isinstance(resp_data.get("jobPostings"), list):
+                raise RuntimeError(f"Workday malformed page {page_idx} for {url}: no jobPostings list")  # never success-empty
 
-            postings = resp_data.get("jobPostings") or []
+            postings = resp_data["jobPostings"]
             if not postings:
                 break
 
