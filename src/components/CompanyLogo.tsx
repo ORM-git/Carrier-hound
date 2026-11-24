@@ -34,6 +34,11 @@ const ATS_HOSTS = [
   "breezy.hr",
   "applytojob.com",
   "pinpointhq.com",
+  // Aggregator platforms: an apply/source URL on one of these is never the employer's site,
+  // so it must never become the fallback logo domain (would render the platform's own brand mark).
+  "linkedin.com",
+  "indeed.com",
+  "naukri.com",
   "careermonke.com",
   "netlify.app",
   "netlify.com",
