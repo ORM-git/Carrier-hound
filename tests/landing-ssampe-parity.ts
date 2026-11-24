@@ -169,6 +169,8 @@ function check(x: Input) {
   let want = lowSrc.match(/<svg[^>]*><symbol id="laurel"[\s\S]*?<\/svg>/)![0] + lowSrc.slice(lowSrc.indexOf('<section class="wrap s stats-row"'), lowSrc.indexOf("</aside>") + 8);
   want = want.replace("</main>", "");
   for (const [from, to] of CELLS) want = want.replace(`<span class="vx">${from}</span>`, `<span class="vx">${to}</span>`);
+  // Owner-requested (2026-11-24): the stats-row "1,200+" fresh roles becomes "1,00,000+" (1 lakh).
+  want = want.replace("<b>1,200+</b>", "<b>1,00,000+</b>");
   // Owner-requested: moving reviews, founder block and review wall come from live careermonke.com.
   for (const [start, build] of [
     ['<section class="s rv" aria-labelledby="rv-h">', LIVE_SECTIONS.rv],
