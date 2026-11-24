@@ -116,15 +116,16 @@ function run() {
     console.log("  [PASS] unlock logic: preserves isUnlocked (isPro && !job.proUnlockError), error retry banner, and onRetryUnlock prop");
   }
 
-  // 7. Mobile Compact Cards in One Row with Non-Truncated Label
+  // 7. Mobile compact score (CM mobile item 17): main score line + one row of the three component scores, 11px+ labels
+  const mobileScore = detailCode.slice(detailCode.indexOf('data-testid="mobile-match-score"'), detailCode.indexOf("(3) CONTENT ORDER"));
   const hasMobileMatchRow =
-    detailCode.includes("grid-cols-4 gap-2") &&
-    detailCode.includes("Match Score") &&
-    detailCode.includes("text-[9px]") &&
-    detailCode.includes("line-clamp-2");
+    mobileScore.includes("Match Score") &&
+    mobileScore.includes("grid grid-cols-3 gap-2") &&
+    ["Experience", "Skill", "Industry"].every((l) => mobileScore.includes(l)) &&
+    !/text-\[(9|10)px\]/.test(mobileScore);
 
   if (!hasMobileMatchRow) {
-    failures.push("MOBILE MATCH ROW FAIL: Mobile must render match score as compact cards in one row (grid-cols-4 gap-2) with wrap-friendly font (text-[9px] line-clamp-2).");
+    failures.push("MOBILE MATCH ROW FAIL: Mobile must render match score as compact cards in a main score line plus one grid-cols-3 row of Experience/Skill/Industry with 11px+ labels.");
   } else {
     console.log("  [PASS] mobile match layout: match scores rendered in one row with wrap-friendly text so labels are not truncated");
   }

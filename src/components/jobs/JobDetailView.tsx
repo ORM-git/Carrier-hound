@@ -294,7 +294,7 @@ export default function JobDetailView({
     <div
       // Mobile: no bottom strip to clear any more (item 16); desktop keeps its 7rem tail.
       style={{ "--cookie-h": `${cookieNoticeHeight}px` } as React.CSSProperties}
-      className="max-w-[880px] w-full mx-auto space-y-4 sm:space-y-3 pb-[calc(var(--cookie-h)+1rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
+      className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+1rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
     >
       {/* Expired Job Banner */}
       {(isExpired || job.isExpired) && (
@@ -393,7 +393,10 @@ export default function JobDetailView({
                 <div className="flex items-center gap-1 border-r border-[#E2E8F0] pr-3">
                   <button
                     type="button"
-                    onClick={() => setActiveTab("overview")}
+                    onClick={() => {
+                    setActiveTab("overview");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                     className={`text-xs sm:text-sm font-semibold transition-colors py-1.5 px-2 rounded-md ${
                       activeTab === "overview"
                         ? "text-[#2563EB] bg-blue-50/70"
@@ -531,7 +534,10 @@ export default function JobDetailView({
               <div className="flex items-center gap-1 bg-[#F1F5F9] p-0.5 rounded-lg shrink-0">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("overview")}
+                  onClick={() => {
+                    setActiveTab("overview");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                   className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
                     activeTab === "overview"
                       ? "text-[#2563EB] bg-white shadow-xs font-bold"
@@ -636,8 +642,10 @@ export default function JobDetailView({
         </div>
       </div>
 
-      {/* MATCH INSIGHTS & TRACKER PANEL */}
+      {/* MATCH INSIGHTS & TRACKER PANEL: on mobile it follows the job content (order) so title, compact score and
+          description come first; the expanded explanations stay behind its disclosure. Desktop order unchanged. */}
       <JobAiToolsPanel
+        className="max-md:order-2"
         job={job}
         candidate={candidate}
         user={user}
@@ -834,46 +842,34 @@ export default function JobDetailView({
           </div>
         </div>
 
-        {/* Match score on Mobile: compact cards in ONE ROW */}
+        {/* Match score on Mobile: main score line + one row of component scores (readable 11px+ labels) */}
         {hasConfirmedResume && matchScore !== null && (
-          <div className="lg:hidden pt-3 border-t border-[#E2E8F0] space-y-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
-              Match Score
+          <div data-testid="mobile-match-score" className="lg:hidden pt-3 border-t border-[#E2E8F0] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Match Score</span>
+              <span className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-xl font-black text-[#0F172A] leading-none">{isUnlocked ? `${matchScore}%` : "••%"}</span>
+                <span className="text-xs font-bold text-[#1D4ED8] truncate">{isUnlocked ? matchLabel : "Match"}</span>
+              </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-center space-y-0.5 min-w-0">
-                <div className="text-base font-black text-[#0F172A]">
-                  {isUnlocked ? `${matchScore}%` : "••%"}
+            <dl className="grid grid-cols-3 gap-2">
+              {([
+                ["Experience", expSubScore],
+                ["Skill", skillSubScore],
+                ["Industry", industrySubScore],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-0">
+                  <dt className="text-[11px] text-[#64748B] leading-tight truncate">{label}</dt>
+                  <dd className="text-sm font-bold text-[#0F172A]">{isUnlocked ? (value !== null ? `${value}%` : "—") : "••%"}</dd>
                 </div>
-                <div className="text-[9px] sm:text-[10px] font-bold text-emerald-800 uppercase tracking-tight leading-tight break-words line-clamp-2">
-                  {isUnlocked ? matchLabel : "Match"}
-                </div>
-              </div>
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
-                <div className="text-base font-bold text-[#0F172A]">
-                  {isUnlocked ? (expSubScore !== null ? `${expSubScore}%` : "—") : "••%"}
-                </div>
-                <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Experience</div>
-              </div>
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
-                <div className="text-base font-bold text-[#0F172A]">
-                  {isUnlocked ? (skillSubScore !== null ? `${skillSubScore}%` : "—") : "••%"}
-                </div>
-                <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Skill</div>
-              </div>
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-0.5 min-w-0">
-                <div className="text-base font-bold text-[#0F172A]">
-                  {isUnlocked ? (industrySubScore !== null ? `${industrySubScore}%` : "—") : "••%"}
-                </div>
-                <div className="text-[9px] sm:text-[10px] text-[#64748B] leading-tight break-words truncate">Industry</div>
-              </div>
-            </div>
+              ))}
+            </dl>
           </div>
         )}
       </div>
 
       {/* (3) CONTENT ORDER & (4) RIGHT RAIL */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start max-md:order-1">
         {/* Left Column: Short summary + tags, Responsibilities, Qualification, Benefits, Company */}
         <div className="lg:col-span-7 space-y-4 min-w-0">
           {/* Pro Unlock Error Retry Banner */}
@@ -1015,7 +1011,7 @@ export default function JobDetailView({
           {/* 5. Company section as grouped cards (name/logo/description, plus founded/HQ/size/website only where data exists) */}
           <div
             id="company-section"
-            className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3"
+            className="scroll-mt-44 md:scroll-mt-36 bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3"
           >
             <h2 className="text-[18px] font-bold text-[#0F172A]">Company</h2>
 

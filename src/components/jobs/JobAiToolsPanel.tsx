@@ -29,6 +29,7 @@ export interface JobAiToolsPanelProps {
   isUpdatingApplied?: boolean;
   onSave: () => void;
   onToggleApplied?: () => void;
+  className?: string;
 }
 
 export default function JobAiToolsPanel({
@@ -41,6 +42,7 @@ export default function JobAiToolsPanel({
   isUpdatingApplied = false,
   onSave,
   onToggleApplied,
+  className = "",
 }: JobAiToolsPanelProps) {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
 
@@ -65,7 +67,7 @@ export default function JobAiToolsPanel({
   return (
     <div
       data-testid="job-ai-tools-panel"
-      className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-xs transition-all duration-200"
+      className={`bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 sm:p-5 shadow-xs transition-all duration-200 ${className}`}
     >
       {/* HEADER / MOBILE TOGGLE */}
       <div className="flex items-center justify-between gap-3">
