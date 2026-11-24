@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef, Suspense, startTransition } from "react";
+import React, { useState, useMemo, useEffect, useRef, useId, Suspense, startTransition } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -323,9 +323,11 @@ function CircularMatchRing({
   /** White-card variant (mobile list): CM-blue arc on a pale track, dark text. */
   light?: boolean;
 }) {
+  const gradientId = `match-blue-${useId().replace(/:/g, "")}`;
+  const displayScore = Math.min(100, Math.max(0, score));
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
+  const offset = circumference - (displayScore / 100) * circumference;
   const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
   return (
@@ -333,7 +335,14 @@ function CircularMatchRing({
       className="relative inline-flex items-center justify-center shrink-0"
       style={{ width: size, height: size }}
     >
-      <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${size} ${size}`}>
+      <svg aria-hidden="true" className="w-full h-full -rotate-90" viewBox={`0 0 ${size} ${size}`}>
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#BFDBFE" />
+            <stop offset="50%" stopColor="#60A5FA" />
+            <stop offset="100%" stopColor="#2563EB" />
+          </linearGradient>
+        </defs>
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -346,7 +355,7 @@ function CircularMatchRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={light ? "#2563EB" : "#2DD4BF"}
+          stroke={`url(#${gradientId})`}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -357,7 +366,7 @@ function CircularMatchRing({
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
         <span className={`${textClass} ${light ? "text-[#0F172A]" : "text-white"} leading-none tracking-tight`}>
-          {score}%
+          {displayScore}<span className="text-[0.6em] font-semibold ml-px">%</span>
         </span>
       </div>
     </div>
@@ -2360,7 +2369,7 @@ function JobsPageInner() {
                                     <CircularMatchRing
                                       score={matchScore}
                                       size={70}
-                                      strokeWidth={4.5}
+                                      strokeWidth={3}
                                       isPro={isPro}
                                     />
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
@@ -2447,7 +2456,7 @@ function JobsPageInner() {
                                       title={`Fit Match: ${matchScore}%`}
                                       aria-label={`Fit Match: ${matchScore}%`}
                                     >
-                                      <CircularMatchRing score={matchScore} size={52} strokeWidth={5} light />
+                                      <CircularMatchRing score={matchScore} size={52} strokeWidth={2.5} light />
                                     </div>
                                   ) : (
                                     <Link
@@ -2580,7 +2589,7 @@ function JobsPageInner() {
                       })}
 
                       {/* Load More Pagination: strictly scoped to tabs with active server-side pagination.
-                          Scrolling auto-loads via the sentinel; the button stays as the accessible manual fallback. */}
+                          Scrolling auto-loads via the sentinel; a button appears only for error or paused recovery. */}
                       {canLoadMore && (
                         // overflow-anchor:none: otherwise scroll anchoring keeps this block in view as cards are
                         // inserted above it, the sentinel stays visible and pages chain-load.
@@ -2589,26 +2598,17 @@ function JobsPageInner() {
                           {loadMoreError && (
                             <p className="text-xs text-[#B91C1C] pb-2" role="alert">Couldn&apos;t load more jobs.</p>
                           )}
-                          <button
-                            type="button"
-                            onClick={handleLoadMore}
-                            disabled={loadingMore}
-                            className="px-6 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-bold transition shadow-none cursor-pointer disabled:opacity-60 min-h-[44px]"
-                          >
-                            {loadingMore ? (
-                              "Loading Positions..."
-                            ) : loadMoreError ? (
-                              "Retry"
-                            ) : (
-                              <>
-                                Load More Verified Positions
-                                {/* Inventory count is desktop-only; mobile shows no remaining/total text (item 22) */}
-                                {totalCount > liveJobs.length && (
-                                  <span className="hidden sm:inline">{` (~${Math.max(0, totalCount - liveJobs.length).toLocaleString()} remaining)`}</span>
-                                )}
-                              </>
-                            )}
-                          </button>
+                          {loadingMore && <p className="text-xs text-[#475569] py-3" role="status">Loading Positions...</p>}
+                          {(loadMoreError || autoLoadPaused) && (
+                            <button
+                              type="button"
+                              onClick={handleLoadMore}
+                              disabled={loadingMore}
+                              className="px-6 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-bold transition shadow-none cursor-pointer disabled:opacity-60 min-h-[44px]"
+                            >
+                              {loadMoreError ? "Retry" : "Load More Verified Positions"}
+                            </button>
+                          )}
                         </div>
                       )}
                       {activeTab === "recommended" && !canLoadMore && page > 1 && (

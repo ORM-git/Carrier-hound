@@ -9,12 +9,16 @@ describe("mobile card score weight (item 19)", () => {
     const block = page.slice(page.indexOf('data-testid="mobile-card-score"') - 200, page.indexOf('data-testid="mobile-card-score"') + 700);
     expect(block).toContain("matchScore !== null ? (");
     expect(block).toContain("aria-label={`Fit Match: ${matchScore}%`}");
-    expect(block).toContain("<CircularMatchRing score={matchScore} size={52} strokeWidth={5} light />");
+    expect(block).toContain("<CircularMatchRing score={matchScore} size={52} strokeWidth={2.5} light />");
     expect(page).not.toContain("w-[54px] h-[30px]");
   });
 
-  it("light ring uses CM blue, dark ring unchanged for desktop; no-score cards keep the +Score resume link", () => {
-    expect(page).toContain('stroke={light ? "#2563EB" : "#2DD4BF"}');
+  it("both feed rings use a blue gradient and small percent sign; no-score cards keep the resume link", () => {
+    expect(page).toContain('stroke={`url(#${gradientId})`}');
+    expect(page).toContain('stopColor="#BFDBFE"');
+    expect(page).toContain('stopColor="#2563EB"');
+    expect(page).toContain('text-[0.6em]');
+    expect(page).toContain('(displayScore / 100) * circumference');
     expect(page).toContain('stroke={light ? "#DBEAFE" : "#1E293B"}');
     expect(page).toContain("+Score");
   });

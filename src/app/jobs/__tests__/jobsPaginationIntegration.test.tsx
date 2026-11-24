@@ -57,6 +57,7 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
       p === 1 ? page(jobs(range(1, 25)), true) : p === 2 ? page(jobs(range(26, 50)), true) : page(jobs(range(51, 60)), false);
     await mount();
     expect(uniqueTitles()).toHaveLength(25);
+    expect(loadMoreButton()).toBeNull();
     expect(screen.getByTestId("jobs-load-more-sentinel")).toBeTruthy();
 
     await act(async () => io.enter());
@@ -99,8 +100,8 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     for (let k = 0; k < 6; k++) await act(async () => io.enter());
     await flush();
     expect(pagesRequested()).toEqual([1, 2]);
-    expect(loadMoreButton()?.textContent).toBe("Loading Positions...");
-    expect((loadMoreButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("Loading Positions...");
+    expect(loadMoreButton()).toBeNull();
     await act(async () => slow.resolve(page(jobs(range(26, 30)), false)));
     await flush();
     expect(uniqueTitles()).toHaveLength(30);
@@ -132,11 +133,8 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     await flush();
     expect(pagesRequested()).toEqual([1, 2, 2]);
     expect(uniqueTitles()).toHaveLength(50);
-    // The mobile button never carries the inventory count (desktop-only span).
-    const button = loadMoreButton()!;
-    expect(button.textContent).toContain("Load More Verified Positions");
-    const countSpan = Array.from(button.querySelectorAll("span")).find((s) => /remaining/.test(s.textContent || ""));
-    expect(countSpan?.className ?? "hidden sm:inline").toContain("hidden sm:inline");
+    // Successful retry resumes normal scroll loading without a button.
+    expect(loadMoreButton()).toBeNull();
     expect(document.body.textContent).not.toMatch(/\d+ jobs? remaining/i);
   });
 
