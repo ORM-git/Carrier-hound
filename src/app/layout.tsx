@@ -54,8 +54,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: ogImageUrl,
-        width: 617,
-        height: 749,
+        width: 534,
+        height: 232,
         alt: siteTitle,
       },
     ],
@@ -76,9 +76,9 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/careermonke-logo.png", sizes: "512x512", type: "image/png" },
+      { url: "/icon.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/careermonke-logo.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 

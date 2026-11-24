@@ -12,7 +12,7 @@ export interface BrandIconProps {
 
 /**
  * Career Monke Brand Logo & Mascot Icon
- * - "full": Full official logo image (brown monkey mark + "CAREER MONKE" wordmark).
+ * - "full": Final brand wordmark ("career monke", 534x232, wide blue logo).
  * - "new" / "legacy": Mascot monkey head square icon for round buttons, avatars, and app rails.
  */
 export default function BrandIcon({
@@ -24,8 +24,10 @@ export default function BrandIcon({
   variant = "legacy",
 }: BrandIconProps) {
   if (variant === "full") {
-    const w = width || 66;
+    // The final wordmark is wide (534x232, ratio ~2.30), so width derives from the
+    // requested height: every call site keeps its height and the wordmark is not squashed.
     const h = height || 80;
+    const w = Math.round(h * (534 / 232));
     return (
       <Image
         src="/careermonke-logo.png"
