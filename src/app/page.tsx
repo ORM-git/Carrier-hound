@@ -522,7 +522,7 @@ export default function HomePage() {
                   <svg className="lf" aria-hidden="true">
                     <use href="#laurel" />
                   </svg>
-                  <b>1,200+</b>
+                  <b>1Lakh+</b>
                   <svg className="lf r" aria-hidden="true">
                     <use href="#laurel" />
                   </svg>

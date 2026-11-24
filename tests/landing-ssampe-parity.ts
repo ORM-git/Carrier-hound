@@ -168,6 +168,10 @@ function check(x: Input) {
   const lowSrc = read("tests/landing-ssampe-parity.lower.source.html");
   let want = lowSrc.match(/<svg[^>]*><symbol id="laurel"[\s\S]*?<\/svg>/)![0] + lowSrc.slice(lowSrc.indexOf('<section class="wrap s stats-row"'), lowSrc.indexOf("</aside>") + 8);
   want = want.replace("</main>", "");
+  // Owner-requested display copy (2026-11-24, owner: "Abeyy tum likhoo 1Lakh+"): the
+  // stats-row "1,200+" figure renders as "1Lakh+". Display copy only; the underlying
+  // metric is not independently verified by this change.
+  want = want.replace("<b>1,200+</b>", "<b>1Lakh+</b>");
   for (const [from, to] of CELLS) want = want.replace(`<span class="vx">${from}</span>`, `<span class="vx">${to}</span>`);
   // Owner-requested: moving reviews, founder block and review wall come from live careermonke.com.
   for (const [start, build] of [
@@ -237,6 +241,7 @@ function check(x: Input) {
   assert.ok(!/<dl\b/.test(fdSec), "founder stat row must be removed");
 
   // --- 3d. unchanged: footer logo and favicon ---
+  assert.ok(lower.includes("<b>1Lakh+</b>"), 'stats row must show the owner-requested "1Lakh+" figure');
   assert.match(squash(lower), /<img src="\/careermonke-logo\.png" alt="Career Monke" width="66" height="80" loading="lazy" \/>/, "footer monkey logo must be unchanged");
   const fav = x.asset(LIVE.unchanged.favicon.path);
   assert.ok(fav && sha256(fav) === LIVE.unchanged.favicon.sha256, "favicon must be unchanged");
