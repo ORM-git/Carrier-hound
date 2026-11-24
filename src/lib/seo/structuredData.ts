@@ -39,7 +39,7 @@ export interface RootJsonLdGraph {
  * Strictly uses only values already on the site:
  * - name: "CareerMonke"
  * - url: canonical base URL from getSiteUrl() ("https://careermonke.com")
- * - logo path: "/careermonke-logo.png" (official full brand logo)
+ * - logo path: "/careermonke-logo-v2.png" (official full brand logo)
  * Zero invented ratings, zero aggregateRating, zero invented counts.
  */
 export function getRootStructuredData(overrideUrl?: string): RootJsonLdGraph {
@@ -55,7 +55,7 @@ export function getRootStructuredData(overrideUrl?: string): RootJsonLdGraph {
         "@id": orgId,
         name: "CareerMonke",
         url: baseUrl,
-        logo: `${baseUrl}/careermonke-logo.png`,
+        logo: `${baseUrl}/careermonke-logo-v2.png`,
       },
       {
         "@type": "WebSite",
