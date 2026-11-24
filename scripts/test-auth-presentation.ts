@@ -35,11 +35,11 @@ function run() {
     loginCode = loginCode.replace(/z-\[70\]/g, "z-40");
     loginCode = loginCode.replace(/z-\[71\]/g, "z-50");
     loginCode = loginCode.replace(/sm:max-w-\[488px\]/g, "max-w-[800px]");
-    loginCode = loginCode.replace(/Welcome back to/g, "Incorrect Heading");
+    loginCode = loginCode.replace(/Sign in for free to/g, "Incorrect Heading");
     loginCode = loginCode.replace(/sm:bg-\[#F3F4F5\]/g, "bg-red-500");
     loginCode = loginCode.replace(/items-end sm:items-center/g, "items-start");
     loginCode = loginCode.replace(/rounded-t-\[20px\] rounded-b-none/g, "rounded-none");
-    signupCode = signupCode.replace(/Welcome to/g, "Unsupported Heading");
+    signupCode = signupCode.replace(/Sign up for free to/g, "Unsupported Heading");
     signupCode = signupCode.replace(/sm:rounded-\[24px\]/g, "rounded-none");
     signupCode = signupCode.replace(/sm:hidden text-\[12px\]/g, "hidden text-[12px]");
   }
@@ -49,12 +49,12 @@ function run() {
   // -------------------------------------------------------------------------
   // 1. MODAL CARD DIMENSIONS, PADDING, BACKDROP & MOBILE DRAWER SPEC
   // -------------------------------------------------------------------------
-  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-black/40") && loginCode.includes("z-[70]");
-  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-black/40") && signupCode.includes("z-[70]");
+  const hasLoginBackdrop = loginCode.includes('data-testid="auth-backdrop"') && loginCode.includes("fixed inset-0 bg-[#F8FAFC]") && loginCode.includes("z-[70]");
+  const hasSignupBackdrop = signupCode.includes('data-testid="auth-backdrop"') && signupCode.includes("fixed inset-0 bg-[#F8FAFC]") && signupCode.includes("z-[70]");
   if (!hasLoginBackdrop || !hasSignupBackdrop) {
-    failures.push("BACKDROP FAIL: Both /login and /signup must render a dimmed backdrop with z-[70] (above CookieNotice z-50 and nav z-[60]).");
+    failures.push("BACKDROP FAIL: Both /login and /signup must render an opaque backdrop with z-[70] (above CookieNotice z-50 and nav z-[60]).");
   } else {
-    console.log("  [PASS] dimmed backdrop: Dimmed backdrop present with z-[70] over auth route page");
+    console.log("  [PASS] opaque backdrop: Opaque backdrop present with z-[70] over auth route page");
   }
 
   const hasLoginCardZ = loginCode.includes("z-[71]");
@@ -132,13 +132,13 @@ function run() {
   // 3. HEADINGS: CENTRED 24PX LIGHT TEXT WITH BRAND BOLD INLINE (NO SUBTITLE / NO INSIDE LOGO)
   // -------------------------------------------------------------------------
   const hasLoginHeading =
-    loginCode.includes("Welcome back to") &&
-    loginCode.includes('<span className="font-bold">CareerMonke</span>') &&
+    loginCode.includes("Sign in for free to") &&
+    loginCode.includes('<span className="font-bold whitespace-nowrap">Career Monke</span>') &&
     !loginCode.includes("Sign in to access your dashboard");
 
   const hasSignupHeading =
-    signupCode.includes("Welcome to") &&
-    signupCode.includes('<span className="font-bold">CareerMonke</span>') &&
+    signupCode.includes("Sign up for free to") &&
+    signupCode.includes('<span className="font-bold whitespace-nowrap">Career Monke</span>') &&
     !signupCode.includes("Create an account to track");
 
   const hasNoInsideBrandLogo =
@@ -206,19 +206,23 @@ function run() {
   }
 
   const hasSubmitBtn =
-    loginCode.includes("Email me a sign-in link") &&
+    loginCode.includes("signInWithPassword") &&
+    !loginCode.includes("signInWithOtp") &&
+    loginCode.includes('"Sign in"') &&
     loginCode.includes("rounded-[8px]") &&
     loginCode.includes("h-[48px]") &&
     loginCode.includes("bg-[#2563EB]") &&
-    signupCode.includes("Email me a sign-in link") &&
+    signupCode.includes("auth.signUp(") &&
+    !signupCode.includes("signInWithOtp") &&
+    signupCode.includes("<span>Sign up</span>") &&
     signupCode.includes("rounded-[8px]") &&
     signupCode.includes("h-[48px]") &&
     signupCode.includes("bg-[#2563EB]");
 
   if (!hasSubmitBtn) {
-    failures.push("SUBMIT BTN FAIL: Submit button must be 48px high, 8px radius, #2563EB 'Email me a sign-in link'.");
+    failures.push("SUBMIT BTN FAIL: Submit button must be 48px high, 8px radius, #2563EB, real email/password submit (no magic link).");
   } else {
-    console.log("  [PASS] primary button: 48px high, 8px radius, #2563EB with truthful magic-link text");
+    console.log("  [PASS] primary button: 48px high, 8px radius, #2563EB, email/password submit (no magic-link OTP)");
   }
 
   // -------------------------------------------------------------------------

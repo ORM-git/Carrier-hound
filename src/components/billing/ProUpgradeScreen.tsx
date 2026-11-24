@@ -20,7 +20,7 @@ interface ProUpgradeScreenProps {
 }
 
 export default function ProUpgradeScreen({
-  title = "Unlock CareerMonke Pro",
+  title = "Unlock Career Monke Pro",
   subtitle = "Complete your membership to access full job details, and match scores.",
 }: ProUpgradeScreenProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<"weekly" | "monthly" | "quarterly">("monthly");

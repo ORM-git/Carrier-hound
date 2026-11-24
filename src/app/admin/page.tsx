@@ -324,7 +324,7 @@ export default function AdminDashboardPage() {
           <div>
             <h2 className="text-base font-bold text-slate-900">Recent Signups</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Newly registered accounts on CareerMonke
+              Newly registered accounts on Career Monke
             </p>
           </div>
           <Link

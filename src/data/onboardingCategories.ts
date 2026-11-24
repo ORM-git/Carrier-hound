@@ -332,9 +332,9 @@ export const LOCATION_OPTIONS = [
 ];
 
 export const WORK_AUTH_OPTIONS = [
-  { id: "authorized", label: "Authorized to work (No sponsorship required)" },
-  { id: "requires_sponsorship", label: "Requires visa sponsorship (e.g. H1B)" },
-  { id: "other", label: "Other / Work Permit" },
+  { id: "authorized", label: "I am authorized to work without sponsorship." },
+  { id: "requires_sponsorship", label: "I need visa sponsorship." },
+  { id: "other", label: "I have another work permit or authorization." },
 ];
 
 export const JOB_TYPE_OPTIONS = [

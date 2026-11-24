@@ -1,4 +1,6 @@
+import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
+import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { formatSalary } from "@/lib/salary/parser";
@@ -204,6 +206,7 @@ async function getHandler(req: Request) {
       ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, role_category, top_keywords, is_remote";
 
+    const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, userId, cfEnv);
     const idParam = searchParams.get("id");
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
@@ -311,6 +314,8 @@ async function getHandler(req: Request) {
         salary_display: isInactive || !isPro ? null : displaySalary,
         salary_original: isInactive || !isPro ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
+        scoreRevision: scoreInputRevision(jobRow, isPro),
+        matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro),
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
@@ -886,6 +891,8 @@ async function getHandler(req: Request) {
           applyUrl: row.apply_url || "",
           description: row.description || "",
           skills: row.skills || [],
+          scoreRevision: scoreInputRevision(row, true),
+          matchScore: sharedDisplayScore(row, displayAnswers, isPro),
           postedAt: row.posted_at || row.created_at,
           companyDomain: row.companies?.domain || null,
           logoUrl: resolvedLogo,
@@ -918,6 +925,8 @@ async function getHandler(req: Request) {
         applyUrl: "",
         description: "",
         skills: [],
+        scoreRevision: scoreInputRevision(row, false),
+        matchScore: sharedDisplayScore(row, displayAnswers, isPro),
         postedAt: row.posted_at || row.created_at,
         logoUrl: null,
         logo_url: null,

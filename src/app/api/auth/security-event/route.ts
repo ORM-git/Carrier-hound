@@ -8,10 +8,10 @@ const MAX_PAYLOAD_BYTES = 4096;
 /** Abuse guard for the monitor endpoint itself. */
 const MONITOR_ROUTE_LIMIT = { max: 30, windowSeconds: 600 };
 
-const ALLOWED_EVENTS = new Set(["otp_request"]);
+const ALLOWED_EVENTS = new Set(["otp_request", "password_signin", "password_reset_request"]);
 
 /**
- * Receives client-reported auth telemetry (currently: magic-link OTP
+ * Receives client-reported auth telemetry (email sign-in, password-reset and OTP
  * requests) and feeds the credential-stuffing monitor. Always 204 - reveals
  * nothing about accounts, thresholds, or whether an alert fired.
  */

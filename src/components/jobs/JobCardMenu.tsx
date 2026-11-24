@@ -12,6 +12,8 @@ export interface JobCardMenuProps {
   onRemoveFromList: () => void;
   onAlreadyApplied: () => void;
   className?: string;
+  /** Free/guest view: the employer is hidden, so share text and the report email never include it. */
+  locked?: boolean;
 }
 
 export function JobCardMenu({
@@ -19,6 +21,7 @@ export function JobCardMenu({
   onRemoveFromList,
   onAlreadyApplied,
   className = "",
+  locked = false,
 }: JobCardMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -114,7 +117,7 @@ export function JobCardMenu({
       try {
         await navigator.share({
           title: job.title,
-          text: `${job.title} at ${job.company || "Company"}`,
+          text: locked ? job.title : `${job.title} at ${job.company || "Company"}`,
           url,
         });
         toast.success("Job link shared!");
@@ -137,7 +140,7 @@ export function JobCardMenu({
   };
 
   const handleReportIssue = () => {
-    const mailto = getReportJobMailto(job);
+    const mailto = getReportJobMailto(job, locked);
     window.location.href = mailto;
     setIsOpen(false);
   };

@@ -437,13 +437,18 @@ export function seniorityFactorForMid(title: string): number {
   return 1;
 }
 
-/** Card and detail show one stored score: the one the feed attached to this job, when the feed has it. */
-export function withFeedScore<T extends { id: string; matchScore?: number | null }>(
+/**
+ * Card and detail show one stored score: the one the feed attached to this job, but only when the feed row and
+ * this job carry the same server score-input revision. A different or missing revision means the inputs may have
+ * changed, so the feed score is not adopted.
+ */
+export function withFeedScore<T extends { id: string; matchScore?: number | null; scoreRevision?: string | null }>(
   job: T,
-  feed: readonly { id: string; matchScore?: number | null }[]
+  feed: readonly { id: string; matchScore?: number | null; scoreRevision?: string | null }[]
 ): T {
-  const listed = feed.find((j) => j.id === job.id)?.matchScore;
-  return typeof listed === "number" && listed !== job.matchScore ? { ...job, matchScore: listed } : job;
+  const row = feed.find((j) => j.id === job.id);
+  if (!row || typeof row.matchScore !== "number" || !row.scoreRevision || row.scoreRevision !== job.scoreRevision) return job;
+  return row.matchScore !== job.matchScore ? { ...job, matchScore: row.matchScore } : job;
 }
 
 export function scoreJobRecommendation(

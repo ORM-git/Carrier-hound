@@ -311,7 +311,10 @@ p{margin:0}
   footer .wrap{flex-direction:column;align-items:flex-start}
 }
 @media (max-width:600px){
-  .nav-link{display:none}
+  .nav-link{display:inline-flex;align-items:center;min-height:44px;font-size:14px;white-space:nowrap}
+  .nav-actions{gap:8px}
+  .nav .brand{font-size:18px;gap:6px}
+  .nav .btn-sm{font-size:14px;padding:0 10px}
 }
 @media (max-width:360px){
   .tile{font-size:14px}

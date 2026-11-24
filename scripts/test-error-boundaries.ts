@@ -130,7 +130,7 @@ async function runTestSuite() {
   assert.ok(rootMarkup.includes("Something went wrong"), "Root error must show title");
   assert.ok(rootMarkup.includes("Try again"), "Root error must include 'Try again' button");
   assert.ok(rootMarkup.includes("Back to Homepage"), "Root error must include home link");
-  assert.ok(rootMarkup.includes("CareerMonke"), "Root error must display CareerMonke branding");
+  assert.ok(rootMarkup.includes("Career Monke"), "Root error must display Career Monke branding");
   assert.ok(!rootMarkup.includes("secret-internal.ts"), "Root error MUST NOT leak stack trace");
   assert.ok(!rootMarkup.includes("Component.render"), "Root error MUST NOT leak stack trace frames");
   console.log("  -> [PASS-LOCAL] app/error.tsx renders branded fallback without stack traces.");
@@ -144,7 +144,7 @@ async function runTestSuite() {
   assert.ok(globalMarkup.includes("Something went wrong"), "Global error must show title");
   assert.ok(globalMarkup.includes("Try again"), "Global error must include 'Try again' button");
   assert.ok(globalMarkup.includes("Back to Homepage"), "Global error must include home link");
-  assert.ok(globalMarkup.includes("CareerMonke"), "Global error must display CareerMonke branding");
+  assert.ok(globalMarkup.includes("Career Monke"), "Global error must display Career Monke branding");
   assert.ok(!globalMarkup.includes("secret-internal.ts"), "Global error MUST NOT leak stack trace");
   console.log("  -> [PASS-LOCAL] app/global-error.tsx renders <html>/<body> branded fallback without stack traces.");
 
@@ -155,7 +155,7 @@ async function runTestSuite() {
   assert.ok(jobsMarkup.includes("Unable to load jobs"), "Jobs error must show segment title");
   assert.ok(jobsMarkup.includes("Try again"), "Jobs error must include 'Try again' button");
   assert.ok(jobsMarkup.includes("Back to Homepage"), "Jobs error must include home link");
-  assert.ok(jobsMarkup.includes("CareerMonke"), "Jobs error must display CareerMonke branding");
+  assert.ok(jobsMarkup.includes("Career Monke"), "Jobs error must display Career Monke branding");
   assert.ok(!jobsMarkup.includes("secret-internal.ts"), "Jobs error MUST NOT leak stack trace");
   console.log("  -> [PASS-LOCAL] app/jobs/error.tsx renders segment-level fallback without stack traces.");
   passed++;

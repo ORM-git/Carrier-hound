@@ -237,7 +237,7 @@ function runAudit() {
 
   // Free User Gating: ProUpgradeScreen with exact copy (AI tailoring claim removed with the AI tool entry points)
   const hasProGating = resumeCode.includes("ProUpgradeScreen") &&
-    resumeCode.includes('title="Unlock CareerMonke Pro"') &&
+    resumeCode.includes('title="Unlock Career Monke Pro"') &&
     resumeCode.includes('subtitle="Upgrade to Pro to upload your resume and compute compatibility scores."') &&
     !/AI tailor/i.test(resumeCode);
   if (hasProGating) {

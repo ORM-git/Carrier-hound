@@ -144,7 +144,7 @@ function getAllowedEarlyAccessEmails(): Set<string> {
 }
 
 /**
- * Session rule: Google and email magic-link sign-in are both allowed.
+ * Session rule: Google and email (password or link) sign-in are both allowed.
  * A session is accepted only when user.email_confirmed_at is set.
  */
 function hasConfirmedEmail(user: any): boolean {
@@ -607,9 +607,14 @@ async function middlewareImpl(request: NextRequest) {
 
   // 4. Guest-facing public routes (/, /remote, /login, /signup, /pricing, legal pages, etc.)
   if (!isProtectedRoute(pathname)) {
+    // Password-recovery links must reach /auth/reset-password even for an already signed-in browser.
+    const isPasswordRecoveryCallback =
+      pathname === "/auth/callback" &&
+      request.nextUrl.searchParams.has("code") &&
+      request.nextUrl.searchParams.get("returnTo") === "/auth/reset-password";
     if (
-      pathname === "/login" ||
-      pathname === "/auth/callback"
+      (pathname === "/login" || pathname === "/auth/callback") &&
+      !isPasswordRecoveryCallback
     ) {
       const { hasValidSession, signedOutNonAllowedUser, response: authResponse, userId } =
         await verifyAuthenticatedRequest(request);

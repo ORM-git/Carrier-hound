@@ -280,10 +280,10 @@ async function runVerification() {
       if (cards[0]) cards[0].click();
     });
 
-    await page.waitForSelector('[data-testid="mobile-share-job-button"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="mobile-header-share-button"]', { timeout: 10000 });
     const mobileDetailMetrics = await page.evaluate(() => {
       const stickyBar = document.querySelector('[role="region"][aria-label="Quick apply bar"]');
-      const mobileShare = document.querySelector('[data-testid="mobile-share-job-button"]');
+      const mobileShare = document.querySelector('[data-testid="mobile-header-share-button"]');
       return {
         stickyBarPresent: Boolean(stickyBar),
         mobileSharePresent: Boolean(mobileShare),

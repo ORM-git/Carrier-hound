@@ -50,7 +50,7 @@ export default function BlockedAccountNotice() {
 
         <h3 className="text-xl font-bold text-gray-900 mb-2">Account Suspended</h3>
         <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-          Your CareerMonke account access has been suspended by an administrator. All active sessions have been immediately revoked.
+          Your Career Monke account access has been suspended by an administrator. All active sessions have been immediately revoked.
         </p>
         <p className="text-xs text-gray-500 mb-6 bg-gray-50 p-3 rounded-lg border border-gray-100">
           If you believe this suspension is in error or require support, please contact{" "}

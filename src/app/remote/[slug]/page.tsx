@@ -27,7 +27,7 @@ export function generateMetadata({ params }: PageProps) {
   if (!article) return { title: "Guide Not Found" };
 
   return {
-    title: `${article.title} | CareerMonke Guides`,
+    title: `${article.title} | Career Monke Guides`,
     description: article.lede,
   };
 }

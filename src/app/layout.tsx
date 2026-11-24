@@ -30,7 +30,7 @@ export const viewport: Viewport = {
   themeColor: "#2563EB",
 };
 
-const siteTitle = "CareerMonke — Unindexed Jobs & Remote Career Discovery";
+const siteTitle = "Career Monke — Unindexed Jobs & Remote Career Discovery";
 const siteDescription =
   "Discover remote engineering, design, marketing, and data roles from verified employers.";
 
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     title: siteTitle,
     description: siteDescription,
     url: "https://careermonke.com",
-    siteName: "CareerMonke",
+    siteName: "Career Monke",
     images: [
       {
         url: ogImageUrl,
@@ -122,7 +122,7 @@ export default function RootLayout({
             }}
           >
             <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>
-              CareerMonke needs JavaScript to run
+              Career Monke needs JavaScript to run
             </p>
             <p style={{ margin: 0 }}>
               Please enable JavaScript in your browser to browse jobs and use

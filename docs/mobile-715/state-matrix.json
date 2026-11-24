@@ -1,0 +1,158 @@
+[
+  {
+    "width": 360,
+    "state": "loading",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 360,
+    "state": "populated",
+    "count": 25,
+    "firstTop": 136,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 360,
+    "state": "saved",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 360,
+    "state": "applied",
+    "count": 1,
+    "firstTop": 136.0291290283203,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 360,
+    "state": "filterzero",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 360,
+    "state": "filtershort",
+    "count": 1,
+    "firstTop": 165.16322326660156,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 360,
+    "state": "error",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "loading",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "populated",
+    "count": 25,
+    "firstTop": 136,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "saved",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "applied",
+    "count": 1,
+    "firstTop": 136.0225372314453,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "filterzero",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "filtershort",
+    "count": 1,
+    "firstTop": 165.10018920898438,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 390,
+    "state": "error",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "loading",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "populated",
+    "count": 25,
+    "firstTop": 136,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "saved",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "applied",
+    "count": 1,
+    "firstTop": 136.03941345214844,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "filterzero",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "filtershort",
+    "count": 1,
+    "firstTop": 165.0787811279297,
+    "overflow": false,
+    "nav": 0
+  },
+  {
+    "width": 430,
+    "state": "error",
+    "count": 0,
+    "overflow": false,
+    "nav": 0
+  }
+]

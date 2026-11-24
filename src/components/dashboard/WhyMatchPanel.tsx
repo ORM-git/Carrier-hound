@@ -675,7 +675,7 @@ export default function WhyMatchPanel({
               </button>
             )}
 
-            {/* Apply button (CareerMonke signature blue brand pill) */}
+            {/* Apply button (Career Monke signature blue brand pill) */}
             <Link
               href={job.applyUrl || `/job-detail?id=${encodeURIComponent(job.id)}`}
               target={job.applyUrl ? "_blank" : undefined}

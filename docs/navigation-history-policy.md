@@ -39,13 +39,16 @@ Audit baseline: `origin/main` (`539c1c8b`). Sites corrected in this PR: **0** (a
 | `src/app/jobs/page.tsx` | 598 | Filter/search/tab/sort URL query param sync (`useEffect`) | `router.replace(newUrl, { scroll: false })` | `replace` | Compliant |
 | `src/app/jobs/page.tsx` | 1312 | Reset all filters clearing query params in place | `router.replace(newUrl, { scroll: false })` | `replace` | Compliant |
 | `src/app/login/page.tsx` | 75 | Already-authenticated auto-redirect off `/login` | `router.replace(next)` | `replace` | Compliant |
+| `src/app/login/page.tsx` | 129 | Successful email/password sign-in hands off to the shared `/auth/callback` routing | `router.replace(`/auth/callback?returnTo=...`)` | `replace` | Compliant |
+| `src/app/signup/page.tsx` | 126 | Signup that returns an immediate session hands off to `/auth/callback` | `router.replace(`/auth/callback?returnTo=...`)` | `replace` | Compliant |
+| `src/app/auth/reset-password/page.tsx` | 51 | One-time password-reset screen replaced after the new password is saved | `router.replace("/auth/callback?returnTo=%2Fjobs")` | `replace` | Compliant |
 | `src/app/onboarding/page.tsx` | 144 | Unauthenticated mount guard on `/onboarding` | ``router.replace(`/login?returnTo=${encodeURIComponent(returnUrl)}`)`` | `replace` | Compliant |
 | `src/app/onboarding/page.tsx` | 154 | Completed-account auto-redirect off `/onboarding` to `next` | `router.replace(next)` | `replace` | Compliant |
 | `src/app/profile/page.tsx` | 73 | Unauthenticated mount guard on `/profile` | `router.replace("/login?returnTo=/profile")` | `replace` | Compliant |
 | `src/app/radar/page.tsx` | 49 | Unauthenticated mount guard on `/radar` | `router.replace("/login?returnTo=/radar")` | `replace` | Compliant |
 | `src/app/resume/page.tsx` | 130 | Unauthenticated mount guard on `/resume` | `router.replace("/login?returnTo=/resume")` | `replace` | Compliant |
 | `src/app/settings/page.tsx` | 64 | Unauthenticated mount guard on `/settings` | `router.replace("/login?returnTo=/settings")` | `replace` | Compliant |
-| `src/app/signup/page.tsx` | 76 | Already-authenticated auto-redirect off `/signup` | `router.replace(next)` | `replace` | Compliant |
+| `src/app/signup/page.tsx` | 90 | Single onboarding-aware, already-authenticated auto-redirect off `/signup` | `router.replace(target)` | `replace` | Compliant |
 | `src/app/tracker/page.tsx` | 105 | Unauthenticated mount guard on `/tracker` | `router.replace("/login?returnTo=/tracker")` | `replace` | Compliant |
 | `src/components/UserMenu.tsx` | 91 | Same-tab sign-out exit away from authenticated view | `router.replace("/")` | `replace` | Compliant |
 | `src/components/shell/LoggedInAppShell.tsx` | 47 | Cross-tab sign-out `storage` listener on protected views | `router.replace("/login")` | `replace` | Compliant |

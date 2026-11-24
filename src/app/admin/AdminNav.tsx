@@ -16,7 +16,7 @@ export default function AdminNav({ adminEmail }: { adminEmail?: string }) {
         <div className="flex items-center space-x-8">
           <div className="flex items-center space-x-3">
             <Link href="/admin" className="font-extrabold text-lg tracking-tight text-slate-900">
-              CareerMonke
+              Career Monke
             </Link>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 uppercase tracking-wider">
               <Shield className="w-3 h-3 text-red-600" />

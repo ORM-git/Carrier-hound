@@ -42,12 +42,12 @@ export default function BrandedErrorFallback({
       <Link
         href="/"
         className="inline-flex items-center gap-2 text-blue-600 mb-8 group"
-        aria-label="CareerMonke Home"
+        aria-label="Career Monke Home"
       >
         <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-sm">
           <BrandIcon className="w-5 h-5 text-white" />
         </div>
-        <span className="text-2xl font-bold tracking-tight text-blue-600">CareerMonke</span>
+        <span className="text-2xl font-bold tracking-tight text-blue-600">Career Monke</span>
       </Link>
 
       <div className="max-w-md w-full text-center space-y-4">

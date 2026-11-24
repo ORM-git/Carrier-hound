@@ -224,7 +224,7 @@ export default function TailorResumeModal({
 
   const handleGenerateAi = async () => {
     if (isProUser === false) {
-      toast.info("CareerMonke Pro subscription required for AI resume tailoring.");
+      toast.info("Career Monke Pro subscription required for AI resume tailoring.");
       return;
     }
     const currentGen = ++authGenerationRef.current;

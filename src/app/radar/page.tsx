@@ -114,7 +114,7 @@ export default function RadarPage() {
         <div className="max-w-5xl w-full mx-auto px-4 py-8">
           <ProUpgradeScreen
             title="Unlock 3D Job Radar"
-            subtitle="The interactive 3D Globe Radar is exclusive to CareerMonke Pro members."
+            subtitle="The interactive 3D Globe Radar is exclusive to Career Monke Pro members."
           />
         </div>
       </LoggedInAppShell>

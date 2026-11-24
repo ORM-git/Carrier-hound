@@ -392,10 +392,10 @@ async function runVerification() {
     console.log("\n--- TEST B.4: Mobile Job-Detail Actions (390x844) ---");
     await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
     await page.goto(`http://localhost:${PORT}/jobs?id=sample-openai-01`, { waitUntil: "networkidle0" });
-    await page.waitForSelector('[data-testid="mobile-share-job-button"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="mobile-header-share-button"]', { timeout: 10000 });
 
     const mobileDetailControls = await page.evaluate(() => {
-      const mobileShare = document.querySelector('[data-testid="mobile-share-job-button"]');
+      const mobileShare = document.querySelector('[data-testid="mobile-header-share-button"]');
       const mobileSave = document.querySelector('[role="region"][aria-label="Quick apply bar"] button[aria-label*="job"]');
       const mobileApply = document.querySelector('[role="region"][aria-label="Quick apply bar"] a, [role="region"][aria-label="Quick apply bar"] button:last-child');
       const topReport = document.querySelector('[data-testid="report-issue-link"]');
@@ -426,7 +426,7 @@ async function runVerification() {
       };
     });
 
-    await page.$eval('[data-testid="mobile-share-job-button"]', (btn) => btn.click());
+    await page.$eval('[data-testid="mobile-header-share-button"]', (btn) => btn.click());
     await page.waitForSelector('[data-testid="share-success-banner"]', { timeout: 3000 });
     console.log(`  [PASS] Mobile share success: Floating toast 'Link copied' appeared`);
 
@@ -436,14 +436,14 @@ async function runVerification() {
 
     // Mobile Share Failure Fallback
     await page.goto(`http://localhost:${PORT}/jobs?id=sample-openai-01`, { waitUntil: "networkidle0" });
-    await page.waitForSelector('[data-testid="mobile-share-job-button"]');
+    await page.waitForSelector('[data-testid="mobile-header-share-button"]');
     await page.evaluate(() => {
       navigator.clipboard.writeText = async () => {
         throw new Error("Mobile clipboard write failed");
       };
     });
 
-    await page.$eval('[data-testid="mobile-share-job-button"]', (btn) => btn.click());
+    await page.$eval('[data-testid="mobile-header-share-button"]', (btn) => btn.click());
     await page.waitForSelector('[data-testid="share-fallback-container"]', { timeout: 3000 });
     console.log(`  [PASS] Mobile share failure: Usable fallback container rendered at top`);
 
