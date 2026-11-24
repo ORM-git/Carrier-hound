@@ -38,7 +38,6 @@ import {
   MapPin,
   Laptop,
   RotateCcw,
-  X,
   Heart,
   Sparkles,
   Briefcase,
@@ -470,7 +469,6 @@ function JobsPageInner() {
   const inFlightSaveRef = useRef<Set<string>>(new Set());
   const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const filterDialogRef = useRef<HTMLDivElement | null>(null);
-  const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const hasInitializedFromUrl = useRef(false);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isRetryingUnlock, setIsRetryingUnlock] = useState(false);
@@ -731,13 +729,7 @@ function JobsPageInner() {
     };
   }, [mobileFiltersOpen]);
 
-  // Keep active tab in view and hide mobile bottom nav while full-screen job detail is open
-  useEffect(() => {
-    if (activeTabRef.current) {
-      activeTabRef.current.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-    }
-  }, [activeTab]);
-
+  // Hide mobile bottom nav while full-screen job detail is open
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent("careermonke_detail_open", { detail: { isOpen: Boolean(selectedJob) } })
@@ -1775,6 +1767,8 @@ function JobsPageInner() {
           user={user}
           isPro={isPro}
           hidePlanPill
+          // Mobile feed: Recommended / Saved / Applied only (External and search stay on sm+).
+          mobileTabs={isListView ? jobTabs.filter((tab) => tab.id !== "external") : undefined}
         />
         <main
           id="main-content"
@@ -1862,75 +1856,6 @@ function JobsPageInner() {
             </div>
           ) : (
             <>
-              {/* Header Row: Tabs with Count Badges (compact mobile view <640px) */}
-              <div className="space-y-2 sm:hidden max-w-full">
-                {/* Mobile tabs (<640px) */}
-                <div className="relative max-w-full">
-                  <div className="flex items-center gap-1 p-1 pr-8 rounded-xl bg-slate-200/80 border border-slate-300/70 overflow-x-auto scrollbar-thin">
-                    {jobTabs.map((tab) => (
-                      <button
-                        key={tab.id}
-                        ref={tab.active ? activeTabRef : undefined}
-                        type="button"
-                        onClick={tab.onClick}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 min-h-[44px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] shrink-0 ${
-                          tab.active
-                            ? "bg-white text-blue-600 shadow-none ring-1 ring-[#E2E8F0]"
-                            : "text-[#334155] hover:text-[#0F172A]"
-                        }`}
-                      >
-                        <span>{tab.label}</span>
-                        {tab.id === "external" ? (
-                          !loadingJobs && externalJobsCount > 0 && (
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                                tab.active ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-[#334155]"
-                              }`}
-                            >
-                              {tab.count}
-                            </span>
-                          )
-                        ) : (
-                          tab.count !== undefined && (
-                            <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                                tab.active ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-[#334155]"
-                              }`}
-                            >
-                              {tab.count}
-                            </span>
-                          )
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-200 to-transparent rounded-r-xl" />
-                </div>
-
-                {/* Mobile search bar (<640px) */}
-                <div className="relative w-full">
-                  <Search className="w-4 h-4 text-[#475569] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    aria-label="Search by job title, company, or keyword"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by job title, company, or keyword..."
-                    className="w-full text-xs sm:text-sm pl-10 pr-11 py-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A] placeholder:text-[#475569] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 shadow-none min-h-[44px]"
-                  />
-                  {search && (
-                    <button
-                      type="button"
-                      onClick={() => setSearch("")}
-                      aria-label="Clear search text"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 text-[#475569] hover:text-[#0F172A] w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}

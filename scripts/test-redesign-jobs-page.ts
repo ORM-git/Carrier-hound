@@ -67,8 +67,9 @@ function run() {
     console.log('  [PASS] a11y: sort select has aria-label="Sort by"');
   }
 
-  // Check 6: Accessible search input
-  if (!code.includes('aria-label="Search by job title, company, or keyword"')) {
+  // Check 6: Accessible search input (rendered by AppTopBar since CM mobile item 15 removed the mobile feed copy)
+  const topBarCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/shell/AppTopBar.tsx"), "utf-8");
+  if (!topBarCode.includes('aria-label="Search by job title, company, or keyword"')) {
     failures.push('A11Y FAIL: Search <input> missing accessible aria-label.');
   } else {
     console.log('  [PASS] a11y: search input has accessible aria-label');
