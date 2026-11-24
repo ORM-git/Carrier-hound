@@ -9,6 +9,7 @@ import { clampMatchScore, computeFitDiagnostics, FitDiagnosticsResult, toFitInpu
 import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
+import { workModelLabel } from "@/lib/jobs/workModel";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import type { User } from "@supabase/supabase-js";
@@ -724,7 +725,7 @@ export default function JobDetailView({
 
                 <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
                   <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
-                  <span className="truncate">{job.remote ? "Remote" : "On-site"}</span>
+                  <span className="truncate">{workModelLabel(job)}</span>
                 </div>
               </div>
 

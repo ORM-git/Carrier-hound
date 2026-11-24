@@ -8,7 +8,7 @@ const mobileCard = page.slice(page.indexOf("MOBILE VIEW (under sm"), page.indexO
 
 describe("mobile field parity (item 20)", () => {
   it("mobile card keeps location, type, work model, seniority, early-applicant, salary + original, date and source", () => {
-    for (const s of ["locInfo.primary", "formattedJobType", '{job.remote ? "Remote" : "On-site"}', "{jobLevel}", "Early applicant", "{isPro ? job.salary", "({job.salary_original})", "formatRelativeTime(job.postedAt)", '"Direct feed" : "Active feed"', "job.category"]) {
+    for (const s of ["locInfo.primary", "formattedJobType", "{workModelLabel(job)}", "{jobLevel}", "Early applicant", "{isPro ? job.salary", "({job.salary_original})", "formatRelativeTime(job.postedAt)", '"Direct feed" : "Active feed"', "job.category"]) {
       expect(mobileCard).toContain(s);
     }
   });

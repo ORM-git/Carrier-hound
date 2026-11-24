@@ -63,6 +63,7 @@ import {
 } from "@/lib/jobs/experienceLevels";
 import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
+import { workModelLabel } from "@/lib/jobs/workModel";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -2421,10 +2422,10 @@ function JobsPageInner() {
                                     {formattedJobType}
                                   </span>
                                 )}
-                                {/* Work model always shown, as on desktop (Remote / On-site) */}
+                                {/* Work model always shown, from remoteScope (Remote / Hybrid / On-site / Flexible) */}
                                 <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <Laptop className="w-3 h-3 text-[#475569]" />
-                                  {job.remote ? "Remote" : "On-site"}
+                                  {workModelLabel(job)}
                                 </span>
                                 {jobLevel && (
                                   <span data-testid="mobile-card-level" className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
