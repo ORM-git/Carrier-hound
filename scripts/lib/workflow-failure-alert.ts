@@ -56,6 +56,7 @@ export const SCHEDULED_CRON_WORKFLOWS: readonly string[] = Object.freeze([
   "Inbound Reply Poll",
   "Daily Job Ingestion & Cleanup Pipeline",
   "Scaled Job Ingestion & Cleanup Pipeline",
+  "Python Job Ingestion (every 4 hours)",
   "Plan Regression",
   "Security & Secret Scanning",
   "Source Health Monitoring",

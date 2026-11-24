@@ -48,8 +48,9 @@ check(isScheduledCronWorkflow("Daily Early-Access Signup Digest Cron"), "early-a
 check(isScheduledCronWorkflow("Source Health Monitoring"), "source health monitoring is allowlisted");
 check(isScheduledCronWorkflow("Weekly Database Reconciliation Audit"), "weekly database reconciliation audit is allowlisted");
 check(isScheduledCronWorkflow("Scaled Job Ingestion & Cleanup Pipeline"), "scaled job ingestion pipeline is allowlisted");
+check(isScheduledCronWorkflow("Python Job Ingestion (every 4 hours)"), "python job ingestion cron is allowlisted");
 check(isScheduledCronWorkflow("daily candidate matching & digest cron"), "case-insensitive allowlist matching works");
-check(SCHEDULED_CRON_WORKFLOWS.length === 13, `all 13 scheduled cron workflows are cataloged (found ${SCHEDULED_CRON_WORKFLOWS.length})`);
+check(SCHEDULED_CRON_WORKFLOWS.length === 14, `all 14 scheduled cron workflows are cataloged (found ${SCHEDULED_CRON_WORKFLOWS.length})`);
 
 // Non-cron workflows must be excluded
 check(!isScheduledCronWorkflow("Continuous Integration (Build, Lint & Test)"), "CI workflow is excluded");

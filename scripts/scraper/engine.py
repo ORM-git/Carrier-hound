@@ -25,6 +25,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
+from .persistence import db_error_diagnostic, prevalidate_jobs, rejection
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 DEFAULT_SEEDS_PATH = Path(__file__).resolve().parent / "company_seeds.json"
@@ -69,13 +70,24 @@ class WriteAuthorizationError(RuntimeError):
     """Write mode was requested without valid Supabase credentials. Never carries the credential values."""
 
 
-def validate_row_cap(*, dry_run: bool, max_rows: int | None, no_expire: bool = True) -> None:
+def validate_row_cap(
+    *,
+    dry_run: bool,
+    max_rows: int | None,
+    no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
+) -> None:
     if max_rows is not None and (isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0):
         raise WriteAuthorizationError("ingestion refused: --max-rows must be a positive integer")
-    if not dry_run and max_rows is None:
+    if not dry_run and max_rows is None and not allow_uncapped:
         raise WriteAuthorizationError("write mode refused: an explicit positive --max-rows cap is required")
-    if not no_expire:
-        raise WriteAuthorizationError("ingestion refused: --no-expire is mandatory; expiry cannot be enabled")
+    if not no_expire and not allow_expire:
+        raise WriteAuthorizationError("ingestion refused: expiry requires the explicit --expire flag")
+    if not no_expire and dry_run:
+        raise WriteAuthorizationError("expiry refused: --expire requires --write-to-database")
+    if not no_expire and max_rows is not None:
+        raise WriteAuthorizationError("expiry refused: capped runs cannot expire jobs")
 
 
 def select_unique_jobs(jobs: list[dict[str, Any]], max_rows: int | None) -> list[dict[str, Any]]:
@@ -100,11 +112,15 @@ def select_unique_jobs(jobs: list[dict[str, Any]], max_rows: int | None) -> list
 
 def ingestion_has_errors(report: dict[str, Any]) -> bool:
     db = report.get("db") if isinstance(report.get("db"), dict) else {}
+    expiry_reports = report.get("expiry_reports") if isinstance(report.get("expiry_reports"), list) else []
     return bool(
         report.get("errors")
         or report.get("failed_sources")
         or db.get("persistence_failed")
         or db.get("write_errors")
+        or report.get("rejected")
+        or db.get("rejected")
+        or any(item.get("status") == "failed" for item in expiry_reports if isinstance(item, dict))
     )
 
 
@@ -121,13 +137,17 @@ def resolve_write_credentials() -> tuple[str, str]:
 
 
 def add_write_mode_arguments(parser: argparse.ArgumentParser) -> None:
-    """Dry-run is the default; writing needs the explicit flag; the two are mutually exclusive."""
+    """Dry-run is the default; write, uncapped, and expiry modes need explicit opt-ins."""
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="Fetch and normalize only; never writes (the default)")
     mode.add_argument(WRITE_FLAG, dest="write_to_database", action="store_true",
-                      help="Explicitly authorize capped company/job writes (requires a positive --max-rows cap and valid Supabase service credentials)")
+                      help="Explicitly authorize company/job writes (requires valid Supabase service credentials)")
+    parser.add_argument("--production", action="store_true", help="Allow uncapped writes when combined with --write-to-database")
     parser.add_argument("--max-rows", type=int, default=None, help="Hard cap on unique canonical job identities selected globally")
-    parser.add_argument("--no-expire", action="store_true", default=True, help="Keep expiry disabled (the default and only supported mode)")
+    expiry = parser.add_mutually_exclusive_group()
+    expiry.add_argument("--no-expire", dest="no_expire", action="store_true", help="Keep stale-job expiry disabled (the default)")
+    expiry.add_argument("--expire", dest="no_expire", action="store_false", help="Enable stale-job expiry (uncapped write mode only)")
+    parser.set_defaults(no_expire=True)
 
 
 def dry_run_from_args(args: argparse.Namespace) -> bool:
@@ -171,7 +191,8 @@ def compute_content_fingerprint(row: dict[str, Any]) -> str:
         str(row.get("salary_text") or "").strip(),
         str(row.get("salary_min") or ""),
         str(row.get("salary_max") or ""),
-        str(row.get("salary_period") or "year").strip().lower(),
+        # No-salary rows carry no period (legacy rows default to yearly): never churn them on that alone.
+        str(row.get("salary_period") or "").strip().lower() if (row.get("salary_text") or row.get("salary_min") or row.get("salary_max")) else "",
         str(row.get("canonical_domain") or "").strip().lower(),
         str(row.get("source_id") or "").strip(),
         str(row.get("source_url") or "").strip(),
@@ -285,6 +306,7 @@ class SupabaseSetDiffWriter:
         self.write_errors: list[str] = []
         self.failed_writes: int = 0
         self.persistence_failed: bool = False
+        self.logo_enqueue: dict[str, Any] = {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None}
 
     async def sync_companies(
         self,
@@ -306,7 +328,7 @@ class SupabaseSetDiffWriter:
                 "canonical_domain": j.get("canonical_domain"),
                 "domain": j.get("canonical_domain"),
                 "category": j.get("company_category"),
-                "logo_url": j.get("logo_url"),
+                "logo_url": None,  # company-logo contract: raw logos must never be written by Python
                 "ats_type": j.get("source"),
                 "source_priority": int(j.get("source_priority") or 2),
                 "enabled": True,
@@ -343,17 +365,14 @@ class SupabaseSetDiffWriter:
             ex = existing_map.get(slug)
             if ex is None:
                 insert_payload = {k: v for k, v in inc.items() if k != "source_priority"}
+                insert_payload["logo_url"] = None
                 to_insert.append(insert_payload)
             else:
                 ex_prio = 1 if ex.get("ats_type") in ("greenhouse", "lever", "ashby", "smartrecruiters", "workday", "amazon", "microsoft") else 2
                 inc_prio = inc.get("source_priority", 2)
                 updates: dict[str, Any] = {}
 
-                # Never overwrite a known better logo with null or lower-quality aggregator value
-                if not ex.get("logo_url") and inc.get("logo_url"):
-                    updates["logo_url"] = inc["logo_url"]
-                elif inc_prio == 1 and ex_prio > 1 and inc.get("logo_url"):
-                    updates["logo_url"] = inc["logo_url"]
+                # Logos are never written here (company-logo contract): the TS repair worker owns logo_url.
 
                 # Never overwrite canonical domain with null
                 if not ex.get("canonical_domain") and inc.get("canonical_domain"):
@@ -394,7 +413,7 @@ class SupabaseSetDiffWriter:
                 if ins_resp.status_code >= 400:
                     self.failed_writes += len(to_insert)
                     self.persistence_failed = True
-                    self.write_errors.append(f"Company insert error {ins_resp.status_code}: {ins_resp.text}")
+                    self.write_errors.append(f"Company insert error: {db_error_diagnostic(ins_resp.status_code, ins_resp.text)[1]}")
                 else:
                     try:
                         data = ins_resp.json()
@@ -413,7 +432,164 @@ class SupabaseSetDiffWriter:
                 self.persistence_failed = True
                 self.write_errors.append(f"Company insert exception: {redact_sensitive_params(str(exc))}")
 
+        if not self.persistence_failed:
+            # Every company seen is handed over; SQL keeps only those without an eligible hosted logo.
+            seen = [company_id_map[slug] for slug in companies_by_slug if slug in company_id_map]
+            await self.enqueue_company_logos(client, seen)
+
         return company_id_map
+
+    async def enqueue_company_logos(self, client: httpx.AsyncClient, company_ids: list[str]) -> None:
+        """Hand new / ineligible-logo companies to the shared logo repair loop. Fail-open: never
+        marks persistence failed and never raises, so branding can't block job ingestion."""
+        ids = sorted({i for i in company_ids if isinstance(i, str) and i})
+        origin = self.base_url[: -len("/rest/v1")] if self.base_url.endswith("/rest/v1") else self.base_url
+        self.logo_enqueue = {"requested": len(ids), "enqueued": 0, "status": "skipped" if not ids else "pending",
+                             "company_ids": ids[:200], "coverage": None}
+        for start in range(0, len(ids), 500):
+            batch = ids[start:start + 500]
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/rpc/enqueue_company_logos",
+                    headers=self.headers,
+                    json={"p_ids": batch, "p_origin": origin},
+                )
+            except Exception as exc:  # noqa: BLE001 - fail-open by design
+                self.logo_enqueue["status"] = f"error: {redact_sensitive_params(str(exc))}"
+                return
+            if resp.status_code == 404 or "PGRST202" in resp.text:
+                self.logo_enqueue["status"] = "not-migrated"
+                return
+            if resp.status_code >= 400:
+                self.logo_enqueue["status"] = f"error: HTTP {resp.status_code}"
+                return
+            try:
+                raw_val = resp.json()
+            except Exception:  # noqa: BLE001
+                self.logo_enqueue["status"] = "invalid: unparseable json"
+                return
+            if isinstance(raw_val, bool) or not isinstance(raw_val, int):
+                val_type = type(raw_val).__name__[:30]
+                self.logo_enqueue["status"] = f"invalid: expected integer count, got {val_type}"
+                return
+            if raw_val < 0:
+                self.logo_enqueue["status"] = "invalid: negative enqueue count"
+                return
+            if raw_val > len(batch):
+                self.logo_enqueue["status"] = f"invalid: count exceeds requested ({len(batch)})"
+                return
+            self.logo_enqueue["enqueued"] += raw_val
+        if ids:
+            self.logo_enqueue["status"] = "ok"
+            # Same coverage / backlog / orphan counts as the TS ingest and the sweep summary.
+            try:
+                cov = await client.post(f"{self.base_url}/rpc/company_logo_coverage", headers=self.headers, json={"p_origin": origin})
+                if cov.status_code < 400:
+                    try:
+                        cov_val = cov.json()
+                    except Exception:
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: unparseable coverage json"
+                        return
+                    if isinstance(cov_val, bool) or not isinstance(cov_val, dict):
+                        cov_type = type(cov_val).__name__[:30]
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = f"invalid: unexpected coverage shape (got {cov_type})"
+                        return
+
+                    # Real company_logo_coverage contract (20261122 base + 20261123 review state)
+                    base_keys = {
+                        "companies_with_active_jobs",
+                        "eligible_hosted",
+                        "missing_or_ineligible",
+                        "pending",
+                        "failed",
+                        "missing",
+                        "queued_retries",
+                        "orphan_links",
+                    }
+                    review_state_keys = {"held", "intentional_initials", "approved"}
+                    allowed_keys = base_keys | review_state_keys
+
+                    if not base_keys.issubset(cov_val.keys()):
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: coverage missing required keys"
+                        return
+
+                    unexpected = set(cov_val.keys()) - allowed_keys
+                    if unexpected:
+                        self.logo_enqueue["coverage"] = "unknown"
+                        self.logo_enqueue["status"] = "invalid: unexpected coverage keys"
+                        return
+
+                    for k, v in cov_val.items():
+                        if isinstance(v, bool) or not isinstance(v, int):
+                            self.logo_enqueue["coverage"] = "unknown"
+                            self.logo_enqueue["status"] = f"invalid: coverage {k} must be integer"
+                            return
+                        if v < 0:
+                            self.logo_enqueue["coverage"] = "unknown"
+                            self.logo_enqueue["status"] = f"invalid: coverage {k} cannot be negative"
+                            return
+
+                    self.logo_enqueue["coverage"] = cov_val
+            except Exception:  # noqa: BLE001 - reporting only, never fatal
+                pass
+
+    async def _post_jobs(self, client: httpx.AsyncClient, rows: list[dict[str, Any]]) -> tuple[str, Any]:
+        """One atomic insert. Returns ("ok", confirmed_rows) / ("check", reason) for a definitive 23514
+        rejection (nothing was written) / ("error", reason) for anything else, including ambiguous ones."""
+        try:
+            resp = await client.post(
+                f"{self.base_url}/jobs",
+                headers={**self.headers, "Prefer": "return=representation"},
+                json=rows,
+            )
+        except Exception as exc:  # timeout / connection reset: outcome unknown, never retried
+            return "error", f"Job insert exception: {redact_sensitive_params(str(exc))}"
+        if resp.status_code >= 300:
+            code, reason = db_error_diagnostic(resp.status_code, resp.text)
+            return ("check" if code == "23514" and resp.status_code == 400 else "error"), reason
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        return "ok", [row for row in data if isinstance(row, dict) and row.get("id")] if isinstance(data, list) else []
+
+    async def _insert_jobs(
+        self,
+        client: httpx.AsyncClient,
+        to_insert: list[dict[str, Any]],
+        db_columns: set[str],
+        stats: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Inserts a batch; returns the source rows confirmed persisted. A definitive 23514 rejection of the
+        atomic batch is isolated row by row (bounded by the batch size); every other failure stops writes."""
+        clean = [{k: v for k, v in row.items() if k in db_columns} for row in to_insert]
+        outcome, payload = await self._post_jobs(client, clean)
+        if outcome == "check" and len(clean) > 1:
+            persisted: list[dict[str, Any]] = []
+            for row in to_insert:
+                persisted += await self._insert_jobs(client, [row], db_columns, stats)
+                if self.persistence_failed:
+                    break
+            return persisted
+        if outcome == "check":
+            stats["rejected"].append(rejection(to_insert[0], "insert", payload, "23514"))
+            return []
+        if outcome == "error":
+            self.failed_writes += len(clean)
+            self.persistence_failed = True
+            self.write_errors.append(f"Job insert error: {payload}")
+            return []
+        stats["inserted"] += len(payload)
+        stats["persisted_ids"].extend(row["id"] for row in payload)
+        if len(payload) != len(clean):
+            self.failed_writes += len(clean) - len(payload) or 1
+            self.persistence_failed = True
+            self.write_errors.append("Job insert response did not confirm every row")
+            return []
+        return list(to_insert)
 
     async def sync_jobs_set_diff(
         self,
@@ -431,9 +607,12 @@ class SupabaseSetDiffWriter:
             "write_errors": [],
             "persisted_ids": [],
             "persisted_source_keys": [],
+            "rejected": [],
         }
         persisted_source_keys: set[tuple[str, str]] = set()
         batch_size = 50
+        # Shared CHECK-constraint validator: invalid rows are reported individually, valid rows continue.
+        jobs, stats["rejected"] = prevalidate_jobs(jobs)
 
         db_columns = {
             "company", "company_id", "title", "location", "country", "country_code",
@@ -532,39 +711,12 @@ class SupabaseSetDiffWriter:
                 break
 
             if to_insert:
-                clean_insert = [{k: v for k, v in row.items() if k in db_columns} for row in to_insert]
-                try:
-                    ins_resp = await client.post(
-                        f"{self.base_url}/jobs",
-                        headers={**self.headers, "Prefer": "return=representation"},
-                        json=clean_insert,
-                    )
-                    if ins_resp.status_code < 300:
-                        try:
-                            inserted_rows = ins_resp.json()
-                        except ValueError:
-                            inserted_rows = None
-                        confirmed_rows = [row for row in inserted_rows if isinstance(row, dict) and row.get("id")] if isinstance(inserted_rows, list) else []
-                        stats["inserted"] += len(confirmed_rows)
-                        stats["persisted_ids"].extend(row["id"] for row in confirmed_rows)
-                        if len(confirmed_rows) == len(clean_insert):
-                            for row in to_insert:
-                                sid = str(row.get("source_id") or "")
-                                sjid = str(row.get("source_job_id") or "")
-                                if sid and sjid:
-                                    persisted_source_keys.add((sid, sjid))
-                        else:
-                            self.failed_writes += len(clean_insert) - len(confirmed_rows) or 1
-                            self.persistence_failed = True
-                            self.write_errors.append("Job insert response did not confirm every row")
-                    else:
-                        self.failed_writes += len(clean_insert)
-                        self.persistence_failed = True
-                        self.write_errors.append(f"Job insert error {ins_resp.status_code}: {ins_resp.text}")
-                except Exception as exc:
-                    self.failed_writes += len(clean_insert)
-                    self.persistence_failed = True
-                    self.write_errors.append(f"Job insert exception: {redact_sensitive_params(str(exc))}")
+                inserted = await self._insert_jobs(client, to_insert, db_columns, stats)
+                for row in inserted:
+                    sid = str(row.get("source_id") or "")
+                    sjid = str(row.get("source_job_id") or "")
+                    if sid and sjid:
+                        persisted_source_keys.add((sid, sjid))
 
             if self.persistence_failed:
                 break
@@ -595,9 +747,13 @@ class SupabaseSetDiffWriter:
                             if sid and sjid:
                                 persisted_source_keys.add((sid, sjid))
                     else:
-                        self.failed_writes += 1
-                        self.persistence_failed = True
-                        self.write_errors.append(f"Job update error {upd_resp.status_code} on {ex_id}: {upd_resp.text}")
+                        code, reason = db_error_diagnostic(upd_resp.status_code, upd_resp.text)
+                        if code == "23514" and upd_resp.status_code == 400:  # definitive CHECK rejection of this row only
+                            stats["rejected"].append(rejection(row, "update", reason, code))
+                        else:
+                            self.failed_writes += 1
+                            self.persistence_failed = True
+                            self.write_errors.append(f"Job update error on {ex_id}: {reason}")
                 except Exception as exc:
                     self.failed_writes += 1
                     self.persistence_failed = True
@@ -638,11 +794,20 @@ async def run_ingestion(
     dry_run: bool = True,
     max_rows: int | None = None,
     no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
     max_seeds_per_layer: int | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Runs Layer 1 (Public ATS) and Layer 2 (Workday CXS, Amazon, Microsoft) ingestion."""
-    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
+    if not no_expire:
+        raise WriteAuthorizationError(
+            "--expire is unsupported by engine.py; use python -m scripts.scraper.run_ingestion"
+        )
+    validate_row_cap(
+        dry_run=dry_run, max_rows=max_rows, no_expire=no_expire,
+        allow_uncapped=allow_uncapped, allow_expire=allow_expire,
+    )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
     config = load_company_seeds(seeds_path)
@@ -687,8 +852,11 @@ async def run_ingestion(
                 all_jobs.extend(res)
 
         fetched_count = len(all_jobs)
+        all_jobs, rejected = prevalidate_jobs(all_jobs)  # before dedupe: dedupe ranks on int(source_priority)
+        validated_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
+        selected_count = len(all_jobs)
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
@@ -734,8 +902,8 @@ async def run_ingestion(
     return {
         "dry_run": dry_run,
         "fetched": fetched_count,
-        "selected": len(all_jobs),
-        "skipped_by_cap": max(0, len(unique_jobs) - len(all_jobs)),
+        "selected": selected_count,
+        "skipped_by_cap": max(0, len(unique_jobs) - selected_count),
         "projected_counts": projected_counts,
         "persisted_counts": None if dry_run else {
             "inserted": db_stats["inserted"],
@@ -745,6 +913,8 @@ async def run_ingestion(
         "unique_after_dedupe": db_stats["inserted"] + db_stats["updated"] + db_stats["skipped_unchanged"],
         "db": db_stats,
         "errors": errors,
+        "validated": validated_count,
+        "rejected": rejected + list(db_stats.get("rejected") or []),
         "sample": all_jobs[0] if all_jobs else None,
     }
 
@@ -757,9 +927,17 @@ def main() -> None:
 
     try:
         dry_run = dry_run_from_args(args)
-        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
+        if not args.no_expire:
+            raise WriteAuthorizationError(
+                "--expire is unsupported by engine.py; use python -m scripts.scraper.run_ingestion"
+            )
+        validate_row_cap(
+            dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
+        )
         summary = asyncio.run(run_ingestion(
             dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
             max_seeds_per_layer=args.limit,
         ))
     except WriteAuthorizationError as exc:
@@ -767,7 +945,7 @@ def main() -> None:
         raise SystemExit(2)
     print(json.dumps(summary, indent=2))
     if ingestion_has_errors(summary):
-        print("ingestion failed: source or persistence errors were reported", file=sys.stderr)
+        print("ingestion failed: source, persistence, or expiry errors were reported", file=sys.stderr)
         raise SystemExit(1)
 
 

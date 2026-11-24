@@ -43,8 +43,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install pytest
-        run: pip install pytest
+      - name: Install pytest and scraper requirements
+        # The scraper's pinned runtime deps (incl. python-jobspy) must install cleanly from requirements.txt.
+        run: pip install pytest -r scripts/scraper/requirements.txt
+
+      - name: Python scraper suites
+        # Every scripts/scraper/test_*.py (engine, CLI safety, source fixes); test:all only runs the identity contract.
+        run: python -m pytest -q scripts/scraper/
 
       - name: Error Budget Policy Check
         run: npx tsx scripts/test-error-budget-policy.ts

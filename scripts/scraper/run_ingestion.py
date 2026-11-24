@@ -5,9 +5,12 @@ Features:
 - `--source` filtering (`all`, `layer1`, `layer2`, `layer3`, `greenhouse`, `lever`,
   `ashby`, `smartrecruiters`, `workday`, `amazon`, `microsoft`, `jobspy`,
   `arbeitnow`, `adzuna`, or a specific company slug).
+- `--cohort workday|non-workday`: independent runs that partition every planned source by type (no
+  overlap, no omission); unknown filters, unknown cohorts and empty selections are refused.
 - Strict per-source error isolation (one failing board never crashes the batch).
 - Tracks per-source completeness and failures in the run report.
-- Expiry is disabled for every run, including full-coverage and capped runs.
+- Expiry is disabled by default. Explicit --expire enables it for uncapped write runs;
+  partial-coverage, incomplete, or failed boards remain vetoed.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import argparse
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Awaitable, Callable
@@ -48,6 +52,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
+from .persistence import prevalidate_jobs
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 PARTIAL_COVERAGE_SOURCES: frozenset[str] = frozenset({"workday", "amazon", "microsoft", "arbeitnow", "smartrecruiters", "jobspy", "adzuna"})
@@ -142,6 +147,107 @@ def _matches_source_filter(source_filter: set[str], *candidates: str) -> bool:
     return bool(source_filter & lower_candidates)
 
 
+class SourceSelectionError(ValueError):
+    """Unknown, empty or contradictory source/cohort selection: refuse instead of guessing."""
+
+
+# Independent execution cohorts. Membership is decided by source_type only (never by slug/alias), so the
+# two cohorts partition every planned source exactly: no overlap, no omission, new sources land somewhere.
+COHORTS: dict[str, Callable[[str], bool]] = {
+    "workday": lambda source_type: source_type == "workday",
+    "non-workday": lambda source_type: source_type != "workday",
+}
+
+
+def plan_sources(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every source this seed config can schedule, with the filter aliases that select it."""
+    plan: list[dict[str, Any]] = []
+    for s in config.get("layer1_public_ats") or []:
+        ats = str(s.get("ats") or "").lower()
+        slug = str(s.get("slug") or "").lower()
+        board_id = f"{ats}:{slug}"
+        plan.append({"id": board_id, "type": ats, "full": ats != "smartrecruiters", "kind": "layer1",
+                     "seed": s, "aliases": {"layer1", ats, slug, board_id}})
+    layer2_cfg = config.get("layer2_enterprise_json") or {}
+    for wd in layer2_cfg.get("workday_cxs") or []:
+        slug = str(wd.get("slug") or "").lower()
+        board_id = f"workday:{slug}"
+        plan.append({"id": board_id, "type": "workday", "full": False, "kind": "workday",
+                     "seed": wd, "aliases": {"layer2", "workday", slug, board_id}})
+    for name in ("amazon", "microsoft"):
+        if name in layer2_cfg:
+            plan.append({"id": name, "type": name, "full": False, "kind": name,
+                         "seed": layer2_cfg[name], "aliases": {"layer2", name}})
+    plan.append({"id": "jobspy:india", "type": "jobspy", "full": False, "kind": "jobspy",
+                 "seed": None, "aliases": {"layer3", "jobspy", "india"}})
+    plan.append({"id": "arbeitnow", "type": "arbeitnow", "full": False, "kind": "arbeitnow",
+                 "seed": None, "aliases": {"layer3", "arbeitnow"}})
+    plan.append({"id": "adzuna:in", "type": "adzuna", "full": False, "kind": "adzuna",
+                 "seed": None, "aliases": {"layer3", "adzuna"}})
+    return plan
+
+
+def normalize_source_filter(
+    sources: list[str] | set[str] | tuple[str, ...] | None,
+    cohort: str | None = None,
+) -> set[str]:
+    """
+    Normalizes and validates source filter tokens.
+    - None defaults to {"all"}.
+    - Explicit --cohort and --source together: reject (even if source was empty/whitespace).
+    - Explicit empty collection (sources=[] or set()), empty token ('', '   '), or containing
+      empty comma segments (',', ',greenhouse', 'greenhouse,'): reject with SourceSelectionError.
+    - Strips whitespace and lowercases valid tokens.
+    """
+    if cohort is not None and sources is not None:
+        raise SourceSelectionError("--cohort cannot be combined with --source")
+
+    if sources is None:
+        return {"all"}
+
+    if len(sources) == 0:
+        raise SourceSelectionError("explicit empty source filter supplied; omit --source for default all")
+
+    tokens: set[str] = set()
+    for item in sources:
+        if not isinstance(item, str):
+            item = str(item)
+        if not item.strip():
+            raise SourceSelectionError("empty or whitespace source filter token is invalid")
+        segments = item.split(",")
+        for seg in segments:
+            stripped = seg.strip()
+            if not stripped:
+                raise SourceSelectionError(f"source filter contains empty comma segment: {item!r}")
+            tokens.add(stripped.lower())
+
+    if not tokens:
+        raise SourceSelectionError("source filter resulted in an empty selection")
+
+    return tokens
+
+
+def select_sources(plan: list[dict[str, Any]], source_filter: set[str], cohort: str | None) -> list[dict[str, Any]]:
+    """Validated, deterministic selection. Unknown tokens, unknown cohorts and empty results are errors."""
+    known = {"all"}.union(*(p["aliases"] for p in plan)) if plan else {"all"}
+    unknown = sorted(source_filter - known)
+    if unknown:
+        raise SourceSelectionError(f"unknown source filter(s): {', '.join(unknown)}")
+    if cohort is not None:
+        if cohort not in COHORTS:
+            raise SourceSelectionError(f"unknown cohort {cohort!r}; expected one of: {', '.join(sorted(COHORTS))}")
+        if source_filter != {"all"}:
+            raise SourceSelectionError("--cohort cannot be combined with --source")
+    selected = [
+        p for p in plan
+        if ("all" in source_filter or source_filter & p["aliases"])
+        and (cohort is None or COHORTS[cohort](p["type"]))
+    ]
+    if not selected:
+        raise SourceSelectionError("source selection is empty; refusing a run that would cover nothing")
+    return selected
+
+
 async def run_master_ingestion(
     *,
     sources: list[str] | None = None,
@@ -149,22 +255,25 @@ async def run_master_ingestion(
     dry_run: bool = True,
     max_rows: int | None = None,
     no_expire: bool = True,
+    allow_uncapped: bool = False,
+    allow_expire: bool = False,
     baseline_active_count: int = 0,
     expire_stale_hours: int = 72,
     transport: httpx.AsyncBaseTransport | None = None,
     jobspy_scrape_fn: Callable[..., Any] | None = None,
+    cohort: str | None = None,
 ) -> dict[str, Any]:
     """
     Runs selected ingestion layers/sources with per-source error isolation,
-    safe set-diff upserts; expiry remains disabled for every run.
+    safe set-diff upserts; expiry requires an explicit opt-in on an uncapped write.
     """
-    validate_row_cap(dry_run=dry_run, max_rows=max_rows, no_expire=no_expire)
+    validate_row_cap(
+        dry_run=dry_run, max_rows=max_rows, no_expire=no_expire,
+        allow_uncapped=allow_uncapped, allow_expire=allow_expire,
+    )
     load_dotenv_into_env()
     credentials = None if dry_run else resolve_write_credentials()  # fail closed before any fetch
-    raw_filters = sources or ["all"]
-    source_filter = {s.strip().lower() for item in raw_filters for s in item.split(",") if s.strip()}
-    if not source_filter:
-        source_filter = {"all"}
+    source_filter = normalize_source_filter(sources, cohort)
 
     config = load_company_seeds(seeds_path)
     rl_cfg = config.get("rate_limit") or {}
@@ -174,8 +283,13 @@ async def run_master_ingestion(
     )
 
     layer1_seeds = list(config.get("layer1_public_ats") or [])
-    layer2_cfg = config.get("layer2_enterprise_json") or {}
-    workday_seeds = list(layer2_cfg.get("workday_cxs") or [])
+    plan = plan_sources(config)
+    known = {"all"}.union(*(p["aliases"] for p in plan)) if plan else {"all"}
+    unknown = sorted(source_filter - known)
+    if unknown:
+        raise SourceSelectionError(f"unknown source filter(s): {', '.join(unknown)}")
+    selected_plan = select_sources(plan, source_filter, cohort)
+    started_at = datetime.now(timezone.utc).isoformat()
 
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(25.0),
@@ -183,104 +297,28 @@ async def run_master_ingestion(
         transport=transport,
         headers={"User-Agent": "CareerHound-HighVolumeIngest/1.0"},
     ) as client:
-        scheduled_tasks: list[asyncio.Task[dict[str, Any]]] = []
+        def factory(p: dict[str, Any]) -> Callable[[], Awaitable[Any]]:
+            kind, seed = p["kind"], p["seed"]
+            if kind == "layer1":
+                return lambda: fetch_layer1_seed(client, limiter, seed)
+            if kind == "workday":  # partial coverage, max_pages=1
+                return lambda: fetch_workday_cxs(client, limiter, seed, max_pages=1)
+            if kind == "amazon":
+                return lambda: fetch_amazon_jobs(client, limiter, seed, max_pages=1)
+            if kind == "microsoft":
+                return lambda: fetch_microsoft_jobs(client, limiter, seed, max_pages=1)
+            if kind == "jobspy":
+                return lambda: fetch_jobspy_india()
+            if kind == "arbeitnow":
+                return lambda: fetch_arbeitnow(client, limiter, max_pages=1)
+            if kind == "adzuna":
+                return lambda: fetch_adzuna(client, limiter)
+            raise SourceSelectionError(f"no fetcher for source kind {kind!r}")
 
-        # Layer 1: Public ATS APIs (Greenhouse, Lever, Ashby full coverage; SmartRecruiters single page = partial)
-        for s in layer1_seeds:
-            ats = str(s.get("ats") or "").lower()
-            slug = str(s.get("slug") or "").lower()
-            board_id = f"{ats}:{slug}"
-            is_full = False if ats == "smartrecruiters" else True
-            if _matches_source_filter(source_filter, "layer1", ats, slug, board_id):
-                scheduled_tasks.append(
-                    asyncio.create_task(
-                        run_isolated_source(
-                            board_id,
-                            ats,
-                            lambda seed=s: fetch_layer1_seed(client, limiter, seed),
-                            is_full_coverage=is_full,
-                        )
-                    )
-                )
-
-        # Layer 2: Enterprise & Big Tech JSON APIs (Partial coverage, max_pages=1)
-        for wd in workday_seeds:
-            slug = str(wd.get("slug") or "").lower()
-            board_id = f"workday:{slug}"
-            if _matches_source_filter(source_filter, "layer2", "workday", slug, board_id):
-                scheduled_tasks.append(
-                    asyncio.create_task(
-                        run_isolated_source(
-                            board_id,
-                            "workday",
-                            lambda seed=wd: fetch_workday_cxs(client, limiter, seed, max_pages=1),
-                            is_full_coverage=False,
-                        )
-                    )
-                )
-
-        if "amazon" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "amazon"):
-            amz_seed = layer2_cfg["amazon"]
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "amazon",
-                        "amazon",
-                        lambda: fetch_amazon_jobs(client, limiter, amz_seed, max_pages=1),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        if "microsoft" in layer2_cfg and _matches_source_filter(source_filter, "layer2", "microsoft"):
-            ms_seed = layer2_cfg["microsoft"]
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "microsoft",
-                        "microsoft",
-                        lambda: fetch_microsoft_jobs(client, limiter, ms_seed, max_pages=1),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        # Layer 3: Scheduled India Batch (JobSpy) & Public JSON Aggregators
-        if _matches_source_filter(source_filter, "layer3", "jobspy", "india"):
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "jobspy:india",
-                        "jobspy",
-                        lambda: fetch_jobspy_india(),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        if _matches_source_filter(source_filter, "layer3", "arbeitnow"):
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "arbeitnow",
-                        "arbeitnow",
-                        lambda: fetch_arbeitnow(client, limiter, max_pages=1),
-                        is_full_coverage=False,
-                    )
-                )
-            )
-
-        if _matches_source_filter(source_filter, "layer3", "adzuna"):
-            scheduled_tasks.append(
-                asyncio.create_task(
-                    run_isolated_source(
-                        "adzuna:in",
-                        "adzuna",
-                        lambda: fetch_adzuna(client, limiter),
-                        is_full_coverage=False,
-                    )
-                )
-            )
+        scheduled_tasks = [
+            asyncio.create_task(run_isolated_source(p["id"], p["type"], factory(p), is_full_coverage=p["full"]))
+            for p in selected_plan
+        ]
 
         task_reports = await asyncio.gather(*scheduled_tasks)
 
@@ -318,8 +356,11 @@ async def run_master_ingestion(
             }
 
         fetched_count = len(all_jobs)
+        all_jobs, rejected = prevalidate_jobs(all_jobs)  # before dedupe: dedupe ranks on int(source_priority)
+        validated_count = len(all_jobs)
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
+        selected_count = len(all_jobs)
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
@@ -379,6 +420,11 @@ async def run_master_ingestion(
         # 7. Per-board 50% drop guard -> skip if persisted < baseline * 0.5.
         expiry_vetoed = db_stats.get("persistence_failed", False)
         expiry_reports: list[dict[str, Any]] = []
+        rejected += list(db_stats.get("rejected") or [])
+        # A board with any rejected (unpersisted) row is not fully persisted: never expire on its behalf.
+        for item in rejected:
+            if item["source_id"] in board_status_map and not board_status_map[item["source_id"]]["error"]:
+                board_status_map[item["source_id"]]["error"] = "rows rejected before persistence"
 
         if credentials is not None and not no_expire and not expiry_vetoed:
             writer = SupabaseSetDiffWriter(*credentials)
@@ -411,7 +457,13 @@ async def run_master_ingestion(
                 # Query baseline count for this exact board (source_id)
                 try:
                     cnt_resp = await client.get(
-                        f"{writer.base_url}/jobs?select=id&is_active=eq.true&source_id=eq.{bsid}&limit=1",
+                        f"{writer.base_url}/jobs",
+                        params={
+                            "select": "id",
+                            "is_active": "eq.true",
+                            "source_id": f"eq.{bsid}",
+                            "limit": "1",
+                        },
                         headers={**writer.headers, "Prefer": "count=exact"},
                     )
                     content_range = cnt_resp.headers.get("content-range") or ""
@@ -457,27 +509,28 @@ async def run_master_ingestion(
                 # Run safe per-board stale job expiration
                 try:
                     exp_resp = await client.patch(
-                        f"{writer.base_url}/jobs?is_active=eq.true&source_id=eq.{bsid}&last_seen_at=lt.{cutoff}",
+                        f"{writer.base_url}/jobs",
+                        params={
+                            "is_active": "eq.true",
+                            "source_id": f"eq.{bsid}",
+                            "last_seen_at": f"lt.{cutoff}",
+                        },
                         headers={**writer.headers, "Prefer": "return=representation"},
                         json={"is_active": False, "status": "expired"},
                     )
-                    if exp_resp.status_code < 300 and isinstance(exp_resp.json(), list):
-                        exp_count = len(exp_resp.json())
-                        db_stats["expired"] += exp_count
-                        expiry_reports.append({
-                            "source_id": bsid,
-                            "source_type": st,
-                            "expired": exp_count,
-                            "status": "completed",
-                        })
-                    else:
-                        expiry_reports.append({
-                            "source_id": bsid,
-                            "source_type": st,
-                            "expired": 0,
-                            "status": "failed",
-                            "error": f"HTTP {exp_resp.status_code}: {exp_resp.text}",
-                        })
+                    if exp_resp.status_code >= 300:
+                        raise RuntimeError(f"HTTP {exp_resp.status_code}: {exp_resp.text}")
+                    response_rows = exp_resp.json()
+                    if not isinstance(response_rows, list) or any(not isinstance(row, dict) for row in response_rows):
+                        raise ValueError("invalid expiry response: expected a JSON array of job rows")
+                    exp_count = len(response_rows)
+                    db_stats["expired"] += exp_count
+                    expiry_reports.append({
+                        "source_id": bsid,
+                        "source_type": st,
+                        "expired": exp_count,
+                        "status": "completed",
+                    })
                 except Exception as exc:
                     expiry_reports.append({
                         "source_id": bsid,
@@ -522,11 +575,33 @@ async def run_master_ingestion(
             ],
         }
 
+        if dry_run:
+            guard_block_reason = "dry_run: projections only, nothing was written or expired"
+        elif failed_sources:
+            guard_block_reason = (
+                f"write_withheld: {len(failed_sources)} failed source(s) in this run; "
+                "no inserts, updates, company sync or expiry"
+            )
+        elif db_stats.get("persistence_failed"):
+            guard_block_reason = "persistence_failed: writes stopped and expiry vetoed"
+        else:
+            guard_block_reason = None
+        failed_ids = {f["source"] for f in failed_sources}
         return {
+            "cohort": cohort or ("all" if source_filter == {"all"} else "custom"),
+            "git_sha": os.environ.get("GITHUB_SHA") or None,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "selected_sources": [p["id"] for p in selected_plan],
+            "completed_sources": [r["source"] for r in source_reports if r["source"] not in failed_ids],
+            "guard_block_reason": guard_block_reason,
             "dry_run": dry_run,
             "fetched": fetched_count,
-            "selected": len(all_jobs),
-            "skipped_by_cap": max(0, len(unique_jobs) - len(all_jobs)),
+            "selected": selected_count,
+            "validated": validated_count,
+            "rejected": rejected[:200],
+            "rejected_count": len(rejected),
+            "skipped_by_cap": max(0, len(unique_jobs) - selected_count),
             "projected_counts": projected_counts,
             "persisted_counts": None if dry_run else {
                 "inserted": db_stats["inserted"],
@@ -542,6 +617,11 @@ async def run_master_ingestion(
             "failed_sources": failed_sources,
             "sources": source_reports,
             "greenhouse_inspection": greenhouse_inspection,
+            "logo_enqueue": (
+                getattr(writer, "logo_enqueue", None)
+                if "writer" in locals() and writer is not None
+                else None
+            ) or {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None},
         }
 
 
@@ -553,28 +633,40 @@ def main() -> None:
         default=None,
         help="Source filter: all, layer1, layer2, layer3, greenhouse, lever, ashby, smartrecruiters, workday, amazon, microsoft, jobspy, arbeitnow, adzuna, or slug",
     )
+    parser.add_argument(
+        "--cohort",
+        choices=sorted(COHORTS),
+        default=None,
+        help="Independent cohort: workday or non-workday (exact partition by source type; not combinable with --source)",
+    )
     add_write_mode_arguments(parser)
     parser.add_argument("--baseline-count", type=int, default=0, help="Baseline active job count for 50%% drop guard")
     args = parser.parse_args()
 
     try:
         dry_run = dry_run_from_args(args)
-        validate_row_cap(dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire)
+        validate_row_cap(
+            dry_run=dry_run, max_rows=args.max_rows, no_expire=args.no_expire,
+            allow_uncapped=args.production, allow_expire=not args.no_expire,
+        )
         report = asyncio.run(
             run_master_ingestion(
                 sources=args.source,
                 dry_run=dry_run,
                 max_rows=args.max_rows,
                 no_expire=args.no_expire,
+                allow_uncapped=args.production,
+                allow_expire=not args.no_expire,
                 baseline_active_count=args.baseline_count,
+                cohort=args.cohort,
             )
         )
-    except WriteAuthorizationError as exc:
+    except (WriteAuthorizationError, SourceSelectionError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)
     print(json.dumps(report, indent=2))
     if ingestion_has_errors(report):
-        print("ingestion failed: source or persistence errors were reported", file=sys.stderr)
+        print("ingestion failed: source, persistence, or expiry errors were reported", file=sys.stderr)
         raise SystemExit(1)
 
 

@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import math
+import os
 import re
+import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -20,7 +23,8 @@ from .enrichment import (
     resolve_logo_url,
     strip_html,
 )
-from .rate_limiter import PerHostRateLimiter, redact_sensitive_params, request_with_backoff
+from .persistence import normalize_salary_period
+from .rate_limiter import PerHostRateLimiter, parse_retry_after, redact_sensitive_params, request_with_backoff
 
 COUNTRY_NAMES = {
     "US": "United States",
@@ -223,7 +227,7 @@ def build_normalized_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     currency: str | None = "USD",
-    salary_period: str | None = "year",
+    salary_period: str | None = None,
     country_code_hint: str | None = None,
     infer_country_from_location: bool = True,
     country_unknown_as_location: bool = True,
@@ -254,7 +258,7 @@ def build_normalized_job(
     if country_unknown_as_location and not country_code and is_remote:
         country_name = clean_location
 
-    clean_desc = strip_html(description_raw) if description_raw else (f"{clean_title} at {company_name}" if description_fallback else "")
+    clean_desc = strip_html(description_raw) if (description_raw and isinstance(description_raw, str)) else (f"{clean_title} at {company_name}" if description_fallback else "")
     if description_limit is not None:
         clean_desc = clean_desc[:description_limit]
     top_keywords = extract_top_keywords(clean_title, clean_desc, max_keywords=8)
@@ -286,7 +290,8 @@ def build_normalized_job(
         "salary_min": salary_min,
         "salary_max": salary_max,
         "currency": currency,
-        "salary_period": salary_period,
+        # Truthful null when no salary is stated; known aliases (year/month/hour) map to the DB enum.
+        "salary_period": normalize_salary_period(salary_period) if (salary_text or salary_min is not None or salary_max is not None) else None,
         "description": clean_desc,
         "apply_url": apply_url.strip(),
         "source": source,
@@ -572,6 +577,79 @@ async def fetch_smartrecruiters(
 # LAYER 2: UNAUTHENTICATED ENTERPRISE & BIG TECH JSON APIs ('MNC_BIGTECH')
 # ---------------------------------------------------------------------------
 
+_WORKDAY_LOCK = asyncio.Lock()
+# Shared across every Workday tenant in this process: once Workday rate-limits us, all boards wait out the
+# server's Retry-After (or fail fast if it is longer than we are willing to wait) instead of retrying elsewhere.
+_WORKDAY_COOLDOWN_UNTIL = 0.0
+_WORKDAY_TENANT_NEXT: dict[str, float] = {}   # tenant host -> earliest monotonic time of its next request
+_WORKDAY_LAST_TENANT_START = 0.0
+
+def get_workday_tenant_spacing_seconds() -> float:
+    """Configurable conservative spacing between Workday tenant starts (default: 60s, range: 60-120s)."""
+    raw = os.getenv("WORKDAY_TENANT_SPACING_SECONDS")
+    if raw is not None:
+        try:
+            s = float(raw)
+            if os.getenv("WORKDAY_ALLOW_SHORT_SPACING_FOR_TESTS") == "1":
+                return max(0.0, s)
+            return max(60.0, min(120.0, s))
+        except ValueError:
+            pass
+    return 60.0
+
+WORKDAY_TENANT_SPACING_SECONDS = 2.0
+WORKDAY_MAX_RETRIES = 4          # per page: at most 5 requests, all through the per-host limiter
+WORKDAY_MAX_COOLDOWN_SECONDS = 30.0            # a single Retry-After longer than this fails the board at once
+WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS = 60.0    # deadline for all of a page's waiting (cooldown, spacing, backoff)
+
+
+class WorkdayRateLimited(RuntimeError):
+    """Workday rate-limited this run beyond its retry/cooldown budget; the board is reported failed."""
+
+
+async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    """One page request under the shared budget: limiter-paced, Retry-After respected, no transport switching."""
+    global _WORKDAY_COOLDOWN_UNTIL
+    tenant_host = urlparse(url).hostname or url
+    page_budget = float(os.getenv("WORKDAY_PAGE_WAIT_BUDGET_SECONDS", str(WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS)))
+    deadline = time.monotonic() + page_budget  # all retry/cooldown waiting for this page
+    retry_at = 0.0  # network-error backoff, waited out at the top of the loop under the same deadline
+    for attempt in range(WORKDAY_MAX_RETRIES + 1):
+        now = time.monotonic()
+        cooldown = _WORKDAY_COOLDOWN_UNTIL - now
+        if cooldown > WORKDAY_MAX_COOLDOWN_SECONDS:
+            raise WorkdayRateLimited(f"Workday cooldown active for {cooldown:.0f}s more; not requesting {url}")
+        wait = max(cooldown, _WORKDAY_TENANT_NEXT.get(tenant_host, 0.0) - now, retry_at - now)
+        if now + wait > deadline:
+            raise WorkdayRateLimited(
+                f"Workday page budget of {page_budget:.0f}s would be exceeded waiting {wait:.0f}s more; "
+                f"not requesting {url} after {attempt} request(s)"
+            )
+        if wait > 0:
+            await asyncio.sleep(wait)
+        await limiter.acquire(url)
+        _WORKDAY_TENANT_NEXT[tenant_host] = time.monotonic() + WORKDAY_TENANT_SPACING_SECONDS
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            if attempt >= WORKDAY_MAX_RETRIES:
+                raise RuntimeError(f"Workday network error for {url}: {redact_sensitive_params(str(exc))}") from None
+            retry_at = time.monotonic() + 2.0 * (2 ** attempt)
+            continue
+        if resp.status_code == 429 or resp.status_code in (502, 503, 504):
+            delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=2.0 * (2 ** attempt))
+            # Honor server requested delay without shortening longer waits
+            _WORKDAY_COOLDOWN_UNTIL = max(_WORKDAY_COOLDOWN_UNTIL, time.monotonic() + delay)
+            if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS or (time.monotonic() + delay > deadline):
+                raise WorkdayRateLimited(
+                    f"Workday HTTP {resp.status_code} for {url} (Retry-After {delay:.0f}s) after {attempt + 1} request(s)"
+                )
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    raise WorkdayRateLimited(f"Workday retry budget exhausted for {url}")
+
+
 
 async def fetch_workday_cxs(
     client: httpx.AsyncClient,
@@ -579,62 +657,82 @@ async def fetch_workday_cxs(
     seed: dict[str, Any],
     *,
     max_pages: int = 2,
+    polite_delay: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """Workday CXS: POST https://{tenant}.{wd_cluster}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"""
-    tenant = seed["tenant"]
-    cluster = seed.get("wd_cluster", "wd5")
-    site = seed["site"]
-    base_host = f"https://{tenant}.{cluster}.myworkdayjobs.com"
-    url = f"{base_host}/wday/cxs/{tenant}/{site}/jobs"
-    results: list[dict[str, Any]] = []
+    """Workday CXS: POST https://{tenant}.{wd_cluster}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
+    
+    Executes one board at a time under _WORKDAY_LOCK with conservative tenant spacing. Every request goes through the
+    per-host limiter and the shared Workday retry/cooldown budget (_workday_post); a rate limit is never
+    retried with a different transport or fingerprint. When the budget is exhausted the board raises, so
+    the source is reported failed and the run-level guard withholds writes.
+    """
+    async with _WORKDAY_LOCK:
+        global _WORKDAY_LAST_TENANT_START
+        now = time.monotonic()
+        if _WORKDAY_LAST_TENANT_START > now:
+            _WORKDAY_LAST_TENANT_START = 0.0
+        spacing = get_workday_tenant_spacing_seconds()
+        wait_tenant = max(0.0, (_WORKDAY_LAST_TENANT_START + spacing) - now)
+        if _WORKDAY_LAST_TENANT_START > 0.0 and wait_tenant > 0.0:
+            await asyncio.sleep(wait_tenant)
+        _WORKDAY_LAST_TENANT_START = time.monotonic()
 
-    for page_idx in range(max_pages):
-        offset = page_idx * 20
-        body = {"limit": 20, "offset": offset, "searchText": ""}
-        resp = await request_with_backoff(
-            client,
-            limiter,
-            "POST",
-            url,
-            json=body,
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
-        )
-        data = resp.json()
-        postings = data.get("jobPostings") or []
-        if not postings:
-            break
+        tenant = seed["tenant"]
+        cluster = seed.get("wd_cluster", "wd5")
+        site = seed["site"]
+        base_host = f"https://{tenant}.{cluster}.myworkdayjobs.com"
+        url = f"{base_host}/wday/cxs/{tenant}/{site}/jobs"
+        results: list[dict[str, Any]] = []
 
-        for item in postings:
-            title = item.get("title")
-            external_path = item.get("externalPath") or ""
-            bullet_fields = item.get("bulletFields") or []
-            req_id = bullet_fields[0] if bullet_fields else external_path
-            if not (title and (external_path or req_id)):
-                continue
-            apply_url = f"{base_host}/en-US/{site}{external_path}" if external_path.startswith("/") else f"{base_host}/{site}"
-            loc = item.get("locationsText") or "Global"
-            desc = " ".join(str(b) for b in bullet_fields)
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        }
 
-            results.append(
-                build_normalized_job(
-                    seed=seed,
-                    source="workday",
-                    source_type="workday",
-                    source_id=f"workday:{tenant}:{site}",
-                    source_job_id=f"{tenant}:{site}:{req_id}",
-                    title=title,
-                    location=loc,
-                    apply_url=apply_url,
-                    description_raw=f"{title} {desc}",
-                    posted_at=None,
-                    source_layer="layer2",
-                    source_priority=1,
+        for page_idx in range(max_pages):
+            if page_idx > 0 or polite_delay > 0:
+                await asyncio.sleep(polite_delay)
+
+            offset = page_idx * 20
+            body = {"limit": 20, "offset": offset, "searchText": ""}
+            resp_data = await _workday_post(client, limiter, url, body, headers)
+
+            postings = resp_data.get("jobPostings") or []
+            if not postings:
+                break
+
+            for item in postings:
+                title = item.get("title")
+                external_path = item.get("externalPath") or ""
+                bullet_fields = item.get("bulletFields") or []
+                req_id = bullet_fields[0] if bullet_fields else external_path
+                if not (title and (external_path or req_id)):
+                    continue
+                apply_url = f"{base_host}/en-US/{site}{external_path}" if external_path.startswith("/") else f"{base_host}/{site}"
+                loc = item.get("locationsText") or "Global"
+                desc = " ".join(str(b) for b in bullet_fields)
+
+                results.append(
+                    build_normalized_job(
+                        seed=seed,
+                        source="workday",
+                        source_type="workday",
+                        source_id=f"workday:{tenant}:{site}",
+                        source_job_id=f"{tenant}:{site}:{req_id}",
+                        title=title,
+                        location=loc,
+                        apply_url=apply_url,
+                        description_raw=f"{title} {desc}",
+                        posted_at=None,
+                        source_layer="layer2",
+                        source_priority=1,
+                    )
                 )
-            )
-        if len(postings) < 20:
-            break
+            if len(postings) < 20:
+                break
 
-    return results
+        return results
 
 
 async def fetch_amazon_jobs(
@@ -652,7 +750,14 @@ async def fetch_amazon_jobs(
     for page_idx in range(max_pages):
         offset = page_idx * limit
         url = f"{base_url}?offset={offset}&result_limit={limit}"
-        resp = await request_with_backoff(client, limiter, "GET", url)
+        # Specify Accept-Encoding to prevent zstd negotiation which triggers httpx.DecodingError
+        resp = await request_with_backoff(
+            client,
+            limiter,
+            "GET",
+            url,
+            headers={"Accept-Encoding": "gzip, deflate, br"},
+        )
         data = resp.json()
         jobs_list = data.get("jobs") or []
         if not jobs_list:
@@ -700,15 +805,65 @@ async def fetch_microsoft_jobs(
     *,
     max_pages: int = 2,
 ) -> list[dict[str, Any]]:
-    """Microsoft Careers JSON: GET https://gcsservices.careers.microsoft.com/search/api/v1/search"""
-    base_url = seed.get("url", "https://gcsservices.careers.microsoft.com/search/api/v1/search")
+    """Microsoft Careers JSON: GET https://apply.careers.microsoft.com/api/pcsx/search"""
+    base_url = seed.get("url", "https://apply.careers.microsoft.com/api/pcsx/search")
     page_size = int(seed.get("page_size", 20))
     results: list[dict[str, Any]] = []
 
     for page_num in range(1, max_pages + 1):
-        url = f"{base_url}?l=en_us&pg={page_num}&pgSz={page_size}&o=Recent&flt=true"
+        if "pcsx" in base_url:
+            start = (page_num - 1) * page_size
+            url = f"{base_url}?domain=microsoft.com&start={start}&num={page_size}"
+        else:
+            url = f"{base_url}?l=en_us&pg={page_num}&pgSz={page_size}&o=Recent&flt=true"
+
         resp = await request_with_backoff(client, limiter, "GET", url)
         data = resp.json()
+
+        # Handle Eightfold / PCSX endpoint (https://apply.careers.microsoft.com/api/pcsx/search)
+        if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict) and "positions" in data["data"]:
+            positions = data["data"].get("positions") or []
+            if not positions:
+                break
+            for item in positions:
+                job_id = item.get("atsJobId") or item.get("displayJobId") or item.get("id")
+                title = item.get("name") or item.get("title")
+                if not (job_id and title):
+                    continue
+                locs = item.get("locations") or []
+                std_locs = item.get("standardizedLocations") or []
+                loc = locs[0] if locs else (std_locs[0] if std_locs else "Redmond, WA, USA")
+                pos_url = item.get("positionUrl") or f"/careers/job/{job_id}"
+                apply_url = f"https://apply.careers.microsoft.com{pos_url}" if pos_url.startswith("/") else pos_url
+                desc = item.get("department") or title
+                work_opt = (item.get("workLocationOption") or "").lower()
+                explicit_remote = True if "remote" in work_opt else (False if "onsite" in work_opt else None)
+                posted_ts = item.get("postedTs")
+                posted_at = datetime.fromtimestamp(posted_ts, tz=timezone.utc).isoformat() if posted_ts else None
+
+                results.append(
+                    build_normalized_job(
+                        seed=seed,
+                        source="microsoft_careers",
+                        source_type="microsoft",
+                        source_id="microsoft",
+                        source_job_id=f"microsoft:{job_id}",
+                        title=title,
+                        location=loc,
+                        apply_url=apply_url,
+                        description_raw=desc,
+                        department=item.get("department"),
+                        posted_at=posted_at,
+                        explicit_remote=explicit_remote,
+                        source_layer="layer2",
+                        source_priority=1,
+                    )
+                )
+            if len(positions) < page_size:
+                break
+            continue
+
+        # Legacy GCS endpoint fallback
         op_res = (data.get("operationResult") or {}).get("result") or {}
         jobs_list = op_res.get("jobs") or data.get("jobs") or []
         if not jobs_list:

@@ -426,12 +426,12 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
     def test_jobspy_missing_import_or_error_reports_failed_status(self) -> None:
         """Requirement 5: JobSpy missing import returns explicit error message so expiry stays off."""
         async def _test() -> None:
-            # When python-jobspy is not installed or import fails
-            jobs, err = await fetch_jobspy_india()
-            # If not installed in test runner environment:
-            if err:
-                self.assertIn("python-jobspy", err)
-                self.assertEqual(len(jobs), 0)
+            with patch("scripts.scraper.fetch_aggregators_and_india.run_jobspy_scrape_in_subprocess", new_callable=AsyncMock) as mock_proc:
+                mock_proc.return_value = ([], "python-jobspy not installed. Run 'pip install python-jobspy'")
+                jobs, err = await fetch_jobspy_india(roles=("Software Engineer",), locations=("Bangalore, India",))
+                if err:
+                    self.assertIn("python-jobspy", err)
+                    self.assertEqual(len(jobs), 0)
 
         asyncio.run(_test())
 
@@ -634,7 +634,7 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             "company": "Stripe", "company_slug": "stripe", "title": "Engineer", "location": "Remote US",
             "country": "United States", "country_code": "US", "remote": True, "is_remote": True,
             "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time",
-            "category": "engineering", "role_category": "engineering", "status": "active", "is_active": True,
+            "category": "engineering", "role_category": "SDE", "status": "active", "is_active": True,
             "verified": False, "description": "Role description", "apply_url": "https://example.test/apply",
             "salary_text": None, "salary_min": None, "salary_max": None, "salary_period": None, "currency": None,
             "source": "greenhouse", "dedupe_hash": "hash", "source_url": "https://example.test/job",
@@ -677,8 +677,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
             if request.method == "GET":
                 return httpx.Response(200, json=[{
                     "id": "company-existing", "slug": "existing", "name": "Existing",
-                    "logo_url": None, "domain": "old.example", "canonical_domain": "old.example",
-                    "category": "MNC_BIGTECH", "ats_type": "greenhouse",
+                    "logo_url": None, "domain": None, "canonical_domain": None,
+                    "category": "OTHER_STARTUPS", "ats_type": "greenhouse",
                 }])
             if request.method == "PATCH":
                 return httpx.Response(503, json={"error": "temporarily unavailable"})

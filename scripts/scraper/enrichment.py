@@ -461,8 +461,8 @@ class _PlainTextHTMLParser(HTMLParser):
             self.parts.append(data)
 
 
-def strip_html(text: str | None) -> str:
-    if not text:
+def strip_html(text: Any) -> str:
+    if not text or not isinstance(text, str):
         return ""
     decoded = text
     for _ in range(5):

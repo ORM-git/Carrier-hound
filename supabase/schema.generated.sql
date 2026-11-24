@@ -1,7 +1,7 @@
 -- ==============================================================================
 -- CareerMonke Schema Representation (Generated from Migrations)
--- Freshness Header: Generated on 2026-11-22
--- Migrations Count: 93
+-- Freshness Header: Generated on 2026-11-24
+-- Migrations Count: 94
 -- DO NOT EDIT DIRECTLY. Regenerate using: npx tsx scripts/generate-schema-dump.ts
 -- ==============================================================================
 
@@ -14009,4 +14009,29 @@ ALTER TABLE public.company_profile_refresh_state ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.company_profile_facts, public.company_profile_leadership, public.company_profile_news, public.company_profile_refresh_state FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.company_profile_facts, public.company_profile_leadership, public.company_profile_news, public.company_profile_refresh_state TO service_role;
 COMMIT;
+
+
+-- ------------------------------------------------------------------------------
+-- Migration: 20261123a_grant_tombstone_delete_to_service_role.sql
+-- ------------------------------------------------------------------------------
+-- ============================================================================
+-- Migration: 20261123a_grant_tombstone_delete_to_service_role.sql
+-- STATUS: NOT APPLIED - apply this standalone statement in autocommit mode,
+-- outside BEGIN/COMMIT, DO blocks, functions or transactional migration runners.
+-- Review docs/ops/account-deletion-preflight.md before applying, then record:
+--   node scripts/record-migration.cjs 20261123a_grant_tombstone_delete_to_service_role
+--
+-- Account Deletion Tombstone Permissions:
+-- Grants DELETE on public.deleted_account_tombstones to service_role to support
+-- account deletion cancellation and cleanup.
+--
+-- Rollback: see the commented block at the bottom.
+-- ============================================================================
+
+GRANT DELETE ON public.deleted_account_tombstones TO service_role;
+
+-- ============================================================================
+-- ROLLBACK (run manually as one autocommit statement, never in a transaction):
+--   REVOKE DELETE ON public.deleted_account_tombstones FROM service_role;
+-- ============================================================================
 

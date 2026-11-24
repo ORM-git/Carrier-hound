@@ -104,7 +104,7 @@ def normalize_aggregator_job(
     salary_min: float | None = None,
     salary_max: float | None = None,
     currency: str = "USD",
-    salary_period: str = "year",
+    salary_period: str | None = None,
     ats_logo_url: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -245,7 +245,7 @@ async def fetch_jobspy_india(
     sites: tuple[str, ...] = JOBSPY_SITES,
     results_wanted: int = 25,
     hours_old: int = 24,
-    scrape_timeout_seconds: float = 30.0,
+    scrape_timeout_seconds: float = 60.0,
     scrape_fn: Any | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """
@@ -336,6 +336,8 @@ async def fetch_jobspy_india(
                     )
                 )
 
+    # Any failed/timed-out query makes this source incomplete: report it so the run-level guard withholds
+    # all writes (rows are still returned for the report). Partial writes would be a separate policy decision.
     error_summary = "; ".join(errors[:3]) if errors else None
     return results, error_summary
 
@@ -472,8 +474,11 @@ async def fetch_adzuna(
                         salary_min=float(sal_min) if isinstance(sal_min, (int, float)) else None,
                         salary_max=float(sal_max) if isinstance(sal_max, (int, float)) else None,
                         currency=currency,
+                        # Adzuna's response states no pay period: salary_period stays null (never invented).
                     )
                 )
 
+    # Any failed/timed-out query makes this source incomplete: report it so the run-level guard withholds
+    # all writes (rows are still returned for the report). Partial writes would be a separate policy decision.
     error_summary = "; ".join(errors[:3]) if errors else None
     return results, error_summary
