@@ -1,0 +1,1787 @@
+[
+  {
+    "view": "landing",
+    "state": "populated",
+    "width": 360,
+    "height": 2267,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nCareer Monke\nSign in\nSign up free\n\n1,240 new jobs found today\n\nJOBS LINKEDIN DOESN'T SHOW YOU\nGet there first.\n\nWe bring you verified jobs, match them to you, and tailor your resume in one tap.\n\nSign up free\nor try the demo firs",
+    "controls": [
+      {
+        "label": "Backend",
+        "y": 1002,
+        "h": 98
+      },
+      {
+        "label": "Frontend",
+        "y": 1002,
+        "h": 98
+      },
+      {
+        "label": "Full-stack",
+        "y": 1002,
+        "h": 98
+      },
+      {
+        "label": "Data & AI",
+        "y": 1114,
+        "h": 98
+      },
+      {
+        "label": "Mobile",
+        "y": 1114,
+        "h": 98
+      },
+      {
+        "label": "Design",
+        "y": 1114,
+        "h": 98
+      }
+    ]
+  },
+  {
+    "view": "login",
+    "state": "populated",
+    "width": 360,
+    "height": 995,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nSign in for free to Career Monke\nContinue with Google\nOR\nEmail\nPassword\nSign in\nForgot password?\n\nBy continuing, you agree to our Terms and Privacy Policy.\n\nDon't have an account?\nSign up\nDISCOVERY\nLive Job Search\nWorldwide Remo",
+    "controls": [
+      {
+        "label": "",
+        "y": 10,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 24,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 732,
+        "h": 44
+      },
+      {
+        "label": "Continue with Google",
+        "y": 304,
+        "h": 48
+      },
+      {
+        "label": "",
+        "y": 484,
+        "h": 48
+      },
+      {
+        "label": "Sign in",
+        "y": 548,
+        "h": 48
+      },
+      {
+        "label": "Forgot password?",
+        "y": 612,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "signup",
+    "state": "populated",
+    "width": 360,
+    "height": 995,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nSign up for free to Career Monke\nContinue with Google\nOR\nEmail\nPassword (8+ characters)\nSign up\nAlready have an account?\nSign in\n\nBy continuing, you agree to our Terms and Privacy Policy.\n\nDISCOVERY\nLive Job Search\nWorldwide Rem",
+    "controls": [
+      {
+        "label": "",
+        "y": 10,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 24,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 732,
+        "h": 44
+      },
+      {
+        "label": "Continue with Google",
+        "y": 356,
+        "h": 48
+      },
+      {
+        "label": "",
+        "y": 536,
+        "h": 48
+      },
+      {
+        "label": "Sign up",
+        "y": 600,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "view": "step1",
+    "state": "empty",
+    "width": 360,
+    "height": 800,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nAdd\n*Job Type\nFull-time\nContract\nPart-time\nInternship\n*Country / Location\nUnited States\nChange\nOpen to Remote\n*\nWork Authorization\nI am",
+    "controls": [
+      {
+        "label": "United States\nChange",
+        "y": 315,
+        "h": 44
+      },
+      {
+        "label": "Open to Remote",
+        "y": 374,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 382,
+        "h": 24
+      },
+      {
+        "label": "",
+        "y": 429,
+        "h": 24
+      },
+      {
+        "label": "I am authorized to work without sponsorship.",
+        "y": 459,
+        "h": 48
+      },
+      {
+        "label": "I need visa sponsorship.",
+        "y": 513,
+        "h": 44
+      },
+      {
+        "label": "I have another work permit or authorization.",
+        "y": 563,
+        "h": 48
+      },
+      {
+        "label": "Next",
+        "y": 746,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step1",
+    "state": "long",
+    "width": 360,
+    "height": 800,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nFrontend Developer\nBackend Developer\nFull Stack Developer\nMachine Learning Engineer\nData Scientist\nAdd more roles\n*Job Type\nFull-time\nC",
+    "controls": [
+      {
+        "label": "United States\nChange",
+        "y": 439,
+        "h": 44
+      },
+      {
+        "label": "Open to Remote",
+        "y": 498,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 506,
+        "h": 24
+      },
+      {
+        "label": "",
+        "y": 553,
+        "h": 24
+      },
+      {
+        "label": "I am authorized to work without sponsorship.",
+        "y": 583,
+        "h": 48
+      },
+      {
+        "label": "I need visa sponsorship.",
+        "y": 637,
+        "h": 44
+      },
+      {
+        "label": "I have another work permit or authorization.",
+        "y": 687,
+        "h": 48
+      },
+      {
+        "label": "Next",
+        "y": 746,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "empty",
+    "width": 360,
+    "height": 800,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nUpload resume\n\nPDF or DOCX, up to 5 MB. Stored privatel",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Upload resume",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Skip for now",
+        "y": 744,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "populated",
+    "width": 360,
+    "height": 800,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nSaved\nfixture.pdf\n\nPDF or DOCX, up to 5 MB. Stored priv",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Upload resume",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Finish",
+        "y": 744,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "pending",
+    "width": 360,
+    "height": 800,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nUpload resume\n\nPDF or DOCX, up to 5 MB. Stored privatel",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Uploading and reading...",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Skip for now",
+        "y": 744,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "populated",
+    "width": 360,
+    "height": 10795,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nS\nSynthetic Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nSan Francisco, United States\nFull-time\nHy",
+    "controls": [
+      {
+        "label": "",
+        "y": 8988,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8988,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 9080,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 9376,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 9376,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 9468,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 9764,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 9764,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "guest",
+    "width": 360,
+    "height": 9495,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nVerified Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nLocation locked\nFull-time\nHybrid\nEarly appli",
+    "controls": [
+      {
+        "label": "",
+        "y": 7792,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7792,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7884,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8128,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8128,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8220,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8464,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8464,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "free",
+    "width": 360,
+    "height": 9495,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nVerified Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nLocation locked\nFull-time\nHybrid\nEarly appli",
+    "controls": [
+      {
+        "label": "",
+        "y": 7792,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7792,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7884,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8128,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8128,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8220,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8464,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8464,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "empty",
+    "width": 360,
+    "height": 1283,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nNo positions currently found\n\nWe refresh verified career site postings regularly. Try checking back shortly.\n\nDISCOVERY\nLive Jo",
+    "controls": [
+      {
+        "label": "",
+        "y": 6,
+        "h": 44
+      },
+      {
+        "label": "Recommended\n30",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Saved\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Applied\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 736,
+        "h": 44
+      },
+      {
+        "label": "Filters",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Sort: Newest",
+        "y": 74,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "error",
+    "width": 360,
+    "height": 1347,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n0\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nCouldn't load jobs\n\nWe encountered a temporary issue querying the jobs directory. Please try again.\n\nRetry\nDISCOVERY\nLive Job Se",
+    "controls": [
+      {
+        "label": "Recommended\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Saved\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Applied\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 736,
+        "h": 44
+      },
+      {
+        "label": "Filters",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Sort: Newest",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Retry",
+        "y": 308,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "pricing",
+    "state": "populated",
+    "width": 360,
+    "height": 2356,
+    "overflow": true,
+    "text": "FIXTURE, NO LIVE DATA\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹499\nQuarterly\n₹2,199\nMonthly\nMost popular\n₹499\n/month\n\nAuto-renews mo",
+    "controls": [
+      {
+        "label": "Buy Monthly",
+        "y": 758,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "view": "landing",
+    "state": "populated",
+    "width": 390,
+    "height": 2267,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nCareer Monke\nSign in\nSign up free\n\n1,240 new jobs found today\n\nJOBS LINKEDIN DOESN'T SHOW YOU\nGet there first.\n\nWe bring you verified jobs, match them to you, and tailor your resume in one tap.\n\nSign up free\nor try the demo firs",
+    "controls": [
+      {
+        "label": "Backend",
+        "y": 1002,
+        "h": 98
+      },
+      {
+        "label": "Frontend",
+        "y": 1002,
+        "h": 98
+      },
+      {
+        "label": "Full-stack",
+        "y": 1002,
+        "h": 98
+      },
+      {
+        "label": "Data & AI",
+        "y": 1114,
+        "h": 98
+      },
+      {
+        "label": "Mobile",
+        "y": 1114,
+        "h": 98
+      },
+      {
+        "label": "Design",
+        "y": 1114,
+        "h": 98
+      }
+    ]
+  },
+  {
+    "view": "login",
+    "state": "populated",
+    "width": 390,
+    "height": 959,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nSign in for free to Career Monke\nContinue with Google\nOR\nEmail\nPassword\nSign in\nForgot password?\n\nBy continuing, you agree to our Terms and Privacy Policy.\n\nDon't have an account?\nSign up\nDISCOVERY\nLive Job Search\nWorldwide Remo",
+    "controls": [
+      {
+        "label": "",
+        "y": 10,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 24,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 776,
+        "h": 44
+      },
+      {
+        "label": "Continue with Google",
+        "y": 366,
+        "h": 48
+      },
+      {
+        "label": "",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Sign in",
+        "y": 610,
+        "h": 48
+      },
+      {
+        "label": "Forgot password?",
+        "y": 674,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "signup",
+    "state": "populated",
+    "width": 390,
+    "height": 959,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nSign up for free to Career Monke\nContinue with Google\nOR\nEmail\nPassword (8+ characters)\nSign up\nAlready have an account?\nSign in\n\nBy continuing, you agree to our Terms and Privacy Policy.\n\nDISCOVERY\nLive Job Search\nWorldwide Rem",
+    "controls": [
+      {
+        "label": "",
+        "y": 10,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 24,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 776,
+        "h": 44
+      },
+      {
+        "label": "Continue with Google",
+        "y": 418,
+        "h": 48
+      },
+      {
+        "label": "",
+        "y": 598,
+        "h": 48
+      },
+      {
+        "label": "Sign up",
+        "y": 662,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "view": "step1",
+    "state": "empty",
+    "width": 390,
+    "height": 844,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nAdd\n*Job Type\nFull-time\nContract\nPart-time\nInternship\n*Country / Location\nUnited States\nChange\nOpen to Remote\n*\nWork Authorization\nI am",
+    "controls": [
+      {
+        "label": "United States\nChange",
+        "y": 315,
+        "h": 44
+      },
+      {
+        "label": "Open to Remote",
+        "y": 374,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 382,
+        "h": 24
+      },
+      {
+        "label": "",
+        "y": 429,
+        "h": 24
+      },
+      {
+        "label": "I am authorized to work without sponsorship.",
+        "y": 459,
+        "h": 44
+      },
+      {
+        "label": "I need visa sponsorship.",
+        "y": 509,
+        "h": 44
+      },
+      {
+        "label": "I have another work permit or authorization.",
+        "y": 559,
+        "h": 44
+      },
+      {
+        "label": "Next",
+        "y": 790,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step1",
+    "state": "long",
+    "width": 390,
+    "height": 844,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nFrontend Developer\nBackend Developer\nFull Stack Developer\nMachine Learning Engineer\nData Scientist\nAdd more roles\n*Job Type\nFull-time\nC",
+    "controls": [
+      {
+        "label": "United States\nChange",
+        "y": 405,
+        "h": 44
+      },
+      {
+        "label": "Open to Remote",
+        "y": 464,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 472,
+        "h": 24
+      },
+      {
+        "label": "",
+        "y": 519,
+        "h": 24
+      },
+      {
+        "label": "I am authorized to work without sponsorship.",
+        "y": 549,
+        "h": 44
+      },
+      {
+        "label": "I need visa sponsorship.",
+        "y": 599,
+        "h": 44
+      },
+      {
+        "label": "I have another work permit or authorization.",
+        "y": 649,
+        "h": 44
+      },
+      {
+        "label": "Next",
+        "y": 790,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "empty",
+    "width": 390,
+    "height": 844,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nUpload resume\n\nPDF or DOCX, up to 5 MB. Stored privatel",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Upload resume",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Skip for now",
+        "y": 788,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "populated",
+    "width": 390,
+    "height": 844,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nSaved\nfixture.pdf\n\nPDF or DOCX, up to 5 MB. Stored priv",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Upload resume",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Finish",
+        "y": 788,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "pending",
+    "width": 390,
+    "height": 844,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nUpload resume\n\nPDF or DOCX, up to 5 MB. Stored privatel",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Uploading and reading...",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Skip for now",
+        "y": 788,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "populated",
+    "width": 390,
+    "height": 10045,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nS\nSynthetic Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nSan Francisco, United States\nFull-time\nHy",
+    "controls": [
+      {
+        "label": "",
+        "y": 8298,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8298,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8390,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8656,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8656,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8748,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 9014,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 9014,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "guest",
+    "width": 390,
+    "height": 8745,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nVerified Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nLocation locked\nFull-time\nHybrid\nEarly appli",
+    "controls": [
+      {
+        "label": "",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7194,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7500,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7714,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7714,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "free",
+    "width": 390,
+    "height": 8745,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nVerified Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nLocation locked\nFull-time\nHybrid\nEarly appli",
+    "controls": [
+      {
+        "label": "",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7194,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7500,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7714,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7714,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "empty",
+    "width": 390,
+    "height": 1283,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nNo positions currently found\n\nWe refresh verified career site postings regularly. Try checking back shortly.\n\nDISCOVERY\nLive Jo",
+    "controls": [
+      {
+        "label": "",
+        "y": 6,
+        "h": 44
+      },
+      {
+        "label": "Recommended\n30",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Saved\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Applied\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 780,
+        "h": 44
+      },
+      {
+        "label": "Filters",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Sort: Newest",
+        "y": 74,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "error",
+    "width": 390,
+    "height": 1347,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n0\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nCouldn't load jobs\n\nWe encountered a temporary issue querying the jobs directory. Please try again.\n\nRetry\nDISCOVERY\nLive Job Se",
+    "controls": [
+      {
+        "label": "Recommended\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Saved\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Applied\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 780,
+        "h": 44
+      },
+      {
+        "label": "Filters",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Sort: Newest",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Retry",
+        "y": 308,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "pricing",
+    "state": "populated",
+    "width": 390,
+    "height": 2284,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹499\nQuarterly\n₹2,199\nMonthly\nMost popular\n₹499\n/month\n\nAuto-renews mo",
+    "controls": [
+      {
+        "label": "Buy Monthly",
+        "y": 722,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "view": "landing",
+    "state": "populated",
+    "width": 430,
+    "height": 2125,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nCareer Monke\nSign in\nSign up free\n\n1,240 new jobs found today\n\nJOBS LINKEDIN DOESN'T SHOW YOU\nGet there first.\n\nWe bring you verified jobs, match them to you, and tailor your resume in one tap.\n\nSign up free\nor try the demo firs",
+    "controls": [
+      {
+        "label": "Backend",
+        "y": 860,
+        "h": 98
+      },
+      {
+        "label": "Frontend",
+        "y": 860,
+        "h": 98
+      },
+      {
+        "label": "Full-stack",
+        "y": 860,
+        "h": 98
+      },
+      {
+        "label": "Data & AI",
+        "y": 972,
+        "h": 98
+      },
+      {
+        "label": "Mobile",
+        "y": 972,
+        "h": 98
+      },
+      {
+        "label": "Design",
+        "y": 972,
+        "h": 98
+      }
+    ]
+  },
+  {
+    "view": "login",
+    "state": "populated",
+    "width": 430,
+    "height": 958,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nSign in for free to Career Monke\nContinue with Google\nOR\nEmail\nPassword\nSign in\nForgot password?\n\nBy continuing, you agree to our Terms and Privacy Policy.\n\nDon't have an account?\nSign up\nDISCOVERY\nLive Job Search\nWorldwide Remo",
+    "controls": [
+      {
+        "label": "",
+        "y": 10,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 24,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 864,
+        "h": 44
+      },
+      {
+        "label": "Continue with Google",
+        "y": 454,
+        "h": 48
+      },
+      {
+        "label": "",
+        "y": 634,
+        "h": 48
+      },
+      {
+        "label": "Sign in",
+        "y": 698,
+        "h": 48
+      },
+      {
+        "label": "Forgot password?",
+        "y": 762,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "signup",
+    "state": "populated",
+    "width": 430,
+    "height": 958,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nSign up for free to Career Monke\nContinue with Google\nOR\nEmail\nPassword (8+ characters)\nSign up\nAlready have an account?\nSign in\n\nBy continuing, you agree to our Terms and Privacy Policy.\n\nDISCOVERY\nLive Job Search\nWorldwide Rem",
+    "controls": [
+      {
+        "label": "",
+        "y": 10,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 24,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 864,
+        "h": 44
+      },
+      {
+        "label": "Continue with Google",
+        "y": 506,
+        "h": 48
+      },
+      {
+        "label": "",
+        "y": 686,
+        "h": 48
+      },
+      {
+        "label": "Sign up",
+        "y": 750,
+        "h": 48
+      }
+    ]
+  },
+  {
+    "view": "step1",
+    "state": "empty",
+    "width": 430,
+    "height": 932,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nAdd\n*Job Type\nFull-time\nContract\nPart-time\nInternship\n*Country / Location\nUnited States\nChange\nOpen to Remote\n*\nWork Authorization\nI am",
+    "controls": [
+      {
+        "label": "United States\nChange",
+        "y": 315,
+        "h": 44
+      },
+      {
+        "label": "Open to Remote",
+        "y": 374,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 382,
+        "h": 24
+      },
+      {
+        "label": "",
+        "y": 429,
+        "h": 24
+      },
+      {
+        "label": "I am authorized to work without sponsorship.",
+        "y": 459,
+        "h": 44
+      },
+      {
+        "label": "I need visa sponsorship.",
+        "y": 509,
+        "h": 44
+      },
+      {
+        "label": "I have another work permit or authorization.",
+        "y": 559,
+        "h": 44
+      },
+      {
+        "label": "Next",
+        "y": 878,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step1",
+    "state": "long",
+    "width": 430,
+    "height": 932,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nFrontend Developer\nBackend Developer\nFull Stack Developer\nMachine Learning Engineer\nData Scientist\nAdd more roles\n*Job Type\nFull-time\nC",
+    "controls": [
+      {
+        "label": "United States\nChange",
+        "y": 405,
+        "h": 44
+      },
+      {
+        "label": "Open to Remote",
+        "y": 464,
+        "h": 40
+      },
+      {
+        "label": "",
+        "y": 472,
+        "h": 24
+      },
+      {
+        "label": "",
+        "y": 519,
+        "h": 24
+      },
+      {
+        "label": "I am authorized to work without sponsorship.",
+        "y": 549,
+        "h": 44
+      },
+      {
+        "label": "I need visa sponsorship.",
+        "y": 599,
+        "h": 44
+      },
+      {
+        "label": "I have another work permit or authorization.",
+        "y": 649,
+        "h": 44
+      },
+      {
+        "label": "Next",
+        "y": 878,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "empty",
+    "width": 430,
+    "height": 932,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nUpload resume\n\nPDF or DOCX, up to 5 MB. Stored privatel",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Upload resume",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Skip for now",
+        "y": 876,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "populated",
+    "width": 430,
+    "height": 932,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nSaved\nfixture.pdf\n\nPDF or DOCX, up to 5 MB. Stored priv",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Upload resume",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Finish",
+        "y": 876,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "step2",
+    "state": "pending",
+    "width": 430,
+    "height": 932,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nProfile\n\nOptional: add your LinkedIn profile and resume. You can skip either one and add them later.\n\nLinkedIn profile URL\nSave LinkedIn URL\nWhere do I find my profile URL?\nUpload resume\n\nPDF or DOCX, up to 5 MB. Stored privatel",
+    "controls": [
+      {
+        "label": "",
+        "y": 12,
+        "h": 44
+      },
+      {
+        "label": "Save LinkedIn URL",
+        "y": 268,
+        "h": 48
+      },
+      {
+        "label": "Where do I find my profile URL?",
+        "y": 328,
+        "h": 44
+      },
+      {
+        "label": "Uploading and reading...",
+        "y": 546,
+        "h": 48
+      },
+      {
+        "label": "Skip for now",
+        "y": 876,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "populated",
+    "width": 430,
+    "height": 10009,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nS\nSynthetic Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nSan Francisco, United States\nFull-time\nHy",
+    "controls": [
+      {
+        "label": "",
+        "y": 8298,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8298,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8390,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8656,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 8656,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 8748,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 9014,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 9014,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "guest",
+    "width": 430,
+    "height": 8709,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nVerified Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nLocation locked\nFull-time\nHybrid\nEarly appli",
+    "controls": [
+      {
+        "label": "",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7194,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7500,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7714,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7714,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "free",
+    "width": 430,
+    "height": 8709,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nVerified Employer\nEngineering · Remote\n83%\nFrontend Engineer, Developer Experience\nLocation locked\nFull-time\nHybrid\nEarly appli",
+    "controls": [
+      {
+        "label": "",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7102,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7194,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7408,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7500,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 7714,
+        "h": 44
+      },
+      {
+        "label": "Apply",
+        "y": 7714,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "empty",
+    "width": 430,
+    "height": 1247,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n30\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nNo positions currently found\n\nWe refresh verified career site postings regularly. Try checking back shortly.\n\nDISCOVERY\nLive Jo",
+    "controls": [
+      {
+        "label": "",
+        "y": 6,
+        "h": 44
+      },
+      {
+        "label": "Recommended\n30",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Saved\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Applied\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 868,
+        "h": 44
+      },
+      {
+        "label": "Filters",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Sort: Newest",
+        "y": 74,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "jobs",
+    "state": "error",
+    "width": 430,
+    "height": 1311,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nJOBS\nRecommended\n0\nSaved\n0\nApplied\n0\nFilters\nSort: Newest\nCouldn't load jobs\n\nWe encountered a temporary issue querying the jobs directory. Please try again.\n\nRetry\nDISCOVERY\nLive Job Se",
+    "controls": [
+      {
+        "label": "Recommended\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Saved\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "Applied\n0",
+        "y": 0,
+        "h": 56
+      },
+      {
+        "label": "",
+        "y": 20,
+        "h": 44
+      },
+      {
+        "label": "",
+        "y": 868,
+        "h": 44
+      },
+      {
+        "label": "Filters",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Sort: Newest",
+        "y": 74,
+        "h": 44
+      },
+      {
+        "label": "Retry",
+        "y": 308,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "view": "pricing",
+    "state": "populated",
+    "width": 430,
+    "height": 2257,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹499\nQuarterly\n₹2,199\nMonthly\nMost popular\n₹499\n/month\n\nAuto-renews mo",
+    "controls": [
+      {
+        "label": "Buy Monthly",
+        "y": 696,
+        "h": 48
+      }
+    ]
+  }
+]
