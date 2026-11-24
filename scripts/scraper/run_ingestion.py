@@ -417,16 +417,27 @@ async def run_master_ingestion(
         unique_jobs = select_unique_jobs(all_jobs, None)
         all_jobs = unique_jobs if max_rows is None else unique_jobs[:max_rows]
         selected_count = len(all_jobs)
+        enrichment_warnings: list[dict[str, str]] = []
         for seed in layer1_seeds:
             if (seed.get("ats") or "").lower() != "greenhouse":
                 continue
             greenhouse_seed = {**seed, "token": seed.get("token") or seed.get("slug")}
             board_source_id = f"greenhouse:{greenhouse_seed['token']}"
             try:
-                await enrich_greenhouse_pay_transparency(
+                warnings = await enrich_greenhouse_pay_transparency(
                     client, limiter, greenhouse_seed,
                     [job for job in all_jobs if job.get("source_id") == board_source_id],
                 )
+                if warnings:
+                    enrichment_warnings.extend(warnings)
+                    withheld = {w["source_job_id"] for w in warnings}
+                    all_jobs = [j for j in all_jobs if not (
+                        j.get("source_id") == board_source_id and j.get("source_job_id") in withheld
+                    )]
+                    if board_source_id in board_status_map:
+                        board_status_map[board_source_id].update({
+                            "completed": False, "error": "Pay detail 404: rows withheld; expiry unsafe",
+                        })
             except Exception as exc:
                 error = redact_sensitive_params(str(exc))
                 failed_sources.append({"source": board_source_id, "error": error})
@@ -746,6 +757,7 @@ async def run_master_ingestion(
             "db": db_stats,
             "expiry_vetoed": expiry_vetoed,
             "expiry_reports": expiry_reports,
+            "enrichment_warnings": enrichment_warnings,
             "failed_sources": failed_sources,
             "sources": source_reports,
             "greenhouse_inspection": greenhouse_inspection,

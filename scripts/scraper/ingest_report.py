@@ -44,6 +44,7 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
         "finished_at": report.get("finished_at"),
         "selected_sources": len(report.get("selected_sources") or report.get("sources") or []),
         "completed_sources": len(report.get("completed_sources") or []),
+        "enrichment_warnings": report.get("enrichment_warnings") or [],
         "failed_sources": failed,
         "fetched": report.get("fetched"),
         "deduped": report.get("selected"),
@@ -139,6 +140,9 @@ def render_cohort(s: dict[str, Any]) -> str:
     if s.get("duplicate_samples"):
         lines += ["", f"**Duplicate apply_url rows skipped ({s.get('duplicate_skipped', 0)}; existing job kept):**", ""]
         lines += [f"- `{r['source_key']}` [{r['stage']}] {r['reason']}" for r in s["duplicate_samples"]]
+    if s.get("enrichment_warnings"):
+        lines += ["", "**Pay detail warnings (rows withheld, affected board expiry skipped):**", ""]
+        lines += [f"- `{w['source_id']}/{w['source_job_id']}`: {w['reason']}" for w in s["enrichment_warnings"]]
     if s.get("deferred_sources"):
         lines += ["", "**Deferred Workday boards (not attempted this run; not a success):**", ""]
         lines += [f"- `{d['source']}`: {d['reason']} (next eligible {d['next_eligible_at'] or 'next run'})" for d in s["deferred_sources"]]
@@ -152,6 +156,7 @@ def annotations(s: dict[str, Any]) -> list[str]:
     out = [f"::error title=Ingestion source failed [{s['cohort']}]::{f['source']}: {f['error']}" for f in s.get("failed_sources") or []]
     out += [f"::error title=Ingestion write error [{s['cohort']}]::{e}" for e in s.get("write_errors") or []]
     out += [f"::error title=Ingestion row rejected [{s['cohort']}]::{r['source_key']}: {r['reason']}" for r in s.get("rejected_samples") or []]
+    out += [f"::warning title=Ingestion pay detail unavailable [{s['cohort']}]::{w['source_id']}/{w['source_job_id']}: {w['reason']}; row withheld, board expiry skipped" for w in s.get("enrichment_warnings") or []]
     if s["status"] == "deferred_noop":
         out.append(f"::warning title=Ingestion no-op [{s['cohort']}]::every selected Workday board was deferred; nothing written")
     if s["status"] == "no_report":

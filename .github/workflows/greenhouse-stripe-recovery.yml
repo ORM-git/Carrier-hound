@@ -1,0 +1,61 @@
+name: Stripe Greenhouse targeted recovery
+
+# Deliberately separate from cohort freshness/watchdog reporting. This is NOT a
+# full non-Workday run. Only the direct Stripe board is fetched; no expiry ever.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Dry run or explicitly authorized production write without expiry'
+        type: choice
+        options: [dry-run, write-production-no-expire]
+        default: dry-run
+      confirm:
+        description: 'For write mode: WRITE STRIPE ONLY NO EXPIRY'
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: ingest-pipeline
+  cancel-in-progress: false
+jobs:
+  stripe:
+    name: Stripe only (not a cohort run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scraper requirements
+        run: pip install -r scripts/scraper/requirements.txt
+      - name: Stripe direct board only, no expiry
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          args=(-m scripts.scraper.run_ingestion --source greenhouse:stripe --no-expire)
+          case "$MODE" in
+            dry-run) ;;
+            write-production-no-expire)
+              [ "$CONFIRM" = 'WRITE STRIPE ONLY NO EXPIRY' ] || { echo '::error::Write not confirmed'; exit 2; }
+              [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || { echo '::error::Missing database configuration'; exit 2; }
+              args+=(--write-to-database --production)
+              ;;
+            *) echo '::error::Unsupported mode'; exit 2 ;;
+          esac
+          python "${args[@]}" > reports/stripe-recovery.json
+      - name: Upload targeted report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stripe-recovery-${{ github.run_id }}
+          path: reports/stripe-recovery.json
+          if-no-files-found: warn
+          retention-days: 14

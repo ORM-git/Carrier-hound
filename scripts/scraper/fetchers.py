@@ -24,7 +24,7 @@ from .enrichment import (
     strip_html,
 )
 from .persistence import normalize_salary_period
-from .rate_limiter import PerHostRateLimiter, parse_retry_after, redact_sensitive_params, request_with_backoff
+from .rate_limiter import RequestHTTPError, PerHostRateLimiter, parse_retry_after, redact_sensitive_params, request_with_backoff
 
 COUNTRY_NAMES = {
     "US": "United States",
@@ -381,8 +381,13 @@ async def enrich_greenhouse_pay_transparency(
     limiter: PerHostRateLimiter,
     seed: dict[str, Any],
     jobs: list[dict[str, Any]],
-) -> None:
-    """Fetch documented per-job pay ranges for selected Greenhouse identities in place."""
+) -> list[dict[str, str]]:
+    """Enrich pay in place; quarantine detail-404 rows, never infer vacancy deletion.
+
+    Other HTTP/schema failures remain fatal. Callers must omit quarantined identities
+    from writes and withhold that board's expiry. The original listing is not evidence
+    that a missing detail response can safely refresh or expire a persisted vacancy.
+    """
     token = str(seed["token"])
     source_id = f"greenhouse:{token}"
     prefix = f"{token}-"
@@ -409,7 +414,17 @@ async def enrich_greenhouse_pay_transparency(
 
     results = await asyncio.gather(*(fetch_detail(job) for job in pending), return_exceptions=True)
     failures: list[str] = []
+    warnings: list[dict[str, str]] = []
     for job, result in zip(pending, results):
+        if isinstance(result, RequestHTTPError) and result.status_code == 404:
+            warnings.append({
+                "source_id": source_id,
+                "source_job_id": str(job.get("source_job_id") or ""),
+                "code": "greenhouse_detail_404",
+                "action": "row_withheld_board_expiry_skipped",
+                "reason": "Pay detail returned 404; listing status unverified, not marked deleted",
+            })
+            continue
         if isinstance(result, BaseException):
             failures.append(
                 f"{job.get('source_job_id')}: {redact_sensitive_params(str(result))}"
@@ -419,6 +434,7 @@ async def enrich_greenhouse_pay_transparency(
         job.update(salary)
     if failures:
         raise RuntimeError("Greenhouse pay-transparency lookup failed: " + "; ".join(failures))
+    return warnings
 
 
 async def fetch_lever(
