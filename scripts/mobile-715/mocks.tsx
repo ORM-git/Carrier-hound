@@ -19,7 +19,7 @@ export const addApplicationToTracker=async()=>{};export const removeApplicationF
 export const getValidReturnUrl=(s:string,f='/jobs')=>s?.startsWith('/')&&!s.startsWith('//')?s:f;
 export const createClient=()=>({auth:{getSession:async()=>({data:{session:null}}),signInWithPassword:async()=>({error:{code:'invalid_credentials'}}),signUp:async()=>({data:{session:null}}),signInWithOAuth:async()=>({}),resetPasswordForEmail:async()=>({}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}});
 export const trackFunnelEvent=()=>{};export const handleProCheckout=async(...args:any[])=>{(window as any).__checkout=args;return {ok:false,error:'Fixture cancelled'};};export const openRazorpaySubscription=handleProCheckout;
-export const useRouter=()=>({push:(url:string)=>location.href=url,replace:(url:string)=>history.replaceState({},'',url),back:()=>history.back()});export const usePathname=()=>location.pathname;export const useSearchParams=()=>new URLSearchParams(location.search);
+export const useRouter=()=>({push:(url:string)=>location.href=url,replace:(url:string)=>history.replaceState({},'',url),back:()=>history.back()});export const usePathname=()=>new URLSearchParams(location.search).get('view')==='landing'?'/':location.pathname;export const useSearchParams=()=>new URLSearchParams(location.search);
 export function Link({href,children,prefetch,...props}:any){return <a href={href} {...props}>{children}</a>;}export function Image({priority,fill,unoptimized,...p}:any){return <img {...p}/>;}
 export function Dynamic(){return ()=>null;}
 export function Shell({children}:any){return <>{children}</>;}
