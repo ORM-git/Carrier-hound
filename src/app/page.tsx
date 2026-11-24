@@ -40,7 +40,7 @@ export default function HomePage() {
                 <a href="#" className="brand" aria-label="Career Monke home">
                   <img
                     className="brand-logo"
-                    src="/careermonke-logo.png"
+                    src="/careermonke-logo-v2.png"
                     alt=""
                     width="534"
                     height="232"
@@ -522,7 +522,7 @@ export default function HomePage() {
                   <svg className="lf" aria-hidden="true">
                     <use href="#laurel" />
                   </svg>
-                  <b>1,200+</b>
+                  <b>1Lakh+</b>
                   <svg className="lf r" aria-hidden="true">
                     <use href="#laurel" />
                   </svg>
@@ -2452,7 +2452,7 @@ export default function HomePage() {
             <div className="f-top">
               <a href="/" aria-label="Career Monke home">
                 <img
-                  src="/careermonke-logo.png"
+                  src="/careermonke-logo-v2.png"
                   alt="Career Monke"
                   width="66"
                   height="80"
@@ -2486,7 +2486,7 @@ export default function HomePage() {
         </footer>
 
         <aside className="sb" aria-label="View jobs">
-          <img src="/careermonke-logo.png" alt="Career Monke logo" width="56" height="56" />
+          <img src="/careermonke-logo-v2.png" alt="Career Monke logo" width="56" height="56" />
           <p>
             <b>Career Monke</b>
             <span>Verified jobs, direct from employers</span>
