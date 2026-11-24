@@ -931,7 +931,7 @@ export default function JobDetailView({
         {/* Match score on Mobile: heading, then the overall card (taller, highlighted, big % with band label)
             beside one card per component score. Cards without real data are dropped; masked for locked viewers. */}
         {hasConfirmedResume && matchScore !== null && (
-          <div data-testid="mobile-match-score" className="lg:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0] space-y-2.5">
+          <div data-testid="mobile-match-score" className="md:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0] space-y-2.5">
             <h2 className="text-[16px] font-bold text-[#0F172A]">Match Score</h2>
             <div className="flex gap-2 items-stretch">
               <div className="flex flex-col justify-between gap-2 w-[72px] shrink-0 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
@@ -959,6 +959,30 @@ export default function JobDetailView({
                   ))}
               </dl>
             </div>
+          </div>
+        )}
+        {/* Tablet (md..lg): the pre-restyle compact score line + one row of component scores, unchanged */}
+        {hasConfirmedResume && matchScore !== null && (
+          <div data-testid="tablet-match-score" className="hidden md:max-lg:block mt-4 sm:mt-3 pt-3 border-t border-[#E2E8F0] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Match Score</span>
+              <span className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-xl font-black text-[#0F172A] leading-none">{isUnlocked ? `${matchScore}%` : "\u2022\u2022%"}</span>
+                <span className="text-xs font-bold text-[#1D4ED8] truncate">{isUnlocked ? matchLabel : "Match"}</span>
+              </span>
+            </div>
+            <dl className="grid grid-cols-3 gap-2">
+              {([
+                ["Experience", expSubScore],
+                ["Skill", skillSubScore],
+                ["Industry", industrySubScore],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-0">
+                  <dt className="text-[11px] text-[#64748B] leading-tight truncate">{label}</dt>
+                  <dd className="text-sm font-bold text-[#0F172A]">{isUnlocked ? (value !== null ? `${value}%` : "\u2014") : "\u2022\u2022%"}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
         {/* Without a confirmed resume no score is shown (never invented); phones get the same prompt desktop has (item 20). */}
