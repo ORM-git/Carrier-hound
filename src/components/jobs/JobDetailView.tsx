@@ -620,7 +620,7 @@ export default function JobDetailView({
       />
 
       {/* (2) HEADER BODY CARD */}
-      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
+      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none">
         {/* Mobile action row: 64px rounded logo, Hide (block icon) circle, heart circle, Apply pill. Desktop keeps these in the sticky strip. */}
         <div className="md:hidden flex items-center gap-2.5">
           <CompanyLogo
@@ -684,7 +684,7 @@ export default function JobDetailView({
           )}
         </div>
 
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+        <div className="max-md:mt-4 flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           {/* Left / Middle: Logo, Company, Title, 2x3 Metadata */}
           <div className="flex-1 min-w-0 space-y-3 md:space-y-3.5">
             <div className="max-md:hidden flex items-center gap-3">
@@ -761,6 +761,12 @@ export default function JobDetailView({
                 <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                   <TrendingUp className="w-4 h-4 text-[#64748B] shrink-0" />
                   <span className="truncate">{jobLevel}</span>
+                </li>
+              )}
+              {expText && (
+                <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                  <Calendar className="w-4 h-4 text-[#64748B] shrink-0" />
+                  <span className="truncate">{expText}</span>
                 </li>
               )}
               <li data-testid="mobile-job-salary" className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
@@ -925,7 +931,7 @@ export default function JobDetailView({
         {/* Match score on Mobile: heading, then the overall card (taller, highlighted, big % with band label)
             beside one card per component score. Cards without real data are dropped; masked for locked viewers. */}
         {hasConfirmedResume && matchScore !== null && (
-          <div data-testid="mobile-match-score" className="lg:hidden pt-4 border-t border-[#E2E8F0] space-y-2.5">
+          <div data-testid="mobile-match-score" className="lg:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0] space-y-2.5">
             <h2 className="text-[16px] font-bold text-[#0F172A]">Match Score</h2>
             <div className="flex gap-2 items-stretch">
               <div className="flex flex-col justify-between gap-2 w-[100px] shrink-0 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-3">
@@ -936,16 +942,16 @@ export default function JobDetailView({
                   {isUnlocked ? matchLabel : "Pro Match"}
                 </span>
               </div>
-              <dl className="flex-1 grid grid-cols-3 gap-2">
+              <dl className="flex-1 grid grid-cols-3 gap-1.5">
                 {([
-                  ["Experience Level", expSubScore],
+                  ["Experience", expSubScore],
                   ["Skill", skillSubScore],
-                  ["Industry Exp.", industrySubScore],
+                  ["Industry", industrySubScore],
                 ] as const)
                   .filter(([, value]) => !isUnlocked || value !== null)
                   .map(([label, value]) => (
-                    <div key={label} className="flex flex-col justify-between gap-1.5 rounded-xl bg-slate-50 border border-slate-200 p-2.5 min-w-0">
-                      <dt className="text-[11px] text-[#64748B] leading-tight">{label}</dt>
+                    <div key={label} className="flex flex-col justify-between gap-1.5 rounded-xl bg-slate-50 border border-slate-200 p-2 min-w-0">
+                      <dt className="text-[11px] text-[#64748B] leading-tight break-words">{label}</dt>
                       <dd className="text-lg font-bold text-[#0F172A] leading-none">
                         {isUnlocked ? (value !== null ? `${value}%` : "—") : "••%"}
                       </dd>
@@ -960,7 +966,7 @@ export default function JobDetailView({
           <Link
             href="/resume"
             data-testid="mobile-match-resume-prompt"
-            className="lg:hidden flex items-center gap-2 min-h-[44px] pt-3 border-t border-[#E2E8F0] text-xs font-bold text-[#1D4ED8] hover:underline"
+            className="lg:hidden mt-4 sm:mt-3 flex items-center gap-2 min-h-[44px] pt-3 border-t border-[#E2E8F0] text-xs font-bold text-[#1D4ED8] hover:underline"
           >
             <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
             <span>Upload your resume to see your real match</span>

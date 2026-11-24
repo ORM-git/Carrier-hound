@@ -122,7 +122,7 @@ function run() {
   const hasMobileMatchRow =
     mobileScore.includes("Match Score") &&
     mobileScore.includes("matchLabel") &&
-    mobileScore.includes("grid grid-cols-3 gap-2") &&
+    mobileScore.includes("grid grid-cols-3") &&
     mobileScore.includes("Pro Match") &&
     ["Experience", "Skill", "Industry"].every((l) => mobileScore.includes(l)) &&
     !/text-\[(9|10)px\]/.test(mobileScore);
