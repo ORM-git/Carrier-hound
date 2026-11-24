@@ -34,7 +34,7 @@ const siteTitle = "Career Monke — Unindexed Jobs & Remote Career Discovery";
 const siteDescription =
   "Discover remote engineering, design, marketing, and data roles from verified employers.";
 
-const ogImageUrl = "https://careermonke.com/careermonke-logo.png";
+const ogImageUrl = "https://careermonke.com/careermonke-logo-v2.png";
 
 export const metadata: Metadata = {
   title: siteTitle,

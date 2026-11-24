@@ -30,7 +30,7 @@ export default function BrandIcon({
     const w = Math.round(h * (534 / 232));
     return (
       <Image
-        src="/careermonke-logo.png"
+        src="/careermonke-logo-v2.png"
         alt="Career Monke"
         width={w}
         height={h}
@@ -46,7 +46,7 @@ export default function BrandIcon({
 
   return (
     <Image
-      src="/icon.png"
+      src="/icon-v2.png"
       alt="Career Monke"
       width={w}
       height={h}
