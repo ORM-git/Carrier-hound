@@ -168,6 +168,70 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(uniqueTitles()[0]).toBe("Fixture Analyst 1");
   });
 
+  it("a failed initial continuation chain surfaces an error alert with a working Retry (regression: reviewer recovery repro)", async () => {
+    let failNext = true;
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:initial", continuation: true };
+      if (failNext) {
+        failNext = false;
+        return { jobs: [], totalCount: 0, isDegraded: true, error: "degraded" };
+      }
+      return page(jobs(range(1, 25)), false, 100, null);
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    // Zero jobs rendered, yet the failure must be visible and recoverable without refresh.
+    expect(screen.getByTestId("jobs-initial-recovery")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+    expect(uniqueTitles()).toHaveLength(25); // the chain resumed from the failed cursor
+  });
+
+  it("a cycling initial empty continuation shows manual recovery instead of the bare empty state (regression: reviewer recovery repro)", async () => {
+    h.transport = async ({ page: p }: any) =>
+      p <= 2
+        ? { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:initial", continuation: true }
+        : page(jobs(range(1, 25)), false, 100, null);
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    // The non-advancing cursor paused the chain with zero jobs shown: a visible control must
+    // remain (no refresh required), and the bare empty state must not render.
+    expect(screen.getByTestId("jobs-initial-recovery")).toBeTruthy();
+    expect(screen.queryByText("No positions match your active filters")).toBeNull();
+    const resume = screen.getByRole("button", { name: "Load More Verified Positions" });
+    fireEvent.click(resume);
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    expect(uniqueTitles()).toHaveLength(25);
+  });
+
+  it("a thrown request mid initial chain clears chaining and shows recovery (regression: network throw)", async () => {
+    let throwNext = true;
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:initial", continuation: true };
+      if (throwNext) {
+        throwNext = false;
+        throw new Error("network down");
+      }
+      return page(jobs(range(1, 25)), false, 100, null);
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    // The chain flag must not stay stuck on a throw: recovery controls render immediately.
+    expect(screen.getByTestId("jobs-initial-recovery")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 2]);
+    expect(uniqueTitles()).toHaveLength(25);
+  });
+
   it("multiple advancing empty continuation chunks chain until jobs arrive (regression: advancing-scan pause)", async () => {
     h.transport = async ({ page: p }: any) => {
       if (p <= 3) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:chunk-${p}`, continuation: true };

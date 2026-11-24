@@ -1151,7 +1151,10 @@ function JobsPageInner() {
     );
     // A stale outcome means the query changed; its reset already cleared loading/error state.
     if (outcome === "stale") return;
-    if (outcome === "error") setLoadMoreError(true);
+    if (outcome === "error") {
+      setLoadMoreError(true);
+      setContinuationChaining(false); // a thrown request must not leave the chain flag stuck
+    }
     setLoadingMore(false);
   };
   loadMoreRef.current = handleLoadMore;
@@ -2109,6 +2112,36 @@ function JobsPageInner() {
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           <span>Retry</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : displayedJobs.length === 0 && !continuationChaining && canLoadMore && (loadMoreError || autoLoadPaused) ? (
+                    /* The initial background chain stopped on an error or a non-advancing
+                       cursor before any job rendered. The bare empty state would hide every
+                       recovery path, so surface the failure with an explicit way forward. */
+                    <div data-testid="jobs-initial-recovery" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 sm:p-14 text-center space-y-3 shadow-none">
+                      <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                        <AlertCircle className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-base font-bold text-[#0F172A]">Couldn&apos;t load jobs</h3>
+                      {loadMoreError ? (
+                        <p className="text-xs text-[#475569] max-w-sm mx-auto" role="alert">
+                          We encountered a temporary issue querying the jobs directory. Please try again.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-[#475569] max-w-sm mx-auto">
+                          We paused while checking for more positions. You can keep loading below.
+                        </p>
+                      )}
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={handleLoadMore}
+                          disabled={loadingMore}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold transition cursor-pointer disabled:opacity-60 min-h-[44px]"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>{loadMoreError ? "Retry" : "Load More Verified Positions"}</span>
                         </button>
                       </div>
                     </div>
