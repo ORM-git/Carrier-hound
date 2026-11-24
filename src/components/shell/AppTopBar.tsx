@@ -172,7 +172,7 @@ export default function AppTopBar({
                     type="button"
                     onClick={tab.onClick}
                     aria-current={tab.active ? "page" : undefined}
-                    className={`relative flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 px-1 text-[13px] leading-tight whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#93C5FD] ${
+                    className={`relative flex-1 min-w-0 flex flex-row items-center justify-center gap-1.5 px-1 text-[13px] leading-tight whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#93C5FD] ${
                       tab.active
                         ? "font-bold text-[#2563EB] after:absolute after:bottom-0 after:inset-x-1 after:h-[3px] after:rounded-full after:bg-[#2563EB]"
                         : "font-medium text-[#475569] hover:text-[#0F172A]"
