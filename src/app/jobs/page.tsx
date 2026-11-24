@@ -515,6 +515,14 @@ function JobsPageInner() {
 
   // Live Supabase Jobs Data
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
+  // Authoritative rows for growth checks. The pending-intent settle calls handleLoadMore from the
+  // closure of an older render, so reading the liveJobs state there would compare a new page
+  // against stale rows and report growth for an all-duplicate page. This ref is updated
+  // synchronously wherever a page is applied.
+  const liveJobsRef = useRef<LiveJob[]>([]);
+  useEffect(() => {
+    liveJobsRef.current = liveJobs;
+  }, [liveJobs]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [appliedEligibility, setAppliedEligibility] = useState<{ countries: string[]; filteredOut: number } | null>(null);
   const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
@@ -970,7 +978,12 @@ function JobsPageInner() {
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const autoLoadArmedRef = useRef(true);
-  useEffect(() => () => pageLoaderRef.current.reset(), []);
+  // ONE coalesced downward gesture observed while a next-page request is in flight. Consumed at
+  // most once, after that request settles, and only when the list grew, a next page exists, no
+  // error/pause happened and the sentinel is still near the viewport. Cleared on query reset and
+  // unmount. Never re-armed by layout/scroll anchoring or by the IntersectionObserver itself.
+  const pendingDownwardRef = useRef(false);
+  useEffect(() => () => { pendingDownwardRef.current = false; pageLoaderRef.current.reset(); }, []);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
@@ -1013,6 +1026,7 @@ function JobsPageInner() {
 
     pageLoaderRef.current.reset();
     autoLoadArmedRef.current = true;
+    pendingDownwardRef.current = false;
     setLoadingMore(false);
     setLoadMoreError(false);
     setAutoLoadPaused(false);
@@ -1045,6 +1059,7 @@ function JobsPageInner() {
     })
       .then((res) => {
         if (queryKey === lastQueryKeyRef.current) {
+          liveJobsRef.current = res.jobs;
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
           setHasNextPage(Boolean(res.hasNextPage));
@@ -1098,6 +1113,8 @@ function JobsPageInner() {
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
     setLoadingMore(true);
     setLoadMoreError(false);
+    // Set only when the applied page actually grew the list AND reported a next page.
+    let appliedWithMore = false;
 
     const outcome = await loader.load(
       (signal) =>
@@ -1130,21 +1147,49 @@ function JobsPageInner() {
           return;
         }
         // Server order kept; ids already shown or repeated within this page are skipped.
-        // liveJobs is current here: one request at a time, and a query change makes this response stale.
-        setAutoLoadPaused(appendPage(liveJobs, res.jobs).length === liveJobs.length);
-        setLiveJobs((prev) => appendPage(prev, res.jobs));
+        // Compare against the authoritative rows ref, not closure state: one request at a time, a
+        // query change makes this response stale, and the pending-intent settle may invoke this
+        // handler from an older render whose liveJobs snapshot misses the last appended page.
+        const prevRows = liveJobsRef.current;
+        const nextRows = appendPage(prevRows, res.jobs);
+        const grew = nextRows.length !== prevRows.length;
+        setAutoLoadPaused(!grew);
+        liveJobsRef.current = nextRows;
+        setLiveJobs(nextRows);
         setHasNextPage(Boolean(res.hasNextPage));
         setPage(nextPage);
         loadedPageRef.current = nextPage;
         cursorRef.current = res.nextCursor ?? null;
         hasNextPageRef.current = Boolean(res.hasNextPage);
+        appliedWithMore = grew && Boolean(res.hasNextPage);
         if (res.totalCount) setTotalCount(res.totalCount);
       }
     );
     // A stale outcome means the query changed; its reset already cleared loading/error state.
     if (outcome === "stale") return;
-    if (outcome === "error") setLoadMoreError(true);
+    if (outcome === "error") {
+      // A failed request consumes any intent recorded during it. Recovery is the Retry
+      // button, which is the user's own fresh intent, never the pre-failure swipe.
+      pendingDownwardRef.current = false;
+      setLoadMoreError(true);
+    }
     setLoadingMore(false);
+
+    // Consume the one pending downward intent, if any, exactly once. Gestures arrive faster than a
+    // multi-second request; without this a user who keeps swiping while the request runs stalls at
+    // the old end with armed=false and the sentinel already passed. Conditions mirror a fresh
+    // gesture: same query (not stale), list grew with a next page, no error, not paused, sentinel
+    // still near the viewport. The next page is itself a one-page-per-intent load, so a continued
+    // fling must gesture again during it; there is no automatic chain.
+    if (outcome === "applied" && pendingDownwardRef.current) {
+      pendingDownwardRef.current = false;
+      const el = loadMoreSentinelRef.current;
+      const rect = el?.getBoundingClientRect();
+      if (appliedWithMore && el && rect && rect.top <= window.innerHeight + 400 && rect.bottom >= -400) {
+        autoLoadArmedRef.current = true;
+        handleLoadMore();
+      }
+    }
   };
 
   // getLiveJobs always reports hasNextPage; a totalCount fallback would show a phantom button once
@@ -1166,7 +1211,11 @@ function JobsPageInner() {
     let frame = 0;
     let touchY: number | null = null;
     const armFromInput = () => {
-      if (pageLoaderRef.current.busy) return;
+      if (pageLoaderRef.current.busy) {
+        // A swipe during a request would otherwise be lost; keep ONE pending intent for settle.
+        pendingDownwardRef.current = true;
+        return;
+      }
       autoLoadArmedRef.current = true;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
