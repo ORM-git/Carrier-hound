@@ -123,7 +123,7 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
     currency: orderData.currency || "INR",
     name: "CareerMonke",
     description: options.addonCode ? "Pro Add-on Pack" : "CareerMonke Pro Pass",
-    image: "/icon.png",
+    image: "/icon-v2.png",
     prefill: {
       name: options.userName || "Candidate",
       email: options.userEmail || "",
@@ -313,7 +313,7 @@ export async function openRazorpaySubscription(
     subscription_id: subData.subscriptionId,
     name: "CareerMonke",
     description: "CareerMonke Pro Auto-Renew",
-    image: "/icon.png",
+    image: "/icon-v2.png",
     prefill: {
       name: options.userName || "Candidate",
       email: options.userEmail || "",

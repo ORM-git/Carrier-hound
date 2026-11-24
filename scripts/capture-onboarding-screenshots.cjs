@@ -33,8 +33,8 @@ function createServer() {
     if (cleanUrl === "/" || cleanUrl === "") cleanUrl = "/index.html";
 
     // Handle icon requests from Next Image
-    if (cleanUrl.startsWith("/_next/image") || cleanUrl === "/icon.png") {
-      const iconPath = path.resolve(process.cwd(), "public", "icon.png");
+    if (cleanUrl.startsWith("/_next/image") || cleanUrl === "/icon.png" || cleanUrl === "/icon-v2.png") {
+      const iconPath = path.resolve(process.cwd(), "public", cleanUrl === "/icon-v2.png" ? "icon-v2.png" : "icon.png");
       if (fs.existsSync(iconPath)) {
         res.writeHead(200, { "Content-Type": "image/png" });
         fs.createReadStream(iconPath).pipe(res);

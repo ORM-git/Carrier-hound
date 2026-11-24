@@ -8,7 +8,7 @@ describe("getRootStructuredData", () => {
     const [org, site] = graph["@graph"];
     expect(org["@type"]).toBe("Organization");
     expect(org.url).toBe("https://careermonke.com");
-    expect(org.logo).toBe("https://careermonke.com/careermonke-logo.png");
+    expect(org.logo).toBe("https://careermonke.com/careermonke-logo-v2.png");
     expect(site["@type"]).toBe("WebSite");
     expect(site.publisher["@id"]).toBe(org["@id"]);
   });

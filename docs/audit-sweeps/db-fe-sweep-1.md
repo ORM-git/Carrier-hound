@@ -338,7 +338,7 @@
 - **Gap Classification:** Code
 - **Artifacts Verified on `main`:**
   - `public/manifest.webmanifest` — Valid JSON manifest defining `name`, `short_name`, `start_url: "/"`, `display: "standalone"`, `192x192` and `512x512` PNG icons.
-  - `public/icon-192.png`, `public/icon.png`, `public/apple-touch-icon.png`, `public/offline.html`, `public/sw.js` — All referenced icon/offline/service-worker assets present on disk.
+  - `public/icon-192.png`, `public/icon-v2.png`, `public/apple-touch-icon.png`, `public/offline.html`, `public/sw.js`, `src/app/icon.png` — All referenced icon/offline/service-worker assets present on disk (icons versioned for cache-busting; `src/app/icon.png` serves the `/icon.png` route).
   - `src/app/layout.tsx` & `src/components/pwa/ServiceWorkerRegistrar.tsx` — Exports `manifest: "/manifest.webmanifest"` in Next.js metadata and registers `/sw.js` in production.
 - **What Is Missing / Owner Sign-Off Action:**
   - **Code:** No offline test or CI guard validates `public/manifest.webmanifest` schema, icon path resolution, or `sw.js` precache/fallback contract; `docs/push-notifications.md` explicitly characterizes the app as pre-PWA; and A2HS install prompt support remains unmerged (`PR #301`).

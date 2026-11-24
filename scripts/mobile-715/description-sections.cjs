@@ -8,7 +8,7 @@ const puppeteer = require('puppeteer-core');
   const server = http.createServer((req, res) => {
     let p = decodeURIComponent(req.url.split('?')[0]);
     if (p === '/jobs') p = '/reports/mobile-715/index.html';
-    if (p.startsWith('/careermonke') || p === '/icon.png') p = '/public' + p;
+    if (p.startsWith('/careermonke') || p === '/icon-v2.png') p = '/public' + p;
     try {
       res.setHeader('content-type', p.endsWith('.js') ? 'application/javascript' : p.endsWith('.css') ? 'text/css' : p.endsWith('.png') ? 'image/png' : 'text/html');
       res.end(fs.readFileSync(path.join(root, p)));

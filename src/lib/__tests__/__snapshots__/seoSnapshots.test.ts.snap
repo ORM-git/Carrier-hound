@@ -47,7 +47,7 @@ exports[`SEO serialized output snapshots > root JSON-LD graph is stable 1`] = `
     {
       "@id": "https://careermonke.com/#organization",
       "@type": "Organization",
-      "logo": "https://careermonke.com/careermonke-logo.png",
+      "logo": "https://careermonke.com/careermonke-logo-v2.png",
       "name": "CareerMonke",
       "url": "https://careermonke.com",
     },
