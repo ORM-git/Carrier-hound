@@ -572,9 +572,11 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(res.totalCount).toBeGreaterThanOrEqual(300);
       expect(res.hasNextPage).toBe(true);
 
-      // Verify masked for Free user
+      // Verify masked for Free user. getLiveJobs runs without a browser session in tests,
+      // so the route sees an unauthenticated (visitor) request and keeps salary masked;
+      // company and applyUrl stay locked for every non-Pro caller.
       expect(res.jobs[0].company).toBe("Verified Employer");
-      expect(res.jobs[0].salary).not.toBe("");
+      expect(res.jobs[0].salary).toBe("");
       expect(res.jobs[0].applyUrl).toBe("");
 
       // Verify Page 11 through getLiveJobs

@@ -157,6 +157,9 @@ describe("real listing + detail handlers: free vs Pro", () => {
     const job = (await (await search(req("http://localhost/api/jobs/search"))).json()).jobs[0];
     expect(job.company).toBe("Verified Employer");
     expect(job.applyUrl).toBe("");
+    // Signed-out visitors do not see salary; signed-in free users do.
+    expect(job.salary).toBe("");
+    expect(job.salary_display).toBeNull();
   });
 
   it("free user: search detail is masked and Pro detail endpoint is 403", async () => {

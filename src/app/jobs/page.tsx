@@ -2508,12 +2508,14 @@ function JobsPageInner() {
                                     Early applicant
                                   </span>
                                 )}
+                                {user && (
                                   <span
                                     className="min-h-6 h-auto max-w-full flex-wrap whitespace-normal break-words px-2.5 py-1 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
                                     {compactSalaryDisplay(job.salary)}
                                   </span>
+                                )}
                               </div>
 
                               {/* Footer divider, posted time on left, existing actions on right with 44px targets */}

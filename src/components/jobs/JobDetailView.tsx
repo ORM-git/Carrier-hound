@@ -148,6 +148,8 @@ export default function JobDetailView({
   onLoadCompanyProfile,
 }: JobDetailViewProps) {
   const isUnlocked = isPro && !job.proUnlockError;
+  // Salary is visible to signed-in users (free included); signed-out visitors see no salary block.
+  const isSignedIn = Boolean(user);
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   const cookieNoticeHeight = useCookieNoticeHeight();
 
@@ -717,12 +719,14 @@ export default function JobDetailView({
                   <span className="truncate">{job.category}</span>
                 </li>
               )}
+              {isSignedIn && (
                 <li data-testid="mobile-job-salary" className="inline-flex items-center gap-1 min-h-7 py-1 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
                   <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
                   <span className="whitespace-normal break-words min-w-0">
                     {compactSalaryDisplay(job.salary)}
                   </span>
                 </li>
+              )}
               {expText && (
                 <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
                   <Calendar className="w-3.5 h-3.5 text-[#475569] shrink-0" />
@@ -793,6 +797,7 @@ export default function JobDetailView({
                   </div>
                 )}
 
+                {isSignedIn && (
                   <div
                     className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]"
                   >
@@ -801,6 +806,7 @@ export default function JobDetailView({
                       {compactSalaryDisplay(job.salary)}
                     </span>
                   </div>
+                )}
 
                 {expText && (
                   <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
