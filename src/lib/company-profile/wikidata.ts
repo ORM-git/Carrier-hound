@@ -1,6 +1,7 @@
 /**
  * Wikidata as a company-profile source (CC0). Used under Wikidata's data-access policy: the Action API,
- * a descriptive User-Agent, one request per second, no retry on 403/429. Owner-approved 2026-11-24.
+ * a descriptive User-Agent, one request per second across the whole run (wikidataClient), 429 cooldowns that honor
+ * Retry-After, no retry on 403. Owner-approved 2026-11-24.
  *
  * Identity is never guessed from a name: a candidate from the name search counts only when its official
  * website (P856) is exactly the homepage of the company's stored domain (host match, path "/" or empty;
@@ -15,6 +16,56 @@ const MAX_LEADERS = 6;
 
 export interface WikidataFetched { url: string; text: string; status: number; contentType: string }
 export type WikidataFetcher = (url: string) => Promise<WikidataFetched>;
+
+export const WIKIDATA_MIN_INTERVAL_MS = 1_000;
+export const WIKIDATA_MAX_429_RETRIES = 2;
+export const WIKIDATA_MAX_COOLDOWN_MS = 120_000;
+const DEFAULT_429_COOLDOWN_MS = 5_000;
+
+/** Thrown by the transport for a non-2xx answer; retryAfterMs comes from the Retry-After header when present. */
+export class WikidataHttpError extends Error {
+  constructor(readonly status: number, readonly retryAfterMs: number | null) { super(`Wikidata returned HTTP ${status}`); this.name = "WikidataHttpError"; }
+}
+
+/** Retry-After as delta-seconds or an HTTP date; null when absent or unparseable. */
+export function parseRetryAfter(header: string | null | undefined, nowMs: number): number | null {
+  const value = (header || "").trim();
+  if (/^\d+$/.test(value)) return Number(value) * 1_000;
+  const at = value ? Date.parse(value) : NaN;
+  return Number.isFinite(at) ? Math.max(0, at - nowMs) : null;
+}
+
+/**
+ * One client per run, shared by every company: a single 1 req/s pacer (never reset per company), a global
+ * cooldown after a 429 (Retry-After, else 5s doubling; at most 2 retries, never past a 120s wait), and, when
+ * `cache` is on, a response cache by URL. Write-time revalidation uses cache: false so it always refetches.
+ */
+export function wikidataClient(fetchJson: WikidataFetcher, options: { sleep: (ms: number) => Promise<void>; nowMs: () => number; cache: boolean }): WikidataFetcher {
+  let nextAt = -Infinity;
+  const cache = new Map<string, WikidataFetched>();
+  const paced = async (url: string): Promise<WikidataFetched> => {
+    for (let attempt = 0; ; attempt++) {
+      const wait = nextAt - options.nowMs();
+      if (wait > 0) await options.sleep(wait);
+      nextAt = options.nowMs() + WIKIDATA_MIN_INTERVAL_MS;
+      try { return await fetchJson(url); }
+      catch (error) {
+        if (!(error instanceof WikidataHttpError) || error.status !== 429 || attempt >= WIKIDATA_MAX_429_RETRIES) throw error;
+        const cooldown = error.retryAfterMs ?? DEFAULT_429_COOLDOWN_MS * 2 ** attempt;
+        if (cooldown > WIKIDATA_MAX_COOLDOWN_MS) throw new Error(`Wikidata asked for a ${Math.ceil(cooldown / 1_000)}s cooldown, over the ${WIKIDATA_MAX_COOLDOWN_MS / 1_000}s cap; stopping`);
+        nextAt = Math.max(nextAt, options.nowMs() + cooldown); // every later request, for any company, waits too
+      }
+    }
+  };
+  return async (url) => {
+    if (!options.cache) return paced(url);
+    const hit = cache.get(url);
+    if (hit) return { ...hit };
+    const fetched = await paced(url);
+    cache.set(url, fetched);
+    return { ...fetched };
+  };
+}
 export type WikidataRecord = (source: { kind: "wikidata"; requested_url: string; final_url: string; status: number; fetched_at: string; bytes: number; sha256: string }) => void;
 
 export interface WikidataLeader { name: string; role: string; roleAsOf: string | null; sourceUrl: string; retrievedAt: string }
@@ -149,45 +200,44 @@ function parseJson(text: string, what: string): Record<string, unknown> {
 }
 
 /**
- * At most 4 + founders requests per company (search, candidates, entity, labels, one P31 check per founder),
- * spaced 1s apart. Throws on fetch failure or malformed data; the caller records a redacted fetch_failed.
+ * At most 4 + founders requests per company (search, candidates, entity, labels, one P31 check per founder).
+ * Pacing, cooldown and caching belong to the wikidataClient passed as fetchJson. Every response is recorded,
+ * identity lookups included, so a write revalidates the match as well as the values.
+ * Throws on fetch failure or malformed data; the caller records a redacted fetch_failed.
  */
 export async function fetchWikidataProfile(input: {
   company: { name: string; canonical_domain: string | null };
-  fetchJson: WikidataFetcher; sleep: (ms: number) => Promise<void>; now: () => string; sha256: (text: string) => string; record?: WikidataRecord;
+  fetchJson: WikidataFetcher; now: () => string; sha256: (text: string) => string; record?: WikidataRecord;
 }): Promise<WikidataProfile> {
-  const { company, fetchJson, sleep, now, sha256, record } = input;
+  const { company, fetchJson, now, sha256, record } = input;
   const domain = bareHost(company.canonical_domain);
   const none = (outcome: WikidataProfile["outcome"]): WikidataProfile => ({ outcome, entityId: null, facts: {}, leadership: [] });
   if (!domain || !company.name.trim()) return none("no_match");
-  let first = true;
-  const get = async (url: string, what: string, keep: boolean) => {
-    if (!first) await sleep(1_000);
-    first = false;
+  const get = async (url: string, what: string) => {
     const res = await fetchJson(url);
-    if (keep) record?.({ kind: "wikidata", requested_url: url, final_url: res.url, status: res.status, fetched_at: now(), bytes: Buffer.byteLength(res.text), sha256: sha256(res.text) });
+    record?.({ kind: "wikidata", requested_url: url, final_url: res.url, status: res.status, fetched_at: now(), bytes: Buffer.byteLength(res.text), sha256: sha256(res.text) });
     return parseJson(res.text, what);
   };
 
-  const search = await get(apiUrl({ action: "wbsearchentities", type: "item", language: "en", limit: "7", search: company.name.trim().slice(0, 100) }), "search", false);
+  const search = await get(apiUrl({ action: "wbsearchentities", type: "item", language: "en", limit: "7", search: company.name.trim().slice(0, 100) }), "search");
   if (!Array.isArray(search.search)) throw new Error("Wikidata search response is malformed");
   const candidateIds = (search.search as Array<{ id?: unknown }>).map((r) => r.id).filter((id): id is string => typeof id === "string" && /^Q\d+$/.test(id));
   if (!candidateIds.length) return none("no_match");
-  const candidates = await get(apiUrl({ action: "wbgetentities", props: "claims", ids: candidateIds.join("|") }), "candidates", false);
+  const candidates = await get(apiUrl({ action: "wbgetentities", props: "claims", ids: candidateIds.join("|") }), "candidates");
   const entities = candidates.entities as Record<string, Entity> | undefined;
   if (!entities || typeof entities !== "object") throw new Error("Wikidata candidates response is malformed");
   const matches = candidateIds.filter((id) => best(entities[id] || {}, "P856").some((s) => isHomepageOf(stringValue(s), domain)));
   if (matches.length !== 1) return none(matches.length ? "ambiguous" : "no_match");
 
   const qid = matches[0];
-  const full = await get(apiUrl({ action: "wbgetentities", props: "claims|descriptions", languages: "en", ids: qid }), "entity", true);
+  const full = await get(apiUrl({ action: "wbgetentities", props: "claims|descriptions", languages: "en", ids: qid }), "entity");
   const entity = (full.entities as Record<string, Entity> | undefined)?.[qid];
   if (!entity?.claims) throw new Error("Wikidata entity response is malformed");
   const retrievedAt = now();
   const refs = referencedIds(entity);
   const labels: Record<string, string> = {};
   if (refs.length) {
-    const named = await get(apiUrl({ action: "wbgetentities", props: "labels", languages: "en", ids: refs.join("|") }), "labels", true);
+    const named = await get(apiUrl({ action: "wbgetentities", props: "labels", languages: "en", ids: refs.join("|") }), "labels");
     for (const [id, e] of Object.entries((named.entities as Record<string, Entity>) || {})) {
       const label = e?.labels?.en?.value;
       if (typeof label === "string" && label.trim()) labels[id] = label.trim();
@@ -195,7 +245,7 @@ export async function fetchWikidataProfile(input: {
   }
   const humans = new Set<string>();
   for (const founder of best(entity, "P112").map(itemId).filter((id): id is string => !!id && !!labels[id]).slice(0, MAX_LEADERS)) {
-    const claims = await get(apiUrl({ action: "wbgetclaims", entity: founder, property: "P31" }), "founder", true);
+    const claims = await get(apiUrl({ action: "wbgetclaims", entity: founder, property: "P31" }), "founder");
     const p31 = ((claims.claims as Record<string, Statement[]> | undefined)?.P31 || []).map(itemId);
     if (p31.includes("Q5")) humans.add(founder); // instance of human; an organization is never labelled Founder
   }

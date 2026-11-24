@@ -2,8 +2,8 @@
 
 Read this alongside the JSON plan; the JSON and its digest are what the write checks. **A digest proves which plan this is, not that the owner approved it.**
 
-- Plan digest: `1499d20632122da52a76898f00ae265cda9563e4c456be6624dcab721c46cac0`
-- Target project: `szakevhxhwpeskidvtfs` · schema `20261122a_company_profile_data` · reviewed code SHA `0123456789abcdef0123456789abcdef01234567`
+- Plan digest: `6c06184082db9e661ac205b62cbc10d77f5b50723d2ef3898b0c114423f39a9c`
+- Target project: `szakevhxhwpeskidvtfs` · schema `20261124a_company_profile_wikidata` · reviewed code SHA `0123456789abcdef0123456789abcdef01234567`
 - Created 2026-11-22T10:00:00Z · expires 2026-11-23T10:00:00Z (after that, generate and review a new plan)
 - Companies (3 of max 3): `11111111-1111-4111-8111-111111111111`, `22222222-2222-4222-8222-222222222222`, `33333333-3333-4333-8333-333333333333`
 - Actions: 9 (6 inserts, 3 updates) across 1 companies. By table: company_profile_facts 6, company_profile_leadership 1, company_profile_news 1, company_profile_refresh_state 1

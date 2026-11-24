@@ -15,7 +15,6 @@ import {
 } from "../src/lib/company-profile/canary";
 import { renderCanaryPlanSummary } from "../src/lib/company-profile/review";
 import { safeFetchCompanyPage, safeFetchWikidataJson } from "../src/lib/company-profile/safeFetch";
-import { WIKIDATA_API } from "../src/lib/company-profile/wikidata";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -31,6 +30,11 @@ function supabaseCanaryStore(supabase: SupabaseClient): CanaryStore {
         if (error) missing.push(`${table}(${columns.join(",")})`);
       }
       return missing;
+    },
+    async factAllowlists() {
+      const { data, error } = await supabase.rpc("company_profile_fact_allowlists");
+      if (error) throw new Error(`Allowlist preflight failed: ${error.message}`);
+      return (data || []) as Array<{ column_name: string; definition: string }>;
     },
     async companies(ids) {
       const { data, error } = await supabase.from("companies").select("id,name,canonical_domain").in("id", ids);
@@ -100,9 +104,9 @@ async function runProductionCanary(argv: string[]) {
     }
     const codeSha = resolveCodeSha(gitState(), options.codeSha);
     const store = supabaseCanaryStore(createClient(url, key, { auth: { persistSession: false } }));
-    // Wikidata Action API URLs (Step D, owner-approved) use the JSON fetcher; everything else is an official page.
+    // Wikidata (Step D, owner-approved) has its own JSON fetcher; canary.ts wraps it in the shared pacer/cooldown client.
     const fetchWikidata = (apiUrl: string) => safeFetchWikidataJson(apiUrl);
-    const fetchPage = (pageUrl: string) => (pageUrl.startsWith(`${WIKIDATA_API}?`) ? fetchWikidata(pageUrl) : safeFetchCompanyPage(pageUrl));
+    const fetchPage = (pageUrl: string) => safeFetchCompanyPage(pageUrl);
     const binding = { targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, confirmDigest: options.confirmDigest || "", codeSha };
     if (options.mode === "plan") {
       const planPath = path.resolve(options.planPath);
@@ -120,7 +124,7 @@ async function runProductionCanary(argv: string[]) {
     const journal = fileJournal(path.resolve(options.journalPath!));
     const report = options.mode === "rollback"
       ? await runCanaryRollback({ plan, binding, store, journal, secrets })
-      : await runCanaryWrite({ plan, binding, store, fetchPage, sleep: delay, journal, resume: options.mode === "resume", secrets });
+      : await runCanaryWrite({ plan, binding, store, fetchPage, sleep: delay, journal, resume: options.mode === "resume", secrets, fetchWikidata });
     console.log(JSON.stringify({ ...report, journal: path.resolve(options.journalPath!) }, null, 2));
   } catch (error) {
     console.error(redactCanaryText(error instanceof Error ? error.message : String(error), secrets));

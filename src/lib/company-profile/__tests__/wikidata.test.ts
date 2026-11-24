@@ -1,4 +1,4 @@
-// Step D: Wikidata source, canary integration, idempotency, null handling and industry tags. Offline only:
+// Step D: Wikidata source, pacing/cooldown/cache, allowlist preflight, canary integration, idempotency and null handling. Offline only:
 // every Wikidata response and official page is a fixture; the database is a disposable PGlite with the real migrations.
 import fs from "node:fs";
 import path from "node:path";
@@ -6,8 +6,8 @@ import { PGlite, types } from "@electric-sql/pglite";
 import { describe, expect, it } from "vitest";
 import * as canary from "../canary";
 import type { CanaryJournal, CanaryRow, CanaryStore, CanaryTable, FetchedPage, JournalIO } from "../canary";
-import { companySourceLabel, deriveIndustryTags } from "../industryTags";
-import { bareHost, employeeBand, extractWikidataProfile, fetchWikidataProfile, WIKIDATA_API } from "../wikidata";
+import { companySourceLabel } from "../industryTags";
+import { bareHost, employeeBand, extractWikidataProfile, fetchWikidataProfile, parseRetryAfter, WIKIDATA_API, wikidataClient, WikidataHttpError } from "../wikidata";
 
 const MIGRATIONS = ["20261122a_company_profile_data.sql", "20261124a_company_profile_wikidata.sql"]
   .map((f) => fs.readFileSync(path.join(process.cwd(), "supabase/migrations", f), "utf8"));
@@ -47,7 +47,7 @@ function wikidata(overrides: { search?: unknown; candidates?: Record<string, unk
   const calls: string[] = [];
   const fetchJson = async (url: string) => {
     calls.push(url);
-    if (overrides.status) throw new Error(`Wikidata returned HTTP ${overrides.status}`);
+    if (overrides.status) throw new WikidataHttpError(overrides.status, null);
     const params = new URL(url).searchParams;
     const body = (() => {
       if (overrides.malformed && params.get("action") === overrides.malformed) return "{not json";
@@ -85,6 +85,7 @@ function pgStore(pg: PGlite): CanaryStore {
   };
   return {
     async missingSchema() { return []; },
+    async factAllowlists() { return (await pg.query<any>("SELECT * FROM public.company_profile_fact_allowlists()")).rows; },
     async companies(ids) { return (await pg.query<any>("SELECT id::text id, name, canonical_domain FROM public.companies WHERE id = ANY($1::uuid[])", [ids])).rows; },
     async boards(companyId) { return (await pg.query<any>("SELECT id::text id, ats_type, slug, careers_url FROM public.company_boards WHERE company_id = $1 AND enabled", [companyId])).rows; },
     async rows(table, ids) {
@@ -108,10 +109,11 @@ function pgStore(pg: PGlite): CanaryStore {
 }
 
 // Official site: reachable, but the homepage does not link the ATS board (what OpenAI/Stripe/Datadog returned).
-function officialPages(home = "<html><body><a href='/careers'>Careers</a></body></html>") {
+function officialPages(home = "<html><body><a href='/careers'>Careers</a></body></html>", about?: string) {
   const pages: Record<string, FetchedPage> = {
     "https://acme-robotics.example/robots.txt": { url: "https://acme-robotics.example/robots.txt", text: "User-agent: *\nAllow: /\n", status: 200, contentType: "text/plain" },
     "https://acme-robotics.example/": { url: "https://acme-robotics.example/", text: home, status: 200, contentType: "text/html" },
+    ...(about ? { "https://acme-robotics.example/about": { url: "https://acme-robotics.example/about", text: about, status: 200, contentType: "text/html" } } : {}),
   };
   return async (url: string): Promise<FetchedPage> => {
     if (url.startsWith(`${WIKIDATA_API}?`)) return wd.fetchJson(url);
@@ -120,6 +122,12 @@ function officialPages(home = "<html><body><a href='/careers'>Careers</a></body>
     return { ...hit };
   };
 }
+const OFFICIAL_HOME = `<html><head><meta name="description" content="Official overview"></head><body><a href="https://boards.greenhouse.io/acmerobotics">Careers</a><a href="/about">About</a><script type="application/ld+json">${JSON.stringify({
+  "@context": "https://schema.org", "@graph": [
+    { "@type": "Organization", "@id": "https://acme-robotics.example/#org", name: "Acme Robotics", url: "https://acme-robotics.example", description: "Official overview" },
+  ] })}</script></body></html>`;
+const OFFICIAL_ABOUT = OFFICIAL_HOME.replace('<a href="/about">About</a>', "").replace(`"@graph":[`, `"@graph":[${JSON.stringify({ "@type": "Person", name: "Jane Official", jobTitle: "CEO", roleAsOf: "2026-01-01", worksFor: { "@id": "https://acme-robotics.example/#org", name: "Acme Robotics" } })},`);
+const ROLLBACK_20261124A = MIGRATIONS[1].split("-- ROLLBACK")[1].split("\n").filter((l) => l.startsWith("-- ALTER TABLE")).map((l) => l.slice(3)).join("\n");
 let wd = wikidata();
 const ids = () => { let n = 0; return () => `aaaaaaaa-0000-4000-8000-${String(++n).padStart(12, "0")}`; };
 const plan = (pg: PGlite, extra: Partial<Parameters<typeof canary.buildCanaryPlan>[0]> = {}) => canary.buildCanaryPlan({
@@ -166,7 +174,7 @@ describe("Wikidata extraction (only what statements state)", () => {
 describe("Wikidata fetch: identity, 429, malformed", () => {
   const company = { name: "Acme Robotics", canonical_domain: "acme-robotics.example" };
   const run = (w: ReturnType<typeof wikidata>, sources: string[] = []) => fetchWikidataProfile({
-    company, fetchJson: w.fetchJson, sleep, now: () => NOW.toISOString(), sha256: (t) => `h${t.length}`, record: (s) => sources.push(s.requested_url),
+    company, fetchJson: w.fetchJson, now: () => NOW.toISOString(), sha256: (t) => `h${t.length}`, record: (s) => sources.push(s.requested_url),
   });
 
   it("matches exactly one entity whose official website is the stored domain", async () => {
@@ -176,8 +184,7 @@ describe("Wikidata fetch: identity, 429, malformed", () => {
     expect(out.outcome).toBe("matched");
     expect(out.entityId).toBe("Q100");
     expect(w.calls.length).toBeLessThanOrEqual(6);
-    expect(sources.every((u) => !u.includes("wbsearchentities"))).toBe(true); // identity search is not a provenance source
-    expect(sources.length).toBe(w.calls.length - 2);
+    expect(sources).toEqual(w.calls); // identity lookups are recorded too, so the write revalidates the match
   });
 
   it("a product entity on a subpath of the company's domain is not the company (live OpenAI/Anthropic shape)", async () => {
@@ -195,12 +202,62 @@ describe("Wikidata fetch: identity, 429, malformed", () => {
     expect(ambiguous).toEqual({ outcome: "ambiguous", entityId: null, facts: {}, leadership: [] });
   });
 
-  it("a 429 throws once (no retry) and malformed JSON throws", async () => {
-    const limited = wikidata({ status: 429 });
-    await expect(run(limited)).rejects.toThrow(/HTTP 429/);
-    expect(limited.calls.length).toBe(1);
+  it("malformed JSON throws", async () => {
     await expect(run(wikidata({ malformed: "wbgetentities" }))).rejects.toThrow(/malformed/);
     await expect(run(wikidata({ search: { nope: true } }))).rejects.toThrow(/malformed/);
+  });
+});
+
+describe("Wikidata client: global 1 req/s pacer, 429 cooldown (Retry-After), cache", () => {
+  const clock = () => {
+    let t = 0;
+    const waits: number[] = [];
+    return { waits, nowMs: () => t, sleep: async (ms: number) => { waits.push(ms); t += ms; } };
+  };
+  const company = (name: string) => ({ name, canonical_domain: "acme-robotics.example" });
+
+  it("paces every request 1s apart across companies (never reset per company) and caches repeated URLs", async () => {
+    const w = wikidata();
+    const c = clock();
+    const client = wikidataClient(w.fetchJson, { ...c, cache: true });
+    await fetchWikidataProfile({ company: company("Acme Robotics"), fetchJson: client, now: () => NOW.toISOString(), sha256: (t) => t });
+    const firstCompanyCalls = w.calls.length;
+    await fetchWikidataProfile({ company: company("Acme Robotics Inc"), fetchJson: client, now: () => NOW.toISOString(), sha256: (t) => t });
+    expect(c.waits).toEqual(Array(w.calls.length - 1).fill(1_000)); // the second company's first request waits too
+    expect(w.calls.length).toBe(firstCompanyCalls + 1); // only its new search URL was fetched; the rest came from the cache
+    const uncached = wikidataClient(w.fetchJson, { ...clock(), cache: false });
+    await uncached(w.calls[0]);
+    expect(w.calls.length).toBe(firstCompanyCalls + 2); // write-time revalidation never reads the cache
+  });
+
+  it("a 429 honours Retry-After as a global cooldown, retries at most twice, and refuses an over-cap wait", async () => {
+    const c = clock();
+    let n = 0;
+    const flaky = async (url: string) => {
+      n++;
+      if (n === 1) throw new WikidataHttpError(429, 7_000);
+      return { url, text: "{}", status: 200, contentType: "application/json" };
+    };
+    const client = wikidataClient(flaky, { ...c, cache: false });
+    await client(`${WIKIDATA_API}?a=1`);
+    await client(`${WIKIDATA_API}?a=2`);
+    expect(c.waits).toEqual([7_000, 1_000]);
+
+    const always = wikidata({ status: 429 });
+    const c2 = clock();
+    await expect(wikidataClient(always.fetchJson, { ...c2, cache: false })(`${WIKIDATA_API}?a=3`)).rejects.toThrow(/HTTP 429/);
+    expect(always.calls.length).toBe(3); // 1 + 2 retries
+    expect(c2.waits).toEqual([5_000, 10_000]); // no Retry-After: 5s doubling
+
+    const tooLong = async () => { throw new WikidataHttpError(429, 600_000); };
+    await expect(wikidataClient(tooLong, { ...clock(), cache: false })(`${WIKIDATA_API}?a=4`)).rejects.toThrow(/over the 120s cap/);
+    const forbidden = wikidata({ status: 403 });
+    await expect(wikidataClient(forbidden.fetchJson, { ...clock(), cache: false })(`${WIKIDATA_API}?a=5`)).rejects.toThrow(/HTTP 403/);
+    expect(forbidden.calls.length).toBe(1); // 403 is never retried
+
+    expect(parseRetryAfter("12", 0)).toBe(12_000);
+    expect(parseRetryAfter(new Date(30_000).toUTCString(), 0)).toBe(30_000);
+    expect(parseRetryAfter("soon", 0)).toBeNull();
   });
 });
 
@@ -218,7 +275,7 @@ describe("Step D canary: Wikidata through the reviewed plan, write and rollback 
       expect(p.actions.at(-1)!.table).toBe("company_profile_refresh_state"); // success recorded last
 
       const j = journal();
-      const report = await canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: j, resume: false, now: later });
+      const report = await canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: j, resume: false, now: later, fetchWikidata: wd.fetchJson });
       expect(report.applied).toBe(11);
       const facts = (await pg.query<any>("SELECT fact_key, source_kind, source_url FROM public.company_profile_facts ORDER BY fact_key")).rows;
       expect(facts).toHaveLength(8);
@@ -247,6 +304,34 @@ describe("Step D canary: Wikidata through the reviewed plan, write and rollback 
     } finally { await pg.close(); }
   }, 60_000);
 
+  it("a stored Wikidata value is replaced by a later official value (no conflict), and leaders are never concatenated", async () => {
+    wd = wikidata();
+    const pg = await db();
+    try {
+      const first = await plan(pg);
+      await canary.runCanaryWrite({ plan: first, binding: bind(first), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: journal(), resume: false, now: later, fetchWikidata: wd.fetchJson });
+      expect((await pg.query<any>("SELECT source_kind FROM public.company_profile_facts WHERE fact_key = 'overview'")).rows[0].source_kind).toBe("wikidata");
+      await pg.query("UPDATE public.company_profile_refresh_state SET next_refresh_at = '2026-11-01T00:00:00Z'");
+
+      const p = await plan(pg, { fetchPage: officialPages(OFFICIAL_HOME, OFFICIAL_ABOUT), now: () => new Date(NOW.getTime() + 120_000) });
+      expect(p.companies[0].outcome).toBe("verified");
+      const overview = p.companies[0].proposed.facts.find((f) => f.fact_key === "overview")!;
+      expect(overview).toMatchObject({ fact_value: "Official overview", source_kind: "official_site", fact_status: "fresh", conflict_value: null, conflict_source_kind: null });
+      expect(p.companies[0].proposed.facts.every((f) => f.fact_status === "fresh" && f.conflict_value === null)).toBe(true);
+      expect(p.companies[0].proposed.facts.find((f) => f.fact_key === "founded_year")?.source_kind).toBe("wikidata"); // gaps stay filled
+      const newLeaders = p.actions.filter((a) => a.table === "company_profile_leadership" && a.op === "insert").map((a) => a.after.source_url);
+      expect(newLeaders.length).toBeGreaterThan(0);
+      expect(newLeaders.every((u) => !u!.includes("wikidata.org"))).toBe(true); // official leaders only
+
+      // Read side: once an official leader is stored, Wikidata leaders are not shown next to it.
+      const profile = (await import("../types")).sanitizeCompanyProfile({ companyId: CO, facts: {}, news: [], jobs: { status: "unknown", jobs: [] }, freshness: "fresh", leadership: [
+        { id: "1", name: "Jane Doe", role: "Chief Executive Officer", sourceUrl: "https://www.wikidata.org/wiki/Q100", retrievedAt: NOW.toISOString() },
+        { id: "2", name: "Jane Official", role: "CEO", sourceUrl: "https://acme-robotics.example/", retrievedAt: NOW.toISOString() },
+      ] }, CO);
+      expect(profile?.leadership.map((l) => l.name)).toEqual(["Jane Official"]);
+    } finally { await pg.close(); }
+  }, 60_000);
+
   it("Wikidata failures, no match and ambiguity plan zero actions; without a Wikidata fetcher the plan is unchanged", async () => {
     for (const [w, outcome] of [[wikidata({ status: 429 }), "fetch_failed"], [wikidata({ search: { search: [] } }), "no_match"],
       [wikidata({ candidates: { Q100: { id: "Q100", claims: { P856: ENTITY.claims.P856 } }, Q200: { id: "Q200", claims: { P856: ENTITY.claims.P856 } } } }), "ambiguous"]] as const) {
@@ -267,15 +352,27 @@ describe("Step D canary: Wikidata through the reviewed plan, write and rollback 
     } finally { await pg.close(); }
   }, 60_000);
 
-  it("without the 20261124a migration the first Wikidata row is refused by the database and journaled, nothing applied", async () => {
+  it("without the 20261124a allowlists the read-only preflight refuses the plan, and a reviewed mixed plan writes nothing", async () => {
     wd = wikidata();
-    const pg = await db({ stepD: false });
+    const bare = await db({ stepD: false });
     try {
-      const p = await plan(pg);
+      await expect(plan(bare)).rejects.toThrow(/20261124a_company_profile_wikidata is not applied/);
+    } finally { await bare.close(); }
+
+    const pg = await db();
+    try {
+      const p = await plan(pg, { fetchPage: officialPages(OFFICIAL_HOME, OFFICIAL_ABOUT) });
+      const kinds = new Set(p.actions.filter((a) => a.table === "company_profile_facts").map((a) => a.after.source_kind));
+      expect(kinds).toEqual(new Set(["official_site", "wikidata"])); // mixed: official rows would otherwise land first
+      await pg.exec(ROLLBACK_20261124A); // allowlists narrowed back; the preflight function stays and reports them
+      expect(canary.missingFactAllowlists((await pgStore(pg).factAllowlists()))).toEqual([
+        "company_profile_facts.fact_key allowlist 'funding_stage'", "company_profile_facts.source_kind allowlist 'wikidata'", "company_profile_facts.conflict_source_kind allowlist 'wikidata'",
+      ]);
       const j = journal();
-      await expect(canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: j, resume: false, now: later })).rejects.toThrow();
-      expect(j.value!.steps.filter((s) => s.status === "applied")).toHaveLength(0);
-      expect((await pg.query("SELECT 1 FROM public.company_profile_facts")).rows).toHaveLength(0);
+      await expect(canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(OFFICIAL_HOME, OFFICIAL_ABOUT), sleep, journal: j, resume: false, now: later, fetchWikidata: wd.fetchJson })).rejects.toThrow(/is not applied: missing/);
+      expect(j.value).toBeNull(); // refused before the journal or any row
+      for (const t of TABLES) expect((await pgStore(pg).rows(t, [CO])).length).toBe(0);
+      expect(p.schema_version).toBe("20261124a_company_profile_wikidata");
     } finally { await pg.close(); }
   }, 60_000);
 
@@ -287,8 +384,13 @@ describe("Step D canary: Wikidata through the reviewed plan, write and rollback 
       const edited = { ...ENTITY, descriptions: { en: { value: "Edited after the plan" } } };
       const drifted = async (url: string) => (url.includes("props=claims%7Cdescriptions")
         ? { url, text: JSON.stringify({ entities: { Q100: edited } }), status: 200, contentType: "application/json" }
-        : officialPages()(url));
-      await expect(canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: drifted, sleep, journal: journal(), resume: false, now: later })).rejects.toThrow(/Source drift/);
+        : wd.fetchJson(url));
+      await expect(canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: journal(), resume: false, now: later, fetchWikidata: drifted })).rejects.toThrow(/Source drift/);
+      const searchDrift = async (url: string) => (url.includes("wbsearchentities")
+        ? { url, text: JSON.stringify({ search: [{ id: "Q100" }, { id: "Q999" }] }), status: 200, contentType: "application/json" }
+        : wd.fetchJson(url));
+      await expect(canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: journal(), resume: false, now: later, fetchWikidata: searchDrift })).rejects.toThrow(/Source drift/);
+      await expect(canary.runCanaryWrite({ plan: p, binding: bind(p), store: pgStore(pg), fetchPage: officialPages(), sleep, journal: journal(), resume: false, now: later })).rejects.toThrow(/needs a Wikidata fetcher/);
       expect((await pg.query("SELECT 1 FROM public.company_profile_facts")).rows).toHaveLength(0);
     } finally { await pg.close(); }
   }, 60_000);
@@ -311,15 +413,7 @@ describe("20261124a migration", () => {
   }, 60_000);
 });
 
-describe("industry tags and source labels (deterministic)", () => {
-  it("tags from the description, or from at least 3 job titles, at most 3 tags", () => {
-    expect(deriveIndustryTags("American robotics and machine learning company")).toEqual(["AI & machine learning"]);
-    expect(deriveIndustryTags(null, ["Security Engineer"])).toEqual([]);
-    expect(deriveIndustryTags(null, ["Database Engineer", "Database Administrator", "Senior Database Developer"])).toEqual(["Developer tools"]);
-    expect(deriveIndustryTags("A payments, cloud computing, cybersecurity and machine learning company").length).toBe(3);
-    expect(deriveIndustryTags("")).toEqual([]);
-  });
-
+describe("source labels", () => {
   it("labels Wikidata provenance honestly", () => {
     expect(companySourceLabel("https://www.wikidata.org/wiki/Q1")).toBe("Wikidata");
     expect(companySourceLabel("https://acme.example/about", "wikidata")).toBe("Wikidata");

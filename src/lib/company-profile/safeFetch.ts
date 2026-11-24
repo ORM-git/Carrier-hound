@@ -1,4 +1,5 @@
 import { fetchWithTimeout, type FetchWithTimeoutOptions } from "@/lib/companies/logoResolver";
+import { parseRetryAfter, WikidataHttpError } from "./wikidata";
 
 export const COMPANY_PAGE_MAX_BYTES = 2 * 1024 * 1024;
 export interface SafeFetchCompanyOptions { allowNotFound?: boolean }
@@ -28,7 +29,7 @@ export async function safeFetchWikidataJson(rawUrl: string, transportOptions: Fe
     ...transportOptions, timeoutMs: transportOptions.timeoutMs ?? 10_000, maxRedirects: 0,
     customFetch: (target, init) => (transportOptions.customFetch || fetch)(target, { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), "User-Agent": WIKIDATA_USER_AGENT } }),
   });
-  if (!response.ok) throw new Error(`Wikidata returned HTTP ${response.status}`);
+  if (!response.ok) throw new WikidataHttpError(response.status, parseRetryAfter(response.headers.get("retry-after"), Date.now()));
   const contentType = response.headers.get("content-type") || "";
   if (!/^application\/json(;|$)/i.test(contentType)) throw new Error("Wikidata response is not JSON");
   const bytes = new Uint8Array(await response.arrayBuffer());

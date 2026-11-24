@@ -34,6 +34,22 @@ ALTER TABLE public.company_profile_facts
   ADD CONSTRAINT company_profile_facts_conflict_source_kind_check CHECK (conflict_source_kind IS NULL OR conflict_source_kind IN (
     'official_site','official_report','official_announcement','wikidata'));
 
+-- Read-only preflight the canary runs before any plan or row write: it refuses unless every CHECK listed here
+-- allows 'funding_stage' / 'wikidata'. Catalog reads only; service_role only.
+CREATE OR REPLACE FUNCTION public.company_profile_fact_allowlists()
+RETURNS TABLE(column_name text, definition text)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog AS $$
+  SELECT a.attname::text, pg_get_constraintdef(c.oid)
+    FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+   WHERE c.conrelid = 'public.company_profile_facts'::regclass
+     AND c.contype = 'c'
+     AND array_length(c.conkey, 1) = 1
+     AND a.attname IN ('fact_key', 'source_kind', 'conflict_source_kind')
+$$;
+REVOKE ALL ON FUNCTION public.company_profile_fact_allowlists() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.company_profile_fact_allowlists() TO service_role;
+
 COMMIT;
 
 -- Verify afterwards (read-only):
@@ -43,6 +59,7 @@ COMMIT;
 -- ROLLBACK (run manually, only after the Wikidata rows are gone, e.g. via the canary's journaled --rollback;
 -- the original allowlists refuse any remaining 'wikidata' or 'funding_stage' row):
 -- BEGIN;
+-- DROP FUNCTION public.company_profile_fact_allowlists();
 -- ALTER TABLE public.company_profile_facts DROP CONSTRAINT company_profile_facts_fact_key_check;
 -- ALTER TABLE public.company_profile_facts DROP CONSTRAINT company_profile_facts_source_kind_check;
 -- ALTER TABLE public.company_profile_facts DROP CONSTRAINT company_profile_facts_conflict_source_kind_check;

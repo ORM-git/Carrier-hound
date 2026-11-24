@@ -101,11 +101,14 @@ export function sanitizeCompanyProfile(value: unknown, companyId?: string): Comp
       } : null,
     };
   }
-  const leadership = Array.isArray(raw.leadership) ? raw.leadership.slice(0, 12).flatMap((row) => {
+  let leadership = Array.isArray(raw.leadership) ? raw.leadership.slice(0, 12).flatMap((row) => {
     const sourceUrl = safeCompanySourceUrl(row?.sourceUrl);
     if (!row || !sourceUrl || !row.name || !row.role || !Number.isFinite(Date.parse(row.retrievedAt))) return [];
     return [{ id: String(row.id), name: stripHtmlAndExecutableMarkup(row.name).slice(0, 100), role: stripHtmlAndExecutableMarkup(row.role).slice(0, 120), roleAsOf: row.roleAsOf && Number.isFinite(Date.parse(row.roleAsOf)) ? row.roleAsOf : null, sourceUrl, retrievedAt: row.retrievedAt }];
   }) : [];
+  // Official leaders win: Wikidata leaders are shown only when no official leader is stored.
+  const officialLeaders = leadership.filter((l) => new URL(l.sourceUrl).hostname !== "www.wikidata.org");
+  if (officialLeaders.length) leadership = officialLeaders;
   const news = Array.isArray(raw.news) ? raw.news.slice(0, 8).flatMap((row) => {
     const sourceUrl = safeCompanySourceUrl(row?.sourceUrl);
     if (!row || !sourceUrl || !row.headline || !Number.isFinite(Date.parse(row.publishedAt))) return [];

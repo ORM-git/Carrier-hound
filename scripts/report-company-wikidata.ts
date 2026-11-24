@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { safeFetchWikidataJson } from "../src/lib/company-profile/safeFetch";
-import { fetchWikidataProfile } from "../src/lib/company-profile/wikidata";
+import { fetchWikidataProfile, wikidataClient } from "../src/lib/company-profile/wikidata";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -42,14 +42,14 @@ async function main() {
   const missing = ids.filter((id) => !known.has(id));
   if (missing.length) throw new Error(`Company IDs not in the inventory: ${missing.join(", ")}`);
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const fetchJson = wikidataClient((url) => safeFetchWikidataJson(url), { sleep, nowMs: Date.now, cache: true });
   const companies = [];
-  for (const [index, id] of ids.entries()) {
-    if (index) await sleep(1_000);
+  for (const id of ids) {
     const company = known.get(id)!;
     const sources: Array<Record<string, unknown>> = [];
     try {
       const profile = await fetchWikidataProfile({
-        company, fetchJson: (url) => safeFetchWikidataJson(url), sleep, now: () => new Date().toISOString(),
+        company, fetchJson, now: () => new Date().toISOString(),
         sha256: (t) => createHash("sha256").update(t).digest("hex"), record: (s) => sources.push(s),
       });
       companies.push({ company_id: id, name: company.name, canonical_domain: company.canonical_domain, active_jobs: company.active_jobs, ...profile, sources });

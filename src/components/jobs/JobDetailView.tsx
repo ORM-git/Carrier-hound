@@ -6,7 +6,7 @@ import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, displayMatchScore, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
-import { companySourceLabel, deriveIndustryTags } from "@/lib/company-profile/industryTags";
+import { companySourceLabel } from "@/lib/company-profile/industryTags";
 import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
@@ -315,7 +315,6 @@ export default function JobDetailView({
     employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X", funding_stage: "Funding",
   };
   const companyFact = (key: CompanyFactKey) => companyFacts[key];
-  const industryTags = deriveIndustryTags(companyFacts.overview?.value, (companyProfile?.jobs.jobs || []).map((j) => j.title));
   const hasCompanyDetails = Object.keys(companyFacts).length > 0 || Boolean(companyProfile?.leadership.length || companyProfile?.news.length);
 
   return (
@@ -1139,16 +1138,9 @@ export default function JobDetailView({
               </div>
             )}
 
-            {industryTags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                {industryTags.map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#334155] font-semibold">{tag}</span>)}
-                <span className="text-[10px] text-[#64748B]">From the company description and job titles</span>
-              </div>
-            )}
-
-            {(companyFact("founded_year") || companyFact("headquarters") || companyFact("employee_count_range") || companyFact("website") || companyFact("funding_stage")) && (
+            {(companyFact("founded_year") || companyFact("headquarters") || companyFact("employee_count_range") || companyFact("website")) && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#E2E8F0] text-xs">
-                {(["founded_year", "headquarters", "employee_count_range", "funding_stage", "website"] as const).map((key) => {
+                {(["founded_year", "headquarters", "employee_count_range", "website"] as const).map((key) => {
                   const fact = companyFact(key);
                   if (!fact) return null;
                   const value = key === "website" ? sanitizedWebsite : fact.value;

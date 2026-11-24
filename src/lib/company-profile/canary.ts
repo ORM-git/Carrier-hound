@@ -11,10 +11,12 @@ import {
   extractOfficialCompanySubpage, isAtsEvidenceLinked, reconcileCompanyFacts, robotsAllows,
   type CompanyAtsEvidence, type OfficialPageExtraction,
 } from "./enrichment";
-import { fetchWikidataProfile, type WikidataFetcher, type WikidataProfile } from "./wikidata";
+import { fetchWikidataProfile, WIKIDATA_HOST, wikidataClient, type WikidataFetcher, type WikidataProfile } from "./wikidata";
 
 export const COMPANY_PROFILE_PRODUCTION_PROJECT_REF = "szakevhxhwpeskidvtfs";
-export const COMPANY_PROFILE_SCHEMA_VERSION = "20261122a_company_profile_data";
+export const COMPANY_PROFILE_SCHEMA_VERSION = "20261124a_company_profile_wikidata";
+/** Values 20261124a adds to company_profile_facts' CHECK allowlists; every CHECK on the column must allow them. */
+export const REQUIRED_FACT_ALLOWLISTS = { fact_key: ["funding_stage"], source_kind: ["wikidata"], conflict_source_kind: ["wikidata"] } as const;
 export const CANARY_MAX_COMPANIES = 3;
 const DEFAULT_TTL_HOURS = 24;
 const MAX_TTL_HOURS = 72;
@@ -216,6 +218,8 @@ export interface CanaryBoard extends CompanyAtsEvidence { id: string }
 export interface CanaryStore {
   /** Names of required tables/columns that are absent; empty when the schema matches COMPANY_PROFILE_SCHEMA_VERSION. */
   missingSchema(): Promise<string[]>;
+  /** Read-only: each single-column CHECK on company_profile_facts.{fact_key,source_kind,conflict_source_kind} as pg_get_constraintdef text. */
+  factAllowlists(): Promise<Array<{ column_name: string; definition: string }>>;
   companies(ids: string[]): Promise<CanaryCompany[]>;
   /** Enabled ATS boards for one company (at most 10, as the batch path). */
   boards(companyId: string): Promise<CanaryBoard[]>;
@@ -230,7 +234,7 @@ export interface CanaryStore {
 
 export function readOnlyCanaryStore(store: CanaryStore): CanaryStore {
   const refuse = async () => { throw new Error("Dry-run store is read-only"); };
-  return { missingSchema: () => store.missingSchema(), companies: (ids) => store.companies(ids), boards: (id) => store.boards(id), rows: (t, ids) => store.rows(t, ids), insert: refuse, updateWhere: refuse, deleteWhere: refuse };
+  return { missingSchema: () => store.missingSchema(), factAllowlists: () => store.factAllowlists(), companies: (ids) => store.companies(ids), boards: (id) => store.boards(id), rows: (t, ids) => store.rows(t, ids), insert: refuse, updateWhere: refuse, deleteWhere: refuse };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -357,8 +361,20 @@ async function snapshot(store: CanaryStore, companyIds: string[]): Promise<Recor
   return out;
 }
 
+export function missingFactAllowlists(defs: Array<{ column_name: string; definition: string }>): string[] {
+  return Object.entries(REQUIRED_FACT_ALLOWLISTS).flatMap(([column, values]) => {
+    const checks = defs.filter((d) => d.column_name === column);
+    return values.filter((v) => !checks.length || checks.some((d) => !d.definition.includes(`'${v}'`))).map((v) => `company_profile_facts.${column} allowlist '${v}'`);
+  });
+}
+
+/** Read-only preflight run before any plan and before any row write; a missing allowlist refuses the whole plan. */
 async function requireSchemaAndCompanies(store: CanaryStore, companyIds: string[]): Promise<CanaryCompany[]> {
   const missing = await store.missingSchema();
+  let defs: Array<{ column_name: string; definition: string }>;
+  try { defs = await store.factAllowlists(); }
+  catch { throw new Error(`Schema ${COMPANY_PROFILE_SCHEMA_VERSION} is not applied: the company_profile_fact_allowlists() preflight is unavailable`); }
+  missing.push(...missingFactAllowlists(defs));
   if (missing.length) throw new Error(`Schema ${COMPANY_PROFILE_SCHEMA_VERSION} is not applied: missing ${missing.join(", ")}`);
   const companies = await store.companies(companyIds);
   const found = new Map(companies.map((c) => [c.id.toLowerCase(), c]));
@@ -383,6 +399,8 @@ export async function buildCanaryPlan(input: {
 }): Promise<CanaryPlan> {
   const { store, fetchPage, sleep, now, newId } = input;
   if (input.targetProject !== COMPANY_PROFILE_PRODUCTION_PROJECT_REF) throw new Error("Plan target must be the production project");
+  // One client for the whole plan: the 1 req/s pacer, 429 cooldown and response cache span every company.
+  const fetchWikidata = input.fetchWikidata && wikidataClient(input.fetchWikidata, { sleep, nowMs: () => now().getTime(), cache: true });
   if (!input.companyIds.length || input.companyIds.length > input.maxCompanies || input.maxCompanies > CANARY_MAX_COMPANIES) throw new Error("Company allowlist is empty or over the cap");
   const createdAt = canonicalTimestamp(now())!;
   const companies = await requireSchemaAndCompanies(store, input.companyIds);
@@ -422,14 +440,14 @@ export async function buildCanaryPlan(input: {
     } catch (error) {
       plan.outcome = "fetch_failed";
       plan.error = redactCanaryText(error instanceof Error ? error.message : String(error), input.secrets);
-      if (!input.fetchWikidata) continue;
+      if (!fetchWikidata) continue;
     }
     // Wikidata is independent of the official crawl's identity gate: its own identity rule is P856 == stored domain.
     let wikidata: WikidataProfile | null = null;
-    if (input.fetchWikidata) {
+    if (fetchWikidata) {
       plan.wikidata = { outcome: "no_match", entity_id: null, error: null };
       try {
-        wikidata = await fetchWikidataProfile({ company, fetchJson: input.fetchWikidata, sleep, now: () => canonicalTimestamp(now())!, sha256, record: (s) => sources.push({ company_id: company.id, ...s }) });
+        wikidata = await fetchWikidataProfile({ company, fetchJson: fetchWikidata, now: () => canonicalTimestamp(now())!, sha256, record: (s) => sources.push({ company_id: company.id, ...s }) });
         plan.wikidata = { outcome: wikidata.outcome, entity_id: wikidata.entityId, error: null };
       } catch (error) {
         plan.wikidata = { outcome: "fetch_failed", entity_id: null, error: redactCanaryText(error instanceof Error ? error.message : String(error), input.secrets) };
@@ -437,10 +455,12 @@ export async function buildCanaryPlan(input: {
     }
     const official = crawl?.extracted || null;
     if (!official && !wikidata?.entityId) continue;
-    // Official sources always win: Wikidata only fills keys that no official row or observation covers.
+    // Official sources always win: Wikidata only fills keys that no official row or observation covers, and a
+    // stored Wikidata value is replaced outright (never a conflict) once an official source states the key.
     const officialKeys = new Set([...Object.keys(official?.facts || {}), ...Object.entries(existing).filter(([, f]) => f!.sourceKind !== "wikidata").map(([k]) => k)]);
     const fromWikidata = Object.fromEntries(Object.entries(wikidata?.facts || {}).filter(([k]) => !officialKeys.has(k)));
-    const next = reconcileCompanyFacts(existing, { ...fromWikidata, ...(official?.facts || {}) }, true);
+    const base = Object.fromEntries(Object.entries(existing).filter(([k, f]) => !(f!.sourceKind === "wikidata" && official?.facts[k as CompanyFactKey]))) as typeof existing;
+    const next = reconcileCompanyFacts(base, { ...fromWikidata, ...(official?.facts || {}) }, true);
     const nextFacts = Object.entries(next).map(([key, fact]) => factRow(company.id, key, fact!));
     plan.proposed.facts = nextFacts;
     if (!nextFacts.length) continue;
@@ -448,7 +468,9 @@ export async function buildCanaryPlan(input: {
       const before = rows.company_profile_facts.find((r) => r.fact_key === after.fact_key) || null;
       if (!sameRow(before, after)) actions.push({ company_id: company.id, table: "company_profile_facts", op: before ? "update" : "insert", key: keyOf("company_profile_facts", after), before, after });
     }
-    const leaders = dedupeLeadershipObservations([...(official?.leadership || []), ...(wikidata?.leadership || [])].map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf ? p.roleAsOf.slice(0, 10) : null, source_url: p.sourceUrl, retrieved_at: canonicalTimestamp(p.retrievedAt)! })));
+    // Leadership is never concatenated: Wikidata leaders only when no official leader is observed or stored.
+    const hasOfficialLeaders = Boolean(official?.leadership.length) || rows.company_profile_leadership.some((r) => !isWikidataSource(r.source_url));
+    const leaders = dedupeLeadershipObservations((hasOfficialLeaders ? official?.leadership || [] : wikidata?.leadership || []).map((p) => ({ company_id: company.id, name: p.name, role: p.role, role_as_of: p.roleAsOf ? p.roleAsOf.slice(0, 10) : null, source_url: p.sourceUrl, retrieved_at: canonicalTimestamp(p.retrievedAt)! })));
     for (const leader of leaders) {
       const before = rows.company_profile_leadership.find((r) => r.name === leader.name && r.role === leader.role && r.role_as_of === leader.role_as_of) || null;
       // Same identity: only retrieved_at moves forward, as the observation RPC does; sourced fields stay.
@@ -515,13 +537,17 @@ export function verifyCanaryPlan(plan: CanaryPlan, binding: CanaryBinding): void
   });
 }
 
-async function verifySources(plan: CanaryPlan, fetchPage: PageFetcher, sleep: Sleeper): Promise<void> {
+const isWikidataSource = (url: string | null) => { try { return new URL(String(url)).hostname === WIKIDATA_HOST; } catch { return false; } };
+
+/** Refetches every source of a planned company; Wikidata goes through an uncached paced client, so it is really re-read. */
+async function verifySources(plan: CanaryPlan, fetchPage: PageFetcher, sleep: Sleeper, wikidata: WikidataFetcher | null): Promise<void> {
   const planned = new Set(plan.actions.map((action) => action.company_id));
   const sources = plan.sources.filter((s) => planned.has(s.company_id));
   for (let index = 0; index < sources.length; index++) {
     const source = sources[index];
     if (index) await sleep(1_000);
-    const page = source.kind === "robots" ? await fetchRobotsTxt(fetchPage, sleep, source.requested_url) : await fetchWithBackoff(fetchPage, sleep, source.requested_url);
+    if (source.kind === "wikidata" && !wikidata) throw new Error("The plan has Wikidata sources; the write needs a Wikidata fetcher to revalidate them");
+    const page = source.kind === "wikidata" ? await wikidata!(source.requested_url) : source.kind === "robots" ? await fetchRobotsTxt(fetchPage, sleep, source.requested_url) : await fetchWithBackoff(fetchPage, sleep, source.requested_url);
     if (page.url !== source.final_url || page.status !== source.status || sha256(page.text) !== source.sha256) throw new Error(`Source drift for company ${source.company_id}: an official page changed since the plan was made`);
   }
 }
@@ -567,6 +593,7 @@ export interface CanaryWriteReport { mode: "write" | "resume"; plan_digest: stri
 /** --write / --resume: interlocks, live revalidation, then each planned row as one compare-and-set step. */
 export async function runCanaryWrite(input: {
   plan: CanaryPlan; binding: CanaryBinding; store: CanaryStore; fetchPage: PageFetcher; sleep: Sleeper; journal: JournalIO; resume: boolean; now?: () => Date; secrets?: string[];
+  fetchWikidata?: WikidataFetcher;
 }): Promise<CanaryWriteReport> {
   const { plan, store, journal: io } = input;
   const clock = input.now ?? (() => new Date());
@@ -589,7 +616,7 @@ export async function runCanaryWrite(input: {
       }
     }
   }
-  await verifySources(plan, input.fetchPage, input.sleep);
+  await verifySources(plan, input.fetchPage, input.sleep, input.fetchWikidata ? wikidataClient(input.fetchWikidata, { sleep: input.sleep, nowMs: () => clock().getTime(), cache: false }) : null);
   const stamp = () => canonicalTimestamp(clock())!;
   if (!journal) {
     journal = { kind: "company-profile-canary-journal", format: 1, atomic: false, plan_digest: plan.plan_digest, target_project: plan.target_project, company_ids: plan.company_ids, code_sha: plan.code_sha, started_at: stamp(), updated_at: stamp(), steps: [], rollback: null };
