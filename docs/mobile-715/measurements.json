@@ -178,7 +178,7 @@
     "view": "step1",
     "state": "long",
     "width": 360,
-    "height": 800,
+    "height": 862,
     "overflow": false,
     "text": "FIXTURE, NO LIVE DATA\n\nWhat type of role are you looking for?\n\n*Job role (select from categories for best results)\nFrontend Developer\nBackend Developer\nFull Stack Developer\nMachine Learning Engineer\nData Scientist\nAdd more roles\n*Job Type\nFull-time\nC",
     "controls": [
