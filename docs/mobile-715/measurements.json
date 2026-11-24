@@ -583,9 +583,9 @@
     "view": "pricing",
     "state": "populated",
     "width": 360,
-    "height": 2472,
-    "overflow": true,
-    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
+    "height": 2498,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings.\nFlat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
     "controls": [
       {
         "label": "",
@@ -599,7 +599,7 @@
       },
       {
         "label": "Buy Monthly",
-        "y": 834,
+        "y": 860,
         "h": 48
       }
     ]
@@ -1188,9 +1188,9 @@
     "view": "pricing",
     "state": "populated",
     "width": 390,
-    "height": 2452,
-    "overflow": true,
-    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
+    "height": 2478,
+    "overflow": false,
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings.\nFlat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
     "controls": [
       {
         "label": "",
@@ -1204,7 +1204,7 @@
       },
       {
         "label": "Buy Monthly",
-        "y": 814,
+        "y": 840,
         "h": 48
       }
     ]
@@ -1793,9 +1793,9 @@
     "view": "pricing",
     "state": "populated",
     "width": 430,
-    "height": 2364,
+    "height": 2390,
     "overflow": false,
-    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings. Flat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
+    "text": "FIXTURE, NO LIVE DATA\nJobs\nResume\nTracker\nProfile\nRadar\nPricing\nPRICING\nLog in\nGet started\nPlans and pricing\n\nFull access to verified unindexed remote job listings.\nFlat ₹499/mo monthly auto-renew, cancel anytime.\n\nChoose a plan\nWeekly\n₹399\nMonthly\n₹",
     "controls": [
       {
         "label": "",
@@ -1809,7 +1809,7 @@
       },
       {
         "label": "Buy Monthly",
-        "y": 778,
+        "y": 804,
         "h": 48
       }
     ]
