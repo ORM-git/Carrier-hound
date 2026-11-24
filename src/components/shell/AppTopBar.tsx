@@ -146,6 +146,17 @@ export default function AppTopBar({
           {/* LEFT: Mobile Hamburger + Page Label + Tabs (on /jobs)               */}
           {/* =================================================================== */}
           <div className={`flex items-center ${mobileTabs ? "gap-1" : "gap-2.5"} sm:gap-4 min-w-0 flex-1 sm:flex-initial`}>
+            {/* The desktop rail owns branding from md up; mobile needs the same
+                brand anchor on every app page, including the compact Jobs tabs. */}
+            <Link
+              href="/jobs"
+              aria-label="Career Monke Jobs"
+              data-testid="app-mobile-brand"
+              className="md:hidden inline-flex items-center justify-center min-w-[56px] min-h-[44px] shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+            >
+              <BrandIcon variant="full" height={24} className="h-6 w-auto" priority />
+            </Link>
+
             {/* Mobile Hamburger Button */}
             <button
               ref={menuButtonRef}
@@ -159,8 +170,8 @@ export default function AppTopBar({
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Page Label (bold 18px uppercase) */}
-            <h1 className={`font-bold text-[18px] uppercase tracking-wider text-[#0F172A] shrink-0 leading-none ${mobileTabs ? "sr-only sm:not-sr-only" : ""}`}>
+            {/* Page identity remains accessible; mobile shows the brand instead. */}
+            <h1 className="sr-only md:not-sr-only font-bold text-[18px] uppercase tracking-wider text-[#0F172A] shrink-0 leading-none">
               {pageLabel}
             </h1>
 
