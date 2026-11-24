@@ -184,6 +184,25 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(uniqueTitles()).toHaveLength(50);
   });
 
+  it("all-duplicate continuation chunks (the frozen-window sweep) chain until unseen jobs arrive", async () => {
+    // The terminal sweep re-serves frozen-window rows; the client dedupes them, so each
+    // chunk appends nothing. These chunks must chain like empty ones, or auto-load would
+    // pause before the stream reaches unseen rows (reviewer caveat: sweep duplicates must
+    // not trip the append-nothing pause).
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 1000, "s:top");
+      if (p === 2) return { ...page(jobs(range(1, 25)), true, 0, "s:chunk-2"), continuation: true }; // all duplicates
+      if (p === 3) return { ...page(jobs(range(1, 25)), true, 0, "s:chunk-3"), continuation: true }; // all duplicates
+      return page(jobs(range(26, 50)), false, 0, null); // unseen rows, genuine end
+    };
+    await mount();
+    await flush();
+    await act(async () => io.enter());
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+    expect(uniqueTitles()).toHaveLength(50); // every job rendered exactly once
+  });
+
   it("empty continuation chunks chain until genuine stream exhaustion, then stop", async () => {
     h.transport = async ({ page: p }: any) => {
       if (p <= 3) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:chunk-${p}`, continuation: true };

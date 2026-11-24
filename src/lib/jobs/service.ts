@@ -123,6 +123,10 @@ export interface GetJobsOptions {
   // Immutable pool anchor handed out by the server at stream start; echoed on every
   // subsequent recommended request so inserts cannot shift pool slices.
   poolAnchor?: string | null;
+  // Immutable pool floor: raw-key lower bound of the frozen pool window; echoed with the
+  // anchor so deletions cannot refill the window and the beyond-pool continuation starts
+  // exactly where the original pool ended.
+  poolFloor?: string | null;
   eligibility?: "on" | "off" | string;
   currency?: string;
 }
@@ -135,6 +139,7 @@ export interface GetJobsResult {
   continuation?: boolean;
   totalIsLowerBound?: boolean;
   poolAnchor?: string | null;
+  poolFloor?: string | null;
   isDegraded?: boolean;
   error?: string | null;
   appliedEligibility?: { countries: string[]; filteredOut: number } | null;
@@ -466,6 +471,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         // ranked pool is exhausted but the corpus likely has more; pass it back verbatim.
         if (cursor) recParams.set("cursor", cursor);
         if (options.poolAnchor) recParams.set("poolAnchor", options.poolAnchor);
+        if (options.poolFloor) recParams.set("poolFloor", options.poolFloor);
 
         // A failed request is a retryable error, never a silently unpersonalized or empty feed.
         const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers, signal: options.signal }).catch(() => null);
@@ -505,6 +511,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           continuation: json.continuation === true,
           totalIsLowerBound: json.totalIsLowerBound === true,
           poolAnchor: json.poolAnchor ?? null,
+          poolFloor: json.poolFloor ?? null,
           isDegraded: false,
         };
       }

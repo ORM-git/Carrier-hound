@@ -413,20 +413,44 @@ afterEach(() => {
 });
 
 // Walks the ranked stream the way the client does: follow nextCursor and echo
-// poolAnchor on every subsequent request. Returns the response bodies in order.
+// poolAnchor/poolFloor verbatim on every subsequent request. Returns the response bodies.
 const walkStream = async (token: string, pages: number, pageSize = 25) => {
   let cursor: string | null = null;
   let anchor: string | null = null;
+  let floor: string | null = null;
   const bodies: any[] = [];
   for (let p = 0; p < pages; p++) {
     const params = new URLSearchParams({ pageSize: String(pageSize) });
     if (cursor) params.set("cursor", cursor);
     if (anchor) params.set("poolAnchor", anchor);
+    if (floor) params.set("poolFloor", floor);
     const res = await recommendedRoute(req(`http://localhost/api/jobs/recommended?${params.toString()}`, token));
     expect(res.status).toBe(200);
     const body = await res.json();
     bodies.push(body);
     anchor = anchor ?? body.poolAnchor ?? null;
+    floor = floor ?? body.poolFloor ?? null;
+    cursor = body.nextCursor;
+  }
+  return bodies;
+};
+
+// Follows a stream's own cursors (echoing its bounds) until hasNextPage is false or the
+// turn budget is hit. Returns every body after the ones supplied.
+const walkToEnd = async (token: string, seedBodies: any[], budget = 200) => {
+  const bodies = [...seedBodies];
+  let anchor = bodies.map((b) => b.poolAnchor).find((a) => a) ?? null;
+  let floor = bodies.map((b) => b.poolFloor).find((f) => f) ?? null;
+  let cursor: string | null = bodies[bodies.length - 1].nextCursor;
+  let turns = 0;
+  while (cursor && turns++ < budget) {
+    const params = new URLSearchParams({ pageSize: "25", cursor });
+    if (anchor) params.set("poolAnchor", anchor);
+    if (floor) params.set("poolFloor", floor);
+    const body = await (await recommendedRoute(req(`http://localhost/api/jobs/recommended?${params.toString()}`, token))).json();
+    bodies.push(body);
+    anchor = anchor ?? body.poolAnchor ?? null;
+    floor = floor ?? body.poolFloor ?? null;
     cursor = body.nextCursor;
   }
   return bodies;
@@ -1318,7 +1342,7 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     });
   const keyOf = (row: any) => `k:${row.posted_at ?? "null"}|${row.id}`;
 
-  it("the pool's final page serves its rows and hands out a keyset continuation cursor", async () => {
+  it("the pool's final page serves its rows and hands out the terminal sweep cursor", async () => {
     seed(1400);
     const bodies = await walkStream("tok-user-no-answers", 40);
     const seen = new Set<string>();
@@ -1334,13 +1358,18 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     const page40 = bodies[39];
     expect(page40.totalCount).toBe(1000); // bounded pool total, honestly reported
     expect(page40.hasNextPage).toBe(true);
-    expect(typeof page40.nextCursor).toBe("string");
-    expect(page40.nextCursor.startsWith("k:")).toBe(true); // raw keyset beyond the pool, not a numeric offset
+    expect(page40.nextCursor).toBe("s:top"); // ranked window exhausted: terminal completeness sweep
     expect(page40.totalIsLowerBound).toBe(true);
+    // The frozen window bounds: computed on the first response, echoed verbatim after.
+    expect(bodies[0].poolAnchor.startsWith("k:")).toBe(true);
+    expect(bodies[0].poolFloor.startsWith("k:")).toBe(true);
+    for (const body of bodies.slice(1)) {
+      expect(body.poolAnchor).toBe(bodies[0].poolAnchor);
+      expect(body.poolFloor).toBe(bodies[0].poolFloor);
+    }
     // Mid-pool pages hand out ranked pool cursors ("p:"): value-based positions in the ranked pool.
     expect(bodies[0].nextCursor.startsWith("p:")).toBe(true);
     expect(bodies[19].nextCursor.startsWith("p:")).toBe(true);
-    expect(bodies[19].hasNextPage).toBe(true);
     expect(bodies[19].totalIsLowerBound).toBe(true); // pool came back full: 1000 is a lower bound
   });
 
@@ -1352,42 +1381,52 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     expect(served).toEqual(ordered.map((r) => r.id));
   });
 
-  it("keyset chunks continue past the pool in order with no overlap, until exhaustion", async () => {
+  it("the stream continues past the pool: sweep re-covers the window, then raw chunks run to exhaustion", async () => {
     seed(1400);
-    const seen = new Set<string>();
-    const bodies = await walkStream("tok-user-no-answers", 40);
-    for (const body of bodies) for (const j of body.jobs) seen.add(j.id);
-    let cursor: string | null = bodies[39].nextCursor;
-    expect(seen.size).toBe(1000);
-    expect(cursor).not.toBeNull();
+    const ranked = await walkStream("tok-user-no-answers", 40);
+    const poolIds = new Set<string>();
+    for (const body of ranked) for (const j of body.jobs) poolIds.add(j.id);
+    expect(poolIds.size).toBe(1000);
 
-    let chunks = 0;
-    while (cursor !== null) {
-      const body = await (await recommendedRoute(
-        req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(cursor)}&pageSize=25`, "tok-user-no-answers")
-      )).json();
-      chunks += 1;
+    const bodies = await walkToEnd("tok-user-no-answers", ranked);
+    const phases = bodies.slice(40);
+    expect(phases.length).toBeGreaterThan(40); // ~40 sweep chunks + 16 beyond-floor chunks
+    for (const body of phases) {
       expect(body.continuation).toBe(true);
       expect(body.totalIsLowerBound).toBe(true);
       expect(body.totalCount).toBe(0); // chunk counts are never presented as a domain-wide total
+      expect(body.hasNextPage).toBe(body.nextCursor !== null);
+    }
+    const sweepChunks = phases.filter((b) => b.poolFloor !== null);
+    const beyondChunks = phases.filter((b) => b.poolFloor === null);
+    expect(sweepChunks.length).toBeGreaterThan(0);
+    expect(beyondChunks.length).toBeGreaterThanOrEqual(16); // 400 beyond-pool rows / 25 per chunk
+    // The sweep re-covers ONLY frozen-window rows (the client's id-dedupe swallows them);
+    // window bounds stay echoed on every sweep chunk.
+    for (const body of sweepChunks) {
+      expect(body.poolAnchor).toBe(ranked[0].poolAnchor);
+      expect(body.poolFloor).toBe(ranked[0].poolFloor);
+      for (const j of body.jobs) expect(poolIds.has(j.id)).toBe(true);
+    }
+    // Beyond-floor chunks carry no bounds and serve only rows the pool never contained.
+    const seen = new Set<string>(poolIds);
+    for (const body of beyondChunks) {
+      expect(body.poolAnchor).toBeNull();
       for (const j of body.jobs) {
-        expect(seen.has(j.id)).toBe(false); // zero duplicates across the pool boundary
+        expect(seen.has(j.id)).toBe(false); // zero duplicates across the beyond boundary
         seen.add(j.id);
       }
-      expect(body.hasNextPage).toBe(body.nextCursor !== null);
-      cursor = body.nextCursor;
     }
     expect(seen.size).toBe(1400); // the full corpus was served: the stream ends only at genuine exhaustion
-    expect(chunks).toBeGreaterThanOrEqual(16); // 400 beyond-pool rows / 25 per chunk
+    expect(bodies[bodies.length - 1].hasNextPage).toBe(false);
   });
 
   it("a keyset cursor at the corpus end returns an empty terminal page", async () => {
     seed(1025);
-    const bodies = await walkStream("tok-user-no-answers", 40);
-    const page40 = bodies[39];
-    const chunk = await (await recommendedRoute(
-      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(page40.nextCursor)}&pageSize=25`, "tok-user-no-answers")
-    )).json();
+    const bodies = await walkToEnd("tok-user-no-answers", await walkStream("tok-user-no-answers", 40));
+    const beyondChunks = bodies.filter((b) => b.continuation === true && b.poolFloor === null);
+    expect(beyondChunks.length).toBe(1);
+    const chunk = beyondChunks[0];
     expect(chunk.jobs.length).toBe(25); // rows 1000-1024
     expect(chunk.hasNextPage).toBe(false); // scan reached the end: genuinely exhausted
     expect(chunk.nextCursor).toBeNull();
@@ -1414,26 +1453,38 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     }
   });
 
-  it("pool path reports hasNextPage false when the corpus fits inside the pool (genuine end)", async () => {
+  it("a corpus that fits inside the pool ends after ranked pages plus one completeness sweep", async () => {
     seed(320);
-    const bodies = await walkStream("tok-user-no-answers", 13);
+    const ranked = await walkStream("tok-user-no-answers", 13);
     const seen = new Set<string>();
-    for (const body of bodies.slice(0, 12)) {
+    for (const body of ranked.slice(0, 12)) {
       expect(body.jobs.length).toBe(25);
       expect(body.hasNextPage).toBe(true);
       for (const j of body.jobs) seen.add(j.id);
     }
-    const last = bodies[12];
+    const last = ranked[12];
     expect(last.jobs.length).toBe(20); // 320 rows = 12 full pages + 20
-    expect(last.hasNextPage).toBe(false);
-    expect(last.nextCursor).toBeNull();
+    expect(last.hasNextPage).toBe(true);
+    expect(last.nextCursor).toBe("s:top"); // the terminal sweep follows the final ranked slice
     expect(last.totalIsLowerBound).toBe(false); // pool not full: 320 is the verified total
-    expect(last.continuation).toBe(false);
+    expect(last.poolFloor).toBeNull(); // no beyond-pool region exists for this stream
     for (const j of last.jobs) {
       expect(seen.has(j.id)).toBe(false);
       seen.add(j.id);
     }
-    expect(seen.size).toBe(320); // the whole corpus was served exactly once
+    expect(seen.size).toBe(320); // the whole corpus was served exactly once in ranked order
+
+    // The sweep re-covers the same 320 rows (client dedupes) and then the stream ends
+    // for real: no floor, no beyond-pool continuation.
+    const bodies = await walkToEnd("tok-user-no-answers", ranked);
+    const sweepChunks = bodies.slice(13);
+    expect(sweepChunks.length).toBeGreaterThanOrEqual(13);
+    for (const body of sweepChunks) {
+      expect(body.continuation).toBe(true);
+      for (const j of body.jobs) expect(seen.has(j.id)).toBe(true); // only re-served window rows
+    }
+    expect(bodies[bodies.length - 1].hasNextPage).toBe(false);
+    expect(bodies[bodies.length - 1].nextCursor).toBeNull();
   });
 
   it("deleting a previously seen row between requests does not shift or skip pool rows (reviewer reproduction)", async () => {
@@ -1459,25 +1510,26 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     expect(refetch.jobs.some((j: any) => j.id === deleted)).toBe(false);
   });
 
-  it("deleting a previously seen row between requests does not skip the next unseen beyond-pool row", async () => {
+  it("deleting a previously seen row between requests does not skip any unseen row (reviewer reproduction)", async () => {
     // Regression: numeric-offset cursors skipped ordered[1025] here (reviewer reproduction).
+    // With the frozen window the stream must still serve every surviving row exactly once
+    // in the ranked and beyond-floor phases.
     seed(1400);
     const ordered = streamOrder(state.tables.jobs);
-    const bodies = await walkStream("tok-user-no-answers", 40);
-    const page40 = bodies[39];
-    const first = await (await recommendedRoute(
-      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(page40.nextCursor)}&pageSize=25`, "tok-user-no-answers")
-    )).json();
-    expect(first.jobs.length).toBe(25);
-    const deleted = first.jobs[0].id;
+    const ranked = await walkStream("tok-user-no-answers", 40);
+    const deleted = ranked[10].jobs[0].id;
     state.tables.jobs = state.tables.jobs.filter((r: any) => r.id !== deleted);
     state.tables.jobs_public = state.tables.jobs;
-    const second = await (await recommendedRoute(
-      req(`http://localhost/api/jobs/recommended?cursor=${encodeURIComponent(first.nextCursor)}&pageSize=25`, "tok-user-no-answers")
-    )).json();
-    // The keyset resumes strictly after the last consumed raw row, so the previously
-    // unseen row MUST be present even though one earlier row was deleted.
-    expect(second.jobs.some((j: any) => j.id === ordered[1025].id)).toBe(true);
+    const bodies = await walkToEnd("tok-user-no-answers", ranked);
+    const served = new Set<string>();
+    for (const body of bodies) for (const j of body.jobs) served.add(j.id);
+    expect(served.has(ordered[1025].id)).toBe(true); // the previously skipped row arrives
+    const missing = state.tables.jobs.filter((r: any) => !served.has(r.id));
+    expect(missing).toEqual([]); // every surviving row served by exhaustion
+    expect(served.has(deleted)).toBe(true); // served before deletion, never after
+    for (const body of bodies.slice(ranked.length + 1)) {
+      expect(body.jobs.some((j: any) => j.id === deleted)).toBe(false);
+    }
   });
 
   it("inserted newer rows between requests never shift, repeat or displace the anchored pool stream", async () => {
@@ -1492,34 +1544,57 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     state.tables.jobs = [...state.tables.jobs, inserted];
     state.tables.jobs_public = state.tables.jobs;
 
-    // With the echoed anchor the pool is pinned: the same request returns the same slice,
-    // and the insert can neither shift page 2 nor displace unseen pool-tail rows.
-    const params = new URLSearchParams({ pageSize: "25" });
-    params.set("cursor", page1.nextCursor);
-    params.set("poolAnchor", page1.poolAnchor);
-    const after = await (await recommendedRoute(
-      req(`http://localhost/api/jobs/recommended?${params.toString()}`, "tok-user-no-answers")
-    )).json();
+    // With the echoed window bounds the pool is pinned: the same request returns the same
+    // slice, and the insert can neither shift page 2 nor displace unseen pool-tail rows.
+    const fetchNext = async (cursor: string) => {
+      const params = new URLSearchParams({ pageSize: "25" });
+      params.set("cursor", cursor);
+      params.set("poolAnchor", page1.poolAnchor);
+      params.set("poolFloor", page1.poolFloor);
+      return (await recommendedRoute(
+        req(`http://localhost/api/jobs/recommended?${params.toString()}`, "tok-user-no-answers")
+      )).json();
+    };
+    const after = await fetchNext(page1.nextCursor);
     expect(after.jobs.map((j: any) => j.id)).toEqual(baselinePage2.jobs.map((j: any) => j.id));
     expect(after.jobs.some((j: any) => j.id === inserted.id)).toBe(false);
 
-    // The anchor also pins the pool tail: the 40th page still ends on the same row, so
-    // beyond-pool continuation starts exactly where the original stream would have.
+    // The bounds also pin the pool tail: the 40th page still ends on the same row, then
+    // hands out the terminal sweep cursor; the beyond-floor region starts at the frozen floor.
     let cursor: string | null = page1.nextCursor;
     let last: any = null;
     for (let p = 2; p <= 40; p++) {
-      const q = new URLSearchParams({ pageSize: "25" });
-      q.set("cursor", cursor!);
-      q.set("poolAnchor", page1.poolAnchor);
-      last = await (await recommendedRoute(
-        req(`http://localhost/api/jobs/recommended?${q.toString()}`, "tok-user-no-answers")
-      )).json();
+      last = await fetchNext(cursor!);
       cursor = last.nextCursor;
     }
     expect(last.jobs.some((j: any) => j.id === inserted.id)).toBe(false);
-    expect(last.nextCursor.startsWith("k:")).toBe(true);
+    expect(last.nextCursor).toBe("s:top");
 
-    // A fresh load (no anchor) is a new stream: the inserted row surfaces at the top.
+    // The terminal sweep is not bounded above by the anchor: the inserted row surfaces
+    // there exactly once, and the beyond-floor phase then serves the raw tail.
+    const seen = new Set<string>(
+      (await walkStream("tok-user-no-answers", 40)).flatMap((b: any) => b.jobs.map((j: any) => j.id))
+    );
+    let occurrences = 0;
+    cursor = "s:top";
+    let beyond = 0;
+    while (cursor !== null) {
+      const body = await fetchNext(cursor);
+      occurrences += body.jobs.filter((j: any) => j.id === inserted.id).length;
+      if (body.poolFloor === null) {
+        beyond += 1;
+        for (const j of body.jobs) {
+          expect(seen.has(j.id)).toBe(false);
+          seen.add(j.id);
+        }
+      }
+      cursor = body.nextCursor;
+    }
+    expect(occurrences).toBe(1);
+    expect(beyond).toBeGreaterThanOrEqual(16); // the 400 beyond-pool rows still stream to exhaustion
+    expect(seen.size).toBe(1400);
+
+    // A fresh load (no bounds) is a new stream: the inserted row surfaces at the top.
     const fresh = await (await recommendedRoute(
       req("http://localhost/api/jobs/recommended?pageSize=25", "tok-user-no-answers")
     )).json();
@@ -1678,9 +1753,20 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     expect(bodies[0].jobs.length).toBe(25);
     expect(bodies[1].jobs.length).toBe(25);
     expect(bodies[2].jobs.length).toBe(10);
-    expect(bodies[2].hasNextPage).toBe(false);
+    expect(bodies[2].hasNextPage).toBe(true);
+    expect(bodies[2].nextCursor).toBe("s:top"); // ranked slices done: terminal completeness sweep
     expect(new Set(served).size).toBe(60);
     expect(served.sort()).toEqual(tied.map((r) => r.id).sort());
+
+    // The sweep re-serves the same 60 tied rows (the client dedupes) and the stream then
+    // ends for real: no floor, no beyond-pool region.
+    const full = await walkToEnd("tok-user-no-answers", bodies);
+    for (const body of full.slice(3)) {
+      expect(body.continuation).toBe(true);
+      for (const j of body.jobs) expect(served.includes(j.id)).toBe(true);
+    }
+    expect(full[full.length - 1].hasNextPage).toBe(false);
+    expect(full[full.length - 1].nextCursor).toBeNull();
   });
 
   it("poolAnchor is echoed consistently across pool pages and is null on continuation chunks", async () => {
@@ -1706,5 +1792,120 @@ describe("beyond-pool continuation (scroll until the domain is exhausted)", () =
     )).json();
     expect(chunk.continuation).toBe(true);
     expect(chunk.poolAnchor).toBeNull(); // beyond-pool chunks are raw keyset scans; no anchor applies
+  });
+});
+
+describe("frozen-window terminal sweep (v4 stream stability)", () => {
+  const seed = (count: number) => {
+    const corpus = generateTestCorpus(count);
+    state.tables.jobs = corpus;
+    state.tables.jobs_public = corpus;
+  };
+  const streamOrder = (rows: any[]) =>
+    [...rows].sort((a, b) => {
+      const pa = a.posted_at ?? "";
+      const pb = b.posted_at ?? "";
+      return pb.localeCompare(pa) || String(b.id).localeCompare(String(a.id));
+    });
+
+  it("reviewer promotion reproduction inverted: deleting a seen row mid-stream omits nothing", async () => {
+    // The reviewer's v3 reproduction: 1050 rows, a seen row deleted after page 1, and the
+    // row that deletion promoted into the ranked pool (inv-1049) went permanently missing.
+    // Under the frozen window every surviving row must still be served exactly once.
+    const base = generateTestCorpus(1)[0];
+    const rows = Array.from({ length: 1050 }, (_, i) => ({
+      ...base,
+      id: `inv-${String(i).padStart(4, "0")}`,
+      company_id: `inv-co-${i}`,
+      posted_at: i < 1000 ? new Date(Date.UTC(2026, 10, 24) - i * 60000).toISOString() : null,
+      created_at: i < 1000 ? "2026-11-01T00:00:00.000Z" : "2026-12-01T00:00:00.000Z",
+    }));
+    state.tables.jobs = rows;
+    state.tables.jobs_public = rows;
+    const first = await (await recommendedRoute(
+      req("http://localhost/api/jobs/recommended?pageSize=25", "tok-user-no-answers")
+    )).json();
+    expect(first.jobs.length).toBe(25);
+    const deletedId = first.jobs[3].id;
+    state.tables.jobs = state.tables.jobs.filter((r: any) => r.id !== deletedId);
+    state.tables.jobs_public = state.tables.jobs;
+
+    const bodies = await walkToEnd("tok-user-no-answers", [first]);
+    const served = new Set<string>();
+    for (const body of bodies) for (const j of body.jobs) served.add(j.id);
+    const missing = state.tables.jobs.filter((r: any) => !served.has(r.id));
+    expect(missing).toEqual([]); // nothing lost: the exact failure the reviewer reproduced
+    expect(served.has("inv-1049")).toBe(true); // the promotion row itself arrives
+    expect(served.has(deletedId)).toBe(true); // served before deletion, never after
+    expect(served.size).toBe(1050); // 1049 survivors plus the row served pre-deletion
+    expect(bodies[bodies.length - 1].hasNextPage).toBe(false);
+  });
+
+  it("a row whose raw key rewrites above the anchor mid-stream is caught by the terminal sweep", async () => {
+    seed(1400);
+    const ranked = await walkStream("tok-user-no-answers", 2);
+    const seen = new Set<string>(ranked.flatMap((b: any) => b.jobs.map((j: any) => j.id)));
+    const ordered = streamOrder(state.tables.jobs);
+    const target = ordered[500]; // unseen window row
+    expect(seen.has(target.id)).toBe(false);
+    state.tables.jobs = state.tables.jobs.map((r: any) =>
+      r.id === target.id ? { ...r, posted_at: "2026-12-25T00:00:00.000Z" } : r
+    );
+    state.tables.jobs_public = state.tables.jobs;
+
+    const bodies = await walkToEnd("tok-user-no-answers", ranked);
+    const occurrences = bodies.reduce(
+      (n: number, b: any) => n + b.jobs.filter((j: any) => j.id === target.id).length,
+      0
+    );
+    expect(occurrences).toBe(1); // omitted from ranked paging, healed exactly once by the sweep
+    const sweepServed = bodies.some(
+      (b: any) => b.poolFloor !== null && b.continuation === true && b.jobs.some((j: any) => j.id === target.id)
+    );
+    expect(sweepServed).toBe(true);
+  });
+
+  it("a backdated insert inside the frozen window is served without displacing any original row", async () => {
+    seed(1400);
+    const ranked = await walkStream("tok-user-no-answers", 40);
+    const ordered = streamOrder(state.tables.jobs);
+    const inserted = {
+      ...generateTestCorpus(1)[0],
+      id: "backdated-0000-4000-8000-000000000001",
+      company_id: "backdated-co",
+      posted_at: new Date(
+        (Date.parse(ordered[499].posted_at) + Date.parse(ordered[500].posted_at)) / 2
+      ).toISOString(), // lands mid-window in the no-answers time ranking
+      created_at: "2026-12-20T00:00:00.000Z",
+    };
+    state.tables.jobs = [...state.tables.jobs, inserted];
+    state.tables.jobs_public = state.tables.jobs;
+
+    const bodies = await walkToEnd("tok-user-no-answers", ranked);
+    const counts = new Map<string, number>();
+    for (const body of bodies) for (const j of body.jobs) counts.set(j.id, (counts.get(j.id) ?? 0) + 1);
+    const missing = state.tables.jobs.filter((r: any) => !counts.has(r.id));
+    expect(missing).toEqual([]); // no original row displaced or lost
+    expect(counts.get(inserted.id)).toBeGreaterThanOrEqual(1); // the insert is served
+    expect(bodies[bodies.length - 1].hasNextPage).toBe(false);
+  });
+
+  it("the frozen floor keeps the beyond-pool region stable when the pool shrinks below 1000 mid-stream", async () => {
+    seed(1400);
+    const ranked = await walkStream("tok-user-no-answers", 2);
+    const ordered = streamOrder(state.tables.jobs);
+    const doomed = new Set<string>(ordered.slice(100, 300).map((r: any) => r.id)); // 200 in-window rows
+    state.tables.jobs = state.tables.jobs.filter((r: any) => !doomed.has(r.id));
+    state.tables.jobs_public = state.tables.jobs;
+
+    const bodies = await walkToEnd("tok-user-no-answers", ranked);
+    const counts = new Map<string, number>();
+    for (const body of bodies) for (const j of body.jobs) counts.set(j.id, (counts.get(j.id) ?? 0) + 1);
+    const missing = state.tables.jobs.filter((r: any) => !counts.has(r.id));
+    expect(missing).toEqual([]); // every surviving row arrives even though the pool now holds 800
+    for (const row of ordered.slice(1000)) {
+      expect(counts.get(row.id)).toBe(1); // the beyond-pool region serves each row exactly once
+    }
+    expect(bodies[bodies.length - 1].hasNextPage).toBe(false);
   });
 });

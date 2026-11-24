@@ -936,6 +936,8 @@ function JobsPageInner() {
   const loadMoreRef = useRef<(() => void) | null>(null);
   // Immutable pool anchor handed out by the server at stream start; echoed on every request.
   const poolAnchorRef = useRef<string | null>(null);
+  // Immutable pool floor: raw-key lower bound of the frozen window; echoed with the anchor.
+  const poolFloorRef = useRef<string | null>(null);
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const autoLoadArmedRef = useRef(true);
@@ -1018,6 +1020,7 @@ function JobsPageInner() {
           setTotalCount(res.totalCount);
           setTotalIsLowerBound(Boolean(res.totalIsLowerBound));
           poolAnchorRef.current = res.poolAnchor ?? null;
+          poolFloorRef.current = res.poolFloor ?? null;
           seenCursorsRef.current = new Set(res.nextCursor ? [res.nextCursor] : []);
           setHasNextPage(Boolean(res.hasNextPage));
           cursorRef.current = res.nextCursor ?? null;
@@ -1086,6 +1089,7 @@ function JobsPageInner() {
           pageSize: 25,
           cursor: cursorRef.current ?? undefined,
           poolAnchor: poolAnchorRef.current ?? undefined,
+          poolFloor: poolFloorRef.current ?? undefined,
           category: selectedCategory,
           search: debouncedSearch,
           remoteOnly,

@@ -67,6 +67,30 @@ function poolAnchorFilter(anchor: { posted_at: string | null; id: string }): str
     ? `posted_at.lt.${anchor.posted_at},and(posted_at.eq.${anchor.posted_at},id.lte.${anchor.id}),posted_at.is.null`
     : "posted_at.is.null";
 }
+function poolFloorFilter(floor: { posted_at: string | null; id: string }): string {
+  // Inclusive immutable lower bound: the frozen pool window never includes rows older
+  // than the floor row captured when the stream started. Together with the anchor this
+  // freezes pool membership: deletions shrink the window but nothing refills it, and the
+  // beyond-pool continuation always starts strictly after this immutable floor value.
+  return floor.posted_at
+    ? `posted_at.gt.${floor.posted_at},and(posted_at.eq.${floor.posted_at},id.gte.${floor.id})`
+    : `posted_at.not.is.null,and(posted_at.is.null,id.gte.${floor.id})`;
+}
+// Terminal completeness sweep ("s:<posted_at>|<id>", "s:top" from the window head): after
+// ranked pool paging exhausts, the frozen window is scanned once more in raw order. The
+// client's id-dedupe renders only rows the ranked stream omitted (score inputs that moved
+// mid-stream, backdated inserts), so no eligible row is silently lost without a refresh.
+function encodeSweepCursor(row: { posted_at: string | null; id: string } | null): string {
+  return row ? `s:${row.posted_at ?? "null"}|${row.id}` : "s:top";
+}
+function parseSweepCursor(raw: string): { after: { posted_at: string | null; id: string } | null } | null {
+  if (!raw.startsWith("s:")) return null;
+  if (raw === "s:top") return { after: null };
+  const sep = raw.lastIndexOf("|");
+  if (sep <= 2 || sep === raw.length - 1) return null;
+  const posted = raw.slice(2, sep);
+  return { after: { posted_at: posted === "null" ? null : posted, id: raw.slice(sep + 1) } };
+}
 
 function sanitizeSearchQuery(input: string): string {
   if (!input) return "";
@@ -494,7 +518,6 @@ export async function GET(req: Request) {
     let nextCursor: string | null = null;
     let isContinuationResponse = false;
     let totalIsLowerBound = false;
-    let candidateJobsForAnchor: any[] = [];
 
     const hasResume = hasResumeSignals(answers.resumeProfile);
 
@@ -506,10 +529,18 @@ export async function GET(req: Request) {
     // and surface on the next fresh load, matching the pool's snapshot semantics.)
     const rawCursorParam = searchParams.get("cursor") || "";
     const poolCursor = parsePoolCursor(rawCursorParam);
-    const cursorKey = poolCursor === null ? parseContinuationCursor(rawCursorParam) : null;
-    // Immutable raw-key upper bound captured by the client when the stream starts; keeps
-    // later inserts out of the pool for the rest of the stream.
+    const sweepCursor = poolCursor === null ? parseSweepCursor(rawCursorParam) : null;
+    const cursorKey = poolCursor === null && sweepCursor === null ? parseContinuationCursor(rawCursorParam) : null;
+    // Immutable raw-key window bounds captured by the client when the stream starts and
+    // echoed verbatim on every later request. The anchor keeps later inserts out of the
+    // pool; the floor freezes membership at the bottom and fixes where the beyond-pool
+    // continuation starts, even after deletions shrink the pool below 1000 rows.
     const poolAnchor = parseContinuationCursor(searchParams.get("poolAnchor") || "");
+    const poolFloor = parseContinuationCursor(searchParams.get("poolFloor") || "");
+    // Response bounds: echo the request's bounds verbatim once the stream has them; only
+    // the first pool response computes them. Beyond-pool ("k:") chunks carry no bounds.
+    let responseAnchor: string | null = poolAnchor ? encodeContinuationCursor(poolAnchor) : null;
+    let responseFloor: string | null = poolFloor ? encodeContinuationCursor(poolFloor) : null;
 
     // Use a fixed candidate set per request (fixed pool size, not growing with page)
     // with deterministic tie-breaks (score desc, posted_at desc, id).
@@ -518,24 +549,33 @@ export async function GET(req: Request) {
       .order("posted_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false });
 
-    // Stream semantics beyond the pool: raw rows are scanned in (posted_at desc, id desc)
-    // order in page-sized slices; each slice is scored and ranked independently and the
-    // per-company cap (max 3 per company, reorder-only, nothing dropped) applies within the
-    // slice. This is deliberately NOT equivalent to one globally ranked list: within the
-    // 1000-row pool the whole pool is ranked together; beyond it, recency-ordered slices
-    // trade cross-slice ranking for completeness (every matching job is eventually served)
-    // and bounded work per request.
-    const runContinuation = async (after: { posted_at: string | null; id: string }) => {
-      const keyFilter = after.posted_at
-        // Null posted_at rows sort after every dated row in the stream, so they belong
-        // to the region strictly after any dated key.
-        ? `posted_at.lt.${after.posted_at},and(posted_at.eq.${after.posted_at},id.lt.${after.id}),posted_at.is.null`
-        : `and(posted_at.is.null,id.lt.${after.id})`;
+    // Raw-order scans power two phases: the terminal completeness sweep ("s", bounded
+    // below by the immutable floor) and the beyond-pool continuation ("k", unbounded).
+    // Both scan raw rows in (posted_at desc, id desc) order in page-sized slices; each
+    // slice is scored and ranked independently and the per-company cap (max 3 per company,
+    // reorder-only, nothing dropped) applies within the slice. This is deliberately NOT
+    // equivalent to one globally ranked list: within the 1000-row pool the whole pool is
+    // ranked together; beyond it, recency-ordered slices trade cross-slice ranking for
+    // completeness (every matching job is eventually served) and bounded work per request.
+    const runRawScan = async (
+      after: { posted_at: string | null; id: string } | null,
+      floor: { posted_at: string | null; id: string } | null,
+      phase: "s" | "k"
+    ) => {
+      if (after) {
+        const keyFilter = after.posted_at
+          // Null posted_at rows sort after every dated row in the stream, so they belong
+          // to the region strictly after any dated key.
+          ? `posted_at.lt.${after.posted_at},and(posted_at.eq.${after.posted_at},id.lt.${after.id}),posted_at.is.null`
+          : `and(posted_at.is.null,id.lt.${after.id})`;
+        query = query.or(keyFilter);
+      }
+      if (floor) query = query.or(poolFloorFilter(floor));
       // One bounded scan per request: up to RECOMMENDED_POOL_SIZE raw rows, walked in
       // page-sized slices until a slice yields qualifying jobs. A request never returns an
       // empty non-terminal page unless the whole scan budget filtered out (extreme edge);
       // then the client auto-continues via the continuation flag below.
-      const { data: rawJobs, error } = await query.or(keyFilter).limit(RECOMMENDED_POOL_SIZE);
+      const { data: rawJobs, error } = await query.limit(RECOMMENDED_POOL_SIZE);
       if (error) {
         log.error("Failed to query continuation jobs for recommendations", { error: error.message || error });
         return NextResponse.json(
@@ -560,22 +600,45 @@ export async function GET(req: Request) {
         paginatedJobs = capJobsPerCompany(qualifyingJobs, 3, pageSize);
         if (paginatedJobs.length > 0) break;
       }
-      hasNextPage = consumed < rows.length || rows.length === RECOMMENDED_POOL_SIZE;
+      const scanHasMore = consumed < rows.length || rows.length === RECOMMENDED_POOL_SIZE;
       const lastRawRow = consumed > 0 ? rows[consumed - 1] : null;
-      nextCursor = hasNextPage && lastRawRow ? encodeContinuationCursor(lastRawRow) : null;
+      if (phase === "s") {
+        if (scanHasMore && lastRawRow) {
+          hasNextPage = true;
+          nextCursor = encodeSweepCursor(lastRawRow);
+        } else if (floor) {
+          // The frozen window is fully swept: the stream continues strictly after the
+          // immutable floor value, exactly where the original pool ended.
+          hasNextPage = true;
+          nextCursor = encodeContinuationCursor(floor);
+        } else {
+          hasNextPage = false;
+          nextCursor = null;
+        }
+      } else {
+        hasNextPage = scanHasMore;
+        nextCursor = scanHasMore && lastRawRow ? encodeContinuationCursor(lastRawRow) : null;
+        // Beyond-pool chunks are raw keyset scans; the window bounds no longer apply.
+        responseAnchor = null;
+        responseFloor = null;
+      }
       isContinuationResponse = true;
       totalIsLowerBound = true;
-      // totalCount stays 0 on continuation chunks: the domain-wide total is not verified
+      // totalCount stays 0 on scan chunks: the domain-wide total is not verified
       // here and a chunk count must never be presented as one. The client keeps its last
       // known total (marked as a lower bound) and relies on hasNextPage for continuation.
       return null;
     };
 
     if (cursorKey !== null) {
-      const failure = await runContinuation(cursorKey);
+      const failure = await runRawScan(cursorKey, null, "k");
+      if (failure) return failure;
+    } else if (sweepCursor !== null) {
+      const failure = await runRawScan(sweepCursor.after, poolFloor, "s");
       if (failure) return failure;
     } else {
       if (poolAnchor) query = query.or(poolAnchorFilter(poolAnchor));
+      if (poolFloor) query = query.or(poolFloorFilter(poolFloor));
       query = query.range(0, RECOMMENDED_POOL_SIZE - 1);
 
       const { data: rawJobs, error } = await query;
@@ -589,7 +652,19 @@ export async function GET(req: Request) {
       }
 
       const candidateJobs = rawJobs || [];
-      candidateJobsForAnchor = candidateJobs;
+      const firstPoolFull = candidateJobs.length === RECOMMENDED_POOL_SIZE;
+      // Frozen window bounds: computed only on the stream's first pool response, echoed
+      // verbatim afterwards (see responseAnchor/responseFloor above).
+      if (!responseAnchor && candidateJobs.length > 0) responseAnchor = encodeContinuationCursor(candidateJobs[0]);
+      const streamFloor =
+        poolFloor ??
+        (firstPoolFull
+          ? {
+              posted_at: candidateJobs[candidateJobs.length - 1].posted_at ?? null,
+              id: String(candidateJobs[candidateJobs.length - 1].id),
+            }
+          : null);
+      if (!responseFloor && streamFloor) responseFloor = encodeContinuationCursor(streamFloor);
       const rankedJobs = isPersonalized || hasResume
         ? rankJobsByRecommendation(candidateJobs, answers)
         : rankJobsByRecommendation(candidateJobs, null);
@@ -622,25 +697,26 @@ export async function GET(req: Request) {
       // NOT a hard cap: a slice full of one employer serves that employer the full slice.
       paginatedJobs = capJobsPerCompany(slice, 3, pageSize);
 
-      // The stream continues while more anchored pool rows remain; when the pool came back
-      // full, the corpus likely holds more rows beyond it, so the stream then continues
-      // through a raw keyset continuation cursor instead of stopping at an artificial
-      // boundary. When this request exhausts the pool (a beyond-pool cursor, or a pool
-      // that filters down to nothing), the first continuation chunk is served in the SAME
-      // response so the client never sees an empty non-terminal page.
-      const poolFull = candidateJobs.length === RECOMMENDED_POOL_SIZE;
-      if (poolFull) totalIsLowerBound = true;
-      if (slice.length === 0 && poolFull) {
-        const poolTail = candidateJobs[candidateJobs.length - 1];
-        const failure = await runContinuation({ posted_at: poolTail.posted_at ?? null, id: poolTail.id });
-        if (failure) return failure;
-        totalCount = qualifyingJobs.length + paginatedJobs.length;
-      } else if (remaining.length > pageSize) {
+      // The stream continues while more frozen-window rows remain. When ranked paging
+      // exhausts the window, the stream hands out a terminal sweep cursor ("s:top"): the
+      // sweep rescans the SAME frozen window in raw order (unbounded above, so rows whose
+      // raw keys moved above the anchor mid-stream are still reached), and the client's
+      // id-dedupe swallows rows already served. After the sweep, a stream whose first pool
+      // came back full continues strictly after the immutable floor value.
+      // Phase transitions are cursor-handed (never in-request) so every scan runs on a
+      // clean query without the pool's own bounds.
+      if (firstPoolFull) totalIsLowerBound = true;
+      if (remaining.length > pageSize) {
         hasNextPage = true;
         nextCursor = encodePoolCursor(slice[slice.length - 1]);
-      } else if (poolFull) {
+      } else if (streamFloor || responseAnchor) {
         hasNextPage = true;
-        nextCursor = encodeContinuationCursor(candidateJobs[candidateJobs.length - 1]);
+        nextCursor = encodeSweepCursor(null);
+        if (slice.length === 0) {
+          // Ranked exhaustion with nothing left to serve: a continuation-marked empty
+          // page; the client auto-chains onto the sweep.
+          isContinuationResponse = true;
+        }
       } else {
         hasNextPage = false;
         nextCursor = null;
@@ -746,9 +822,11 @@ export async function GET(req: Request) {
       // totalIsLowerBound: true means totalCount is a verified lower bound (a full pool or
       // known-served rows), never the verified domain-wide total.
       totalIsLowerBound,
-      // poolAnchor: immutable raw-key upper bound pinning the pool for this stream. The
-      // client echoes it on every subsequent request so inserts cannot shift pool slices.
-      poolAnchor: !isContinuationResponse && candidateJobsForAnchor.length > 0 ? encodeContinuationCursor(candidateJobsForAnchor[0]) : null,
+      // poolAnchor / poolFloor: immutable raw-key window bounds pinning the pool for this
+      // stream. The client echoes them verbatim on every subsequent request; beyond-pool
+      // ("k:") chunks return null for both.
+      poolAnchor: responseAnchor,
+      poolFloor: responseFloor,
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });
