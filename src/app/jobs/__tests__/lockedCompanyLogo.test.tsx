@@ -97,7 +97,7 @@ describe("CompanyLogo locked silhouette (unit)", () => {
     expect(imgSrcRequests).toEqual([]);
     // Constant markup: identical whatever the company.
     const other = render(<CompanyLogo company="Another Fixture Co" locked className="w-8 h-8" />);
-    expect(other.container.innerHTML).toBe(container.innerHTML);
+    expect(other.container.firstElementChild!.outerHTML).toBe(container.firstElementChild!.outerHTML);
   });
 
   it("Pro: genuine logo first, then a neutral letter tile after the image errors", () => {

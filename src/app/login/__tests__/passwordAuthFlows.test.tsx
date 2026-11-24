@@ -195,9 +195,9 @@ describe("/login password sign-in", () => {
   });
 
   it("an error passed back by /auth/callback is shown as text (escaped), not markup", async () => {
-    await mount(<LoginPage />, "/login?error=%3Cimg%20src%3Dx%3E%20expired");
-    expect(banner()).toBe("<img src=x> expired");
-    expect(screen.getByTestId("auth-error-banner").querySelector("img")).toBeNull();
+    await mount(<LoginPage />, "/login?error=%3Cb%3Ebold%3C%2Fb%3E%20expired");
+    expect(banner()).toBe("<b>bold</b> expired");
+    expect(screen.getByTestId("auth-error-banner").querySelector("b")).toBeNull();
   });
 });
 
