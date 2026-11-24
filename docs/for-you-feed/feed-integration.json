@@ -1,0 +1,245 @@
+[
+  {
+    "width": 360,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 360,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 360,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 360,
+    "profileRevisionBeforeAndWhileDetailOpen": true,
+    "scoreValuesSynthetic": true
+  },
+  {
+    "width": 360,
+    "manualRetryRecovery": true
+  },
+  {
+    "width": 360,
+    "browserBackRestoresListAndScroll": true
+  },
+  {
+    "width": 360,
+    "transition": "saved",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "transition": "filter",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "transition": "unmount",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 360,
+    "lockedLogoNoProtectedRequest": true
+  },
+  {
+    "width": 390,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 390,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 390,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 390,
+    "profileRevisionBeforeAndWhileDetailOpen": true,
+    "scoreValuesSynthetic": true
+  },
+  {
+    "width": 390,
+    "manualRetryRecovery": true
+  },
+  {
+    "width": 390,
+    "browserBackRestoresListAndScroll": true
+  },
+  {
+    "width": 390,
+    "transition": "saved",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "transition": "filter",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "transition": "unmount",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 390,
+    "lockedLogoNoProtectedRequest": true
+  },
+  {
+    "width": 430,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 430,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 430,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 430,
+    "profileRevisionBeforeAndWhileDetailOpen": true,
+    "scoreValuesSynthetic": true
+  },
+  {
+    "width": 430,
+    "manualRetryRecovery": true
+  },
+  {
+    "width": 430,
+    "browserBackRestoresListAndScroll": true
+  },
+  {
+    "width": 430,
+    "transition": "saved",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "transition": "applied",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "transition": "filter",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "transition": "unmount",
+    "abortedStaleRequest": true
+  },
+  {
+    "width": 430,
+    "lockedLogoNoProtectedRequest": true
+  },
+  {
+    "width": 1280,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 1280,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 1280,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 1280,
+    "lockedLogoNoProtectedRequest": true
+  }
+]

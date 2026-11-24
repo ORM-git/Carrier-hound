@@ -218,11 +218,11 @@ export default function JobFilterBar({
             type="button"
             ref={(el) => { triggerRefs.current["sort_mobile"] = el; }}
             onClick={() => handleOpenPopover("sort_mobile")}
-            aria-label={`Sort by: ${filters.sort === "match" ? "Recommended" : "Newest"}`}
+            aria-label={`Sort by Recommended: ${filters.sort === "match" ? "Top matched" : "Most recent"}`}
             className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-full border border-[#CBD5E1] bg-white text-[#0F172A] text-xs font-semibold hover:bg-[#F1F5F9] transition cursor-pointer shadow-2xs"
           >
             <ArrowUpDown className="w-3.5 h-3.5 text-[#475569]" />
-            <span>Sort: {filters.sort === "match" ? "Recommended" : "Newest"}</span>
+            <span>Recommended</span>
             <ChevronDown className="w-3 h-3 text-[#475569]" />
           </button>
           {activePopover === "sort_mobile" && (
@@ -240,7 +240,7 @@ export default function JobFilterBar({
                   filters.sort === "newest" ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                Newest First
+                Most recent
               </button>
               <button
                 type="button"
@@ -252,7 +252,7 @@ export default function JobFilterBar({
                   filters.sort === "match" ? "bg-[#EFF6FF] text-[#1D4ED8] font-bold" : "text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                Recommended (Match)
+                Top matched
               </button>
             </div>
           )}
@@ -649,11 +649,11 @@ export default function JobFilterBar({
               type="button"
               onClick={() => handleOpenPopover("sort")}
               aria-expanded={activePopover === "sort"}
-              aria-label={`Sort by: ${filters.sort === "match" ? "Recommended" : "Newest"}`}
+              aria-label={`Sort by Recommended: ${filters.sort === "match" ? "Top matched" : "Most recent"}`}
               className="h-8 px-2 lg:px-2.5 rounded-lg border border-[#CBD5E1] bg-white text-[#0F172A] text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 hover:bg-[#F8FAFC] cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
             >
               <ArrowUpDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
-              <span className="truncate max-w-[90px] sm:max-w-[130px]">{filters.sort === "match" ? "Recommended" : "Newest"}</span>
+              <span className="truncate max-w-[90px] sm:max-w-[130px]">Recommended</span>
               <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
             </button>
 
@@ -674,7 +674,7 @@ export default function JobFilterBar({
                 >
                   <div className="flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-[#2563EB]" />
-                    <span className="font-semibold text-[13px]">Recommended (Match)</span>
+                    <span className="font-semibold text-[13px]">Top matched</span>
                   </div>
                   {!hasConfirmedResume && (
                     <p className="text-[10px] text-[#64748B] mt-0.5 pl-5">Upload resume to activate tailored ranking</p>
@@ -692,7 +692,7 @@ export default function JobFilterBar({
                 >
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-[#64748B]" />
-                    <span className="font-semibold text-[13px]">Newest First</span>
+                    <span className="font-semibold text-[13px]">Most recent</span>
                   </div>
                   <p className="text-[10px] text-[#64748B] mt-0.5 pl-5">Chronological date posted</p>
                 </button>
