@@ -30,3 +30,11 @@ Normal flow now has only sentinel and non-interactive loading status. Button app
 ## Oval refinement
 
 Owner clarified oval rather than circular on Nov24 at 17:04. Ring width/placement retained, height is 62% of width; the thin blue gradient and small percent sign remain. Native ellipse uses normalized pathLength=100, so partial arc length follows the actual score without an approximate circumference. Typecheck and ring tests pass; native scroll/no-button checks repeated at all four widths. Settled 390/1440 screenshots inspected.
+
+## Jobright reference correction
+
+The 17:08 correction supersedes the ellipse interpretation. Direct inspection of the supplied screenshot shows a capsule with straight horizontal sides and semicircular ends. Replaced the ellipse with a closed capsule path, ratio 104:58 from the screenshot, a pale neutral track, thin left-to-right blue gradient, white interior, and a smaller baseline percent sign. Progress starts just before the top-left tangent and follows normalized pathLength=100. Mobile 56x31 with 1.75px stroke; desktop 70x39 with 2.25px stroke. Actual score inputs unchanged.
+
+Attached side-by-side comparisons normalize the original and fixture crops for inspection. Fixture-only 38% matches the source screenshot for the comparison, not a production score. Full viewport evidence is 390 and 1440 CSS px. Reference color intentionally changed from green to blue as requested. Screenshot font rasterization is not pixel-identical across source and fixture devices.
+
+Typecheck and 2 ring tests pass. Native fresh-input/no-normal-button checks repeat at 360/390/768/1440. No merge performed.

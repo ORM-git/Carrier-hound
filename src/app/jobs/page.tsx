@@ -325,39 +325,38 @@ function CircularMatchRing({
 }) {
   const gradientId = `match-blue-${useId().replace(/:/g, "")}`;
   const displayScore = Math.min(100, Math.max(0, score));
-  const height = Math.round(size * 0.62);
-  const radiusX = (size - strokeWidth) / 2;
-  const radiusY = (height - strokeWidth) / 2;
+  // Reference is a capsule: straight top/bottom, semicircular ends, not an ellipse.
+  const height = Math.round(size * (58 / 104));
+  const radius = (height - strokeWidth) / 2;
+  const inset = strokeWidth / 2;
+  const left = height / 2;
+  const right = size - left;
+  // Start just before the top-left tangent, matching the reference arc origin.
+  const outline = `M ${left - radius * 0.3} ${inset + radius * (1 - Math.sqrt(0.91))} A ${radius} ${radius} 0 0 1 ${left} ${inset} H ${right} A ${radius} ${radius} 0 0 1 ${right} ${height - inset} H ${left} A ${radius} ${radius} 0 0 1 ${left - radius * 0.3} ${inset + radius * (1 - Math.sqrt(0.91))} Z`;
   const offset = 100 - displayScore;
   const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
   return (
     <div
-      className="relative inline-flex items-center justify-center shrink-0"
+      className="relative inline-flex items-center justify-center shrink-0 rounded-full bg-white"
       style={{ width: size, height }}
     >
       <svg aria-hidden="true" className="w-full h-full" viewBox={`0 0 ${size} ${height}`}>
         <defs>
-          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#BFDBFE" />
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#EFF6FF" />
             <stop offset="50%" stopColor="#60A5FA" />
             <stop offset="100%" stopColor="#2563EB" />
           </linearGradient>
         </defs>
-        <ellipse
-          cx={size / 2}
-          cy={height / 2}
-          rx={radiusX}
-          ry={radiusY}
-          stroke={light ? "#DBEAFE" : "#1E293B"}
+        <path
+          d={outline}
+          stroke={light ? "#F4F4F5" : "#1E293B"}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
-        <ellipse
-          cx={size / 2}
-          cy={height / 2}
-          rx={radiusX}
-          ry={radiusY}
+        <path
+          d={outline}
           stroke={`url(#${gradientId})`}
           strokeWidth={strokeWidth}
           pathLength={100}
@@ -2373,7 +2372,8 @@ function JobsPageInner() {
                                     <CircularMatchRing
                                       score={matchScore}
                                       size={70}
-                                      strokeWidth={3}
+                                      strokeWidth={2.25}
+                                      light
                                       isPro={isPro}
                                     />
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
@@ -2460,7 +2460,7 @@ function JobsPageInner() {
                                       title={`Fit Match: ${matchScore}%`}
                                       aria-label={`Fit Match: ${matchScore}%`}
                                     >
-                                      <CircularMatchRing score={matchScore} size={52} strokeWidth={2.5} light />
+                                      <CircularMatchRing score={matchScore} size={56} strokeWidth={1.75} light />
                                     </div>
                                   ) : (
                                     <Link
