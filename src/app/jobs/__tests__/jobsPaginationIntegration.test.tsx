@@ -153,24 +153,71 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(loadMoreButton()).not.toBeNull();
   });
 
-  it("an empty continuation chunk with an advancing cursor auto-continues, bounded by the anti-spin guard", async () => {
-    let empties = 0;
+  it("an initial empty continuation chunk auto-chains to the first real page (regression: initial filtered-region dead end)", async () => {
+    // The first pool/continuation chunks can legitimately contain zero eligible jobs
+    // (filtered regions). The feed must keep loading on its own: no sentinel, no manual
+    // button press, and no false empty state.
     h.transport = async ({ page: p }: any) => {
-      if (p === 1) return page(jobs(range(1, 25)), true, 25);
-      // Beyond-pool chunks whose scan budget filtered out mid-stream: empty but NOT the end.
-      empties += 1;
-      return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:cursor-${empties}`, continuation: true };
+      if (p === 1) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:chunk-1", continuation: true };
+      return page(jobs(range(1, 25)), false, 25, "k:chunk-2");
     };
     await mount();
-    for (let k = 0; k < 8; k++) {
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(uniqueTitles()).toHaveLength(25);
+    expect(uniqueTitles()[0]).toBe("Fixture Analyst 1");
+  });
+
+  it("multiple advancing empty continuation chunks chain until jobs arrive (regression: advancing-scan pause)", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p <= 3) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:chunk-${p}`, continuation: true };
+      if (p === 4) return page(jobs(range(1, 25)), true, 100, "k:chunk-4");
+      return page(jobs(range(26, 50)), false, 100, "k:chunk-5");
+    };
+    await mount();
+    await flush();
+    // No observer entry needed: the chain runs from the initial response to the first
+    // non-empty chunk, and the sentinel then continues the stream.
+    await act(async () => io.enter());
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3, 4, 5]);
+    expect(uniqueTitles()).toHaveLength(50);
+  });
+
+  it("empty continuation chunks chain until genuine stream exhaustion, then stop", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p <= 3) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: `k:chunk-${p}`, continuation: true };
+      // Exhaustion: server reports the end of the anchored stream.
+      return { jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null, continuation: true };
+    };
+    await mount();
+    await flush();
+    expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+    for (let k = 0; k < 3; k++) {
       await act(async () => io.enter());
       await flush();
     }
-    // The pinned pause-on-empty does NOT apply to continuation-flagged chunks (they
-    // auto-continue), but the loader pauses after 3 consecutive empty chunks so a
-    // server that keeps promising more can never spin the client indefinitely.
-    expect(empties).toBe(3);
+    // The stream ended: no background refetching, and the true empty state can render.
     expect(pagesRequested()).toEqual([1, 2, 3, 4]);
+  });
+
+  it("a cycling continuation cursor (A then B then A) pauses auto-load immediately", async () => {
+    h.transport = async ({ page: p }: any) => {
+      if (p === 1) return page(jobs(range(1, 25)), true, 100, "k:A");
+      if (p === 2) return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:B", continuation: true };
+      return { jobs: [], totalCount: 0, hasNextPage: true, nextCursor: "k:A", continuation: true };
+    };
+    await mount();
+    await act(async () => io.enter());
+    await flush();
+    // k:B advanced onto an unseen cursor so the chain continued; the response cycling
+    // back to the already-served k:A is non-advancing and pauses instead of spinning.
+    expect(pagesRequested()).toEqual([1, 2, 3]);
+    for (let k = 0; k < 4; k++) {
+      await act(async () => io.enter());
+      await flush();
+    }
+    expect(pagesRequested()).toEqual([1, 2, 3]);
     expect(loadMoreButton()).not.toBeNull();
   });
 

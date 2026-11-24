@@ -192,8 +192,8 @@ export function fixtureJob(i: number, over: Partial<LiveJob> = {}): LiveJob {
   };
 }
 
-export function page(jobs: LiveJob[], hasNextPage: boolean, totalCount = 100): GetJobsResult {
-  return { jobs, totalCount, hasNextPage, nextCursor: null };
+export function page(jobs: LiveJob[], hasNextPage: boolean, totalCount = 100, nextCursor: string | null = null): GetJobsResult {
+  return { jobs, totalCount, hasNextPage, nextCursor };
 }
 
 export const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, k) => from + k);

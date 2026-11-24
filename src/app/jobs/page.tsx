@@ -375,10 +375,6 @@ function CircularMatchRing({
     </div>
   );
 }
-
-// Consecutive empty continuation chunks tolerated before auto-loading pauses (anti-spin bound).
-const MAX_EMPTY_CONTINUATIONS = 3;
-
 function JobsPageInner() {
   const { isExpanded } = useSidebarMode();
   const router = useRouter();
@@ -922,6 +918,9 @@ function JobsPageInner() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
   const [autoLoadPaused, setAutoLoadPaused] = useState(false);
+  // True while the client is auto-chaining through empty continuation chunks: the feed
+  // keeps the loading/sentinel path instead of flashing the empty state.
+  const [continuationChaining, setContinuationChaining] = useState(false);
   // totalCount is a verified lower bound once the full ranked pool is in play; the welcome
   // copy then says "at least N".
   const [totalIsLowerBound, setTotalIsLowerBound] = useState(false);
@@ -929,9 +928,14 @@ function JobsPageInner() {
   const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
   const loadedPageRef = useRef(1);
   const cursorRef = useRef<string | null>(null);
-  // Consecutive empty continuation chunks seen without progress; bounded so a misbehaving
-  // cursor cannot spin the loader indefinitely.
-  const emptyContinuationStreakRef = useRef(0);
+  // Cursors the stream has already consumed; a repeated cursor means the server is not
+  // making progress and auto-load pauses. Advancing empty continuation chunks never pause:
+  // they chain until the domain is genuinely exhausted.
+  const seenCursorsRef = useRef<Set<string>>(new Set());
+  // Latest handleLoadMore, so empty continuation chunks can chain the next request.
+  const loadMoreRef = useRef<(() => void) | null>(null);
+  // Immutable pool anchor handed out by the server at stream start; echoed on every request.
+  const poolAnchorRef = useRef<string | null>(null);
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const autoLoadArmedRef = useRef(true);
@@ -1013,13 +1017,22 @@ function JobsPageInner() {
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
           setTotalIsLowerBound(Boolean(res.totalIsLowerBound));
-          emptyContinuationStreakRef.current = 0;
+          poolAnchorRef.current = res.poolAnchor ?? null;
+          seenCursorsRef.current = new Set(res.nextCursor ? [res.nextCursor] : []);
           setHasNextPage(Boolean(res.hasNextPage));
           cursorRef.current = res.nextCursor ?? null;
           hasNextPageRef.current = Boolean(res.hasNextPage);
           setIsDegraded(Boolean(res.isDegraded || res.error === "degraded"));
           setAppliedEligibility(res.appliedEligibility || null);
           setLoadingJobs(false);
+          // Initial empty continuation (filtered regions before the first eligible jobs):
+          // chain immediately; the empty state is not the end of the stream.
+          if (res.jobs.length === 0 && res.hasNextPage && res.continuation && res.nextCursor) {
+            setContinuationChaining(true);
+            setTimeout(() => loadMoreRef.current?.(), 0);
+          } else {
+            setContinuationChaining(false);
+          }
         }
       })
       .catch((err) => {
@@ -1072,6 +1085,7 @@ function JobsPageInner() {
           page: nextPage,
           pageSize: 25,
           cursor: cursorRef.current ?? undefined,
+          poolAnchor: poolAnchorRef.current ?? undefined,
           category: selectedCategory,
           search: debouncedSearch,
           remoteOnly,
@@ -1094,28 +1108,32 @@ function JobsPageInner() {
       (res) => {
         if (res.isDegraded || res.error) {
           setLoadMoreError(true);
+          setContinuationChaining(false);
           return;
         }
         // Server order kept; ids already shown or repeated within this page are skipped.
         // liveJobs is current here: one request at a time, and a query change makes this response stale.
         const appendedNothing = appendPage(liveJobs, res.jobs).length === liveJobs.length;
         if (appendedNothing && res.hasNextPage && res.continuation) {
-          // An empty beyond-pool chunk means the server's bounded scan filtered out mid-stream,
-          // not that the domain is exhausted: keep going. The pinned pause-on-empty applies to
-          // pool responses, which never carry the continuation flag.
-          // Anti-spin guards: pause if the server hands back a non-advancing cursor, or after
-          // MAX_EMPTY_CONTINUATIONS consecutive empty continuation chunks without progress.
-          const advancing = Boolean(res.nextCursor) && res.nextCursor !== cursorRef.current;
-          emptyContinuationStreakRef.current = advancing ? emptyContinuationStreakRef.current + 1 : MAX_EMPTY_CONTINUATIONS;
-          if (advancing && emptyContinuationStreakRef.current < MAX_EMPTY_CONTINUATIONS) {
+          // An empty continuation chunk means the server's bounded scan filtered out
+          // mid-stream, not that the domain is exhausted: chain the next chunk
+          // automatically until genuine exhaustion. Protection is limited to non-progress:
+          // a repeated cursor (server not advancing) pauses auto-load; errors pause above.
+          const next = res.nextCursor;
+          const advancing = Boolean(next) && !seenCursorsRef.current.has(next as string);
+          if (advancing) {
+            seenCursorsRef.current.add(next as string);
             setAutoLoadPaused(false);
-            autoLoadArmedRef.current = true;
+            setContinuationChaining(true);
+            setTimeout(() => loadMoreRef.current?.(), 0);
           } else {
             setAutoLoadPaused(true);
+            setContinuationChaining(false);
           }
         } else {
-          emptyContinuationStreakRef.current = 0;
+          if (res.nextCursor) seenCursorsRef.current.add(res.nextCursor);
           setAutoLoadPaused(appendedNothing);
+          setContinuationChaining(false);
         }
         setLiveJobs((prev) => appendPage(prev, res.jobs));
         setHasNextPage(Boolean(res.hasNextPage));
@@ -1132,6 +1150,7 @@ function JobsPageInner() {
     if (outcome === "error") setLoadMoreError(true);
     setLoadingMore(false);
   };
+  loadMoreRef.current = handleLoadMore;
 
   // getLiveJobs always reports hasNextPage; a totalCount fallback would show a phantom button once
   // duplicates are dropped (shown < total while the server has no next page).
@@ -2089,7 +2108,7 @@ function JobsPageInner() {
                         </button>
                       </div>
                     </div>
-                  ) : displayedJobs.length === 0 ? (
+                  ) : displayedJobs.length === 0 && !continuationChaining ? (
                     /* Empty state distinguishing no saved vs filtered vs no applied */
                     <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 sm:p-14 text-center space-y-3 shadow-none">
                       <div className="w-12 h-12 rounded-full bg-[#F1F5F9] text-[#475569] flex items-center justify-center mx-auto">

@@ -36,6 +36,38 @@ function parseContinuationCursor(raw: string): { posted_at: string | null; id: s
   return { posted_at: posted === "null" ? null : posted, id: raw.slice(sep + 1) };
 }
 
+// Ranked pool keyset ("p:<score>|<time>|<id>"): a value-based position in the ranked pool
+// order (score desc, time desc, id desc; time = posted_at || created_at || first_seen_at).
+// Combined with poolAnchor (an immutable raw-key upper bound captured when the stream
+// starts) this is stable under insertions and deletions of rows whose score inputs did not
+// change: inserts can neither shift pool slices nor displace unseen pool-tail rows out of
+// the bounded window, and deleted rows simply vanish without moving the position. A row
+// whose score inputs genuinely mutate mid-stream can move; the client de-duplicates repeats
+// by id and a fresh load converges. That is the stream contract - not a snapshot claim.
+function jobStreamTime(row: any): string {
+  return row.posted_at || row.created_at || row.first_seen_at || "";
+}
+function jobStreamScore(row: any): number {
+  return row.matchScore ?? row._matchScore ?? 0;
+}
+function encodePoolCursor(row: any): string {
+  return `p:${jobStreamScore(row)}|${jobStreamTime(row)}|${row.id}`;
+}
+function parsePoolCursor(raw: string): { score: number; time: string; id: string } | null {
+  if (!raw.startsWith("p:")) return null;
+  const parts = raw.slice(2).split("|");
+  if (parts.length !== 3) return null;
+  const score = Number(parts[0]);
+  if (!Number.isFinite(score) || parts[2].length === 0) return null;
+  return { score, time: parts[1], id: parts[2] };
+}
+function poolAnchorFilter(anchor: { posted_at: string | null; id: string }): string {
+  // Inclusive immutable upper bound: the pool never includes rows newer than the anchor.
+  return anchor.posted_at
+    ? `posted_at.lt.${anchor.posted_at},and(posted_at.eq.${anchor.posted_at},id.lte.${anchor.id}),posted_at.is.null`
+    : "posted_at.is.null";
+}
+
 function sanitizeSearchQuery(input: string): string {
   if (!input) return "";
   return input
@@ -453,8 +485,8 @@ export async function GET(req: Request) {
       query = query.or(relevancePrefilter.orClause);
     }
 
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    // The legacy numeric page parameter is echoed in responses but never used for
+    // positioning: pool slices advance by ranked keyset cursors (see below).
 
     let paginatedJobs: any[] = [];
     let totalCount = 0;
@@ -462,6 +494,7 @@ export async function GET(req: Request) {
     let nextCursor: string | null = null;
     let isContinuationResponse = false;
     let totalIsLowerBound = false;
+    let candidateJobsForAnchor: any[] = [];
 
     const hasResume = hasResumeSignals(answers.resumeProfile);
 
@@ -472,7 +505,11 @@ export async function GET(req: Request) {
     // and no seen row repeats. (Rows inserted after the stream started sort before the key
     // and surface on the next fresh load, matching the pool's snapshot semantics.)
     const rawCursorParam = searchParams.get("cursor") || "";
-    const cursorKey = parseContinuationCursor(rawCursorParam);
+    const poolCursor = parsePoolCursor(rawCursorParam);
+    const cursorKey = poolCursor === null ? parseContinuationCursor(rawCursorParam) : null;
+    // Immutable raw-key upper bound captured by the client when the stream starts; keeps
+    // later inserts out of the pool for the rest of the stream.
+    const poolAnchor = parseContinuationCursor(searchParams.get("poolAnchor") || "");
 
     // Use a fixed candidate set per request (fixed pool size, not growing with page)
     // with deterministic tie-breaks (score desc, posted_at desc, id).
@@ -538,6 +575,7 @@ export async function GET(req: Request) {
       const failure = await runContinuation(cursorKey);
       if (failure) return failure;
     } else {
+      if (poolAnchor) query = query.or(poolAnchorFilter(poolAnchor));
       query = query.range(0, RECOMMENDED_POOL_SIZE - 1);
 
       const { data: rawJobs, error } = await query;
@@ -551,6 +589,7 @@ export async function GET(req: Request) {
       }
 
       const candidateJobs = rawJobs || [];
+      candidateJobsForAnchor = candidateJobs;
       const rankedJobs = isPersonalized || hasResume
         ? rankJobsByRecommendation(candidateJobs, answers)
         : rankJobsByRecommendation(candidateJobs, null);
@@ -561,33 +600,49 @@ export async function GET(req: Request) {
         ? rankedJobs.filter((job) => (job.matchScore ?? job._matchScore ?? 0) > 0)
         : rankedJobs;
 
-      const cappedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
-      totalCount = cappedJobs.length; // Honestly reports the bounded pool total after exclusions
-      paginatedJobs = cappedJobs.slice(from, to + 1);
+      totalCount = qualifyingJobs.length; // Honestly reports the bounded pool total after exclusions
 
-      // The stream continues while this page is not the pool's end; when the pool came back
-      // full, the corpus likely holds more rows beyond it, so the stream continues past the
-      // pool through a keyset continuation cursor instead of stopping at an artificial
-      // boundary. When this request exhausts the pool (including a pool that filters down
-      // to nothing), the first continuation chunk is served in the SAME response so the
-      // client never sees an empty non-terminal page.
+      // Pool slices are value-based ranked keysets over the anchored pool (see helpers):
+      // stable under insertions (anchor) and deletions (value predicate) for rows whose
+      // score inputs did not change. The legacy numeric page parameter is intentionally
+      // not used for positioning: it drifts under mutation.
+      const remaining = poolCursor
+        ? qualifyingJobs.filter((job) => {
+            const s = jobStreamScore(job);
+            if (s !== poolCursor.score) return s < poolCursor.score;
+            const t = jobStreamTime(job);
+            if (t !== poolCursor.time) return t < poolCursor.time;
+            return String(job.id) < poolCursor.id;
+          })
+        : qualifyingJobs;
+
+      const slice = remaining.slice(0, pageSize);
+      // Per-slice employer diversity: reorder-only within the served slice. It never drops
+      // rows, so completeness is preserved and the keyset never skips a deferred row. It is
+      // NOT a hard cap: a slice full of one employer serves that employer the full slice.
+      paginatedJobs = capJobsPerCompany(slice, 3, pageSize);
+
+      // The stream continues while more anchored pool rows remain; when the pool came back
+      // full, the corpus likely holds more rows beyond it, so the stream then continues
+      // through a raw keyset continuation cursor instead of stopping at an artificial
+      // boundary. When this request exhausts the pool (a beyond-pool cursor, or a pool
+      // that filters down to nothing), the first continuation chunk is served in the SAME
+      // response so the client never sees an empty non-terminal page.
       const poolFull = candidateJobs.length === RECOMMENDED_POOL_SIZE;
-      hasNextPage = to + 1 < cappedJobs.length || poolFull;
-      if (poolFull) {
-        totalIsLowerBound = true;
+      if (poolFull) totalIsLowerBound = true;
+      if (slice.length === 0 && poolFull) {
         const poolTail = candidateJobs[candidateJobs.length - 1];
-        if (paginatedJobs.length === 0) {
-          // The pool is exhausted by this request (a beyond-pool page, or a pool that
-          // filters down to nothing): serve the first continuation chunk in the SAME
-          // response so the client never sees an empty non-terminal page.
-          const failure = await runContinuation({ posted_at: poolTail.posted_at ?? null, id: poolTail.id });
-          if (failure) return failure;
-          totalCount = cappedJobs.length + paginatedJobs.length;
-        } else if (to + 1 >= cappedJobs.length) {
-          // Serving the pool's final rows: hand out the keyset continuation cursor.
-          nextCursor = encodeContinuationCursor(poolTail);
-        }
+        const failure = await runContinuation({ posted_at: poolTail.posted_at ?? null, id: poolTail.id });
+        if (failure) return failure;
+        totalCount = qualifyingJobs.length + paginatedJobs.length;
+      } else if (remaining.length > pageSize) {
+        hasNextPage = true;
+        nextCursor = encodePoolCursor(slice[slice.length - 1]);
+      } else if (poolFull) {
+        hasNextPage = true;
+        nextCursor = encodeContinuationCursor(candidateJobs[candidateJobs.length - 1]);
       } else {
+        hasNextPage = false;
         nextCursor = null;
       }
     }
@@ -691,6 +746,9 @@ export async function GET(req: Request) {
       // totalIsLowerBound: true means totalCount is a verified lower bound (a full pool or
       // known-served rows), never the verified domain-wide total.
       totalIsLowerBound,
+      // poolAnchor: immutable raw-key upper bound pinning the pool for this stream. The
+      // client echoes it on every subsequent request so inserts cannot shift pool slices.
+      poolAnchor: !isContinuationResponse && candidateJobsForAnchor.length > 0 ? encodeContinuationCursor(candidateJobsForAnchor[0]) : null,
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });
