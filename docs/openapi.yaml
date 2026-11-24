@@ -70,6 +70,15 @@ paths:
         "200": { description: All sessions revoked }
         "401": { description: Missing, invalid, or expired session }
         "429": { description: Rate limited }
+  /api/account/status:
+    get:
+      tags: [account]
+      summary: Check account status and pending deletion tombstones
+      description: Returns onboarding completion and pending deletion status under service authority.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Account status returned }
+        "401": { description: Missing, invalid, or expired session }
   /api/admin/early-access:
     get:
       tags: [admin]

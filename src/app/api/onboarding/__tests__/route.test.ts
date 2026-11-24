@@ -5,6 +5,33 @@ const mockDb = {
   user_preferences: new Map<string, any>(),
 };
 
+const defaultFromImplementation = (table: string) => {
+  let filterVal: string | null = null;
+  const queryObj: any = {
+    eq: vi.fn((col: string, val: string) => {
+      filterVal = val;
+      return queryObj;
+    }),
+    is: vi.fn(() => queryObj),
+    maybeSingle: vi.fn(async () => {
+      if (table === "user_preferences") {
+        return { data: (filterVal ? mockDb.user_preferences.get(filterVal) : null) || null, error: null };
+      }
+      return { data: null, error: null };
+    }),
+  };
+  return {
+    select: vi.fn(() => queryObj),
+    upsert: vi.fn(async (payload: any) => {
+      if (table === "user_preferences") {
+        const existing = mockDb.user_preferences.get(payload.user_id) || {};
+        mockDb.user_preferences.set(payload.user_id, { ...existing, ...payload });
+      }
+      return { data: payload, error: null };
+    }),
+  };
+};
+
 const mockSupabaseAdmin = {
   auth: {
     getUser: vi.fn(async (token: string) => {
@@ -17,25 +44,7 @@ const mockSupabaseAdmin = {
       return { data: { user: null }, error: new Error("Invalid session") };
     }),
   },
-  from: vi.fn((table: string) => ({
-    select: vi.fn(() => ({
-      eq: vi.fn((col: string, val: string) => ({
-        maybeSingle: vi.fn(async () => {
-          if (table === "user_preferences") {
-            return { data: mockDb.user_preferences.get(val) || null, error: null };
-          }
-          return { data: null, error: null };
-        }),
-      })),
-    })),
-    upsert: vi.fn(async (payload: any) => {
-      if (table === "user_preferences") {
-        const existing = mockDb.user_preferences.get(payload.user_id) || {};
-        mockDb.user_preferences.set(payload.user_id, { ...existing, ...payload });
-      }
-      return { data: payload, error: null };
-    }),
-  })),
+  from: vi.fn(defaultFromImplementation),
 };
 
 vi.mock("@/lib/ai/serviceHandler", () => ({
@@ -66,6 +75,7 @@ describe("POST /api/onboarding", () => {
   beforeEach(() => {
     mockDb.user_preferences.clear();
     vi.clearAllMocks();
+    mockSupabaseAdmin.from.mockImplementation(defaultFromImplementation);
   });
 
   it("returns 401 with private no-store header when Authorization header is missing", async () => {
@@ -318,12 +328,20 @@ describe("POST /api/onboarding", () => {
 
   it("fails closed with 500 and writes nothing when saved preferences cannot be read", async () => {
     const upsert = vi.fn();
-    mockSupabaseAdmin.from.mockImplementationOnce(() => ({
-      select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: "connection reset" } }) }),
-      }),
-      upsert,
-    }) as any);
+    mockSupabaseAdmin.from.mockImplementation((table: string) => {
+      if (table === "deleted_account_tombstones") {
+        return defaultFromImplementation(table) as any;
+      }
+      const q: any = {
+        eq: vi.fn(() => q),
+        is: vi.fn(() => q),
+        maybeSingle: vi.fn(async () => ({ data: null, error: { message: "connection reset" } })),
+      };
+      return {
+        select: vi.fn(() => q),
+        upsert,
+      } as any;
+    });
     const res = await POST(makeReq(validBody, "valid-user-token"));
     expect(res.status).toBe(500);
     expect(res.headers.get("Cache-Control")).toBe("private, no-cache, no-store, must-revalidate");
@@ -336,12 +354,20 @@ describe("POST /api/onboarding", () => {
       data: null,
       error: { code: "PGRST204", message: "Could not find the 'country' column of 'user_preferences' in the schema cache" },
     }));
-    const table = {
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-      upsert,
-    } as any;
-    // One call for the existing-prefs read, one for the upsert (a retry would need a third).
-    mockSupabaseAdmin.from.mockImplementationOnce(() => table).mockImplementationOnce(() => table);
+    mockSupabaseAdmin.from.mockImplementation((table: string) => {
+      if (table === "deleted_account_tombstones") {
+        return defaultFromImplementation(table) as any;
+      }
+      const q: any = {
+        eq: vi.fn(() => q),
+        is: vi.fn(() => q),
+        maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+      };
+      return {
+        select: vi.fn(() => q),
+        upsert,
+      } as any;
+    });
     const res = await POST(makeReq(validBody, "valid-user-token"));
     expect(res.status).toBe(503);
     const json = await res.json();

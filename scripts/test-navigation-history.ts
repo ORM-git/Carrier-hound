@@ -74,7 +74,8 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
   {
     file: "src/app/login/page.tsx",
     expectedCount: 2,
-    requiredSnippets: ["router.replace(next)", "router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`)"],
+    // main renamed the auto-redirect target to `target`; the branch adds the post-sign-in callback replace
+    requiredSnippets: ["router.replace(target)", "router.replace(`/auth/callback?returnTo=${encodeURIComponent(next)}`)"],
   },
   // Successful password reset replaces the one-time reset screen with the post-auth callback
   {

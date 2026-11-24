@@ -55,7 +55,11 @@ check("handler falls back to hard delete pre-migration", handler.includes("isMis
 check("handler anonymizes early-access email with non-deliverable placeholder", handler.includes('@${ANONYMIZED_EMAIL_DOMAIN}') && handler.includes('ANONYMIZED_EMAIL_DOMAIN = "deleted.invalid"'));
 check("handler hashes email for lookup without PII", handler.includes("sha256Hex(normalizedEmail)"));
 check("handler writes tombstone with retention deadline", handler.includes('deleted_account_tombstones') && handler.includes("hard_delete_after"));
-check("tombstone write is fail-open", handler.includes("Account deletion tombstone write failed (continuing)"));
+check(
+  "tombstone write failure stops before destructive cleanup",
+  handler.includes("Unable to record deletion state") &&
+    handler.indexOf("Unable to record deletion state") < handler.indexOf("isIgnorableDeleteError")
+);
 check("retention window is 30 days", handler.includes("ACCOUNT_DELETION_RETENTION_DAYS = 30"));
 check(
   "auth identity is still deleted after the tombstone write",

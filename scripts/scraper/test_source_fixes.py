@@ -236,6 +236,7 @@ class TestWorkdaySharedBudget(unittest.TestCase):
         self.fetchers = fetchers
         fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
         fetchers._WORKDAY_TENANT_NEXT.clear()
+        fetchers._WORKDAY_LAST_TENANT_START = 0.0
         self.clock = _Sleeps()
         self.requests: list[str] = []
         self.limiter_calls: list[str] = []
@@ -391,6 +392,7 @@ class TestMixedSuccessZeroWriteVeto(unittest.TestCase):
 
         fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
         fetchers._WORKDAY_TENANT_NEXT.clear()
+        fetchers._WORKDAY_LAST_TENANT_START = 0.0
         env = {
             "NEXT_PUBLIC_SUPABASE_URL": "https://unit-test-project.supabase.co",
             "SUPABASE_SERVICE_ROLE_KEY": "fake-service-role-key-for-tests-0123456789",

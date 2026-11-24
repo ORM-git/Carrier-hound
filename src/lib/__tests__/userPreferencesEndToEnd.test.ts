@@ -64,6 +64,21 @@ function shimClient() {
           return {
             eq(col: string, val: unknown) {
               return {
+                is(isCol: string, _isVal: null) {
+                  return {
+                    async maybeSingle() {
+                      try {
+                        const r = await db.query<any>(
+                          `select ${cols} from public.${table} where ${col} = $1 and ${isCol} is null`,
+                          [val]
+                        );
+                        return { data: r.rows[0] ?? null, error: null };
+                      } catch (e) {
+                        return { data: null, error: pgError(e) };
+                      }
+                    },
+                  };
+                },
                 async maybeSingle() {
                   try {
                     const r = await db.query<any>(`select ${cols} from public.${table} where ${col} = $1`, [val]);
@@ -146,6 +161,7 @@ const VALID_BODY = {
 async function setUp(applyCountryMigration: boolean) {
   db = new PGlite();
   await db.exec(BASE_TABLE);
+  await db.exec("alter table public.user_preferences add column deleted_at timestamptz");
   await db.exec(migration("20261101_user_preferences_eligibility_filter.sql"));
   if (applyCountryMigration) {
     await db.exec(migration("20261117_user_preferences_country.sql"));
@@ -157,6 +173,7 @@ describe("user preferences end to end (migration 20261117 applied)", () => {
     await setUp(true);
   });
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await db.close();
   });
 
@@ -178,6 +195,41 @@ describe("user preferences end to end (migration 20261117 applied)", () => {
     // Reading twice still writes nothing.
     await getUserPreferences(USER_ID);
     expect(await rowCount()).toBe(0);
+  });
+
+  it("ordinary getter ignores tombstoned preferences and returns fresh defaults", async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+    vi.stubGlobal("window", { dispatchEvent: () => true });
+    storage.set("careermonke_preferences", JSON.stringify({ roles: ["Previous identity"], onboardingCompleted: true }));
+    await db.query(
+      "insert into public.user_preferences (user_id, roles, onboarding_completed, deleted_at) values ($1, $2, true, now())",
+      [USER_ID, ["Old role"]]
+    );
+    const prefs = await getUserPreferences(USER_ID);
+    expect(prefs.roles).toEqual([]);
+    expect(prefs.onboardingCompleted).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("ordinary getter does not turn a database read error into cached preferences", async () => {
+    const storage = new Map<string, string>([["careermonke_preferences", JSON.stringify({ roles: ["Old user"], onboardingCompleted: true })]]);
+    vi.stubGlobal("localStorage", { getItem: (key: string) => storage.get(key) ?? null, setItem: () => {}, removeItem: () => {} });
+    vi.stubGlobal("window", { dispatchEvent: () => true });
+    await db.exec("drop table public.user_preferences");
+    const prefs = await getUserPreferences(USER_ID);
+    expect(prefs.roles).toEqual([]);
+    expect(prefs.onboardingCompleted).toBe(false);
+  });
+
+  it("genuinely old schema without deleted_at can read a row after hard-delete-era setup", async () => {
+    await db.exec("alter table public.user_preferences drop column deleted_at");
+    await db.query("insert into public.user_preferences (user_id, roles) values ($1, $2)", [USER_ID, ["Legacy role"]]);
+    expect((await getUserPreferences(USER_ID)).roles).toEqual(["Legacy role"]);
   });
 
   it("new account: getter, then API save, then getter agrees with the saved row and the API response", async () => {
@@ -240,6 +292,7 @@ describe("user preferences end to end (migration 20261117 NOT applied yet)", () 
     await setUp(false);
   });
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await db.close();
   });
 
@@ -253,6 +306,16 @@ describe("user preferences end to end (migration 20261117 NOT applied yet)", () 
     expect(prefs.employmentTypes).toEqual(["full-time"]);
     expect(prefs.locations).toEqual(["Pune"]);
     expect(prefs.country).toBeUndefined();
+  });
+
+  it("ordinary getter ignores tombstoned preferences when country columns are unavailable", async () => {
+    await db.query(
+      "insert into public.user_preferences (user_id, roles, onboarding_completed, deleted_at) values ($1, $2, true, now())",
+      [USER_ID, ["Old role"]]
+    );
+    const prefs = await getUserPreferences(USER_ID);
+    expect(prefs.roles).toEqual([]);
+    expect(prefs.onboardingCompleted).toBe(false);
   });
 
   it("API save does NOT report success when the country columns are missing (no retry that drops them)", async () => {

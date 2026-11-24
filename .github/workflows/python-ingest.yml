@@ -1,16 +1,37 @@
 name: Python Job Ingestion (every 4 hours)
 
-# Runs the Python master ingestion (scripts/scraper/run_ingestion.py) on a schedule with exactly the manual
-# production command. The TypeScript pipeline (ingest.yml, :17 every 4h) is a separate ingester; this one is
-# offset by 2.5h and shares its concurrency group (ingest-pipeline), so the two never run at the same time.
+# Runs the Python master ingestion (scripts/scraper/run_ingestion.py) as two independent cohorts:
+# non-workday (every other source) and workday. Each cohort is its own run with its own report and its own
+# failed-source write guard, so a throttled Workday tenant no longer blocks healthy non-Workday writes, and
+# a failed non-Workday board never blocks Workday. The run is green only when every cohort is green.
 #
-# Safety: the runner's own guard is untouched. If any source fails, run_master_ingestion withholds every
-# database write and all expiry, and the CLI exits 1 -> this run is marked failed with a summary.
+# The TypeScript pipeline (ingest.yml, :17 every 4h) is a separate ingester; this one is offset by 2.5h and
+# shares its concurrency group (ingest-pipeline), so the two never write at the same time. The cohorts run
+# one after the other (max-parallel: 1) and a failure in one never cancels the other (fail-fast: false).
+#
+# Safety: inside each cohort the runner's guard is untouched. If any of that cohort's sources fails, the
+# runner withholds every database write (company sync included) and all expiry for that cohort and exits 1.
+# Workday is partial coverage and never expires jobs.
 on:
   schedule:
-    # 02:47, 06:47, 10:47, 14:47, 18:47, 22:47 UTC
+    # 02:47, 06:47, 10:47, 14:47, 18:47, 22:47 UTC: both cohorts, write + production + expire (unchanged authority)
     - cron: '47 2-23/4 * * *'
   workflow_dispatch:
+    inputs:
+      cohort:
+        description: 'Which cohort(s) to run'
+        type: choice
+        options: [both, non-workday, workday]
+        default: both
+      mode:
+        description: 'dry-run fetches and reports only. write-production-expire writes to the production DB and may expire jobs.'
+        type: choice
+        options: [dry-run, write-production-expire]
+        default: dry-run
+      confirm:
+        description: 'Only for write-production-expire: type exactly WRITE PRODUCTION AND EXPIRE'
+        type: string
+        default: ''
 
 concurrency:
   # Shared with ingest.yml (TypeScript ingester): both write and expire jobs in the same DB, so at most one
@@ -22,10 +43,62 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    name: Validate run plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      cohorts: ${{ steps.plan.outputs.cohorts }}
+      expect: ${{ steps.plan.outputs.expect }}
+      mode: ${{ steps.plan.outputs.mode }}
+    steps:
+      - name: Validate inputs
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_COHORT: ${{ inputs.cohort }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "schedule" ]; then
+            cohort=both
+            mode=write-production-expire
+          else
+            cohort="$IN_COHORT"
+            mode="$IN_MODE"
+          fi
+          case "$cohort" in
+            both) cohorts='["non-workday","workday"]'; expect='non-workday,workday' ;;
+            non-workday|workday) cohorts="[\"$cohort\"]"; expect="$cohort" ;;
+            *) echo "::error title=Invalid input::cohort must be both, non-workday or workday"; exit 2 ;;
+          esac
+          case "$mode" in
+            dry-run) ;;
+            write-production-expire)
+              if [ "$EVENT" != "schedule" ] && [ "$IN_CONFIRM" != "WRITE PRODUCTION AND EXPIRE" ]; then
+                echo "::error title=Write not confirmed::type exactly WRITE PRODUCTION AND EXPIRE in the confirm input to write"
+                exit 2
+              fi ;;
+            *) echo "::error title=Invalid input::mode must be dry-run or write-production-expire"; exit 2 ;;
+          esac
+          {
+            echo "cohorts=$cohorts"
+            echo "expect=$expect"
+            echo "mode=$mode"
+          } >> "$GITHUB_OUTPUT"
+          echo "Plan: event=$EVENT cohort=$cohort mode=$mode"
+
   ingest:
-    name: Python ingestion (write, production, expire)
+    name: Python ingestion [${{ matrix.cohort }}] (${{ needs.plan.outputs.mode }})
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        cohort: ${{ fromJSON(needs.plan.outputs.cohorts) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -43,77 +116,73 @@ jobs:
       - name: Run ingestion
         id: run
         env:
+          COHORT: ${{ matrix.cohort }}
+          MODE: ${{ needs.plan.outputs.mode }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
         run: |
           mkdir -p reports
-          # Presence check only; secret values are never echoed.
-          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "::error title=Missing secrets::Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) in repository Actions secrets."
-            exit 2
+          case "$COHORT" in non-workday|workday) ;; *) echo "::error::invalid cohort"; exit 2 ;; esac
+          args=(-m scripts.scraper.run_ingestion --cohort "$COHORT")
+          if [ "$MODE" = "write-production-expire" ]; then
+            # Presence check only; secret values are never echoed.
+            missing=()
+            [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] || missing+=("NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL)")
+            [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || missing+=("SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)")
+            if [ "${#missing[@]}" -gt 0 ]; then
+              echo "::error title=Missing secrets::Set in repository Actions secrets: ${missing[*]}"
+              echo "exit_code=2" >> "$GITHUB_OUTPUT"
+              exit 2
+            fi
+            args+=(--write-to-database --production --expire)
           fi
           set +e
-          python -m scripts.scraper.run_ingestion --write-to-database --production --expire \
-            > reports/python-ingest-report.json 2> reports/python-ingest-stderr.log
+          python "${args[@]}" > "reports/python-ingest-$COHORT.json" 2> "reports/python-ingest-$COHORT-stderr.log"
           code=$?
           set -e
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           # stderr carries only the runner's own (redacted) messages / tracebacks
-          tail -n 40 reports/python-ingest-stderr.log
+          tail -n 40 "reports/python-ingest-$COHORT-stderr.log"
           exit $code
 
-      - name: Run summary
+      - name: Cohort summary
         if: always()
         env:
+          COHORT: ${{ matrix.cohort }}
           EXIT_CODE: ${{ steps.run.outputs.exit_code }}
         run: |
-          python - <<'PY'
-          import json, os
-          path, out = "reports/python-ingest-report.json", []
-          code = os.environ.get("EXIT_CODE") or "n/a"
-          try:
-              with open(path, encoding="utf-8") as fh:
-                  r = json.load(fh)
-          except Exception as exc:  # no report: auth refusal, crash or timeout before the runner printed it
-              r = None
-              out.append(f"### Python ingestion: no report (exit {code}): {type(exc).__name__}")
-          if r is not None:
-              db = r.get("db") or {}
-              failed = r.get("failed_sources") or []
-              ok = code == "0"
-              out += [
-                  f"### Python ingestion: {'OK' if ok else 'FAILED'} (exit {code})",
-                  "",
-                  "| metric | value |", "|---|---|",
-                  f"| sources | {len(r.get('sources') or [])} |",
-                  f"| failed sources | {len(failed)} |",
-                  f"| fetched | {r.get('fetched')} |",
-                  f"| inserted | {db.get('inserted')} |",
-                  f"| updated | {db.get('updated')} |",
-                  f"| expired | {db.get('expired')} |",
-                  f"| persistence failed | {db.get('persistence_failed')} |",
-              ]
-              if failed:
-                  out += ["", "**Failed sources (all writes and expiry withheld by the guard):**", ""]
-                  for f in failed:
-                      msg = str(f.get("error") or "")[:300].replace("\n", " ")
-                      out.append(f"- `{f.get('source')}`: {msg}")
-                      print(f"::error title=Ingestion source failed::{f.get('source')}: {msg}")
-              for e in (db.get("write_errors") or [])[:10]:
-                  print(f"::error title=Ingestion write error::{str(e)[:300]}")
-          text = "\n".join(out)
-          print(text)
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
-              fh.write(text + "\n")
-          PY
+          mkdir -p reports
+          python -m scripts.scraper.ingest_report cohort --cohort "$COHORT" --exit-code "$EXIT_CODE" \
+            --report "reports/python-ingest-$COHORT.json" --out "reports/python-ingest-summary-$COHORT.json"
 
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: python-ingest-report-${{ github.run_id }}
+          name: python-ingest-${{ matrix.cohort }}-${{ github.run_id }}
           path: reports/python-ingest-*
           if-no-files-found: ignore
           retention-days: 14
+
+  aggregate:
+    name: Python ingestion overall
+    needs: [plan, ingest]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download cohort reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: python-ingest-*-${{ github.run_id }}
+          path: reports
+
+      - name: Aggregate (green only when every cohort is green)
+        env:
+          EXPECT: ${{ needs.plan.outputs.expect }}
+        run: python -m scripts.scraper.ingest_report aggregate --dir reports --expect "$EXPECT"

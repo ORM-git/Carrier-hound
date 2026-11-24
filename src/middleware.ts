@@ -5,6 +5,7 @@ import { isVerifiedAdminUser } from "@/lib/admin/constants";
 import { isCrossSiteMutation } from "@/lib/security/sameOrigin";
 import { exceedsGlobalBodyCap } from "@/lib/security/bodySize";
 import { checkAccountOnboardingCompleted } from "@/lib/auth/onboarding";
+import { getValidReturnUrl } from "@/lib/auth/returnTo";
 import { createLogger } from "@/lib/observability/logger";
 
 const log = createLogger({ context: { module: "middleware" } });
@@ -618,15 +619,35 @@ async function middlewareImpl(request: NextRequest) {
       const { hasValidSession, signedOutNonAllowedUser, response: authResponse, userId } =
         await verifyAuthenticatedRequest(request);
       if (hasValidSession && !signedOutNonAllowedUser) {
-        let destination = "/jobs";
+        let destination = getValidReturnUrl(
+          request.nextUrl.searchParams.get("returnTo") || request.nextUrl.searchParams.get("return_to") || request.nextUrl.searchParams.get("next"),
+          "/jobs"
+        );
+        let completedDestination = false;
         if (userId) {
           const adminClient = getAdminSupabaseClient();
           if (adminClient) {
+            try {
+              const { data: tombstone } = await adminClient
+                .from("deleted_account_tombstones")
+                .select("user_id")
+                .eq("user_id", userId)
+                .is("purged_at", null)
+                .maybeSingle();
+              if (tombstone?.user_id) {
+                const redirect = NextResponse.redirect(new URL("/settings?tab=privacy&state=deletion_pending", request.url));
+                for (const cookie of authResponse.cookies.getAll()) redirect.cookies.set(cookie);
+                return redirect;
+              }
+            } catch {}
             const completed = await checkAccountOnboardingCompleted(adminClient, userId);
-            destination = completed ? "/jobs" : "/onboarding";
+            completedDestination = completed;
           }
         }
-        return NextResponse.redirect(new URL(destination, request.url));
+        if (!completedDestination) destination = `/onboarding?next=${encodeURIComponent(destination)}`;
+        const redirect = NextResponse.redirect(new URL(destination, request.url));
+        for (const cookie of authResponse.cookies.getAll()) redirect.cookies.set(cookie);
+        return redirect;
       }
       if (signedOutNonAllowedUser) {
         return authResponse;
@@ -642,18 +663,39 @@ async function middlewareImpl(request: NextRequest) {
       await verifyAuthenticatedRequest(request);
     if (!hasValidSession || signedOutNonAllowedUser) {
       const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("returnTo", "/onboarding");
-      return NextResponse.redirect(loginUrl);
+      const next = getValidReturnUrl(request.nextUrl.searchParams.get("next"), "/jobs");
+      loginUrl.searchParams.set("returnTo", `/onboarding?next=${encodeURIComponent(next)}`);
+      const redirect = NextResponse.redirect(loginUrl);
+      for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+      return redirect;
     }
     if (userId) {
+      const adminClient = getAdminSupabaseClient();
+      if (adminClient) {
+        try {
+          const { data: tombstone } = await adminClient
+            .from("deleted_account_tombstones")
+            .select("user_id")
+            .eq("user_id", userId)
+            .is("purged_at", null)
+            .maybeSingle();
+          if (tombstone?.user_id) {
+            const redirect = NextResponse.redirect(new URL("/settings?tab=privacy&state=deletion_pending", request.url));
+            for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+            return redirect;
+          }
+        } catch {}
+      }
       const modeParam = request.nextUrl.searchParams.get("mode") || request.nextUrl.searchParams.get("edit");
       const isEditMode = modeParam === "edit" || modeParam === "true";
       if (!isEditMode) {
-        const adminClient = getAdminSupabaseClient();
         if (adminClient) {
           const completed = await checkAccountOnboardingCompleted(adminClient, userId);
           if (completed) {
-            return NextResponse.redirect(new URL("/jobs", request.url));
+            const destination = getValidReturnUrl(request.nextUrl.searchParams.get("next"), "/jobs");
+            const redirect = NextResponse.redirect(new URL(destination, request.url));
+            for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+            return redirect;
           }
         }
       }

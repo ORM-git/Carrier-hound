@@ -356,7 +356,7 @@ async function runAuthGuardSuite() {
     }
 
     // 4. Google session hitting /login
-    // Must redirect to /dashboard (status 307)
+    // Missing local admin configuration fails closed to onboarding and preserves the default return.
     const googleLoginReq = new NextRequest("http://localhost:3000/login", {
       headers: {
         cookie: "sb-access-token=google-auth-token;",
@@ -369,11 +369,10 @@ async function runAuthGuardSuite() {
       `Google session on /login must redirect to /jobs (307), got ${googleLoginRes.status}`
     );
     const googleLoginLoc = googleLoginRes.headers.get("location") || "";
-    assert.ok(
-      googleLoginLoc.includes("/jobs") || googleLoginLoc.includes("/dashboard"),
-      `Google session on /login must redirect to /jobs, got ${googleLoginLoc}`
-    );
-    console.log("  -> [PASS-LOCAL] Google session on /login correctly redirected to /jobs");
+    const googleLoginUrl = new URL(googleLoginLoc);
+    assert.strictEqual(googleLoginUrl.pathname, "/onboarding");
+    assert.strictEqual(googleLoginUrl.searchParams.get("next"), "/jobs");
+    console.log("  -> [PASS-LOCAL] Google session on /login safely routed through onboarding with /jobs return");
   } finally {
     if (prevMockSb !== undefined) {
       (globalThis as any).__mockSupabaseClient = prevMockSb;
