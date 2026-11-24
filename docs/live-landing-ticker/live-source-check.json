@@ -1,0 +1,15 @@
+{
+  "source": "https://careermonke.com/api/ticker",
+  "checked_at": "2026-11-24T10:37:52Z",
+  "rows": 20,
+  "rows_with_stored_logo": 2,
+  "latest_posted_at": "2026-11-24T07:15:47.138Z",
+  "logo_checks": [
+    {
+      "url": "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/581f67d3-d9ce-4d20-a5a8-7edcb2a4fcc4.png",
+      "status": 200,
+      "content_type": "image/png",
+      "byte_count": 197703
+    }
+  ]
+}
