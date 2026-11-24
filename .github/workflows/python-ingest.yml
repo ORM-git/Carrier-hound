@@ -32,6 +32,10 @@ on:
         description: 'Only for write-production-expire: type exactly WRITE PRODUCTION AND EXPIRE'
         type: string
         default: ''
+      watchdog:
+        description: 'Set to true if dispatched by scheduled watchdog catch-up'
+        type: boolean
+        default: false
 
 concurrency:
   # Shared with ingest.yml (TypeScript ingester): both write and expire jobs in the same DB, so at most one
@@ -41,6 +45,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   plan:
@@ -51,16 +56,51 @@ jobs:
       cohorts: ${{ steps.plan.outputs.cohorts }}
       expect: ${{ steps.plan.outputs.expect }}
       mode: ${{ steps.plan.outputs.mode }}
+      skip: ${{ steps.gate.outputs.skip }}
+      skip_reason: ${{ steps.gate.outputs.skip_reason }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Watchdog admission gate
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          IS_WATCHDOG: ${{ inputs.watchdog }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          TARGET_COHORT: ${{ inputs.cohort }}
+          CADENCE_MINUTES: "240"
+          OVERDUE_GRACE_MINUTES: "45"
+          ATTEMPT_COOLDOWN_MINUTES: "45"
+        run: python -m scripts.scraper.watchdog_gate
+
       - name: Validate inputs
         id: plan
         env:
           EVENT: ${{ github.event_name }}
+          IS_WATCHDOG: ${{ inputs.watchdog }}
+          SKIP: ${{ steps.gate.outputs.skip }}
+          SKIP_REASON: ${{ steps.gate.outputs.skip_reason }}
+          ADMITTED_COHORTS: ${{ steps.gate.outputs.admitted_cohorts }}
           IN_COHORT: ${{ inputs.cohort }}
           IN_MODE: ${{ inputs.mode }}
           IN_CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
+          if [ "${SKIP:-false}" = "true" ]; then
+            echo "cohorts=[]" >> "$GITHUB_OUTPUT"
+            echo "expect=" >> "$GITHUB_OUTPUT"
+            echo "mode=skipped" >> "$GITHUB_OUTPUT"
+            echo "Watchdog run skipped: ${SKIP_REASON:-redundant catch-up within cooldown}"
+            exit 0
+          fi
           if [ "$EVENT" = "schedule" ]; then
             cohort=both
             mode=write-production-expire
@@ -68,11 +108,24 @@ jobs:
             cohort="$IN_COHORT"
             mode="$IN_MODE"
           fi
-          case "$cohort" in
-            both) cohorts='["non-workday","workday"]'; expect='non-workday,workday' ;;
-            non-workday|workday) cohorts="[\"$cohort\"]"; expect="$cohort" ;;
-            *) echo "::error title=Invalid input::cohort must be both, non-workday or workday"; exit 2 ;;
-          esac
+          if [ "$IS_WATCHDOG" = "true" ] && [ -n "${ADMITTED_COHORTS:-}" ] && [ "$ADMITTED_COHORTS" != "[]" ]; then
+            cohorts="$ADMITTED_COHORTS"
+            if [ "$cohorts" = '["non-workday","workday"]' ] || [ "$cohorts" = '["workday","non-workday"]' ]; then
+              expect='non-workday,workday'
+            elif [ "$cohorts" = '["non-workday"]' ]; then
+              expect='non-workday'
+            elif [ "$cohorts" = '["workday"]' ]; then
+              expect='workday'
+            else
+              expect='non-workday,workday'
+            fi
+          else
+            case "$cohort" in
+              both) cohorts='["non-workday","workday"]'; expect='non-workday,workday' ;;
+              non-workday|workday) cohorts="[\"$cohort\"]"; expect="$cohort" ;;
+              *) echo "::error title=Invalid input::cohort must be both, non-workday or workday"; exit 2 ;;
+            esac
+          fi
           case "$mode" in
             dry-run) ;;
             write-production-expire)
@@ -87,11 +140,12 @@ jobs:
             echo "expect=$expect"
             echo "mode=$mode"
           } >> "$GITHUB_OUTPUT"
-          echo "Plan: event=$EVENT cohort=$cohort mode=$mode"
+          echo "Plan: event=$EVENT cohort=$cohort mode=$mode watchdog=$IS_WATCHDOG"
 
   ingest:
     name: Python ingestion [${{ matrix.cohort }}] (${{ needs.plan.outputs.mode }})
     needs: plan
+    if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -169,7 +223,7 @@ jobs:
   aggregate:
     name: Python ingestion overall
     needs: [plan, ingest]
-    if: ${{ always() && needs.plan.result == 'success' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
