@@ -1,7 +1,7 @@
 "use client";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -10,6 +10,7 @@ import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/securit
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
+import type { CompanyFactKey } from "@/lib/company-profile/types";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
@@ -115,6 +116,7 @@ interface JobDetailViewProps {
   similarJobs?: LiveJob[];
   onSelectJob?: (job: LiveJob) => void;
   isExpired?: boolean;
+  onLoadCompanyProfile?: () => Promise<void> | void;
 }
 
 export default function JobDetailView({
@@ -136,6 +138,7 @@ export default function JobDetailView({
   similarJobs,
   onSelectJob,
   isExpired = false,
+  onLoadCompanyProfile,
 }: JobDetailViewProps) {
   const isUnlocked = isPro && !job.proUnlockError;
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
@@ -145,6 +148,44 @@ export default function JobDetailView({
   const [isScrolled, setIsScrolled] = useState(false);
   const [shareStatus, setShareStatus] = useState<"idle" | "success" | "error">("idle");
   const [shareErrorMsg, setShareErrorMsg] = useState<string>("");
+  const [companyProfileLoading, setCompanyProfileLoading] = useState(false);
+  const [companyScrollVersion, setCompanyScrollVersion] = useState(0);
+
+  const scrollToCompany = useCallback(() => {
+    const target = document.getElementById("company-section");
+    if (!target) return;
+    const stickyHeader = document.querySelector<HTMLElement>('[role="region"][aria-label="Job header"]');
+    const stickyHeight = stickyHeader?.getBoundingClientRect().height ?? 0;
+    const stickyTop = stickyHeader ? Number.parseFloat(window.getComputedStyle(stickyHeader).top) || 0 : 0;
+    const safeAreaTop = window.visualViewport?.offsetTop || 0;
+    const stickyBottom = stickyTop + stickyHeight + safeAreaTop;
+    const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - stickyBottom - 12);
+    window.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "company") return;
+    const frame = window.requestAnimationFrame(scrollToCompany);
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, companyScrollVersion, scrollToCompany]);
+
+  useEffect(() => {
+    if (activeTab !== "company") return;
+    const onResize = () => setCompanyScrollVersion((version) => version + 1);
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
+  }, [activeTab]);
+
+  const openCompanyTab = useCallback(async () => {
+    setActiveTab("company");
+    setCompanyScrollVersion((version) => version + 1);
+    setCompanyProfileLoading(true);
+    try { await onLoadCompanyProfile?.(); }
+    finally {
+      setCompanyProfileLoading(false);
+      setCompanyScrollVersion((version) => version + 1);
+    }
+  }, [onLoadCompanyProfile]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -275,19 +316,17 @@ export default function JobDetailView({
   const expMatch = job.description?.match(/(\d+\+?\s*(?:-\s*\d+\+?)?\s*years?(?:\s*of)?\s*(?:experience|exp)?)/i);
   const expText = (job as any).experience || (expMatch ? expMatch[0] : null);
 
-  // Parse company details only where available
-  const companyInfo = useMemo(() => {
-    const raw = (job as any).companyInfo || (job as any).company_data || {};
-    const rawWebsite = raw.website || (job as any).company_website || null;
-    const sanitizedWebsite = sanitizeExternalUrl(rawWebsite);
-    return {
-      description: raw.description || (job as any).company_description || "",
-      founded: raw.founded || (job as any).founded || null,
-      hq: raw.hq || raw.headquarters || (job as any).hq || null,
-      size: raw.size || raw.employees || (job as any).company_size || null,
-      website: sanitizedWebsite,
-    };
-  }, [job]);
+  const companyProfile = job.companyProfile;
+  const companyFacts = companyProfile?.facts || {};
+  const rawWebsite = companyFacts.website?.value || null;
+  const sanitizedWebsite = sanitizeExternalUrl(rawWebsite);
+  const websiteHost = (() => { try { return sanitizedWebsite ? new URL(sanitizedWebsite).hostname : null; } catch { return null; } })();
+  const factLabel: Record<CompanyFactKey, string> = {
+    overview: "Overview", website: "Website", headquarters: "Headquarters", founded_year: "Founded",
+    employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X",
+  };
+  const companyFact = (key: CompanyFactKey) => companyFacts[key];
+  const hasCompanyDetails = Object.keys(companyFacts).length > 0 || Boolean(companyProfile?.leadership.length || companyProfile?.news.length);
 
   return (
     <div
@@ -402,8 +441,7 @@ export default function JobDetailView({
                   <button
                     type="button"
                     onClick={() => {
-                      setActiveTab("company");
-                      document.getElementById("company-section")?.scrollIntoView({ behavior: "smooth" });
+                      void openCompanyTab();
                     }}
                     className={`text-xs sm:text-sm font-semibold transition-colors py-1.5 px-2 rounded-md ${
                       activeTab === "company"
@@ -540,8 +578,7 @@ export default function JobDetailView({
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveTab("company");
-                    document.getElementById("company-section")?.scrollIntoView({ behavior: "smooth" });
+                    void openCompanyTab();
                   }}
                   className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
                     activeTab === "company"
@@ -1014,12 +1051,15 @@ export default function JobDetailView({
             </div>
           )}
 
-          {/* 5. Company section as grouped cards (name/logo/description, plus founded/HQ/size/website only where data exists) */}
+          {/* 5. Company facts and related listings use the existing card style. */}
+          {/* The global floating back-to-top button would sit over Company content on phones. */}
+          {activeTab === "company" && <style>{`@media (max-width: 767px) { button[aria-label="Back to top"] { display: none; } }`}</style>}
           <div
             id="company-section"
             className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3"
           >
             <h2 className="text-[18px] font-bold text-[#0F172A]">Company</h2>
+            {companyProfile && !hasCompanyDetails ? <p role="status" className="text-[11px] text-[#64748B]">Company details are not available yet.</p> : companyProfile?.freshness && companyProfile.freshness !== "fresh" && <p role="status" className="text-[11px] text-[#64748B]">{companyProfile.freshness === "conflict" ? "Some company details have conflicting sources; the previously verified value is shown." : "Company details may be out of date."}</p>}
 
             <div className="flex items-start gap-3.5">
               <CompanyLogo
@@ -1036,55 +1076,43 @@ export default function JobDetailView({
                 </div>
                 {job.location && (
                   <div className="text-xs text-[#475569] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-[#64748B]" />
-                    <span>{isUnlocked ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
+                    <MapPin className="w-3.5 h-3.5 text-[#64748B]" aria-hidden="true" />
+                    {/* This is the job's location, not the company's headquarters (that is the sourced HQ fact below). */}
+                    <span><span className="text-[#64748B]">Job location: </span>{isUnlocked ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
                   </div>
                 )}
               </div>
             </div>
 
-            {companyInfo.description && (
-              <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
-                {companyInfo.description}
-              </p>
-            )}
-
-            {/* Founded, HQ, size, website only where data exists */}
-            {(companyInfo.founded || companyInfo.hq || companyInfo.size || companyInfo.website) && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#E2E8F0] text-xs">
-                {companyInfo.founded && (
-                  <div className="space-y-0.5">
-                    <div className="text-[#94A3B8]">Founded</div>
-                    <div className="font-semibold text-[#0F172A]">{companyInfo.founded}</div>
-                  </div>
-                )}
-                {companyInfo.hq && (
-                  <div className="space-y-0.5">
-                    <div className="text-[#94A3B8]">Headquarters</div>
-                    <div className="font-semibold text-[#0F172A]">{companyInfo.hq}</div>
-                  </div>
-                )}
-                {companyInfo.size && (
-                  <div className="space-y-0.5">
-                    <div className="text-[#94A3B8]">Company Size</div>
-                    <div className="font-semibold text-[#0F172A]">{companyInfo.size}</div>
-                  </div>
-                )}
-                {companyInfo.website && (
-                  <div className="space-y-0.5">
-                    <div className="text-[#94A3B8]">Website</div>
-                    <a
-                      href={companyInfo.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-semibold text-[#2563EB] hover:underline truncate block"
-                    >
-                      {companyInfo.website.replace(/^https?:\/\//, "")}
-                    </a>
-                  </div>
-                )}
+            {companyFact("overview") && (
+              <div className="space-y-1">
+                <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">{companyFact("overview")?.value}</p>
+                <a href={companyFact("overview")?.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Official source · checked {new Date(companyFact("overview")!.retrievedAt).toLocaleDateString()}</a>
               </div>
             )}
+
+            {(companyFact("founded_year") || companyFact("headquarters") || companyFact("employee_count_range") || companyFact("website")) && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[#E2E8F0] text-xs">
+                {(["founded_year", "headquarters", "employee_count_range", "website"] as const).map((key) => {
+                  const fact = companyFact(key);
+                  if (!fact) return null;
+                  const value = key === "website" ? sanitizedWebsite : fact.value;
+                  if (!value) return null;
+                  return <div key={key} className="space-y-0.5 min-w-0"><div className="text-[#94A3B8]">{factLabel[key]}</div>{key === "website" ? <a href={value} target="_blank" rel="noopener noreferrer" title={websiteHost || value} className="font-semibold text-[#2563EB] hover:underline break-words block">{websiteHost || value}</a> : <div className="font-semibold text-[#0F172A] break-words">{value}</div>}<a href={fact.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Source · {new Date(fact.retrievedAt).toLocaleDateString()}</a>{fact.conflict && <a href={fact.conflict.sourceUrl} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-[#64748B] hover:underline">Conflicting report · {fact.conflict.value}</a>}</div>;
+                })}
+              </div>
+            )}
+
+            {(companyFact("linkedin_url") || companyFact("twitter_url")) && <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">{(["linkedin_url", "twitter_url"] as const).map((key) => { const fact = companyFact(key); const href = fact && sanitizeExternalUrl(fact.value); return href ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline">{factLabel[key]}<span className="block text-[10px] text-[#64748B] font-normal">Official site · {new Date(fact.retrievedAt).toLocaleDateString()}</span></a> : null; })}</div>}
+
+            {companyProfile?.leadership.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Leadership</h3>{companyProfile.leadership.map((leader) => <div key={leader.id} className="text-xs"><span className="font-semibold text-[#0F172A]">{leader.name}</span><span className="text-[#475569]"> · {leader.role}{leader.roleAsOf ? ` (as of ${new Date(leader.roleAsOf).toLocaleDateString()})` : ""}</span><div><a href={leader.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Official source · checked {new Date(leader.retrievedAt).toLocaleDateString()}</a></div></div>)}</div> : null}
+
+            {companyProfile?.news.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Company news</h3>{companyProfile.news.map((item) => <div key={item.id} className="text-xs"><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline break-words">{item.headline}</a><div className="text-[10px] text-[#64748B]">{new Date(item.publishedAt).toLocaleDateString()}</div>{item.excerpt && <p className="mt-0.5 text-[#475569] break-words">{item.excerpt}</p>}</div>)}</div> : null}
+
+            <div className="pt-3 border-t border-[#E2E8F0] space-y-2">
+              <h3 className="text-sm font-bold text-[#0F172A]">Other open jobs at {job.company}</h3>
+              {companyProfileLoading ? <p role="status" className="text-xs text-[#64748B]">Loading company jobs…</p> : companyProfile?.jobs.status === "error" ? <p role="status" className="text-xs text-[#64748B]">Company jobs could not be loaded.</p> : companyProfile?.jobs.status === "ready" && companyProfile.jobs.jobs.length === 0 ? <p className="text-xs text-[#64748B]">No other open jobs found.</p> : companyProfile?.jobs.status === "ready" ? companyProfile.jobs.jobs.map((companyJob) => <button key={companyJob.id} type="button" onClick={() => onSelectJob?.({ ...job, ...companyJob, postedAt: companyJob.postedAt || undefined, date: companyJob.postedAt || "", salary: "", category: job.category, remote: false, country: "", type: job.type, directSource: true, applyUrl: "", description: "", skills: [], companyId: companyProfile.companyId, company_id: companyProfile.companyId, companyProfile: undefined, matchScore: null })} className="w-full min-w-0 text-left p-3 rounded-xl border border-[#E2E8F0] hover:border-[#93C5FD] hover:bg-[#EFF6FF] transition flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"><div className="min-w-0 flex-1"><div className="text-xs font-bold text-[#0F172A] break-words">{companyJob.title}</div><div className="text-[11px] text-[#475569] break-words">{companyJob.location}</div></div></button>) : <p className="text-xs text-[#64748B]">Company jobs are unavailable for this employer.</p>}
+            </div>
 
             {/* Secondary report issue link */}
             <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#64748B]">
