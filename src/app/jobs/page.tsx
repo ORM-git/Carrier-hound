@@ -2262,17 +2262,11 @@ function JobsPageInner() {
                                   {/* Row 1, Col 3: Salary (highlighted with stronger weight) */}
                                   <div
                                     className="flex items-start gap-1.5 min-w-0 flex-wrap"
-                                    title={job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-4 h-4 text-[#475569] shrink-0" />
                                     <span className={`whitespace-normal break-words ${job.salary ? "font-semibold text-[#0F172A]" : ""}`}>
                                       {compactSalaryDisplay(job.salary)}
                                     </span>
-                                    {job.salary_original && job.salary_original !== job.salary && (
-                                      <span className="text-[11px] text-[#64748B] whitespace-normal break-words hidden sm:inline">
-                                        ({job.salary_original})
-                                      </span>
-                                    )}
                                   </div>
 
                                   {/* Row 2, Col 1: Work mode */}
@@ -2516,14 +2510,9 @@ function JobsPageInner() {
                                 )}
                                   <span
                                     className="min-h-6 h-auto max-w-full flex-wrap whitespace-normal break-words px-2.5 py-1 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1"
-                                    title={job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                                   >
                                     <DollarSign className="w-3 h-3 text-[#475569]" />
                                     {compactSalaryDisplay(job.salary)}
-                                    {/* Original-currency value visible on touch, not only in a hover title */}
-                                    {job.salary_original && job.salary_original !== job.salary && (
-                                      <span className="font-normal text-[#64748B]">({job.salary_original})</span>
-                                    )}
                                   </span>
                               </div>
 

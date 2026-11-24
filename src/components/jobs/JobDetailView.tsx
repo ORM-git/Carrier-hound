@@ -721,9 +721,6 @@ export default function JobDetailView({
                   <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
                   <span className="whitespace-normal break-words min-w-0">
                     {compactSalaryDisplay(job.salary)}
-                    {job.salary_original && job.salary_original !== job.salary && (
-                      <span className="font-normal text-[#64748B]"> ({job.salary_original})</span>
-                    )}
                   </span>
                 </li>
               {expText && (
@@ -798,15 +795,11 @@ export default function JobDetailView({
 
                   <div
                     className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]"
-                    title={job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                   >
                     <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
                     <span className="whitespace-normal break-words font-medium text-[#0F172A]">
                       {compactSalaryDisplay(job.salary)}
                     </span>
-                    {job.salary_original && job.salary_original !== job.salary && (
-                      <span className="text-xs text-[#64748B] whitespace-normal break-words">({job.salary_original})</span>
-                    )}
                   </div>
 
                 {expText && (
