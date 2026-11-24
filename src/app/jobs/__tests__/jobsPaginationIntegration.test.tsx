@@ -277,13 +277,30 @@ describe("mobile infinite scroll on the real feed (item 21)", () => {
     expect(uniqueTitles()).toHaveLength(75);
   });
 
-  it("desktop never auto-loads: the sentinel exists but no observer is armed", async () => {
+  it("For You has no count, defaults to match and honors explicit Most recent on every page", async () => {
+    h.transport = async ({ page: p }) => p === 1 ? page(jobs(range(1, 25)), true) : page(jobs(range(26, 50)), false);
+    await mount();
+    expect(h.calls.at(-1)?.sortBy).toBe("match");
+    expect(screen.getAllByRole("button", { name: "For You" }).length).toBeGreaterThan(0);
+    const sortButtons = screen.getAllByRole("button", { name: /Sort by Recommended:/ });
+    fireEvent.click(sortButtons[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Most recent" }));
+    await flush();
+    expect(h.calls.at(-1)?.sortBy).toBe("newest");
+    await act(async () => io.enter());
+    await flush();
+    expect(h.calls.at(-1)?.page).toBe(2);
+    expect(h.calls.at(-1)?.sortBy).toBe("newest");
+  });
+
+  it("desktop also auto-loads from the sentinel", async () => {
     h.desktop = true;
     h.transport = async ({ page: p }) => (p === 1 ? page(jobs(range(1, 25)), true) : page(jobs(range(26, 50)), false));
     await mount();
-    expect(io.live).toBe(0);
+    expect(io.live).toBe(1);
     await act(async () => io.enter());
     await flush();
-    expect(pagesRequested()).toEqual([1]);
+    expect(pagesRequested()).toEqual([1, 2]);
+    expect(uniqueTitles()).toHaveLength(50);
   });
 });

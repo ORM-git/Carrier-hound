@@ -398,7 +398,7 @@ function JobsPageInner() {
   const [selectedCompany, setSelectedCompany] = useState("");
   const [allFiltersDrawerOpen, setAllFiltersDrawerOpen] = useState(false);
   const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const [sortBy, setSortBy] = useState<"match" | "newest">("newest");
+  const [sortBy, setSortBy] = useState<"match" | "newest">("match");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [_openDropdown, setOpenDropdown] = useState<string | null>(null);
 
@@ -620,7 +620,7 @@ function JobsPageInner() {
     syncParam("company", selectedCompany);
     syncParam("country", selectedCountryCode);
     syncParam("hidden", viewHiddenJobs ? "true" : null);
-    syncParam("sort", sortBy === "match" ? "match" : null);
+    syncParam("sort", sortBy === "newest" ? "newest" : null);
     syncParam("id", selectedJob?.id || pendingJobIdRef.current || null);
 
     // Clean up legacy aliases
@@ -747,7 +747,7 @@ function JobsPageInner() {
       setSelectedSourceType(qSourceType);
       setSelectedCompany(qCompany);
       setViewHiddenJobs(qHidden);
-      setSortBy(qSort === "match" ? "match" : "newest");
+      setSortBy(qSort === "newest" ? "newest" : "match");
 
       if (qTab === "liked" || qTab === "saved") {
         setActiveTab("saved");
@@ -924,7 +924,7 @@ function JobsPageInner() {
     }
 
     const isRecommended = activeTab === "recommended";
-    const effectiveSortBy = isRecommended ? "match" : sortBy;
+    const effectiveSortBy = sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
 
@@ -1037,7 +1037,7 @@ function JobsPageInner() {
     autoLoadArmedRef.current = false;
     const nextPage = loadedPageRef.current + 1;
     const isRecommended = activeTab === "recommended";
-    const effectiveSortBy = isRecommended ? "match" : sortBy;
+    const effectiveSortBy = sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
     setLoadingMore(true);
@@ -1095,12 +1095,11 @@ function JobsPageInner() {
   // duplicates are dropped (shown < total while the server has no next page).
   const canLoadMore = activeTab === "recommended" && hasNextPage;
 
-  // Mobile only: load the next page when the sentinel above the manual button scrolls into view.
+  // Load the next page while scrolling on every screen size.
   // Appending a page never re-arms automatic loading. A fresh downward gesture is required.
   useEffect(() => {
     const el = loadMoreSentinelRef.current;
     if (!el || !canLoadMore || loadMoreError || autoLoadPaused || loadingJobs || typeof IntersectionObserver === "undefined") return;
-    if (!window.matchMedia("(max-width: 639px)").matches) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (autoLoadArmedRef.current && entries.some((e) => e.isIntersecting)) handleLoadMore();
@@ -1284,14 +1283,7 @@ function JobsPageInner() {
       });
     }
 
-    // Sort: Recommended ranking (title/skills + experience fit, location/remote
-    // eligibility, recency, salary-listed) via the scoring module's pure ranking
-    // function. Ranking only — nothing above this is excluded by score. Runs
-    // whenever the Recommended tab is the effective sort (same condition the
-    // fetch uses above) or the user explicitly picks Sort: Recommended — not
-    // gated on a local "match" default — and with no candidate/resume, the
-    // module's own neutral fallback (fitScore 50) still orders by the other
-    // factors instead of skipping ranking entirely.
+    // Top matched uses the shared ranking. Most recent preserves server chronological order.
     if (shouldApplyRecommendedRanking(activeTab, sortBy)) {
       const now = Date.now(); // one snapshot for the whole sort pass, not per-comparison
       result = [...result].sort((a, b) =>
@@ -1397,7 +1389,7 @@ function JobsPageInner() {
     setSelectedSourceType("");
     setSelectedCompany("");
     setViewHiddenJobs(false);
-    setSortBy("newest");
+    setSortBy("match");
     setPage(1);
     setMobileFiltersOpen(false);
     setAllFiltersDrawerOpen(false);
@@ -1803,13 +1795,7 @@ function JobsPageInner() {
   const jobTabs: TopBarTab[] = [
     {
       id: "recommended",
-      label: "Recommended",
-      // Hidden (undefined) while the skeleton is up, so it never flashes 0.
-      count: loadingJobs
-        ? undefined
-        : hasActiveFilters
-        ? (displayedJobs.length === 0 ? "0" : (totalCount > 0 ? totalCount.toLocaleString() : displayedJobs.length.toLocaleString()))
-        : (totalCount > 0 ? totalCount.toLocaleString() : liveJobs.length),
+      label: "For You",
       active: activeTab === "recommended",
       onClick: () => {
         setActiveTab("recommended");
@@ -2201,12 +2187,6 @@ function JobsPageInner() {
                                           </span>
                                         )}
                                       </div>
-                                      <JobCardMenu
-                                        job={job}
-                                        locked={!isPro}
-                                        onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
-                                        onAlreadyApplied={() => handleToggleApplied(job)}
-                                      />
                                     </div>
 
                                     {/* Title: 20px / 600 / 24px line-height with ellipsis */}
@@ -2235,8 +2215,7 @@ function JobsPageInner() {
                                   </div>
                                 </div>
 
-                                {/* Horizontal divider 1: thin 1px light gray line */}
-                                <div className="border-b border-[#E2E8F0]" />
+                                {/* Role, tags and metadata remain one uninterrupted group. */}
 
                                 {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
                                 <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
@@ -2321,6 +2300,12 @@ function JobsPageInner() {
                                     <EyeOff className="w-4 h-4" />
                                   </button>
 
+                                      <JobCardMenu
+                                        job={job}
+                                        locked={!isPro}
+                                        onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
+                                        onAlreadyApplied={() => handleToggleApplied(job)}
+                                      />
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -2425,7 +2410,7 @@ function JobsPageInner() {
 
                             {/* MOBILE VIEW (under sm: 390px, 360px) */}
                             <div className="flex sm:hidden flex-col justify-between w-full space-y-3">
-                              {/* Top Row: 32px logo beside company & industry, 52px match ring (J01 weight) and menu at top right */}
+                              {/* Top row: company and 52px match ring; menu sits beside the heart below. */}
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                   <CompanyLogo
@@ -2452,7 +2437,7 @@ function JobsPageInner() {
                                   </div>
                                 </div>
 
-                                {/* Compact match badge & options menu at top right */}
+                                {/* Compact match badge at top right */}
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {matchScore !== null ? (
                                     <div
@@ -2475,12 +2460,7 @@ function JobsPageInner() {
                                     </Link>
                                   )}
 
-                                  <JobCardMenu
-                                    job={job}
-                                    locked={!isPro}
-                                    onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
-                                    onAlreadyApplied={() => handleToggleApplied(job)}
-                                  />
+
                                 </div>
                               </div>
 
@@ -2489,8 +2469,7 @@ function JobsPageInner() {
                                 {job.title}
                               </h2>
 
-                              {/* Horizontal divider 1 on mobile */}
-                              <div className="border-b border-[#E2E8F0]" />
+                              {/* Title and metadata remain one uninterrupted group. */}
 
                               {/* Small wrapping metadata chips beneath title: roughly 24px high, 12px text (posted time not duplicated here) */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -2546,7 +2525,12 @@ function JobsPageInner() {
 
                                 {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}
                                 <div className="flex items-center gap-1.5">
-
+                                  <JobCardMenu
+                                    job={job}
+                                    locked={!isPro}
+                                    onRemoveFromList={() => handleHideJob({ stopPropagation: () => {} } as any, job.id)}
+                                    onAlreadyApplied={() => handleToggleApplied(job)}
+                                  />
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -2596,7 +2580,7 @@ function JobsPageInner() {
                       })}
 
                       {/* Load More Pagination: strictly scoped to tabs with active server-side pagination.
-                          Mobile auto-loads via the sentinel; the button stays as the accessible manual fallback. */}
+                          Scrolling auto-loads via the sentinel; the button stays as the accessible manual fallback. */}
                       {canLoadMore && (
                         // overflow-anchor:none: otherwise scroll anchoring keeps this block in view as cards are
                         // inserted above it, the sentinel stays visible and pages chain-load.
