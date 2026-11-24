@@ -899,6 +899,7 @@ function JobsPageInner() {
   // One next-page request at a time; reset (abort + stale) when the list query (filters/tab/search/sort) changes.
   const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => pageLoaderRef.current.reset(), []);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {

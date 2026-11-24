@@ -1,0 +1,132 @@
+[
+  {
+    "width": 360,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 360,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 360,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 360,
+    "lockedLogoNoProtectedRequest": true
+  },
+  {
+    "width": 390,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 390,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 390,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 390,
+    "lockedLogoNoProtectedRequest": true
+  },
+  {
+    "width": 430,
+    "state": "paging",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 430,
+    "state": "slow",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "width": 430,
+    "state": "page-error",
+    "pass": true,
+    "calls": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "width": 430,
+    "lockedLogoNoProtectedRequest": true
+  },
+  {
+    "width": 1280,
+    "state": "paging",
+    "pass": true,
+    "desktopNoAutoload": true
+  },
+  {
+    "width": 1280,
+    "state": "slow",
+    "pass": true,
+    "desktopNoAutoload": true
+  },
+  {
+    "width": 1280,
+    "state": "page-error",
+    "pass": true,
+    "desktopNoAutoload": true
+  },
+  {
+    "width": 1280,
+    "lockedLogoNoProtectedRequest": true
+  }
+]
