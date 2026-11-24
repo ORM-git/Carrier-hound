@@ -88,6 +88,8 @@ function run() {
         // shared helpers from src/lib/matcher/scoring.ts (CM mobile item 18)
         const toFitInput = (j) => j;
         const clampMatchScore = (n) => Math.max(10, Math.min(99, Math.round(n)));
+        // real displayMatchScore semantics (src/lib/matcher/scoring.ts)
+        const displayMatchScore = (j, fb) => typeof j.matchScore === "number" ? clampMatchScore(j.matchScore) : (fb && typeof fb.score === "number" ? clampMatchScore(fb.score) : null);
         ${jsFn}
         return getJobMatchScore;
       `;

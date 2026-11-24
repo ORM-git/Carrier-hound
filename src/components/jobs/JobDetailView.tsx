@@ -5,7 +5,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
-import { clampMatchScore, computeFitDiagnostics, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
+import { computeFitDiagnostics, displayMatchScore, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
 import { stripHtmlAndExecutableMarkup, sanitizeExternalUrl } from "@/lib/security/xss";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
@@ -182,11 +182,7 @@ export default function JobDetailView({
     }
   }, [hasConfirmedResume, candidate, job]);
 
-  const matchScore = typeof job.matchScore === "number"
-    ? clampMatchScore(job.matchScore)
-    : diagnostics
-    ? clampMatchScore(diagnostics.score)
-    : null;
+  const matchScore = displayMatchScore(job, diagnostics);
 
   const expSubScore = diagnostics
     ? Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))

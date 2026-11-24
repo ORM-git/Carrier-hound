@@ -2,25 +2,16 @@
  * Remembers the shared match score each job showed in the feed, so a detail opened later (or after a reload,
  * when that job is not in the loaded page) shows the same number as its card instead of a different fallback.
  *
- * Entries are keyed by job id + job revision; the whole store belongs to one snapshot
- * (scoring version + candidate profile version + saved preferences). Any snapshot change drops every entry together.
+ * Entries are keyed by job id + the server's score-input revision (scoreInputRevision: every scoring input of
+ * the job plus MATCH_SCORE_VERSION). The whole store belongs to one snapshot (scoring version + candidate profile
+ * version + saved preferences); any snapshot change drops every entry together. No revision => never cached.
  */
-import { MATCH_SCORE_VERSION } from "./scoring";
+import { MATCH_SCORE_VERSION, fnv1aHex } from "./scoring";
 
 const KEY = "cm_match_scores";
 const MAX_ENTRIES = 500;
 
 type Store = { snap: string; scores: Record<string, number> };
-
-/** FNV-1a 32-bit, hex. Enough to detect a changed profile/job; not a security hash. */
-function fnv1a(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16);
-}
 
 type CandidateLike = {
   confirmedAt?: string;
@@ -37,18 +28,12 @@ type CandidateLike = {
 /** Version of the scoring-relevant candidate profile (CandidateProfile has no id): content hash + timestamps. */
 export function candidateProfileVersion(c: CandidateLike): string {
   const { skills, experience, education, certifications, headline, summary, location, updatedAt, confirmedAt } = c;
-  return fnv1a(JSON.stringify([skills, experience, education, certifications, headline, summary, location, updatedAt, confirmedAt]));
+  return fnv1aHex(JSON.stringify([skills, experience, education, certifications, headline, summary, location, updatedAt, confirmedAt]));
 }
 
-type JobLike = { id: string; postedAt?: string; title?: string; location?: string; category?: string; remote?: boolean; remoteScope?: string };
+type JobLike = { id: string; scoreRevision?: string | null };
 
-/**
- * Job revision from fields present in both the feed row and the detail fetch.
- * shortcut: the jobs API exposes no updated_at/revision; if one is added, key on it instead.
- */
-export function jobRevisionKey(job: JobLike): string {
-  return `${job.id}|${fnv1a(JSON.stringify([job.postedAt ?? "", job.title ?? "", job.location ?? "", job.category ?? "", Boolean(job.remote), job.remoteScope ?? ""]))}`;
-}
+const entryKey = (job: JobLike) => (job.scoreRevision ? `${job.id}|${job.scoreRevision}` : null);
 
 export function matchScoreSnapshot(candidate: CandidateLike | null | undefined, prefsUpdatedAt?: string | null): string | null {
   if (!candidate?.confirmedAt) return null;
@@ -69,9 +54,8 @@ export function rememberMatchScores(snap: string | null, jobs: readonly (JobLike
   const scores = read(snap);
   let changed = false;
   for (const job of jobs) {
-    if (typeof job.matchScore !== "number" || Number.isNaN(job.matchScore)) continue;
-    const key = jobRevisionKey(job);
-    if (scores[key] === job.matchScore) continue;
+    const key = entryKey(job);
+    if (!key || typeof job.matchScore !== "number" || Number.isNaN(job.matchScore) || scores[key] === job.matchScore) continue;
     delete scores[key]; // re-insert so the newest entries survive the cap
     scores[key] = job.matchScore;
     changed = true;
@@ -87,7 +71,21 @@ export function rememberMatchScores(snap: string | null, jobs: readonly (JobLike
 }
 
 export function recallMatchScore(snap: string | null, job: JobLike): number | null {
-  if (!snap) return null;
-  const score = read(snap)[jobRevisionKey(job)];
+  const key = entryKey(job);
+  if (!snap || !key) return null;
+  const score = read(snap)[key];
   return typeof score === "number" ? score : null;
+}
+
+/**
+ * When a detail fetch shows a newer score-input revision than the feed row for the same job, the feed's score is
+ * stale: replace that row with the fetched job and drop its score, so card, detail and insights all fall back to
+ * the same computation from the same data. Returns the same array when nothing is stale.
+ */
+export function reconcileFeedWithDetail<T extends JobLike & { matchScore?: number | null }>(feed: T[], detail: T): T[] {
+  const i = feed.findIndex((j) => j.id === detail.id);
+  if (i < 0 || !detail.scoreRevision || feed[i].scoreRevision === detail.scoreRevision) return feed;
+  const next = [...feed];
+  next[i] = { ...detail, matchScore: null };
+  return next;
 }

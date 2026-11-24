@@ -1,6 +1,6 @@
 import { createClient } from "../supabase/client";
 import { CandidateProfile } from "../resume/types";
-import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore } from "../matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
@@ -61,6 +61,8 @@ export interface LiveJob {
   salary_display?: string | null;
   salary_original?: string | null;
   matchScore?: number | null;
+  /** Server-stamped revision of this job's score inputs (scoreInputRevision); a feed score is reused only on a match. */
+  scoreRevision?: string | null;
   matchReasons?: string[];
 }
 
@@ -899,6 +901,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           postedAt: row.posted_at || row.created_at,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
+          scoreRevision: scoreInputRevision(row, isPro),
           matchScore: typeof row.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row.matchScore))) : (typeof row._matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row._matchScore))) : null),
         };
       });
@@ -1070,6 +1073,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 logoUrl: job.logo_url || job.logoUrl || null,
                 logo_url: job.logo_url || job.logoUrl || null,
                 matchScore: typeof job.matchScore === "number" ? job.matchScore : null,
+                scoreRevision: job.scoreRevision ?? null,
               };
             }
           } else {
@@ -1178,6 +1182,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         applyUrl: "",
         description: "",
         skills: [],
+        scoreRevision: scoreInputRevision(row, false),
         postedAt: row.posted_at || row.created_at,
         isExpired: expired,
         status: expired ? "expired" : (row.status || "active"),

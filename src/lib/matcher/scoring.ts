@@ -697,6 +697,39 @@ export function withSharedScore(diagnostics: FitDiagnosticsResult, sharedScore: 
 /** Bump when the shared recommendation scorer or computeFitDiagnostics changes, so cached display scores are dropped. */
 export const MATCH_SCORE_VERSION = 1;
 
+/** FNV-1a 32-bit, hex: change detection for score inputs, not a security hash. */
+export function fnv1aHex(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
+// jobs-row columns the recommendation scorer reads. Paid inputs are only selected (and scored) on Pro paths.
+const SCORE_INPUT_COLUMNS = ["title", "location", "remote", "remote_scope", "remote_eligibility", "job_type", "category", "country_code", "posted_at"] as const;
+const PAID_SCORE_INPUT_COLUMNS = ["description", "skills", "salary_text", "salary_min", "salary_max", "currency"] as const;
+
+/**
+ * Authoritative revision of a job's score inputs, stamped by every jobs API route (list and detail) from the
+ * same jobs-table columns, so the client only reuses a feed score for a job whose inputs are unchanged.
+ * Includes MATCH_SCORE_VERSION, so a scoring change also invalidates.
+ */
+export function scoreInputRevision(row: Record<string, unknown>, includePaidInputs: boolean): string {
+  const cols: readonly string[] = includePaidInputs ? [...SCORE_INPUT_COLUMNS, ...PAID_SCORE_INPUT_COLUMNS] : SCORE_INPUT_COLUMNS;
+  return `${MATCH_SCORE_VERSION}.${includePaidInputs ? "p" : "f"}.${fnv1aHex(JSON.stringify(cols.map((c) => row[c] ?? null)))}`;
+}
+
+/**
+ * The one displayed score for card, detail and Match Insights: the job's shared (server) score, else the fit
+ * fallback computed from the same job object, one clamp. Same job object + candidate => same number everywhere.
+ */
+export function displayMatchScore(job: { matchScore?: number | null }, fallback: { score: number } | null): number | null {
+  if (typeof job.matchScore === "number" && !Number.isNaN(job.matchScore)) return clampMatchScore(job.matchScore);
+  return fallback && typeof fallback.score === "number" && !Number.isNaN(fallback.score) ? clampMatchScore(fallback.score) : null;
+}
+
 /** Display clamp shared by every match-score surface (cards, detail, Match Insights). */
 export function clampMatchScore(score: number): number {
   return Math.max(10, Math.min(99, Math.round(score)));

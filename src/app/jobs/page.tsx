@@ -31,8 +31,8 @@ import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
-import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, clampMatchScore, toFitInput } from "@/lib/matcher/scoring";
-import { matchScoreSnapshot, recallMatchScore, rememberMatchScores } from "@/lib/matcher/scoreCache";
+import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, displayMatchScore, toFitInput } from "@/lib/matcher/scoring";
+import { matchScoreSnapshot, recallMatchScore, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -264,19 +264,15 @@ function getCompanyTagPills(category?: string | null): string[] {
   return pills;
 }
 
+// Card score: the same displayMatchScore contract as the detail header and Match Insights.
 function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
-  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) {
-    return clampMatchScore(job.matchScore);
+  if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) return displayMatchScore(job, null);
+  if (!candidate || !candidate.confirmedAt) return null;
+  try {
+    return displayMatchScore(job, computeFitDiagnostics(candidate, toFitInput(job)));
+  } catch {
+    return null;
   }
-  if (candidate && candidate.confirmedAt) {
-    try {
-      const res = computeFitDiagnostics(candidate, toFitInput(job));
-      if (res && typeof res.score === "number" && !isNaN(res.score)) {
-        return clampMatchScore(res.score);
-      }
-    } catch {}
-  }
-  return null;
 }
 
 function getJobDiagnostics(job: LiveJob, candidate: CandidateProfile | null): FitDiagnosticsResult | null {
@@ -1515,7 +1511,8 @@ function JobsPageInner() {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
         if (fullJob) {
-          if (typeof job.matchScore === "number") {
+          // Reuse the list score only for the same score-input revision; otherwise the inputs changed.
+          if (typeof job.matchScore === "number" && fullJob.scoreRevision && fullJob.scoreRevision === job.scoreRevision) {
             fullJob.matchScore = job.matchScore;
           }
           setSelectedJob(fullJob);
@@ -1601,6 +1598,10 @@ function JobsPageInner() {
   useEffect(() => {
     rememberMatchScores(scoreSnap, liveJobs);
   }, [scoreSnap, liveJobs]);
+  // A detail fetch with a newer score-input revision makes that card's feed score stale: invalidate it there too.
+  useEffect(() => {
+    if (selectedJob) setLiveJobs((prev) => reconcileFeedWithDetail(prev, selectedJob));
+  }, [selectedJob]);
   const detailJob = useMemo(() => {
     if (!selectedJob) return null;
     const job = withFeedScore(selectedJob, liveJobs);
