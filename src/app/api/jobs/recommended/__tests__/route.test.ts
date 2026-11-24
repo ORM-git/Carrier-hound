@@ -487,7 +487,7 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
   });
 
   describe("2. Free User Masking vs Pro User (Page 1 & Page 11)", () => {
-    it("Free user: company is 'Verified Employer', opaque companyGroupId, salary empty, applyUrl empty on Page 1 AND Page 11", async () => {
+    it("Free user: company is 'Verified Employer', opaque companyGroupId, salary visible, applyUrl empty on Page 1 AND Page 11", async () => {
       for (const pageNum of [1, 11]) {
         const res = await recommendedRoute(
           req(`http://localhost/api/jobs/recommended?page=${pageNum}&pageSize=25`, "tok-free-with-answers")
@@ -504,8 +504,8 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
           expect(job.companyId).toBeUndefined();
           expect(typeof job.companyGroupId).toBe("string");
           expect(job.companyGroupId.length).toBeGreaterThan(0);
-          expect(job.salary).toBe("");
-          expect(job.salary_display).toBeNull();
+          expect(job.salary).not.toBe("");
+          expect(job.salary_display).not.toBeNull();
           expect(job.applyUrl).toBe("");
           expect(job.skills).toEqual([]);
           expect(job.logoUrl).toBeNull();
@@ -574,7 +574,7 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
 
       // Verify masked for Free user
       expect(res.jobs[0].company).toBe("Verified Employer");
-      expect(res.jobs[0].salary).toBe("");
+      expect(res.jobs[0].salary).not.toBe("");
       expect(res.jobs[0].applyUrl).toBe("");
 
       // Verify Page 11 through getLiveJobs
@@ -987,10 +987,10 @@ describe("5. Signed-in Free (no subscription): India + Open to Remote + intern",
     for (const j of Object.values(EXCLUDED)) expect(got.has(j.id), `leaked ${j.id}`).toBe(false);
     expect(jobs.some((j) => String(j.id).startsWith("us-ae-"))).toBe(false);
     for (const j of jobs) {
-      // Server-side masking for Free: no company, salary, apply link, description or skills
+      // Server-side masking for Free: salary visible; company, apply link, description and skills stay locked
       expect(j.company).toBe("Verified Employer");
       expect(j.applyUrl).toBe("");
-      expect(j.salary).toBe("");
+      expect(j.salary).not.toBe("");
       expect(j.description).toBe("");
       expect(j.skills).toEqual([]);
       expect(j.logoUrl).toBeNull();
