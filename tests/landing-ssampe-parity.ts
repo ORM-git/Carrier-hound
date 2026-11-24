@@ -128,7 +128,7 @@ function check(x: Input) {
   const t0 = x.page.indexOf(TOP_OPEN), l0 = x.page.indexOf(LOW_OPEN), end = x.page.lastIndexOf("</>");
   assert.ok(t0 > 0 && l0 > t0 && end > l0, "page must render .cm-top then .landing-wrapper as siblings");
   const top = x.page.slice(t0 + TOP_OPEN.length, l0);
-  const lower = x.page.slice(l0 + LOW_OPEN.length, end);
+  let lower = x.page.slice(l0 + LOW_OPEN.length, end);
 
   // --- 1. top fold: unchanged from f21504b (text, classes), only the three hrefs and the header logo ---
   const topSrc = read("tests/landing-ssampe-parity.source.html");
@@ -179,6 +179,12 @@ function check(x: Input) {
     assert.ok(a >= 0 && want.indexOf(start, a + 1) < 0, `fixture section must exist once: ${start}`);
     want = want.slice(0, a) + build() + want.slice(want.indexOf("</section>", a) + "</section>".length);
   }
+  // Owner-approved live ticker exception: only the strip's data children change.
+  // Validate its exact placement/wrapper, then substitute the pinned sample for unrelated parity checks.
+  const liveTicker = /<section className="ls" aria-label="Companies hiring now">\s*<LiveLandingTicker \/>\s*<\/section>/;
+  assert.match(lower, liveTicker, "live ticker keeps the exact strip wrapper and only replaces its children");
+  const pinnedTicker = want.match(/<section class="ls"[\s\S]*?<\/section>/)![0];
+  lower = lower.replace(liveTicker, pinnedTicker.replace(/https:\/\/careermonke\.com\//g, "/").replace(/class=/g, "className=").replace(/tabindex=/g, "tabIndex="));
   want = want.replace(/CareerMonke/g, "Career Monke"); // Owner item2, spelling only, all other copy remains exact.
   assert.deepEqual(words(lower), words(want), "lower page copy must match 3386250 except the five CareerMonke Way cells and the live review/founder content");
   assert.deepEqual(attrs(lower, "className"), attrs(want, "class"), "lower page classes must match 3386250");
@@ -357,6 +363,8 @@ const mut = (k: keyof Omit<Input, "asset">, a: string | RegExp, b: string): Inpu
   return { ...real, [k]: next };
 };
 const controls: [string, Input][] = [ // each must fail for its own reason (see WHY below)
+  ["live ticker removed", mut("page", "<LiveLandingTicker />", "")],
+  ["live ticker wrapper redesigned", mut("page", 'className="ls" aria-label="Companies hiring now"', 'className="new-strip" aria-label="Companies hiring now"')],
   ["hero copy changed", mut("page", "1,240 new jobs found today", "1,250 new jobs found today")],
   ["kicker removed", mut("page", '<p className="kicker">Skip LinkedIn competition</p>', "")],
   ["top link changed", mut("page", 'href="/login"', 'href="/signin"')],
@@ -412,6 +420,8 @@ const controls: [string, Input][] = [ // each must fail for its own reason (see 
   ["hero CSS styles the cards", mut("topCss", /$/, "\n.cm-top .card { font-family: serif; }\n")],
 ];
 const WHY: Record<string, RegExp> = {
+  "live ticker removed": /live ticker keeps/ ,
+  "live ticker wrapper redesigned": /live ticker keeps/ ,
   "hero copy changed": /top fold text/,
   "kicker removed": /top fold text/,
   "top link changed": /top fold links/,

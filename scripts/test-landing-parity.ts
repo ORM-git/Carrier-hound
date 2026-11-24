@@ -78,7 +78,7 @@ async function runParityTests() {
 
   // Company/logo strip placement check (directly between stats and the comparison table)
   const statsNoteIdx = pageSrc.indexOf('id="stats-note"');
-  const tickerIdx = pageSrc.indexOf('<section className="ls" aria-label="Companies hiring now (sample)">');
+  const tickerIdx = pageSrc.indexOf('<section className="ls" aria-label="Companies hiring now">');
   const cmpHeadingIdx = pageSrc.indexOf('id="cmp-h"');
   assert.ok(tickerIdx !== -1, "Company/logo strip must be rendered on homepage");
   assert.ok(!pageSrc.includes("<LandingJobsTickerStrip"), "Old LandingJobsTickerStrip must not be rendered");
