@@ -18,6 +18,7 @@ import type { CompanyFactKey } from "@/lib/company-profile/types";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
+  Ban,
   FileText,
   Heart,
   ExternalLink,
@@ -291,7 +292,7 @@ export default function JobDetailView({
     <div
       // Mobile: clear the 64px bottom nav (shown during detail, item 16) + 1rem; desktop keeps its 7rem tail.
       style={{ "--cookie-h": `${cookieNoticeHeight}px` } as React.CSSProperties}
-      className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+5rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
+      className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+1.5rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
     >
       {/* Expired Job Banner */}
       {(isExpired || job.isExpired) && (
@@ -513,127 +514,61 @@ export default function JobDetailView({
           </div>
         </div>
 
-        {/* MOBILE TWO-ROW STRIP (md:hidden, stays sticky, zero overlap at 360px-414px) */}
-        <div data-testid="mobile-sticky-header-strip" className="md:hidden flex flex-col gap-2">
-          {/* Row 1: Back, Overview and Company tabs (full labels visible), Share icon */}
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <button
-                type="button"
-                onClick={onBack}
-                aria-label="Back to jobs list"
-                className="w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-slate-100 text-[#475569] hover:text-[#0F172A] transition-colors cursor-pointer shrink-0"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
+        {/* MOBILE SINGLE-ROW STRIP (md:hidden, stays sticky): X left, Overview/Company tabs centered, "..." menu
+            right. The menu carries Share/Report/Hide/Applied on mobile; a Share button fills in when no menu renders. */}
+        <div data-testid="mobile-sticky-header-strip" className="md:hidden flex items-center justify-between gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Close job details"
+            className="w-9 h-9 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-slate-100 text-[#475569] hover:text-[#0F172A] transition-colors cursor-pointer shrink-0"
+          >
+            <X className="w-5 h-5" />
+          </button>
 
-              <div className="flex items-center gap-1 bg-[#F1F5F9] p-0.5 rounded-lg shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab("overview");
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
-                  className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
-                    activeTab === "overview"
-                      ? "text-[#2563EB] bg-white shadow-xs font-bold"
-                      : "text-[#64748B] hover:text-[#0F172A]"
-                  }`}
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void openCompanyTab();
-                  }}
-                  className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
-                    activeTab === "company"
-                      ? "text-[#2563EB] bg-white shadow-xs font-bold"
-                      : "text-[#64748B] hover:text-[#0F172A]"
-                  }`}
-                >
-                  Company
-                </button>
-              </div>
-            </div>
+          <div className="flex items-center gap-1 bg-[#F1F5F9] p-0.5 rounded-lg shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("overview");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
+                activeTab === "overview"
+                  ? "text-[#2563EB] bg-white shadow-xs font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void openCompanyTab();
+              }}
+              className={`text-xs font-semibold py-1 px-2.5 rounded-md transition-colors ${
+                activeTab === "company"
+                  ? "text-[#2563EB] bg-white shadow-xs font-bold"
+                  : "text-[#64748B] hover:text-[#0F172A]"
+              }`}
+            >
+              Company
+            </button>
+          </div>
 
+          {onHide ? (
+            <JobCardMenu className="-my-1" job={job} locked={!isUnlocked} onRemoveFromList={() => onHide()} onAlreadyApplied={() => onToggleApplied?.()} />
+          ) : (
             <button
               type="button"
               onClick={handleShare}
               data-testid="mobile-header-share-button"
               aria-label="Share position"
-              className="w-11 h-11 -my-1 -mr-1.5 flex items-center justify-center rounded-lg text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+              className="w-9 h-9 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
             >
               <Share2 className="w-4 h-4" />
             </button>
-          </div>
-
-          {/* Row 2: logo, Hide, Heart and Apply on the right */}
-          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[#F1F5F9] min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <CompanyLogo
-                company={job.company}
-                locked={!isUnlocked}
-                applyUrl={job.applyUrl}
-                logoUrl={job.logoUrl}
-                className="w-7 h-7 rounded-lg object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
-              />
-              <span className={`text-xs font-bold text-[#0F172A] truncate max-w-[120px] ${!isUnlocked ? "filter blur-[3.5px] select-none" : ""}`}>
-                {(isUnlocked && job.company) || "Verified Employer"}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              {onHide && (
-                // Hide is a labeled menu action (Remove From List), not a standalone ban icon
-                <JobCardMenu className="-my-1" job={job} locked={!isUnlocked} onRemoveFromList={() => onHide()} onAlreadyApplied={() => onToggleApplied?.()} />
-              )}
-
-              <button
-                type="button"
-                onClick={onSave}
-                aria-label={isSaved ? "Unlike job" : "Save job"}
-                className={`w-8 h-8 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border transition cursor-pointer ${
-                  isSaved
-                    ? "border-rose-200 bg-rose-50 text-rose-600"
-                    : "border-[#E2E8F0] bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]"
-                }`}
-              >
-                <Heart className={`w-3.5 h-3.5 ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
-              </button>
-
-              {isExpired || job.isExpired ? (
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center gap-1 px-3.5 py-1.5 min-h-[36px] rounded-full bg-slate-200 text-slate-500 text-xs font-bold transition shadow-none cursor-not-allowed shrink-0"
-                >
-                  <span>Closed</span>
-                </button>
-              ) : isUnlocked && job.applyUrl ? (
-                <a
-                  href={job.applyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={onApply}
-                  className="inline-flex items-center gap-1 px-3.5 py-1.5 min-h-[36px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none cursor-pointer shrink-0"
-                >
-                  <span>Apply</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onApply}
-                  className="inline-flex items-center gap-1 px-3.5 py-1.5 min-h-[36px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none cursor-pointer shrink-0"
-                >
-                  {!isUnlocked && <Lock className="w-3 h-3" />}
-                  <span>Apply</span>
-                </button>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -655,8 +590,71 @@ export default function JobDetailView({
       />
 
       {/* (2) HEADER BODY CARD */}
-      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-4 sm:space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none">
+        {/* Mobile action row: 64px rounded logo, Hide (block icon) circle, heart circle, Apply pill. Desktop keeps these in the sticky strip. */}
+        <div className="md:hidden flex items-center gap-2.5">
+          <CompanyLogo
+            company={job.company}
+            locked={!isUnlocked}
+            applyUrl={job.applyUrl}
+            logoUrl={job.logoUrl}
+            className="w-16 h-16 rounded-2xl object-contain p-1.5 border border-[#E2E8F0] bg-white shrink-0"
+          />
+          <div className="flex-1" />
+          {onHide && (
+            <button
+              type="button"
+              onClick={onHide}
+              aria-label="Hide position"
+              title="Hide position"
+              className="w-10 h-10 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A] transition cursor-pointer shrink-0"
+            >
+              <Ban className="w-[18px] h-[18px]" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onSave}
+            aria-label={isSaved ? "Unlike job" : "Save job"}
+            className={`w-10 h-10 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full border transition cursor-pointer shrink-0 ${
+              isSaved
+                ? "border-rose-200 bg-rose-50 text-rose-600"
+                : "border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+            }`}
+          >
+            <Heart className={`w-[18px] h-[18px] ${isSaved ? "fill-rose-500 text-rose-500" : ""}`} />
+          </button>
+          {isExpired || job.isExpired ? (
+            <button
+              type="button"
+              disabled
+              className="inline-flex items-center gap-1 px-4 py-2 min-h-[40px] rounded-full bg-slate-200 text-slate-500 text-sm font-bold transition shadow-none cursor-not-allowed shrink-0"
+            >
+              <span>Closed</span>
+            </button>
+          ) : isUnlocked && job.applyUrl ? (
+            <a
+              href={job.applyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onApply}
+              className="inline-flex items-center gap-1 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
+            >
+              <span>Apply</span>
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={onApply}
+              className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
+            >
+              {!isUnlocked && <Lock className="w-3.5 h-3.5" />}
+              <span>Apply</span>
+            </button>
+          )}
+        </div>
+
+        <div className="max-md:mt-4 flex flex-col lg:flex-row lg:items-start justify-between gap-5">
           {/* Left / Middle: Logo, Company, Title, 2x3 Metadata */}
           <div className="flex-1 min-w-0 space-y-3 md:space-y-3.5">
             <div className="max-md:hidden flex items-center gap-3">
@@ -680,62 +678,72 @@ export default function JobDetailView({
               </div>
             </div>
 
+            {/* Mobile pills: posted time + category (real data only) */}
+            <div className="md:hidden flex flex-wrap items-center gap-2">
+              {(job.postedAt || job.date) && (
+                <span className="inline-flex items-center h-7 px-2.5 rounded-full bg-[#F1F5F9] text-[#334155] text-[12px] font-semibold">
+                  {formatRelativeTime(job.postedAt || job.date)}
+                </span>
+              )}
+              {job.category && (
+                <span className="inline-flex items-center h-7 px-2.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8] text-[12px] font-semibold capitalize">
+                  {job.category}
+                </span>
+              )}
+            </div>
+
             {/* Title */}
-            <h1 className="text-[20px] md:text-[24px] font-bold text-[#0F172A] leading-tight break-words">
+            <h1 className="text-[28px] md:text-[24px] font-bold text-[#0F172A] leading-tight break-words">
               {job.title}
             </h1>
 
-            {/* Overview chips: seniority, category, job type, remote scope */}
-            {/* Mobile: every fact once, as compact chips (CM mobile item 17). The md+ chips and grid below are unchanged. */}
-            <ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden flex flex-wrap gap-1.5">
-              <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
-                <MapPin className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+            {/* Mobile meta line: company / skill - skill - ... grey tags, single line, real data only */}
+            {(job.company || (job.skills && job.skills.length > 0)) && (
+              <p className="md:hidden text-[13px] text-[#64748B] truncate">
+                <span className={!isUnlocked ? "filter blur-[3.5px] select-none" : ""}>
+                  {(isUnlocked && job.company) || "Verified Employer"}
+                </span>
+                {job.skills && job.skills.length > 0 && ` / ${job.skills.join(" · ")}`}
+              </p>
+            )}
+
+            {/* Mobile fact list: one icon row per fact (location, job type, work model, level, salary). Salary is
+                always listed and visible to every viewer ("Not disclosed" when empty). Desktop chips/grid unchanged. */}
+            <ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden flex flex-col gap-2.5">
+              <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                <MapPin className="w-4 h-4 text-[#64748B] shrink-0" />
                 <span className="truncate">{isUnlocked ? (job.location || "Remote") : <span className="text-[#64748B]">Location locked</span>}</span>
               </li>
-              <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
-                <Laptop className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+              {job.type && (
+                <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                  <Briefcase className="w-4 h-4 text-[#64748B] shrink-0" />
+                  <span className="truncate">{job.type}</span>
+                </li>
+              )}
+              <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                <Laptop className="w-4 h-4 text-[#64748B] shrink-0" />
                 <span className="truncate">
                   {workModelLabel(job)}
                   {job.remoteScope && !["remote", "hybrid", "onsite", "on-site", "any"].includes(job.remoteScope.toLowerCase()) ? ` (${job.remoteScope})` : ""}
                 </span>
               </li>
-              {job.type && (
-                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
-                  <Briefcase className="w-3.5 h-3.5 text-[#475569] shrink-0" />
-                  <span className="truncate">{job.type}</span>
-                </li>
-              )}
               {jobLevel && (
-                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
-                  <TrendingUp className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                  <TrendingUp className="w-4 h-4 text-[#64748B] shrink-0" />
                   <span className="truncate">{jobLevel}</span>
                 </li>
               )}
-              {job.category && (
-                <li className="inline-flex items-center h-7 px-2.5 rounded-md bg-[#EFF6FF] text-[#1D4ED8] text-[12px] font-semibold capitalize max-w-full">
-                  <span className="truncate">{job.category}</span>
-                </li>
-              )}
-              {Boolean(job.salary && String(job.salary).trim()) && (
-                <li data-testid="mobile-job-salary" className="inline-flex items-center gap-1 min-h-7 py-1 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
-                  <DollarSign className="w-3.5 h-3.5 text-[#166534] shrink-0" />
-                  <span className="whitespace-normal break-words min-w-0">
-                    {isUnlocked ? job.salary : "••••••••"}
-                    {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
-                      <span className="font-normal text-[#64748B]"> ({job.salary_original})</span>
-                    )}
-                  </span>
-                </li>
-              )}
               {expText && (
-                <li className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold max-w-full">
-                  <Calendar className="w-3.5 h-3.5 text-[#475569] shrink-0" />
+                <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                  <Calendar className="w-4 h-4 text-[#64748B] shrink-0" />
                   <span className="truncate">{expText}</span>
                 </li>
               )}
-              <li className="inline-flex items-center gap-1 h-7 px-1 text-[12px] text-[#64748B]">
-                <Clock className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                <span>{formatRelativeTime(job.postedAt || job.date)}</span>
+              <li data-testid="mobile-job-salary" className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+                <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
+                <span className="whitespace-normal break-words min-w-0">
+                  {Boolean(job.salary && String(job.salary).trim()) ? job.salary : "Not disclosed"}
+                </span>
               </li>
             </ul>
 
@@ -890,13 +898,46 @@ export default function JobDetailView({
           </div>
         </div>
 
-        {/* Match score on Mobile: main score line + one row of component scores (readable 11px+ labels) */}
+        {/* Match score on Mobile: heading, then the overall card (taller, highlighted, big % with band label)
+            beside one card per component score. Cards without real data are dropped; masked for locked viewers. */}
         {hasConfirmedResume && matchScore !== null && (
-          <div data-testid="mobile-match-score" className="lg:hidden pt-3 border-t border-[#E2E8F0] space-y-2">
+          <div data-testid="mobile-match-score" className="md:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0] space-y-2.5">
+            <h2 className="text-[16px] font-bold text-[#0F172A]">Match Score</h2>
+            <div className="flex gap-2 items-stretch">
+              <div className="flex flex-col justify-between gap-2 w-[72px] shrink-0 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
+                <span className="text-2xl font-black text-[#0F172A] leading-none">
+                  {isUnlocked ? `${matchScore}%` : <span className="select-none text-slate-400">••%</span>}
+                </span>
+                <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#1D4ED8] leading-tight">
+                  {isUnlocked ? matchLabel : "Pro Match"}
+                </span>
+              </div>
+              <dl className="flex-1 grid grid-cols-3 gap-1">
+                {([
+                  ["Experience", expSubScore],
+                  ["Skill", skillSubScore],
+                  ["Industry", industrySubScore],
+                ] as const)
+                  .filter(([, value]) => !isUnlocked || value !== null)
+                  .map(([label, value]) => (
+                    <div key={label} className="flex flex-col justify-between gap-1 rounded-xl bg-slate-50 border border-slate-200 px-1.5 py-2 min-w-0">
+                      <dt className="text-[11px] text-[#64748B] leading-tight tracking-tight break-words">{label}</dt>
+                      <dd className="text-lg font-bold text-[#0F172A] leading-none">
+                        {isUnlocked ? (value !== null ? `${value}%` : "—") : "••%"}
+                      </dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
+          </div>
+        )}
+        {/* Tablet (md..lg): the pre-restyle compact score line + one row of component scores, unchanged */}
+        {hasConfirmedResume && matchScore !== null && (
+          <div data-testid="tablet-match-score" className="hidden md:max-lg:block mt-4 sm:mt-3 pt-3 border-t border-[#E2E8F0] space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Match Score</span>
               <span className="flex items-baseline gap-1.5 min-w-0">
-                <span className="text-xl font-black text-[#0F172A] leading-none">{isUnlocked ? `${matchScore}%` : "••%"}</span>
+                <span className="text-xl font-black text-[#0F172A] leading-none">{isUnlocked ? `${matchScore}%` : "\u2022\u2022%"}</span>
                 <span className="text-xs font-bold text-[#1D4ED8] truncate">{isUnlocked ? matchLabel : "Match"}</span>
               </span>
             </div>
@@ -908,7 +949,7 @@ export default function JobDetailView({
               ] as const).map(([label, value]) => (
                 <div key={label} className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-0">
                   <dt className="text-[11px] text-[#64748B] leading-tight truncate">{label}</dt>
-                  <dd className="text-sm font-bold text-[#0F172A]">{isUnlocked ? (value !== null ? `${value}%` : "—") : "••%"}</dd>
+                  <dd className="text-sm font-bold text-[#0F172A]">{isUnlocked ? (value !== null ? `${value}%` : "\u2014") : "\u2022\u2022%"}</dd>
                 </div>
               ))}
             </dl>
@@ -919,7 +960,7 @@ export default function JobDetailView({
           <Link
             href="/resume"
             data-testid="mobile-match-resume-prompt"
-            className="lg:hidden flex items-center gap-2 min-h-[44px] pt-3 border-t border-[#E2E8F0] text-xs font-bold text-[#1D4ED8] hover:underline"
+            className="lg:hidden mt-4 sm:mt-3 flex items-center gap-2 min-h-[44px] pt-3 border-t border-[#E2E8F0] text-xs font-bold text-[#1D4ED8] hover:underline"
           >
             <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
             <span>Upload your resume to see your real match</span>
@@ -963,8 +1004,11 @@ export default function JobDetailView({
           )}
 
           {/* 1. Short summary + tags Card */}
-          <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-6 shadow-none space-y-3.5">
-            <h2 className="text-[18px] font-bold text-[#0F172A]">Job description</h2>
+          <div className="bg-white max-md:bg-[#F1F5F9] rounded-[16px] ring-1 ring-[#E2E8F0] max-md:ring-0 p-5 sm:p-6 shadow-none space-y-3.5">
+            <h2 className="max-md:hidden text-[18px] font-bold text-[#0F172A]">Job description</h2>
+            <p className={`md:hidden text-[15px] font-bold text-[#0F172A] ${!isUnlocked ? "filter blur-[3.5px] select-none" : ""}`}>
+              {(isUnlocked && job.company) || "Verified Employer"}
+            </p>
             {job.description ? (
               <div className="text-[15px] leading-[24px] text-[#0F172A] max-w-[720px] whitespace-pre-wrap break-words">
                 {jobDescriptionText(job.description)}

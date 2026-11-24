@@ -1871,7 +1871,7 @@ function JobsPageInner() {
         <main
           id="main-content"
           data-testid="jobs-main-content"
-          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 pb-4 sm:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
+          className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 pb-4 md:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
           {detailLoading ? (
             <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">

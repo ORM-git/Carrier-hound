@@ -173,13 +173,15 @@ function run() {
     console.log("  [PASS] detail optional sections: Requirements and Benefits render strictly when data exists");
   }
 
-  // 2g. CM mobile item 16: no duplicate fixed bottom Share/Apply strip; Apply and Share stay in the sticky header strip
+  // 2g. CM mobile item 16: no duplicate fixed bottom Share/Apply strip; Share lives in the sticky strip's
+  // "..." menu (fallback share button when no menu renders), Apply in the overview action row
   const strip = detailCode.slice(detailCode.indexOf('data-testid="mobile-sticky-header-strip"'), detailCode.indexOf("MATCH INSIGHTS & TRACKER PANEL"));
-  const hasMobileStickyBar = !detailCode.includes("md:hidden fixed") && strip.includes("Apply") && strip.includes('data-testid="mobile-header-share-button"');
+  const actionRow = detailCode.slice(detailCode.indexOf("w-16 h-16 rounded-2xl"), detailCode.indexOf("{/* Mobile pills:"));
+  const hasMobileStickyBar = !detailCode.includes("md:hidden fixed") && strip.includes("<JobCardMenu") && detailCode.includes('data-testid="mobile-header-share-button"') && actionRow.includes("Apply");
   if (!hasMobileStickyBar) {
-    failures.push("MOBILE STICKY BAR FAIL: Mobile detail must keep Apply/Share in the sticky header strip and have no fixed bottom strip.");
+    failures.push("MOBILE STICKY BAR FAIL: Mobile detail must keep Share in the sticky strip menu, Apply in the overview action row, and have no fixed bottom strip.");
   } else {
-    console.log("  [PASS] mobile detail: Apply/Share in the sticky header strip, no duplicate fixed bottom strip");
+    console.log("  [PASS] mobile detail: Share in the strip menu, Apply in the overview action row, no duplicate fixed bottom strip");
   }
 
   // -------------------------------------------------------------------------

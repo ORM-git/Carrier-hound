@@ -298,7 +298,7 @@ export default function TrackerPage() {
       pageLabel="TRACKER"
       user={user}
       isPro={isPro}
-      mainClassName="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-4 space-y-5 sm:space-y-3.5 pb-24 lg:pb-12"
+      mainClassName="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-4 space-y-5 sm:space-y-3.5 pb-8 md:pb-24 lg:pb-12"
     >
           {/* Top row above the board: segmented control, search input pill, primary blue Add button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
