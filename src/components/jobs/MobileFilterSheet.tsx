@@ -21,7 +21,6 @@ interface MobileFilterSheetProps {
   onApply: (updated: JobFilterValues) => void;
   onResetAll: () => void;
   activeCount: number;
-  hiddenCount: number;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
@@ -32,7 +31,6 @@ export default function MobileFilterSheet({
   onApply,
   onResetAll,
   activeCount,
-  hiddenCount,
   triggerRef,
 }: MobileFilterSheetProps) {
   const [draft, setDraft] = useState<JobFilterValues>(filters);
@@ -123,11 +121,11 @@ export default function MobileFilterSheet({
     draft.salaryMin,
     draft.sourceType,
     draft.company,
-    draft.hidden,
   ].filter((v) => Boolean(v && v !== "all")).length;
 
   const handleApply = () => {
-    onApply(draft);
+    // Phones have no Hidden Jobs control, so applying this sheet always shows the normal feed.
+    onApply({ ...draft, hidden: false });
     onClose();
     triggerRef?.current?.focus();
   };
@@ -305,19 +303,6 @@ export default function MobileFilterSheet({
                   type="button"
                   onClick={() => setDraft((p) => ({ ...p, datePosted: "" }))}
                   aria-label="Remove date posted"
-                  className="hover:text-rose-600 transition"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {draft.hidden && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] font-medium text-[11px]">
-                <span>Hidden Jobs</span>
-                <button
-                  type="button"
-                  onClick={() => setDraft((p) => ({ ...p, hidden: false }))}
-                  aria-label="Remove hidden jobs filter"
                   className="hover:text-rose-600 transition"
                 >
                   <X className="w-3 h-3" />
@@ -513,6 +498,7 @@ export default function MobileFilterSheet({
                     {[
                       { id: "", label: "Any time" },
                       { id: "24h", label: "Past 24 hours" },
+                      { id: "3d", label: "Past 3 days" },
                       { id: "7d", label: "Past week" },
                       { id: "30d", label: "Past month" },
                     ].map((item) => (
@@ -608,31 +594,6 @@ export default function MobileFilterSheet({
 
 
 
-          {/* Section 3: Hidden Positions Toggle */}
-          <div className="p-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold text-[#0F172A]">View Hidden Positions</p>
-              <p className="text-[10px] text-[#64748B]">
-                {hiddenCount > 0 ? `${hiddenCount} jobs currently hidden` : "No jobs hidden yet"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDraft((p) => ({ ...p, hidden: !p.hidden }))}
-              role="switch"
-              aria-checked={draft.hidden}
-              aria-label="View Hidden Positions"
-              className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer min-h-[24px] ${
-                draft.hidden ? "bg-[#2563EB]" : "bg-slate-300"
-              }`}
-            >
-              <span
-                className={`block w-5 h-5 rounded-full bg-white shadow-xs transition-transform transform ${
-                  draft.hidden ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
         </div>
       </div>
     </>
