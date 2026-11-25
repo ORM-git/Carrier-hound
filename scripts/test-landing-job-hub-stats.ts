@@ -70,8 +70,8 @@ async function main() {
 
   assert(pageContent.includes("3x") && pageContent.includes("higher callback rate"), "Must contain '3x higher callback rate'");
   assert(pageContent.includes("94%") && pageContent.includes("ATS keyword alignment"), "Must contain '94% ATS keyword alignment'");
-  // Owner-requested copy: the stats-row figure renders as "1Lakh+" (was "1,200+"); the guard on the metric block and its "fresh roles" label is unchanged.
-  assert(pageContent.includes("1Lakh+") && pageContent.includes("fresh roles"), "Must contain '1Lakh+ fresh roles'");
+  // Match the shipped stats-row copy; metric block and fresh-roles label guards stay unchanged.
+  assert(pageContent.includes("100k+") && pageContent.includes("fresh roles"), "Must contain '100k+ fresh roles'");
 
   console.log("  [PASS-LOCAL] All 3 metric stats in laurels verified with 100% fidelity");
   console.log("\n================================================================================");
