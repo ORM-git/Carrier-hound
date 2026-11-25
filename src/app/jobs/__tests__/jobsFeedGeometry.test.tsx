@@ -272,6 +272,33 @@ describe("server-ordered pages (appended below the reader)", () => {
   });
 });
 
+describe("anchor correction lifecycle", () => {
+  it("cancels the pending animation frames of the anchor correction on unmount", async () => {
+    const pending = new Set<number>();
+    let nextId = 900000;
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => {
+      pending.add(++nextId); // never fires, so the correction's frames are still pending at unmount
+      return nextId;
+    });
+    const cancelSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id: number) => {
+      pending.delete(id);
+    });
+    try {
+      const p2 = deferred<GetJobsResult>();
+      h.transport = async ({ page: p }) => (p === 2 ? p2.promise : pageOf(p));
+      const view = await mount();
+      await act(async () => p2.resolve(pageOf(2)));
+      await settle(8);
+      expect(pending.size).toBeGreaterThan(0); // the re-ranked append scheduled the flag reset
+      view.unmount();
+      expect(Array.from(pending)).toEqual([]);
+    } finally {
+      rafSpy.mockRestore();
+      cancelSpy.mockRestore();
+    }
+  });
+});
+
 describe("scrollbar jump across a rendered page", () => {
   it("jumping straight to card 26 (no cards seen in between) refills 4-6 once", async () => {
     h.transport = async ({ page: p }) => ({ jobs: range((p - 1) * 25 + 1, p * 25).map((i) => fixtureJob(i)), totalCount: 1000, hasNextPage: p < 12, nextCursor: null });
