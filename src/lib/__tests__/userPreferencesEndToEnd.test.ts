@@ -275,7 +275,9 @@ describe("user preferences end to end (migration 20261117 applied)", () => {
     expect(saved.daily_digest_opt_in).toBe(false);
 
     const prefs = await getUserPreferences(USER_ID);
-    const { updatedAt: _a, ...fromDb } = prefs;
+    // Saved feed constraints are read separately (migration 20261125a) and the onboarding API never
+    // writes them; compare the original contract here, the constraint fields in their own test.
+    const { updatedAt: _a, workModels: _w, datePosted: _d, excludedTitles: _t, includedCompanies: _i, excludedCompanies: _e, feedConstraintsAvailable: _f, ...fromDb } = prefs;
     const { updatedAt: _b, ...fromApi } = json.preferences;
     // The validated preferences the API returns (what the page caches) equal what the DB holds.
     expect(fromDb).toEqual(JSON.parse(JSON.stringify(fromApi)));
