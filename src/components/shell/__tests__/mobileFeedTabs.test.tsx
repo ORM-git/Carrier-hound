@@ -34,9 +34,9 @@ describe("mobile jobs feed tab row (item 15)", () => {
     expect(html).not.toContain("sr-only sm:not-sr-only");
   });
 
-  it("jobs page: only the list view passes mobile tabs (minus External); the old mobile pill row and search input are gone", () => {
+  it("jobs page: only the list view passes all functional mobile tabs including External; the old mobile pill row and search input are gone", () => {
     const page = readFileSync("src/app/jobs/page.tsx", "utf8");
-    expect(page).toContain('mobileTabs={isListView ? jobTabs.filter((tab) => tab.id !== "external") : undefined}');
+    expect(page).toContain('mobileTabs={isListView ? jobTabs : undefined}');
     expect(page).not.toContain("Mobile search bar (<640px)");
     expect(page).not.toContain("Mobile tabs (<640px)");
   });
