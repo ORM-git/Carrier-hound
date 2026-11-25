@@ -1186,6 +1186,36 @@ function JobsPageInner() {
       }
     });
 
+    if (activeTab === "external") {
+      result = result.filter((job) => Boolean(job.directSource));
+    }
+
+    if (selectedCountryCode && selectedCountryCode.toLowerCase() !== "all") {
+      result = result.filter((job) =>
+        matchCountryWithStrictFallback(job.country, job.location, selectedCountryCode)
+      );
+    }
+
+    if (selectedLocation) {
+      result = result.filter((job) =>
+        (job.location || "").toLowerCase().includes(selectedLocation.toLowerCase())
+      );
+    }
+
+    if (selectedWorkModel) {
+      result = result.filter((job) => matchesWorkModelFilter(job, selectedWorkModel));
+    }
+
+    if (selectedLevel) {
+      result = result.filter((job) =>
+        matchesExperienceLevelFilter(job, selectedLevel)
+      );
+    }
+
+    if (selectedJobType) {
+      result = result.filter((job) => matchesJobTypeFilter(job.type, selectedJobType));
+    }
+
     return () => {
       cancelled = true;
     };
