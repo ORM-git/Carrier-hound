@@ -1,433 +1,240 @@
-{
-  "kind": "CONTROLLED FIXTURE (intercepted /api/stats; not live data)",
-  "baseUrl": "http://localhost:3612",
-  "capturedAt": "2026-11-25T16:57:35.865Z",
-  "01_mobile_320x640_short_hidden": {
-    "viewport": "320x640",
-    "expectedPillVisible": false,
-    "withNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "none",
-        "visibility": "visible",
-        "rect": {
-          "x": 0,
-          "y": 0,
-          "w": 0,
-          "h": 0
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": {
-        "x": 0,
-        "y": 530,
-        "w": 320,
-        "h": 110
-      },
-      "viewJobsCta": {
-        "x": 16,
-        "y": 594,
-        "w": 288,
-        "h": 48
-      },
-      "ctaCoveredByNoticePx": 13248,
-      "ctaCoveredFraction": 0.958,
-      "pageHorizontalScroll": false
+[
+  {
+    "width": 390,
+    "state": "1122",
+    "text": "1,122 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 44.671875,
+      "y": 141.640625,
+      "width": 300.65625,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 345.328125,
+      "bottom": 171.140625,
+      "left": 44.671875
     },
-    "noNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "none",
-        "visibility": "visible",
-        "rect": {
-          "x": 0,
-          "y": 0,
-          "w": 0,
-          "h": 0
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": null,
-      "viewJobsCta": {
-        "x": 16,
-        "y": 593,
-        "w": 288,
-        "h": 48
-      },
-      "ctaCoveredByNoticePx": 0,
-      "ctaCoveredFraction": 0,
-      "pageHorizontalScroll": false
-    }
+    "overflow": false
   },
-  "02_mobile_320x800_tall_visible": {
-    "viewport": "320x800",
-    "expectedPillVisible": true,
-    "withNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 57,
-          "y": 97,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": {
-        "x": 0,
-        "y": 690,
-        "w": 320,
-        "h": 110
-      },
-      "viewJobsCta": {
-        "x": 16,
-        "y": 704,
-        "w": 288,
-        "h": 56
-      },
-      "ctaCoveredByNoticePx": 16128,
-      "ctaCoveredFraction": 1,
-      "pageHorizontalScroll": false
+  {
+    "width": 390,
+    "state": "1",
+    "text": "1 new job record added today",
+    "visible": true,
+    "rect": {
+      "x": 64.578125,
+      "y": 141.640625,
+      "width": 260.84375,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 325.421875,
+      "bottom": 171.140625,
+      "left": 64.578125
     },
-    "noNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 57,
-          "y": 97,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": null,
-      "viewJobsCta": {
-        "x": 16,
-        "y": 704,
-        "w": 288,
-        "h": 56
-      },
-      "ctaCoveredByNoticePx": 0,
-      "ctaCoveredFraction": 0,
-      "pageHorizontalScroll": false
-    }
+    "overflow": false
   },
-  "03_mobile_390x844_visible": {
-    "viewport": "390x844",
-    "expectedPillVisible": true,
-    "withNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 92,
-          "y": 125,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": {
-        "x": 0,
-        "y": 734,
-        "w": 390,
-        "h": 110
-      },
-      "viewJobsCta": {
-        "x": 16,
-        "y": 745,
-        "w": 358,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 20764,
-      "ctaCoveredFraction": 1,
-      "pageHorizontalScroll": false
+  {
+    "width": 390,
+    "state": "0",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
     },
-    "noNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 92,
-          "y": 125,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": null,
-      "viewJobsCta": {
-        "x": 16,
-        "y": 745,
-        "w": 358,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 0,
-      "ctaCoveredFraction": 0,
-      "pageHorizontalScroll": false
-    }
+    "overflow": false
   },
-  "04_phablet_640x900_visible": {
-    "viewport": "640x900",
-    "expectedPillVisible": true,
-    "withNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 217,
-          "y": 150,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": {
-        "x": 0,
-        "y": 831,
-        "w": 640,
-        "h": 69
-      },
-      "viewJobsCta": {
-        "x": 120,
-        "y": 800,
-        "w": 400,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 10800,
-      "ctaCoveredFraction": 0.466,
-      "pageHorizontalScroll": false
+  {
+    "width": 390,
+    "state": "503",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
     },
-    "noNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 217,
-          "y": 150,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": null,
-      "viewJobsCta": {
-        "x": 120,
-        "y": 800,
-        "w": 400,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 0,
-      "ctaCoveredFraction": 0,
-      "pageHorizontalScroll": false
-    }
+    "overflow": false
   },
-  "05_tablet_768x1024_visible": {
-    "viewport": "768x1024",
-    "expectedPillVisible": true,
-    "withNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 281,
-          "y": 148,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": {
-        "x": 0,
-        "y": 955,
-        "w": 768,
-        "h": 69
-      },
-      "viewJobsCta": {
-        "x": 184,
-        "y": 922,
-        "w": 400,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 10000,
-      "ctaCoveredFraction": 0.431,
-      "pageHorizontalScroll": false
+  {
+    "width": 390,
+    "state": "malformed",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
     },
-    "noNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 281,
-          "y": 148,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": null,
-      "viewJobsCta": {
-        "x": 184,
-        "y": 922,
-        "w": 400,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 0,
-      "ctaCoveredFraction": 0,
-      "pageHorizontalScroll": false
-    }
+    "overflow": false
   },
-  "06_desktop_1440x900_visible": {
-    "viewport": "1440x900",
-    "expectedPillVisible": true,
-    "withNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 617,
-          "y": 125,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": {
-        "x": 0,
-        "y": 831,
-        "w": 1440,
-        "h": 69
-      },
-      "viewJobsCta": {
-        "x": 520,
-        "y": 800,
-        "w": 400,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 10800,
-      "ctaCoveredFraction": 0.466,
-      "pageHorizontalScroll": false
+  {
+    "width": 390,
+    "state": "prior",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
     },
-    "noNotice": {
-      "pill": {
-        "text": "1,122 new jobs found today",
-        "pending": false,
-        "display": "flex",
-        "visibility": "visible",
-        "rect": {
-          "x": 617,
-          "y": 125,
-          "w": 206,
-          "h": 30
-        }
-      },
-      "previewCards": 2,
-      "fontsStatus": "loaded",
-      "cookieNotice": null,
-      "viewJobsCta": {
-        "x": 520,
-        "y": 800,
-        "w": 400,
-        "h": 58
-      },
-      "ctaCoveredByNoticePx": 0,
-      "ctaCoveredFraction": 0,
-      "pageHorizontalScroll": false
-    }
+    "overflow": false
   },
-  "07_mobile_singular_count_1": {
-    "pill": {
-      "text": "1 new job found today",
-      "pending": false,
-      "display": "flex",
-      "visibility": "visible",
-      "rect": {
-        "x": 106,
-        "y": 125,
-        "w": 178,
-        "h": 30
-      }
+  {
+    "width": 390,
+    "state": "12345",
+    "text": "12,345 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 40.140625,
+      "y": 141.640625,
+      "width": 309.703125,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 349.84375,
+      "bottom": 171.140625,
+      "left": 40.140625
     },
-    "previewCards": 2,
-    "fontsStatus": "loaded",
-    "cookieNotice": {
-      "x": 0,
-      "y": 734,
-      "w": 390,
-      "h": 110
-    },
-    "viewJobsCta": {
-      "x": 16,
-      "y": 745,
-      "w": 358,
-      "h": 58
-    },
-    "ctaCoveredByNoticePx": 20764,
-    "ctaCoveredFraction": 1,
-    "pageHorizontalScroll": false
+    "overflow": false
   },
-  "08_mobile_true_zero_hidden": {
-    "pill": {
-      "text": "Daily jobs count pending verification",
-      "pending": true,
-      "display": "flex",
-      "visibility": "hidden",
-      "rect": {
-        "x": 64,
-        "y": 125,
-        "w": 263,
-        "h": 30
-      }
+  {
+    "width": 1440,
+    "state": "1122",
+    "text": "1,122 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 569.671875,
+      "y": 92.53125,
+      "width": 300.65625,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 870.328125,
+      "bottom": 122.03125,
+      "left": 569.671875
     },
-    "previewCards": 2,
-    "fontsStatus": "loaded",
-    "cookieNotice": {
-      "x": 0,
-      "y": 734,
-      "w": 390,
-      "h": 110
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "1",
+    "text": "1 new job record added today",
+    "visible": true,
+    "rect": {
+      "x": 589.578125,
+      "y": 92.53125,
+      "width": 260.84375,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 850.421875,
+      "bottom": 122.03125,
+      "left": 589.578125
     },
-    "viewJobsCta": {
-      "x": 16,
-      "y": 745,
-      "w": 358,
-      "h": 58
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "0",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
     },
-    "ctaCoveredByNoticePx": 20764,
-    "ctaCoveredFraction": 1,
-    "pageHorizontalScroll": false
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "503",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "malformed",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "prior",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "12345",
+    "text": "12,345 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 565.140625,
+      "y": 92.53125,
+      "width": 309.703125,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 874.84375,
+      "bottom": 122.03125,
+      "left": 565.140625
+    },
+    "overflow": false
   }
-}
+]
