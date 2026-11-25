@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
+import { VISIBLE_SOURCE_FILTER } from "../../src/lib/jobs/sourcePolicy";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -107,7 +108,7 @@ export async function handler(event?: any) {
 
       const { data: pageRows, error: jobsError } = await supabase
         .from("jobs")
-        .select("id, company, company_id, title, posted_at, created_at")
+        .select("id, company, company_id, title, posted_at, created_at").or(VISIBLE_SOURCE_FILTER)
         .eq("status", "active")
         .eq("is_active", true)
         .order("posted_at", { ascending: false, nullsFirst: false })

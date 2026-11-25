@@ -15,6 +15,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/top10" } });
 
@@ -209,7 +210,7 @@ export async function POST(req: Request) {
       .from("jobs")
       .select(
         "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
-      )
+      ).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -242,7 +243,7 @@ export async function POST(req: Request) {
         .from("jobs")
         .select(
           "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
-        )
+        ).or(VISIBLE_SOURCE_FILTER)
         .eq("is_active", true)
         .eq("status", "active")
         .order("posted_at", { ascending: false, nullsFirst: false })
@@ -357,7 +358,7 @@ export async function POST(req: Request) {
     // Query exact active count for totalCorpus (same source as /api/stats)
     const { count: totalActiveCount } = await supabaseAdmin
       .from("jobs_public")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
     const totalCorpus = totalActiveCount ?? dedupedScoredJobs.length;

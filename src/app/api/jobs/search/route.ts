@@ -23,6 +23,7 @@ import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter
 import { withRouteSpan } from "@/lib/monitoring/tracing";
 
 import { createLogger } from "@/lib/observability/logger";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/search" } });
 
@@ -219,7 +220,7 @@ async function getHandler(req: Request) {
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
         .from(targetTable)
-        .select(singleColumns as any) as any)
+        .select(singleColumns as any).or(VISIBLE_SOURCE_FILTER) as any)
         .eq("id", cleanId)
         .maybeSingle();
 
@@ -372,7 +373,7 @@ async function getHandler(req: Request) {
     ) => {
       let query = supabaseAdmin
         .from(targetTable)
-        .select(selectColumns, countMode ? { count: countMode } : undefined)
+        .select(selectColumns, countMode ? { count: countMode } : undefined).or(VISIBLE_SOURCE_FILTER)
         .eq("is_active", true)
         .eq("status", "active");
 

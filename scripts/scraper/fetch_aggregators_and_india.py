@@ -49,6 +49,9 @@ INDIA_LOCATIONS: tuple[str, ...] = (
 )
 
 JOBSPY_SITES: tuple[str, ...] = ("linkedin", "indeed", "naukri")
+# Source policy: no LinkedIn / Indeed / Naukri imports through JobSpy. Blocked sites are never scraped and any
+# row reporting one is dropped. Other sources (Arbeitnow, Adzuna, ATS boards) are unaffected.
+BLOCKED_JOBSPY_SITES: frozenset[str] = frozenset({"linkedin", "indeed", "naukri"})
 
 
 def _slugify(value: str) -> str:
@@ -257,6 +260,9 @@ async def fetch_jobspy_india(
     results: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     errors: list[str] = []
+    sites = tuple(s for s in sites if str(s).lower().strip() not in BLOCKED_JOBSPY_SITES)
+    if not sites:
+        return results, None  # every requested site is blocked: nothing to scrape, not an error
 
     for role in roles:
         for loc in locations:
@@ -309,6 +315,8 @@ async def fetch_jobspy_india(
                 seen_urls.add(apply_url)
 
                 site = str(item.get("site") or "jobspy").lower().strip()
+                if site in BLOCKED_JOBSPY_SITES:
+                    continue
                 job_id = str(item.get("id") or apply_url)
                 item_loc = str(item.get("location") or loc).strip()
                 sal_min = item.get("min_amount")

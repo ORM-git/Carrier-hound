@@ -31,6 +31,7 @@ function getSupabaseAdmin() {
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
+import { VISIBLE_SOURCE_FILTER } from "../../src/lib/jobs/sourcePolicy";
 
 const CORS_OPTIONS = {
   allowedMethods: "GET, OPTIONS",
@@ -75,7 +76,7 @@ export async function handler(event?: any) {
     todayMidnight.setUTCHours(0, 0, 0, 0);
     const { count: recentJobs, error: recentErr } = await supabase
       .from("jobs")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active")
       .gte("created_at", todayMidnight.toISOString());
@@ -108,7 +109,7 @@ export async function handler(event?: any) {
     // 2. Authenticated + approved users: query and return complete corpus metrics
     const { count: totalActive, error: activeErr } = await supabase
       .from("jobs")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
 

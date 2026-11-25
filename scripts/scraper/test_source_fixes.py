@@ -176,6 +176,8 @@ class TestSourceFixes(unittest.TestCase):
         self.assertEqual(strip_html(None), "")
         self.assertEqual(strip_html("<b>Developer</b>"), "Developer")
 
+    # Fetch mechanics only: the blocklist is emptied so the retry/timeout handling stays covered (policy: test_jobspy_policy.py).
+    @patch("scripts.scraper.fetch_aggregators_and_india.BLOCKED_JOBSPY_SITES", frozenset())
     def test_jobspy_resilience_and_error_handling(self) -> None:
         """Requirement 5: JobSpy returns error when empty/missing, but succeeds when jobs are returned."""
         from scripts.scraper.fetch_aggregators_and_india import fetch_jobspy_india
@@ -418,6 +420,8 @@ class TestMixedSuccessZeroWriteVeto(unittest.TestCase):
                 sources=sources, dry_run=False, max_rows=50, transport=httpx.MockTransport(handler)))
         return report, writer, db_calls
 
+    # Fetch mechanics only: the blocklist is emptied so the retry/timeout handling stays covered (policy: test_jobspy_policy.py).
+    @patch("scripts.scraper.fetch_aggregators_and_india.BLOCKED_JOBSPY_SITES", frozenset())
     def test_jobspy_one_query_ok_next_times_out_withholds_all_writes(self) -> None:
         import httpx
         calls = {"n": 0}

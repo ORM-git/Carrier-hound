@@ -29,6 +29,7 @@ function createMockSupabaseClient() {
       return queryBuilder;
     },
     or: (clause: string) => {
+      if (clause === "source_type.is.null,source_type.neq.jobspy") return queryBuilder; // source-policy filter (sourcePolicy.ts), not the search clause
       capturedFilters.or.push(clause);
       return queryBuilder;
     },

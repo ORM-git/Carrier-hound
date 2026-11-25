@@ -25,8 +25,8 @@ function createMockSupabase(captured: { orClause: string | null }) {
     select: (_cols?: any, _opts?: any) => chain,
     eq: (_col: string, _val: any) => chain,
     or: (filterStr: string) => {
-      // Record the FIRST or() call which corresponds to the search query 'q'
-      if (!captured.orClause) {
+      // Record the FIRST search or() call ('q'); the source-policy filter (sourcePolicy.ts) is not the search clause.
+      if (!captured.orClause && filterStr !== "source_type.is.null,source_type.neq.jobspy") {
         captured.orClause = filterStr;
       }
       return chain;

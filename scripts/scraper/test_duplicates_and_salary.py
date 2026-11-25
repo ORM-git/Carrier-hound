@@ -259,6 +259,8 @@ class RunTests(unittest.TestCase):
         self.patches: list[str] = []
 
     def run_cohort(self, gh_rows, jobspy_rows, duplicates_for=()):
+        # JobSpy is only a carrier for an aggregator-shaped board here: the source-policy blocklist is emptied so it is
+        # scheduled (policy itself: test_jobspy_policy.py).
         writer_cls = MagicMock()
         inst = writer_cls.return_value
         inst.persistence_failed, inst.failed_writes, inst.write_errors = False, 0, []
@@ -287,7 +289,7 @@ class RunTests(unittest.TestCase):
                 patch.object(run_ingestion, "SupabaseSetDiffWriter", writer_cls), \
                 patch.object(run_ingestion, "fetch_layer1_seed", AsyncMock(return_value=(gh_rows, None))), \
                 patch.object(run_ingestion, "enrich_greenhouse_pay_transparency", AsyncMock(return_value=None)), \
-                patch.object(run_ingestion, "fetch_jobspy_india", AsyncMock(return_value=(jobspy_rows, None))), \
+                patch.object(run_ingestion, "fetch_jobspy_india", AsyncMock(return_value=(jobspy_rows, None))),                 patch.object(run_ingestion.aggregators_mod, "BLOCKED_JOBSPY_SITES", frozenset()), \
                 patch.object(run_ingestion, "fetch_arbeitnow", empty), \
                 patch.object(run_ingestion, "fetch_adzuna", empty):
             report = asyncio.run(run_ingestion.run_master_ingestion(

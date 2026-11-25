@@ -16,6 +16,7 @@ import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 import { applyExperienceLevelQuery, parseExperienceLevels, EARLY_CAREER_OR_CLAUSE } from "@/lib/jobs/experienceLevels";
 import { jobTypeOrClause, workModelOrClause } from "@/lib/jobs/jobFilters";
 import { normalizeUserCountries as normalizeEligibleCountries } from "@/lib/jobs/eligibility";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -235,7 +236,7 @@ export async function GET(req: Request) {
     // No count: nothing reads it, and an exact count over the filtered table is extra DB work on every request.
     let query = supabaseAdmin
       .from(targetTable)
-      .select(selectCols)
+      .select(selectCols).or(VISIBLE_SOURCE_FILTER)
       .eq("status", "active");
 
     if (hasServiceKey) {
@@ -478,7 +479,7 @@ export async function GET(req: Request) {
       timing.begin("hydrate");
       const { data: details, error: detailError } = await supabaseAdmin
         .from("jobs")
-        .select(PRO_HYDRATE_COLS)
+        .select(PRO_HYDRATE_COLS).or(VISIBLE_SOURCE_FILTER)
         .in("id", paginatedJobs.map((row: any) => row.id))
         // Same eligibility as the candidate query: a job that went inactive after it was ranked is not returned.
         .eq("status", "active")
