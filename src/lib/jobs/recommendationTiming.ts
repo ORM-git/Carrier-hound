@@ -11,6 +11,10 @@ export function recommendationTiming(ray: string | null, now = () => performance
   const durations: Record<string, number> = {};
   const counts: Record<string, number> = {};
   const elapsed = (from: number) => Math.round(Math.max(0, now() - from) * 100) / 100;
+  // A stage can repeat (e.g. one db + scoring pass per candidate chunk): wall times add up.
+  const add = (into: Record<string, number>, key: string, value: number) => {
+    into[key] = Math.round(((into[key] ?? 0) + value) * 100) / 100;
+  };
   function emit(event: string, status?: number) {
     try { log.info("recommended_request_timing", { event, stage, ...durations, ...counts, totalWallMs: elapsed(started), ...(status ? { status } : {}) }); }
     catch { /* Telemetry never changes the response. */ }
@@ -18,8 +22,8 @@ export function recommendationTiming(ray: string | null, now = () => performance
   emit("start");
   return {
     requestId,
-    begin(next: "db" | "scoring" | "format") {
-      durations[`${stage}WallMs`] = elapsed(stageStarted);
+    begin(next: "db" | "hydrate" | "scoring" | "format") {
+      add(durations, `${stage}WallMs`, elapsed(stageStarted));
       stage = next;
       stageStarted = now();
       emit("stage_start"); // Survives in logs even when the runtime kills the next stage.
@@ -28,7 +32,7 @@ export function recommendationTiming(ray: string | null, now = () => performance
       counts[kind] = Number.isSafeInteger(value) && value >= 0 ? value : 0;
     },
     finish(status: number) {
-      durations[`${stage}WallMs`] = elapsed(stageStarted);
+      add(durations, `${stage}WallMs`, elapsed(stageStarted));
       emit("finish", status);
     },
   };
