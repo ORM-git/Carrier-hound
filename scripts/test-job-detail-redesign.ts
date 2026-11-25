@@ -57,7 +57,8 @@ function run() {
     detailCode.includes("formatRelativeTime") &&
     detailCode.includes("Experience Level") &&
     detailCode.includes("Skill") &&
-    detailCode.includes("Industry Exp.");
+    detailCode.includes("Role Match") &&
+    !detailCode.includes("Industry"); // FitDiagnosticsResult has no industry dimension: never label one
 
   if (!hasHeaderBody) {
     failures.push("HEADER BODY FAIL: Must contain 2x3 metadata grid (location, job type, work model, level, salary, exp) and Match card with sub-scores.");
@@ -127,19 +128,20 @@ function run() {
     console.log("  [PASS] unlock logic: preserves isUnlocked (isPro && !job.proUnlockError), error retry banner, and onRetryUnlock prop");
   }
 
-  // 7. Mobile match score: heading + highlighted overall card (big %, band label) + one grid-cols-3 row of
-  // component score cards (Experience/Skill/Industry, dropped when no data), 11px+ labels
-  const mobileScore = detailCode.slice(detailCode.indexOf('data-testid="mobile-match-score"'), detailCode.indexOf("(3) CONTENT ORDER"));
+  // 7. Mobile match score: heading + one row of four tiles (highlighted overall with its match label, then
+  // Experience Level / Skill / Role Match), masked as "Pro Match" when locked, 11px+ labels
+  const mobileScore = detailCode.slice(detailCode.indexOf('testId="mobile-match-score"'), detailCode.indexOf("(3) CONTENT ORDER"));
+  const tilesCode = detailCode.slice(detailCode.indexOf("function MatchScoreTiles"), detailCode.indexOf("function MatchScorePrompt"));
   const hasMobileMatchRow =
-    mobileScore.includes("Match Score") &&
+    tilesCode.includes("Match Score") &&
+    tilesCode.includes("grid grid-cols-4") &&
+    tilesCode.includes("Pro Match") &&
     mobileScore.includes("matchLabel") &&
-    mobileScore.includes("grid grid-cols-3") &&
-    mobileScore.includes("Pro Match") &&
-    ["Experience", "Skill", "Industry"].every((l) => mobileScore.includes(l)) &&
-    !/text-\[(9|10)px\]/.test(mobileScore);
+    ["Experience Level", "Skill", "Role Match"].every((l) => mobileScore.includes(l)) &&
+    !/text-\[(9|10)px\]/.test(mobileScore + tilesCode);
 
   if (!hasMobileMatchRow) {
-    failures.push("MOBILE MATCH ROW FAIL: Mobile must render Match Score as a highlighted overall card (big %, band label) plus one grid-cols-3 row of Experience/Skill/Industry cards with 11px+ labels.");
+    failures.push("MOBILE MATCH ROW FAIL: Mobile must render Match Score as one grid-cols-4 row: highlighted overall tile (big %, match label) plus Experience Level / Skill / Role Match tiles with 11px+ labels.");
   } else {
     console.log("  [PASS] mobile match layout: highlighted overall card plus component score cards with readable labels");
   }
