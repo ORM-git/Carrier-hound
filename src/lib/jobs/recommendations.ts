@@ -549,14 +549,35 @@ function prepareAnswers(answers: OnboardingAnswers): PreparedAnswers {
   };
 }
 
-export function scoreJobRecommendation(
-  job: JobScoringCandidate,
-  answers: OnboardingAnswers
-): ScoredJobResult {
-  return scorePrepared(job, prepareAnswers(answers));
+/**
+ * Recency points (0 / 1 / 3 / 5) the scorer gives a job at `now`, using the scorer's own date fallback.
+ * Shared with scoreInputRevision so a score's time-dependent state is part of its revision.
+ */
+export function recencyPoints(
+  job: { posted_at?: string | null; created_at?: string | null; first_seen_at?: string | null },
+  now: number
+): number {
+  const dateStr = job.posted_at || job.created_at || job.first_seen_at;
+  if (!dateStr) return 0;
+  const postTime = new Date(dateStr).getTime();
+  if (isNaN(postTime)) return 0;
+  const ageHours = (now - postTime) / (1000 * 60 * 60);
+  if (ageHours <= 24) return 5;
+  if (ageHours <= 24 * 7) return 3;
+  if (ageHours <= 24 * 30) return 1;
+  return 0;
 }
 
-function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers): ScoredJobResult {
+/** `now`: the response's reference instant; pass the same one to scoreInputRevision for the same row. */
+export function scoreJobRecommendation(
+  job: JobScoringCandidate,
+  answers: OnboardingAnswers,
+  now: number = Date.now()
+): ScoredJobResult {
+  return scorePrepared(job, prepareAnswers(answers), now);
+}
+
+function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers, now: number): ScoredJobResult {
   const { answers, userRemote, userExp, userLocations } = p;
   const reasons: string[] = [];
   const title = (job.title || "").toLowerCase();
@@ -901,17 +922,7 @@ function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers): ScoredJobR
   }
 
   // 5. FRESHNESS RECENCY TIE-BREAKER (0 - 5 pts)
-  let recencyScore = 0;
-  const dateStr = job.posted_at || job.created_at || job.first_seen_at;
-  if (dateStr) {
-    const postTime = new Date(dateStr).getTime();
-    if (!isNaN(postTime)) {
-      const ageHours = (Date.now() - postTime) / (1000 * 60 * 60);
-      if (ageHours <= 24) recencyScore = 5;
-      else if (ageHours <= 24 * 7) recencyScore = 3;
-      else if (ageHours <= 24 * 30) recencyScore = 1;
-    }
-  }
+  const recencyScore = recencyPoints(job, now);
 
   // 6. RESUME / LINKEDIN PDF BOOST (0 - 15 pts, only when a parsed profile exists)
   const resume = scorePreparedResume(job, p.resume);
@@ -945,7 +956,8 @@ function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers): ScoredJobR
  */
 export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScoringCandidate>(
   jobs: T[],
-  answers?: OnboardingAnswers | null
+  answers?: OnboardingAnswers | null,
+  now: number = Date.now()
 ): (T & { _matchScore?: number; matchScore?: number })[] {
   if (!Array.isArray(jobs) || jobs.length === 0) {
     return [];
@@ -1002,10 +1014,10 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
   for (const job of jobs) {
     // Must have positive score from base onboarding answers (resume never qualifies on its own).
     // A positive base score already passed the seniority and country hard filters (scorePrepared returns 0 on them).
-    const baseScored = scorePrepared(job, base);
+    const baseScored = scorePrepared(job, base, now);
     if (baseScored.score <= 0) continue;
     // The relevance gate also counts resume titles/skills, so it is checked on the full answers
-    const fullScored = full ? scorePrepared(job, full) : baseScored;
+    const fullScored = full ? scorePrepared(job, full, now) : baseScored;
     if (fullScored.score <= 0) continue;
     // Work model: "remote" is additive (see scoreJobRecommendation); only "onsite" (not open to remote) excludes.
     if (base.userRemote === "onsite" && isRemoteJob(job)) continue;

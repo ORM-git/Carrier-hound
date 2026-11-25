@@ -1363,6 +1363,11 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
   });
 
   it("Pro: one 25-row hydration; payload and paid card/detail score equal the full database row", async () => {
+    // Freeze Date so the route's reference instant and the expected revision/score below are the same instant
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now());
+    const now = Date.now();
+    try {
     const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
     const body = await res.json();
     const candidate = state.queries.filter((q) => !isHydrate(q));
@@ -1378,8 +1383,11 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     for (const j of body.jobs) {
       const row = fullRow(j.id);
       expect(j).toMatchObject({ company: row.company, companyId: row.company_id, applyUrl: row.apply_url, description: row.description, skills: row.skills, logoUrl: row.logo_url, companyDomain: row.companies.domain });
-      expect(j.scoreRevision).toBe(scoreInputRevision(row, true));
-      expect(j.matchScore).toBe(sharedDisplayScore(row, displayAnswers, true));
+      expect(j.scoreRevision).toBe(scoreInputRevision(row, true, now));
+      expect(j.matchScore).toBe(sharedDisplayScore(row, displayAnswers, true, now));
+    }
+    } finally {
+      vi.useRealTimers();
     }
   });
 

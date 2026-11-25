@@ -373,6 +373,8 @@ const DEGRADED_JOBS_RESULT: GetJobsResult = {
  * When sortBy is "match", computes fit across the full corpus on the server/DB.
  */
 export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobsResult> {
+  // One reference instant per response: every score and revision below is computed at it.
+  const scoredAt = Date.now();
   const isLegacyBehavior =
     process.env.NODE_ENV === "test" &&
     process.env.__CAREERMONKE_LEGACY_JOBS_SERVICE === "true";
@@ -802,7 +804,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       } else {
         // Shared recommendation scorer (relevance gate, seniority/location/salary filters, score, order),
         // with the resume's titles, headline and skills added to the saved preferences.
-        const ranked = rankJobsByRecommendation(candidatePool, answersFromCandidate(candidate, preferences));
+        const ranked = rankJobsByRecommendation(candidatePool, answersFromCandidate(candidate, preferences), scoredAt);
         const cappedPool = capJobsPerCompany(ranked, 3, 30);
         data = cappedPool.slice(from, to + 1);
         count = cappedPool.length;
@@ -820,7 +822,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (poolRes.error && !isLegacyBehavior) {
           return DEGRADED_JOBS_RESULT;
         }
-        const ranked = rankJobsByRecommendation(poolRes.data || [], preferences);
+        const ranked = rankJobsByRecommendation(poolRes.data || [], preferences, scoredAt);
         const capped = capJobsPerCompany(ranked, 3, 30);
         data = capped.slice(from, to + 1);
         count = capped.length;
@@ -893,7 +895,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           postedAt: row.posted_at || row.created_at,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
-          scoreRevision: scoreInputRevision(row, isPro),
+          scoreRevision: scoreInputRevision(row, isPro, scoredAt),
           matchScore: typeof row.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row.matchScore))) : (typeof row._matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row._matchScore))) : null),
         };
       });
@@ -1024,6 +1026,8 @@ export function keepSameJobLogoIdentity(detail: LiveJob, listing: LiveJob | null
 }
 
 export async function getLiveJobById(jobId: string, isPro: boolean = false): Promise<LiveJob | null> {
+  // One reference instant per response: every score and revision below is computed at it.
+  const scoredAt = Date.now();
   if (!jobId || !jobId.trim()) return null;
   const cleanId = jobId.trim();
 
@@ -1197,7 +1201,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         applyUrl: "",
         description: "",
         skills: [],
-        scoreRevision: scoreInputRevision(row, false),
+        scoreRevision: scoreInputRevision(row, false, scoredAt),
         postedAt: row.posted_at || row.created_at,
         isExpired: expired,
         status: expired ? "expired" : (row.status || "active"),

@@ -6,6 +6,8 @@ import { scoreJobRecommendation, withFeedScore, type OnboardingAnswers } from "@
 import { sharedDisplayScore } from "@/lib/jobs/displayScore";
 import type { CandidateProfile } from "@/lib/resume/types";
 
+const NOW = Date.parse("2026-11-25T00:00:00Z"); // fixed reference instant for revisions
+
 // Regression: the salary filter in scoreJobRecommendation reads jobs.salary_period, so a period-only change can flip a
 // Pro score; the paid score-input revision must change with it or a stale cached / feed score is reused.
 const mem = new Map<string, string>();
@@ -56,7 +58,7 @@ describe("salary_period is a paid score input", () => {
     for (let i = 0; i < rows.length; i++) {
       for (let j = i + 1; j < rows.length; j++) {
         if (scores[i] !== scores[j]) {
-          expect(scoreInputRevision(rows[i], true), `${PERIODS[i]} vs ${PERIODS[j]}`).not.toBe(scoreInputRevision(rows[j], true));
+          expect(scoreInputRevision(rows[i], true, NOW), `${PERIODS[i]} vs ${PERIODS[j]}`).not.toBe(scoreInputRevision(rows[j], true, NOW));
         }
       }
     }
@@ -65,14 +67,14 @@ describe("salary_period is a paid score input", () => {
   });
 
   it("is stable for identical inputs and ignores unrelated extra columns", () => {
-    expect(scoreInputRevision(withPeriod("monthly"), true)).toBe(scoreInputRevision({ ...withPeriod("monthly") }, true));
-    expect(scoreInputRevision({ ...withPeriod("monthly"), apply_url: "x", logo_url: "y" }, true)).toBe(
-      scoreInputRevision(withPeriod("monthly"), true)
+    expect(scoreInputRevision(withPeriod("monthly"), true, NOW)).toBe(scoreInputRevision({ ...withPeriod("monthly") }, true, NOW));
+    expect(scoreInputRevision({ ...withPeriod("monthly"), apply_url: "x", logo_url: "y" }, true, NOW)).toBe(
+      scoreInputRevision(withPeriod("monthly"), true, NOW)
     );
   });
 
   it("Free stays isolated: free score and free revision ignore the period", () => {
-    const free = PERIODS.map((p) => scoreInputRevision(withPeriod(p), false));
+    const free = PERIODS.map((p) => scoreInputRevision(withPeriod(p), false, NOW));
     expect(new Set(free).size).toBe(1);
     const freeScores = PERIODS.map((p) => sharedDisplayScore(withPeriod(p), answers, false));
     expect(new Set(freeScores).size).toBe(1);
@@ -85,7 +87,7 @@ describe("salary_period is a paid score input", () => {
     } as CandidateProfile;
     const snap = matchScoreSnapshot(cand, "p1");
     const live = (p: (typeof PERIODS)[number], matchScore?: number | null) => ({
-      id: "j1", scoreRevision: scoreInputRevision(withPeriod(p), true), matchScore,
+      id: "j1", scoreRevision: scoreInputRevision(withPeriod(p), true, NOW), matchScore,
     });
     const oldScore = sharedDisplayScore(withPeriod("monthly"), answers)!;
     rememberMatchScores(snap, [live("monthly", oldScore)]);
@@ -101,7 +103,7 @@ describe("salary_period is a paid score input", () => {
   });
 
   it("list and detail give the same revision for the same row", () => {
-    // Every Pro select feeding scoreInputRevision(..., true) returns salary_period (explicitly or via "*")
+    // Every Pro select feeding scoreInputRevision(..., true, NOW) returns salary_period (explicitly or via "*")
     const recommended = readFileSync("src/app/api/jobs/recommended/route.ts", "utf8");
     const pro = readFileSync("src/app/api/jobs/pro/route.ts", "utf8");
     const search = readFileSync("src/app/api/jobs/search/route.ts", "utf8");
@@ -111,6 +113,6 @@ describe("salary_period is a paid score input", () => {
     // Same row object (list) and a re-read of it (detail, different key order) hash identically
     const listRow = withPeriod("hourly");
     const detailRow = Object.fromEntries(Object.entries(listRow).reverse());
-    expect(scoreInputRevision(detailRow, true)).toBe(scoreInputRevision(listRow, true));
+    expect(scoreInputRevision(detailRow, true, NOW)).toBe(scoreInputRevision(listRow, true, NOW));
   });
 });
