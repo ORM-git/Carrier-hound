@@ -10,6 +10,7 @@ const LandingJobsPreview = dynamic(() => import("@/components/landing/LandingJob
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "@/styles/careermonke-landing.css";
 import "@/styles/careermonke-landing-lower.css";
+import "@/styles/mobile-ticker.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 import { initCareerMonkeLandingLower } from "@/components/landing/careermonke-landing-lower-runtime";
 
