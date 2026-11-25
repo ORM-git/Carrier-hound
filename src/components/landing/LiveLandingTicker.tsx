@@ -20,7 +20,7 @@ function Logo({ job }: { job: TickerItemParsed }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => { setLoaded(false); setFailed(false); }, [src]);
-  return <span className="ls-logo" style={{ position: "relative", overflow: "hidden", flexShrink: 0 }}>
+  return <span className="ls-logo" style={{ position: "relative", overflow: "hidden", flexShrink: 0, backgroundColor: loaded ? "#fff" : undefined }}>
     {!loaded && <span>{job.company.trim()[0]?.toUpperCase() || "?"}</span>}
     {/* Stored third-party images need direct load/error signals for the visible letter fallback. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}

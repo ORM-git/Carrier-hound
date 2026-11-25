@@ -55,6 +55,7 @@ async function testTickerPagingUnderDominantCompanyFlood() {
       id: `diverse-${i}`,
       company: `DiverseCo_${compIndex}`,
       company_id: `comp-diverse-${compIndex}`,
+      logo_url: compIndex === 2 ? "https://mock.supabase.co/storage/v1/object/public/company-logos/job-fallback.png" : compIndex === 1 ? "https://mock.supabase.co/storage/v1/object/public/company-logos/job-secondary.png" : compIndex === 3 ? "https://unverified.test/company-logos/no.png" : compIndex === 4 ? "javascript:alert(1)" : compIndex === 5 ? "https://wrong-tenant.supabase.co/storage/v1/object/public/company-logos/no.png" : null,
       title: `Software Engineer ${i + 1}`,
       posted_at: new Date(now - (120 + i) * 1000).toISOString(),
       created_at: new Date(now - (120 + i) * 1000).toISOString(),
@@ -132,6 +133,12 @@ async function testTickerPagingUnderDominantCompanyFlood() {
       `Expected exactly 20 items returned despite single company flood, but got ${items.length}`
     );
 
+    const assertLogoFallback = (rows: any[]) => {
+      assert(rows.filter(r => r.company === "DiverseCo_1").every(r => r.logo_url?.endsWith("diverse1.png")), "Company logo retains priority");
+      assert(rows.filter(r => r.company === "DiverseCo_2").every(r => r.logo_url?.endsWith("job-fallback.png")), "Stored job logo recovers absent company logo");
+      assert(rows.filter(r => ["DiverseCo_3", "DiverseCo_4", "DiverseCo_5"].includes(r.company)).every(r => r.logo_url === null), "Untrusted job logos remain null");
+    };
+    assertLogoFallback(items);
     // Verify company capping
     const floodCount = items.filter((j: any) => j.company.toLowerCase() === "megafloodinc").length;
     assert.strictEqual(
@@ -175,6 +182,7 @@ async function testTickerPagingUnderDominantCompanyFlood() {
     assert.strictEqual(netlifyRes.statusCode, 200, "Netlify ticker should return 200");
     const netlifyItems = JSON.parse(netlifyRes.body);
     assert.strictEqual(netlifyItems.length, 20, "Netlify ticker must return 20 items");
+    assertLogoFallback(netlifyItems);
     const netlifyFloodCount = netlifyItems.filter((j: any) => j.company.toLowerCase() === "megafloodinc").length;
     assert.strictEqual(netlifyFloodCount, 2, "Netlify ticker must cap MegaFloodInc at 2");
     console.log("  [PASS-LOCAL] Netlify functions/ticker returned identical 20 diverse items");
