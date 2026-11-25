@@ -318,6 +318,21 @@ function JobsPageInner() {
   const pendingJobIdRef = useRef<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const [viewHiddenJobs, setViewHiddenJobs] = useState(false);
+  // Hidden Jobs has no control on phones (< md). A stale ?hidden=true, a popstate entry or state carried
+  // over from a wider window must not leave a phone in a hidden-only feed it can't leave. Desktop unchanged.
+  // Saved hidden IDs are untouched; only the "view hidden" mode is turned off.
+  const [isPhone, setIsPhone] = useState(() => typeof window !== "undefined" && Boolean(window.matchMedia?.("(max-width: 767px)").matches));
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 767px)");
+    if (!mq) return;
+    const update = () => setIsPhone(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  useEffect(() => {
+    if (isPhone && viewHiddenJobs) setViewHiddenJobs(false);
+  }, [isPhone, viewHiddenJobs]);
 
   // Search & Filter state
   const [search, setSearch] = useState("");
@@ -1996,7 +2011,6 @@ function JobsPageInner() {
                   onApply={handleApplyAllFilters}
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
-                  hiddenCount={hiddenJobIds.length}
                   triggerRef={filtersTriggerRef}
                 />
               </div>
