@@ -1842,7 +1842,7 @@ function JobsPageInner() {
           isPro={isPro}
           hidePlanPill
           // Mobile feed: Recommended / Saved / Applied only (External and search stay on sm+).
-          mobileTabs={isListView ? jobTabs : undefined}
+          mobileTabs={isListView ? jobTabs.filter((tab) => tab.id !== "external") : undefined}
         />
         <main
           id="main-content"
