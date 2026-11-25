@@ -25,6 +25,7 @@ import {
   parseExperienceLevels,
   EARLY_CAREER_OR_CLAUSE,
 } from "./experienceLevels";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 export interface LiveJob {
   id: string;
@@ -568,7 +569,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
     let query = supabase
       .from("jobs_public")
-      .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
+      .select(PUBLIC_SELECT_COLUMNS, { count: "exact" }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -740,7 +741,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (candidatePool.length === 0 && preferences?.categories?.length) {
         let catQuery = supabase
           .from("jobs_public")
-          .select(PUBLIC_SELECT_COLUMNS, { count: "exact" })
+          .select(PUBLIC_SELECT_COLUMNS, { count: "exact" }).or(VISIBLE_SOURCE_FILTER)
           .eq("is_active", true)
           .eq("status", "active")
           .in("category", preferences.categories);
@@ -1174,7 +1175,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
 
     let { data } = await supabase
       .from("jobs_public")
-      .select(selectColumns)
+      .select(selectColumns).or(VISIBLE_SOURCE_FILTER)
       .eq("id", cleanId)
       .maybeSingle();
 
@@ -1183,7 +1184,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
       // Direct query fallback for inactive/expired row fixture
       const inactiveRes = await supabase
         .from("jobs")
-        .select(selectColumns)
+        .select(selectColumns).or(VISIBLE_SOURCE_FILTER)
         .eq("id", cleanId)
         .maybeSingle();
       if (!inactiveRes.error && inactiveRes.data) {
@@ -1251,7 +1252,7 @@ async function loadAllActiveJobs(): Promise<LiveJob[]> {
     const supabase = createClient();
     const { count } = await supabase
       .from("jobs_public")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -1266,7 +1267,7 @@ async function loadAllActiveJobs(): Promise<LiveJob[]> {
       chunkPromises.push(
         supabase
           .from("jobs_public")
-          .select(PUBLIC_SELECT_COLUMNS)
+          .select(PUBLIC_SELECT_COLUMNS).or(VISIBLE_SOURCE_FILTER)
           .eq("is_active", true)
           .eq("status", "active")
           .range(from, to)

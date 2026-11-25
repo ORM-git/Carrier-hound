@@ -11,6 +11,7 @@ import {
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 export const runtime = "edge";
 
@@ -154,7 +155,7 @@ async function getHandler(req: Request) {
 
       const { data: pageRows, error: jobsError } = await supabase
         .from("jobs")
-        .select("id, company, company_id, title, posted_at, created_at")
+        .select("id, company, company_id, title, posted_at, created_at").or(VISIBLE_SOURCE_FILTER)
         .eq("status", "active")
         .eq("is_active", true)
         .order("posted_at", { ascending: false, nullsFirst: false })

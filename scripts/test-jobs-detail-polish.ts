@@ -125,6 +125,7 @@ async function runInactiveRowFixtureTest() {
       const chain = () => builder;
       builder.select = chain;
       builder.eq = chain;
+      builder.or = chain; // source-policy filter (sourcePolicy.ts); the fixture row is not a hidden source
       builder.maybeSingle = async () => ({
         data: inactiveRowFixture,
         error: null,

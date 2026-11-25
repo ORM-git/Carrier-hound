@@ -11,6 +11,7 @@ import {
 } from "./clientSchemas";
 import { createLogger } from "@/lib/observability/logger";
 import { COUNTRY_CODE_TO_NAME } from "@/lib/countries";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const log = createLogger({ context: { module: "api/jobs" } });
 
@@ -100,7 +101,7 @@ export async function searchJobs(
   }
 
   // Direct PostgREST query (uses jobs_public for client/anon to preserve paid-field masking, or jobs on server with service role)
-  let query = supabase.from(targetTable).select(CARD_FIELDS, { count: "exact" }).eq("status", "active");
+  let query = supabase.from(targetTable).select(CARD_FIELDS, { count: "exact" }).or(VISIBLE_SOURCE_FILTER).eq("status", "active");
 
   if (q) {
     query = query.or(`title.ilike.%${q}%,company.ilike.%${q}%`);
@@ -271,7 +272,7 @@ export async function searchJobs(
   }));
 
   // Calculate facet counts for categories and countries based on current filtered results
-  let facetQuery = supabase.from("jobs_public").select("category, country").eq("status", "active");
+  let facetQuery = supabase.from("jobs_public").select("category, country").or(VISIBLE_SOURCE_FILTER).eq("status", "active");
   if (q) {
     facetQuery = facetQuery.or(`title.ilike.%${q}%,company.ilike.%${q}%`);
   }

@@ -5,6 +5,7 @@ import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/coun
 import { sanitizeSearchQuery } from "../../src/lib/api/jobs";
 import { detectCompanyCategory, detectRoleCategory, extractTopKeywords } from "../../src/lib/jobs/highVolumeEnrichment";
 import { safeLog } from "./_logger";
+import { VISIBLE_SOURCE_FILTER } from "../../src/lib/jobs/sourcePolicy";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -189,7 +190,7 @@ export async function handler(event: any) {
           const code = sanitizeSearchQuery(countryCodeParam).toUpperCase().trim();
           let query = supabaseAdmin
             .from("jobs")
-            .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
+            .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)").or(VISIBLE_SOURCE_FILTER)
             .eq("status", "active")
             .eq("is_active", true);
 
@@ -250,7 +251,7 @@ export async function handler(event: any) {
 
       const { data: job, error }: any = await (supabaseAdmin as any)
         .from("jobs")
-        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
+        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)").or(VISIBLE_SOURCE_FILTER)
         .eq("id", id)
         .maybeSingle();
 
@@ -323,7 +324,7 @@ export async function handler(event: any) {
 
       const { data: jobs, error }: any = await (supabaseAdmin as any)
         .from("jobs")
-        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)")
+        .select("id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote, companies(name, logo_url, category, canonical_domain, domain)").or(VISIBLE_SOURCE_FILTER)
         .in("id", ids.slice(0, 100));
 
       if (error) {

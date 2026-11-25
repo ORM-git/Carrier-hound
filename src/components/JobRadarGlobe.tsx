@@ -48,6 +48,7 @@ import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { toast } from "react-toastify";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 // Convert latitude and longitude to 3D Cartesian coordinates on sphere
 function latLngToVector3(lat: number, lng: number, radius: number = 5) {
@@ -525,7 +526,7 @@ export default function JobRadarGlobe() {
           .select(
             "id, title, company, location, country_code, remote_scope, remote_eligibility, job_type, salary_text, verified, source_type, apply_url, posted_at, discovered_at, last_seen_at, seniority, category",
             { count: "exact" }
-          )
+          ).or(VISIBLE_SOURCE_FILTER)
           .eq("status", "active");
 
         // Target: City or Worldwide Remote

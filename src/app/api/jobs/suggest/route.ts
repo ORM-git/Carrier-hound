@@ -6,6 +6,7 @@ import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler"
 import { checkSharedRateLimit } from "@/lib/api/sharedRateLimit";
 
 import { createLogger } from "@/lib/observability/logger";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/suggest" } });
 
@@ -100,7 +101,7 @@ async function getHandler(req: Request) {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("jobs_public")
-      .select("title")
+      .select("title").or(VISIBLE_SOURCE_FILTER)
       .ilike("title", `${escapeIlike(q)}%`)
       .order("posted_at", { ascending: false, nullsFirst: false })
       .limit(CANDIDATE_ROWS);

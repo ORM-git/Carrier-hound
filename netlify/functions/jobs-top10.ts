@@ -8,6 +8,7 @@ import { extractCandidateRelevanceTerms, LiveJob } from "../../src/lib/jobs/serv
 import { CandidateProfile } from "../../src/lib/resume/types";
 import { isJobEligible } from "../../src/lib/jobs/eligibility";
 import { safeLog } from "./_logger";
+import { VISIBLE_SOURCE_FILTER } from "../../src/lib/jobs/sourcePolicy";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -235,7 +236,7 @@ export async function handler(event: any) {
       .from("jobs")
       .select(
         "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
-      )
+      ).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
 
@@ -272,7 +273,7 @@ export async function handler(event: any) {
         .from("jobs")
         .select(
           "id, title, company, location, salary_text, salary_min, salary_max, currency, salary_period, description, skills, apply_url, remote, remote_scope, remote_eligibility, job_type, category, country, country_code, posted_at, first_seen_at"
-        )
+        ).or(VISIBLE_SOURCE_FILTER)
         .eq("is_active", true)
         .eq("status", "active")
         .order("posted_at", { ascending: false, nullsFirst: false })
@@ -387,7 +388,7 @@ export async function handler(event: any) {
     // Query exact active count for totalCorpus (same source as /api/stats)
     const { count: totalActiveCount } = await supabaseAdmin
       .from("jobs_public")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
     const totalCorpus = totalActiveCount ?? dedupedScoredJobs.length;

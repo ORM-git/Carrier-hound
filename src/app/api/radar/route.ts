@@ -7,6 +7,7 @@ import { reportRequestErrorToSentry } from '@/lib/monitoring/sentryErrorReporter
 import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import { radarJsonResponse } from "@/lib/api/radarResponse";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const baseLog = createLogger({ context: { route: "/api/radar" } });
 
@@ -39,7 +40,7 @@ async function fetchJobsChunks(
       batchPromises.push(
         supabase
           .from('jobs_public')
-          .select('id, company, title, location, country_code, remote_scope, remote_eligibility, verified')
+          .select('id, company, title, location, country_code, remote_scope, remote_eligibility, verified').or(VISIBLE_SOURCE_FILTER)
           .eq('is_active', true)
           .eq('status', 'active')
           .range(from, to)
@@ -71,7 +72,7 @@ async function computeRadarPayload(supabase: any, now: number): Promise<any> {
     // 2. Fetch active jobs in parallel chunks (bypassing PostgREST 1000 row cap)
     const { count: totalActive } = await supabase
       .from('jobs_public')
-      .select('*', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq('is_active', true)
       .eq('status', 'active');
 

@@ -69,6 +69,7 @@ function sanitizeSearchQuery(input: string): string {
 }
 
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
+import { VISIBLE_SOURCE_FILTER } from "../../src/lib/jobs/sourcePolicy";
 
 interface RateLimitBucket {
   count: number;
@@ -290,7 +291,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
         .from(targetTable)
-        .select(singleColumns as any) as any)
+        .select(singleColumns as any).or(VISIBLE_SOURCE_FILTER) as any)
         .eq("id", cleanId)
         .maybeSingle();
 
@@ -449,7 +450,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
     ) => {
       let query = supabaseAdmin
         .from(targetTable)
-        .select(selectColumns, countMode ? { count: countMode } : undefined)
+        .select(selectColumns, countMode ? { count: countMode } : undefined).or(VISIBLE_SOURCE_FILTER)
         .eq("is_active", true)
         .eq("status", "active");
 

@@ -499,6 +499,10 @@ async function runRegressionTests() {
           return q;
         },
         or: (expr: string) => {
+          if (expr === "source_type.is.null,source_type.neq.jobspy") { // source-policy filter (sourcePolicy.ts)
+            filters.push((r) => r.source_type == null || r.source_type !== "jobspy");
+            return q;
+          }
           orExpr = expr;
           const m = expr.match(/^discovered_at\.lt\."(.+?)",and\(discovered_at\.eq\."(.+?)",id\.lt\."(.+?)"\)$/);
           if (!m) throw new Error(`unsupported or() expression: ${expr}`);

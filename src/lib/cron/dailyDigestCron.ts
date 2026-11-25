@@ -1,4 +1,5 @@
 import { createLogger } from "@/lib/observability/logger";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const log = createLogger({ context: { module: "cron/dailyDigestCron" } });
 
@@ -40,7 +41,7 @@ export async function fetchActiveJobsWindow(
     const limit = Math.min(pageSize, maxJobs - jobs.length);
     let query = supabase
       .from("jobs")
-      .select("id, title, company, location, remote_scope, category, salary_text, apply_url, discovered_at")
+      .select("id, title, company, location, remote_scope, category, salary_text, apply_url, discovered_at").or(VISIBLE_SOURCE_FILTER)
       .eq("status", "active")
       .eq("is_active", true)
       .gte("discovered_at", windowCutoff);

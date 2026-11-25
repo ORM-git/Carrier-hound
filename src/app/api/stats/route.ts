@@ -13,6 +13,7 @@ import { withRouteSpan } from "@/lib/monitoring/tracing";
 import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { createLogger } from "@/lib/observability/logger";
+import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 const baseLog = createLogger({ context: { route: "/api/stats" } });
 
@@ -114,7 +115,7 @@ async function getHandler(req: Request) {
     todayMidnight.setUTCHours(0, 0, 0, 0);
     const { count: recentJobs, error: recentErr } = await supabase
       .from("jobs_public")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active")
       .gte("created_at", todayMidnight.toISOString());
@@ -162,7 +163,7 @@ async function getHandler(req: Request) {
     // 2. Authenticated + approved callers: return full corpus metrics
     const { count: totalActive, error: activeErr } = await supabase
       .from("jobs_public")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active");
 
