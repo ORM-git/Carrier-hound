@@ -459,10 +459,12 @@ export async function GET(req: Request) {
     }
 
     timing.begin("scoring");
+    // One reference instant per response: every score and revision below is computed at it.
+    const scoredAt = Date.now();
     const candidateJobs = rawJobs || [];
     const rankedJobs = isPersonalized || hasResume
-      ? rankJobsByRecommendation(candidateJobs, answers)
-      : rankJobsByRecommendation(candidateJobs, null);
+      ? rankJobsByRecommendation(candidateJobs, answers, scoredAt)
+      : rankJobsByRecommendation(candidateJobs, null, scoredAt);
 
     // Drop rows with matchScore <= 0 (ineligible under saved preferences or not relevant to the user's role).
     // A saved "remote" preference is additive and is handled in ranking.
@@ -549,8 +551,8 @@ export async function GET(req: Request) {
           companyDomain: row.companies?.domain || null,
           logoUrl: row.logo_url || row.companies?.logo_url || null,
           logo_url: row.logo_url || row.companies?.logo_url || null,
-          matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro),
-          scoreRevision: scoreInputRevision(row, true),
+          matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt),
+          scoreRevision: scoreInputRevision(row, true, scoredAt),
         };
       }
 
@@ -578,8 +580,8 @@ export async function GET(req: Request) {
         postedAt: row.posted_at || row.created_at,
         logoUrl: null,
         logo_url: null,
-        matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro),
-        scoreRevision: scoreInputRevision(row, false),
+        matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt),
+        scoreRevision: scoreInputRevision(row, false, scoredAt),
       };
     });
 

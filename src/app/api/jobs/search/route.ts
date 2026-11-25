@@ -209,6 +209,8 @@ async function getHandler(req: Request) {
       : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, role_category, top_keywords, is_remote";
 
     const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, userId, cfEnv);
+    // One reference instant per response: every score and revision below is computed at it.
+    const scoredAt = Date.now();
     const idParam = searchParams.get("id");
     if (idParam) {
       const cleanId = sanitizeSearchQuery(idParam).trim();
@@ -316,8 +318,8 @@ async function getHandler(req: Request) {
         salary_display: isInactive || !isPro ? null : displaySalary,
         salary_original: isInactive || !isPro ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
-        scoreRevision: scoreInputRevision(jobRow, isPro),
-        matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro),
+        scoreRevision: scoreInputRevision(jobRow, isPro, scoredAt),
+        matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro, scoredAt),
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
         isExpired: isInactive,
@@ -871,8 +873,8 @@ async function getHandler(req: Request) {
           applyUrl: row.apply_url || "",
           description: row.description || "",
           skills: row.skills || [],
-          scoreRevision: scoreInputRevision(row, true),
-          matchScore: sharedDisplayScore(row, displayAnswers, isPro),
+          scoreRevision: scoreInputRevision(row, true, scoredAt),
+          matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
           postedAt: row.posted_at || row.created_at,
           companyDomain: row.companies?.domain || null,
           logoUrl: resolvedLogo,
@@ -905,8 +907,8 @@ async function getHandler(req: Request) {
         applyUrl: "",
         description: "",
         skills: [],
-        scoreRevision: scoreInputRevision(row, false),
-        matchScore: sharedDisplayScore(row, displayAnswers, isPro),
+        scoreRevision: scoreInputRevision(row, false, scoredAt),
+        matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
         postedAt: row.posted_at || row.created_at,
         logoUrl: null,
         logo_url: null,
