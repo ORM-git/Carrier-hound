@@ -1,0 +1,13 @@
+/* Phone ticker: keep each employer readable instead of scrolling through a long role title. */
+@media (max-width:639px){
+  .landing-wrapper .ls{overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-padding-inline:16px}
+  .landing-wrapper .ls-track{animation:none;width:max-content;padding-inline:16px}
+  .landing-wrapper .ls-set{gap:16px}
+  .landing-wrapper .ls-set[aria-hidden="true"]{display:none}
+  .landing-wrapper .ls-card{width:290px;max-width:calc(100vw - 48px);flex:0 0 auto;margin-right:0;gap:10px;scroll-snap-align:start}
+  .landing-wrapper .ls-logo{width:44px;height:44px;background:#fff;border-color:#E2E8F0;color:#0F172A;font-size:18px}
+  .landing-wrapper .ls-txt{min-width:0;flex:1;gap:4px}
+  .landing-wrapper .ls-meta{display:flex;flex-wrap:wrap;gap:0 4px;font-size:11px;line-height:1.4}
+  .landing-wrapper .ls-meta b{flex-basis:100%;color:#fff;font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis}
+  .landing-wrapper .ls-title{overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500;line-height:1.4;color:#D4D4D8}
+}
