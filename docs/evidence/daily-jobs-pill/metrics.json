@@ -1,0 +1,240 @@
+[
+  {
+    "width": 390,
+    "state": "1122",
+    "text": "1,122 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 44.671875,
+      "y": 141.640625,
+      "width": 300.65625,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 345.328125,
+      "bottom": 171.140625,
+      "left": 44.671875
+    },
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "1",
+    "text": "1 new job record added today",
+    "visible": true,
+    "rect": {
+      "x": 64.578125,
+      "y": 141.640625,
+      "width": 260.84375,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 325.421875,
+      "bottom": 171.140625,
+      "left": 64.578125
+    },
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "0",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "503",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "malformed",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "prior",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 39.15625,
+      "y": 141.640625,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 350.84375,
+      "bottom": 171.140625,
+      "left": 39.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "12345",
+    "text": "12,345 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 40.140625,
+      "y": 141.640625,
+      "width": 309.703125,
+      "height": 29.5,
+      "top": 141.640625,
+      "right": 349.84375,
+      "bottom": 171.140625,
+      "left": 40.140625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "1122",
+    "text": "1,122 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 569.671875,
+      "y": 92.53125,
+      "width": 300.65625,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 870.328125,
+      "bottom": 122.03125,
+      "left": 569.671875
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "1",
+    "text": "1 new job record added today",
+    "visible": true,
+    "rect": {
+      "x": 589.578125,
+      "y": 92.53125,
+      "width": 260.84375,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 850.421875,
+      "bottom": 122.03125,
+      "left": 589.578125
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "0",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "503",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "malformed",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "prior",
+    "text": "Daily jobs count pending verification",
+    "visible": false,
+    "rect": {
+      "x": 564.15625,
+      "y": 92.53125,
+      "width": 311.6875,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 875.84375,
+      "bottom": 122.03125,
+      "left": 564.15625
+    },
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "state": "12345",
+    "text": "12,345 new job records added today",
+    "visible": true,
+    "rect": {
+      "x": 565.140625,
+      "y": 92.53125,
+      "width": 309.703125,
+      "height": 29.5,
+      "top": 92.53125,
+      "right": 874.84375,
+      "bottom": 122.03125,
+      "left": 565.140625
+    },
+    "overflow": false
+  }
+]

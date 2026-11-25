@@ -312,7 +312,7 @@ function randomOpaqueTag(maxLen = 16): string {
   check("parseStatsResponse: well-formed stats payload accepted and preserved", allValid);
 }
 
-// Property 3b: parseStatsResponse drops malformed counts to null (jobsToday to 0), never throws
+// Property 3b: parseStatsResponse drops malformed counts to null (including jobsToday), never throws
 {
   let allSafe = true;
   const MALFORMED_VALUES = ["not-a-number", null, undefined, NaN, Infinity, -Infinity, {}, [], false, true];
@@ -322,7 +322,7 @@ function randomOpaqueTag(maxLen = 16): string {
     const badToday = randomChoice(MALFORMED_VALUES);
     try {
       const res = parseStatsResponse({ activeJobs: badActive, companies: badComps, jobsToday: badToday });
-      if (!res || res.activeJobs !== null || res.companies !== null || res.jobsToday !== 0) {
+      if (!res || res.activeJobs !== null || res.companies !== null || res.jobsToday !== null) {
         allSafe = false;
         break;
       }
