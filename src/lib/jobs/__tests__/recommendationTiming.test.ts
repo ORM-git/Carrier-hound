@@ -38,3 +38,17 @@ describe("recommendation timing privacy and checkpoints", () => {
     spy.mockRestore();
   });
 });
+
+describe("repeated stages", () => {
+  it("add up instead of overwriting, and hydrate is its own stage", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      let t = 0;
+      const timing = recommendationTiming(null, () => t);
+      timing.begin("db"); t = 10; timing.begin("scoring"); t = 15;
+      timing.begin("db"); t = 22; timing.begin("scoring"); t = 25;
+      timing.begin("hydrate"); t = 29; timing.finish(503);
+      expect(JSON.parse(String(spy.mock.calls.at(-1)![0]))).toMatchObject({ event: "finish", status: 503, dbWallMs: 17, scoringWallMs: 8, hydrateWallMs: 4, totalWallMs: 29 });
+    } finally { spy.mockRestore(); }
+  });
+});

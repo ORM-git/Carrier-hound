@@ -5,7 +5,25 @@ import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 const state = vi.hoisted(() => ({
   users: {} as Record<string, { id: string; email: string; user_metadata: Record<string, unknown> }>,
   tables: {} as Record<string, any[]>,
+  // Log of executed queries on jobs tables: selected columns, count option, rows and UTF-8 response bytes.
+  queries: [] as Array<{ table: string; cols: string; count?: string; rows: number; bytes: number; ids: string[] }>,
+  failWhen: null as null | ((table: string, cols: string) => boolean),
 }));
+
+/** Like PostgREST, return only the selected columns ("a, b, rel(x, y)"); "*" or aliases fall back to whole rows. */
+function projectRows(rows: any[], cols: string): any[] {
+  if (!cols || /[*:!]/.test(cols)) return rows;
+  const names: string[] = [];
+  let depth = 0, cur = "";
+  for (const ch of cols) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { names.push(cur.trim()); cur = ""; } else cur += ch;
+  }
+  if (cur.trim()) names.push(cur.trim());
+  const keys = names.map((n) => n.replace(/\([\s\S]*$/, "").trim());
+  return rows.map((r) => Object.fromEntries(keys.filter((k) => k in r).map((k) => [k, r[k]])));
+}
 
 vi.mock("@supabase/supabase-js", () => {
   function from(table: string) {
@@ -13,8 +31,20 @@ vi.mock("@supabase/supabase-js", () => {
     const orders: Array<{ col: string; ascending: boolean; nullsFirst?: boolean }> = [];
     let rangeBounds: [number, number] | null = null;
     let limitCount: number | null = null;
+    let selectedCols = "*";
+    let selectedCount: string | undefined;
 
     const run = () => {
+      if (state.failWhen?.(table, selectedCols)) return { data: null, count: null, error: { message: "injected failure" } };
+      const result = runQuery();
+      if (table.startsWith("jobs")) {
+        result.data = projectRows(result.data, selectedCols);
+        state.queries.push({ table, cols: selectedCols, count: selectedCount, rows: result.data.length, bytes: new TextEncoder().encode(JSON.stringify(result.data)).length, ids: result.data.map((r: any) => r.id) });
+      }
+      return result;
+    };
+
+    const runQuery = () => {
       let data = [...(state.tables[table] || [])].filter((r) =>
         predicates.every((p) => p(r))
       );
@@ -127,10 +157,14 @@ vi.mock("@supabase/supabase-js", () => {
             };
           }
           if (prop === "maybeSingle" || prop === "single") {
-            return async () => ({ data: run().data[0] ?? null, error: null });
+            return async () => ({ data: run().data?.[0] ?? null, error: null });
           }
           if (prop === "select") {
-            return () => b;
+            return (cols?: string, opts?: { count?: string }) => {
+              selectedCols = cols ?? "*";
+              selectedCount = opts?.count;
+              return b;
+            };
           }
           return () => b;
         },
@@ -350,6 +384,8 @@ beforeEach(() => {
     },
   };
 
+  state.queries = [];
+  state.failWhen = null;
   state.tables = {
     jobs: corpus,
     jobs_public: corpus,
@@ -1289,5 +1325,197 @@ describe("recommended request phase telemetry", () => {
         expect(Object.keys(r).every(k => ["route", "requestId", "cfRay", "event", "stage", "ts", "level", "msg", "setupWallMs", "dbWallMs", "scoringWallMs", "formatWallMs", "candidateRows", "rankedRows", "returnedRows", "totalWallMs", "status"].includes(k))).toBe(true);
       }
     } finally { spy.mockRestore(); }
+  });
+});
+
+
+describe("Narrow candidate query (no exact count; Pro-only columns hydrated for the returned page)", () => {
+  // The candidate select on deployed main 2c09888c, for byte comparisons on the same rows.
+  const MAIN_COLS = "id, title, company, location, remote, remote_scope, remote_eligibility, job_type, salary_text, salary_min, salary_max, salary_period, currency, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code, apply_url, description, skills, logo_url, company_id, companies(logo_url, domain)";
+  const WIDE = /\b(description|skills|apply_url|logo_url|companies|last_seen_at|status|is_active)\b/;
+  const url = "http://localhost/api/jobs/recommended?page=1&pageSize=25";
+  const isHydrate = (q: any) => q.cols.startsWith("id, apply_url");
+  const fullRow = (id: string) => state.tables.jobs.find((r: any) => r.id === id);
+  const timingRows = (spy: any) => spy.mock.calls.map(([l]: any[]) => { try { return JSON.parse(String(l)); } catch { return null; } })
+    .filter((r: any) => r?.msg === "recommended_request_timing");
+
+  beforeEach(() => {
+    // Realistic payload sizes: long descriptions and a company join.
+    for (const r of state.tables.jobs) {
+      r.description = `${r.description ?? ""} ${"Responsibilities and requirements. ".repeat(120)}`;
+      r.companies = { logo_url: r.logo_url ?? null, domain: `${r.company_id}.example.com` };
+    }
+  });
+
+  it("Free: candidate query has no count and no wide columns; payload stays masked", async () => {
+    const res = await recommendedRoute(req(url, "tok-free-with-answers"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(state.queries).toHaveLength(1);
+    expect(state.queries[0].count).toBeUndefined();
+    expect(state.queries[0].cols).not.toMatch(WIDE);
+    expect(body.jobs).toHaveLength(25);
+    for (const j of body.jobs) {
+      expect(j).toMatchObject({ company: "Verified Employer", salary: "", salary_display: null, applyUrl: "", description: "", skills: [], logoUrl: null });
+      expect(j.companyId).toBeUndefined();
+      expect(j.companyGroupId).toMatch(/^[a-f0-9]{12}$/);
+    }
+  });
+
+  it("Pro: one 25-row hydration; payload and paid card/detail score equal the full database row", async () => {
+    const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
+    const body = await res.json();
+    const candidate = state.queries.filter((q) => !isHydrate(q));
+    const hydrate = state.queries.filter(isHydrate);
+    expect(candidate).toHaveLength(1);
+    expect(candidate[0].cols).not.toMatch(WIDE);
+    expect(candidate[0].count).toBeUndefined();
+    expect(hydrate).toHaveLength(1);
+    expect(hydrate[0].rows).toBe(25);
+    const { scoreInputRevision } = await import("@/lib/matcher/scoring");
+    const { sharedDisplayScore, loadDisplayScoreAnswers } = await import("@/lib/jobs/displayScore");
+    const displayAnswers = await loadDisplayScoreAnswers((await import("@supabase/supabase-js")).createClient("x", "y") as any, "u_pro_answers");
+    for (const j of body.jobs) {
+      const row = fullRow(j.id);
+      expect(j).toMatchObject({ company: row.company, companyId: row.company_id, applyUrl: row.apply_url, description: row.description, skills: row.skills, logoUrl: row.logo_url, companyDomain: row.companies.domain });
+      expect(j.scoreRevision).toBe(scoreInputRevision(row, true));
+      expect(j.matchScore).toBe(sharedDisplayScore(row, displayAnswers, true));
+    }
+  });
+
+  it("same page, same order and same scores as ranking the full rows (no-resume equivalence)", async () => {
+    const free = await (await recommendedRoute(req(url, "tok-free-with-answers"))).json();
+    const pro = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    const { rankJobsByRecommendation } = await import("@/lib/jobs/recommendations");
+    const { capJobsPerCompany } = await import("@/lib/jobs/capping");
+    const answers = {
+      roles: ["Frontend Developer"], experienceLevel: "senior", remotePreference: "remote",
+      locations: ["Worldwide / Remote", "United States"], employmentTypes: ["full-time"], categories: ["engineering"],
+      minSalary: null, salaryCurrency: "USD", country: "United States", countryCode: "US", resumeProfile: null,
+    };
+    const expected = capJobsPerCompany(rankJobsByRecommendation(state.tables.jobs, answers as any).filter((j: any) => j.matchScore > 0), 3, 30)
+      .slice(0, 25).map((j: any) => j.id);
+    expect(free.jobs.map((j: any) => j.id)).toEqual(expected);
+    expect(pro.jobs.map((j: any) => j.id)).toEqual(expected);
+  });
+
+  it("bytes: the candidate response is much smaller than deployed main's select on the same rows", async () => {
+    await recommendedRoute(req(url, "tok-free-with-answers"));
+    const narrow = state.queries[0];
+    const ids = new Set(narrow.ids);
+    const wideBytes = new TextEncoder().encode(JSON.stringify(projectRows(state.tables.jobs.filter((r: any) => ids.has(r.id)), MAIN_COLS))).length;
+    console.info(`NARROW_BYTES rows=${narrow.rows} narrow=${narrow.bytes} main=${wideBytes} ratio=${(narrow.bytes / wideBytes).toFixed(3)}`);
+    expect(narrow.rows).toBeGreaterThan(300);
+    expect(narrow.bytes).toBeLessThan(wideBytes / 5);
+  });
+
+  describe("with a parsed onboarding resume (Step 2 flag on)", () => {
+    const STEP2 = "NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED";
+    const PATH = "u_free_answers/onboarding/current.pdf";
+    const profile = { jobTitles: ["Frontend Engineer"], skills: ["React", "TypeScript"], preferredRoles: [], education: [], yearsOfExperience: 4, location: null };
+    beforeEach(() => {
+      process.env[STEP2] = "true";
+      state.tables.onboarding_resume_uploads = [{ user_id: "u_free_answers", storage_path: PATH }];
+      state.tables.onboarding_resume_profiles = [{ user_id: "u_free_answers", parse_status: "parsed", source_storage_path: PATH, profile }];
+    });
+    afterEach(() => { delete process.env[STEP2]; });
+
+    it("keeps description and skills in the candidate query; order and eligibility equal ranking the full rows", async () => {
+      const body = await (await recommendedRoute(req(url, "tok-free-with-answers"))).json();
+      expect(body.personalized).toBe(true);
+      expect(state.queries[0].cols).toMatch(/\bdescription\b/);
+      expect(state.queries[0].cols).toMatch(/\bskills\b/);
+      const { rankJobsByRecommendation } = await import("@/lib/jobs/recommendations");
+      const { capJobsPerCompany } = await import("@/lib/jobs/capping");
+      const answers = {
+        roles: ["Frontend Developer"], experienceLevel: "senior", remotePreference: "remote",
+        locations: ["Worldwide / Remote", "United States"], employmentTypes: ["full-time"], categories: ["engineering"],
+        minSalary: null, salaryCurrency: "USD", country: "United States", countryCode: "US",
+        resumeProfile: { jobTitles: profile.jobTitles, skills: profile.skills, preferredRoles: [], yearsOfExperience: 4 },
+      };
+      const expected = capJobsPerCompany(rankJobsByRecommendation(state.tables.jobs, answers as any).filter((j: any) => j.matchScore > 0), 3, 30)
+        .slice(0, 25).map((j: any) => j.id);
+      expect(body.jobs.map((j: any) => j.id)).toEqual(expected);
+      // Free masking unchanged with a resume.
+      expect(body.jobs.every((j: any) => j.description === "" && j.skills.length === 0)).toBe(true);
+    });
+  });
+
+  it("a failed hydration is a 503 (never an empty success), and the timing log shows both db stages", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      state.failWhen = (_t, cols) => cols.startsWith("id, apply_url");
+      const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
+      expect(res.status).toBe(503);
+      expect((await res.json()).error).toBeTruthy();
+      const id = res.headers.get("X-CM-Request-ID");
+      const rows = timingRows(spy).filter((r: any) => r.requestId === id);
+      expect(rows.map((r: any) => r.stage)).toEqual(["setup", "db", "scoring", "hydrate", "hydrate"]);
+      expect(rows.at(-1)).toMatchObject({ event: "finish", status: 503 });
+      expect(typeof rows.at(-1).dbWallMs).toBe("number");
+      expect(typeof rows.at(-1).hydrateWallMs).toBe("number");
+    } finally { spy.mockRestore(); }
+  });
+
+  it("a hydration miss (row deleted after ranking) leaves out only that row", async () => {
+    const before = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    const victim = before.jobs[7].id;
+    state.queries = [];
+    const all = state.tables.jobs;
+    const origPush = state.queries.push.bind(state.queries);
+    state.queries.push = ((q: any) => {
+      if (!isHydrate(q)) state.tables.jobs = all.filter((j: any) => j.id !== victim); // gone before hydration
+      return origPush(q);
+    }) as any;
+    const after = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    expect(after.jobs.map((j: any) => j.id)).toEqual(before.jobs.map((j: any) => j.id).filter((id: string) => id !== victim));
+    expect(after.jobs.every((j: any) => j.description && j.applyUrl)).toBe(true);
+  });
+
+  // Each way a ranked job can become ineligible between the candidate query and hydration.
+  const inactiveChanges: Array<[string, (row: any) => void]> = [
+    ["is_active becomes false", (row) => { row.is_active = false; }],
+    ["status becomes closed", (row) => { row.status = "closed"; }],
+    ["status becomes expired", (row) => { row.status = "expired"; }],
+    ["status becomes null", (row) => { row.status = null; }],
+    ["both status and is_active change", (row) => { row.status = "closed"; row.is_active = false; }],
+  ];
+  it.each(inactiveChanges)("a job that goes inactive after ranking (%s) is left out of the Pro page; the rest keep their order", async (_label, change) => {
+    const before = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    // First, middle and last positions of the page.
+    const victims = [before.jobs[0].id, before.jobs[9].id, before.jobs[before.jobs.length - 1].id];
+    state.queries = [];
+    const origPush = state.queries.push.bind(state.queries);
+    let changed = false;
+    state.queries.push = ((q: any) => {
+      if (!changed && !isHydrate(q)) {
+        // The candidate query has already returned these rows as active; change them before hydration runs.
+        for (const id of victims) change(state.tables.jobs.find((j: any) => j.id === id));
+        changed = true;
+      }
+      return origPush(q);
+    }) as any;
+    const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
+    expect(res.status).toBe(200);
+    const after = await res.json();
+    expect(changed).toBe(true);
+    expect(after.jobs.map((j: any) => j.id)).toEqual(before.jobs.map((j: any) => j.id).filter((id: string) => !victims.includes(id)));
+    expect(after.jobs.every((j: any) => j.description && j.applyUrl && j.company !== "Verified Employer")).toBe(true);
+    // The candidate query did see them: only hydration's recheck removed them.
+    const candidate = state.queries.find((q: any) => !isHydrate(q))!;
+    expect(victims.every((id) => candidate.ids.includes(id))).toBe(true);
+    const hydrate = state.queries.find(isHydrate)!;
+    expect(victims.some((id) => hydrate.ids.includes(id))).toBe(false);
+  });
+
+  it("a hydration query error with some jobs gone inactive is still a 503, never a partial or empty success", async () => {
+    const before = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    state.tables.jobs.find((j: any) => j.id === before.jobs[2].id).is_active = false;
+    state.failWhen = (_t, cols) => cols.startsWith("id, apply_url");
+    const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
+    expect(body.jobs).toEqual([]);
   });
 });

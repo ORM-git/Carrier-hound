@@ -222,14 +222,19 @@ export async function GET(req: Request) {
     const companyParam = searchParams.get("company") || "";
     const searchParam = searchParams.get("q") || searchParams.get("search") || "";
 
-    // Query active candidate jobs from Supabase
+    // Candidate columns: only what ranking, capping and the Free card read. status/is_active/last_seen_at are
+    // filtered in SQL, never read here. Pro-only payload columns are hydrated for the returned page only.
+    const hasResume = hasResumeSignals(answers.resumeProfile);
     const selectCols = hasServiceKey
-      ? "id, title, company, location, remote, remote_scope, remote_eligibility, job_type, salary_text, salary_min, salary_max, salary_period, currency, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code, apply_url, description, skills, logo_url, company_id, companies(logo_url, domain)"
+      ? "id, title, company, company_id, location, remote, remote_scope, remote_eligibility, job_type, salary_text, salary_min, salary_max, salary_period, currency, first_seen_at, posted_at, created_at, category, country, country_code" +
+        (hasResume ? ", description, skills" : "") // resume matching reads them
       : "id, title, location, remote, remote_scope, remote_eligibility, job_type, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code";
+    const PRO_HYDRATE_COLS = "id, apply_url, description, skills, logo_url, companies(logo_url, domain)";
 
+    // No count: nothing reads it, and an exact count over the filtered table is extra DB work on every request.
     let query = supabaseAdmin
       .from(targetTable)
-      .select(selectCols, { count: "exact" })
+      .select(selectCols)
       .eq("status", "active");
 
     if (hasServiceKey) {
@@ -475,7 +480,6 @@ export async function GET(req: Request) {
 
     timing.begin("scoring");
     const candidateJobs = rawJobs || [];
-    const hasResume = hasResumeSignals(answers.resumeProfile);
     const rankedJobs = isPersonalized || hasResume
       ? rankJobsByRecommendation(candidateJobs, answers)
       : rankJobsByRecommendation(candidateJobs, null);
@@ -489,6 +493,28 @@ export async function GET(req: Request) {
     const cappedJobs = capJobsPerCompany(qualifyingJobs, 3, 30);
     totalCount = cappedJobs.length; // Honestly reports the bounded pool total after exclusions
     paginatedJobs = cappedJobs.slice(from, to + 1);
+
+    // Pro cards, details and the paid display score need the wide columns; fetch them for the returned rows only.
+    if (isPro && hasServiceKey && paginatedJobs.length > 0) {
+      timing.begin("hydrate");
+      const { data: details, error: detailError } = await supabaseAdmin
+        .from("jobs")
+        .select(PRO_HYDRATE_COLS)
+        .in("id", paginatedJobs.map((row: any) => row.id))
+        // Same eligibility as the candidate query: a job that went inactive after it was ranked is not returned.
+        .eq("status", "active")
+        .eq("is_active", true);
+      if (detailError) {
+        log.error("Failed to load details for recommended jobs", { error: detailError.message || detailError });
+        return respond(
+          { error: "Database service unavailable", jobs: [], totalCount: 0 },
+          { status: 503 }
+        );
+      }
+      const byId = new Map<string, any>((details || []).map((d: any) => [d.id, d]));
+      // A row missing here was deleted or went inactive after ranking: leave it out, keep the rest in order.
+      paginatedJobs = paginatedJobs.filter((row: any) => byId.has(row.id)).map((row: any) => ({ ...row, ...byId.get(row.id), id: row.id }));
+    }
 
     timing.rows("rankedRows", cappedJobs.length);
     timing.rows("returnedRows", paginatedJobs.length);
