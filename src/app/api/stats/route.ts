@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { countRetainedJobsToday } from "@/lib/api/retainedJobsToday";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
 import { createClient } from "@supabase/supabase-js";
 import { checkRequiredEnv } from "@/lib/api/envCheck";
@@ -110,17 +111,14 @@ async function getHandler(req: Request) {
       }
     }
 
-    // 1. Jobs posted/created today (UTC midnight to now) - required for public UI
-    const todayMidnight = new Date();
-    todayMidnight.setUTCHours(0, 0, 0, 0);
-    const { count: recentJobs, error: recentErr } = await supabase
-      .from("jobs_public")
-      .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
-      .eq("is_active", true)
-      .eq("status", "active")
-      .gte("created_at", todayMidnight.toISOString());
+    // 1. Retained job records created today (IST), raw public.jobs, no status/active/source filter.
+    // See lib/api/retainedJobsToday.ts: single-flight, hard deadline, rows not unique vacancies.
+    const retained = await countRetainedJobsToday(supabase);
+    const recentJobs = retained.count as number;
+    const isoNow = retained.asOf;
+    const recentErr = !retained.ok;
 
-    if (recentErr) {
+    if (recentErr || typeof recentJobs !== "number" || !Number.isSafeInteger(recentJobs) || recentJobs < 0) {
       return NextResponse.json(
         { error: "Service unavailable" },
         {
@@ -139,8 +137,8 @@ async function getHandler(req: Request) {
     if (!isAuthenticated) {
       // Identical body for every anonymous caller: safe for weak ETag / 304.
       const publicStats = {
-        jobsToday: recentJobs ?? 0,
-        updatedAt: new Date().toISOString(),
+        jobsToday: recentJobs,
+        updatedAt: isoNow,
       };
       // Edge-cacheable ONLY when the request carries no Authorization header at
       // all: any Authorization header, valid or invalid, keeps the response
@@ -201,10 +199,10 @@ async function getHandler(req: Request) {
       {
         activeJobs: totalActive ?? 0,
         companies: companyCount ?? 0,
-        jobsToday: recentJobs ?? 0,
+        jobsToday: recentJobs,
         totalJobs: totalActive ?? 0,
         companiesScanned: companyCount ?? 0,
-        updatedAt: new Date().toISOString(),
+        updatedAt: isoNow,
       },
       {
         headers: {
