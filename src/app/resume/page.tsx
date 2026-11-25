@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
-import AppIconRail from "@/components/shell/AppIconRail";
-import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
@@ -23,7 +21,6 @@ import {
   FileText,
   Download,
   Trash2,
-  UploadCloud,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -77,7 +74,8 @@ export default function ResumePage() {
   const [isViewDetailsOpen, setIsViewDetailsOpen] = useState<boolean>(false);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>("");
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -197,7 +195,7 @@ export default function ResumePage() {
     if (typeof window !== "undefined") {
       localStorage.setItem("careermonke_resume_title", newTitle);
     }
-    setIsUploadModalOpen(false);
+    setSelectedFile(null);
     toast.success("Resume facts confirmed successfully!");
   };
 
@@ -252,7 +250,7 @@ export default function ResumePage() {
               RESUME <span className="sr-only">Resumes</span>
             </h1>
             <p className="text-[13px] text-[#475569] mt-0.5">
-              Manage your verified resumes and confirmed background facts for automated matching.
+              Your resume and match profile.
             </p>
           </div>
         </div>
@@ -260,6 +258,7 @@ export default function ResumePage() {
         {/* ================================================================= */}
         {/* INFO ROW: Verified resume status & single + Add Resume entry point*/}
         {/* ================================================================= */}
+        {candidate && <>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-1 text-[14px] font-medium text-[#0F172A]">
           <div className="flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] flex items-center justify-center text-xs font-bold shrink-0">
@@ -267,10 +266,10 @@ export default function ResumePage() {
             </span>
             <span>
               {candidate && candidate.confirmedAt
-                ? "You have 1 verified resume active for fit scoring."
+                ? "Resume ready for matching."
                 : candidate
-                ? "Resume facts need review before fit scoring is active."
-                : "No active resume. Upload a resume to enable fit scoring."}
+                ? "Review your resume details."
+                : "Add your resume to see match scores."}
             </span>
             <span
               title="Career Monke uses your confirmed resume facts to calculate match scores."
@@ -283,7 +282,7 @@ export default function ResumePage() {
           <button
             type="button"
             data-testid="upload-resume-button"
-            onClick={() => setIsUploadModalOpen(true)}
+            onClick={() => fileInputRef.current?.click()}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[13px] font-semibold text-[#0F172A] transition shadow-2xs self-start sm:self-auto cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#93C5FD]"
           >
             <span className="w-4 h-4 rounded bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-bold text-xs">
@@ -293,6 +292,7 @@ export default function ResumePage() {
           </button>
         </div>
 
+        </>}
         {/* ================================================================= */}
         {/* RESUMES TABLE CARD (Measured: 1176px w, 16px radius, 80px row)    */}
         {/* ================================================================= */}
@@ -614,34 +614,14 @@ export default function ResumePage() {
           /* =============================================================== */
           /* EMPTY STATE: centred icon, one line, upload button               */
           /* =============================================================== */
-          <div
-            data-testid="resume-empty-state"
-            className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-12 sm:p-16 text-center space-y-4 max-w-xl mx-auto shadow-none"
-          >
-            <div className="w-14 h-14 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB] mx-auto flex items-center justify-center">
-              <FileText className="w-7 h-7 text-[#2563EB]" />
+          <div data-testid="resume-empty-state" className="bg-white rounded-2xl ring-1 ring-slate-200 p-5 sm:p-6 max-w-xl mx-auto space-y-4">
+            <h2 className="text-lg font-bold">Add your resume</h2>
+            <p className="text-sm text-slate-600">Upload a file or enter your details.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" data-testid="empty-upload-resume-button" onClick={() => fileInputRef.current?.click()} className="min-h-[44px] px-3 py-2 rounded-full bg-blue-600 text-white font-semibold">Upload resume</button>
+              <button type="button" onClick={() => router.push("/resume/manual")} className="min-h-[44px] px-3 py-2 rounded-full border border-slate-300 font-semibold">Fill manually</button>
             </div>
-
-            <div className="space-y-1">
-              <h3 className="text-[16px] font-bold text-[#0F172A]">
-                No resumes uploaded yet
-              </h3>
-              <p className="text-[13px] text-[#475569]">
-                Upload your resume in PDF, DOCX, or TXT format to compute personalized compatibility scores.
-              </p>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                data-testid="empty-upload-resume-button"
-                onClick={() => setIsUploadModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-[14px] transition cursor-pointer shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1"
-              >
-                <UploadCloud className="w-4 h-4" />
-                <span>Upload resume</span>
-              </button>
-            </div>
+            <p className="text-xs text-slate-500">PDF, DOCX or TXT. Up to 10MB.</p>
           </div>
         )}
 
@@ -707,47 +687,11 @@ export default function ResumePage() {
         </div>
       )}
 
-      {/* =================================================================== */}
-      {/* UPLOAD & CONFIRM MODAL                                              */}
-      {/* =================================================================== */}
-      {isUploadModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="upload-modal-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-xs overflow-y-auto animate-fadeIn"
-        >
-          <div className="bg-white rounded-[20px] ring-1 ring-[#E2E8F0] p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-[0_16px_48px_rgba(15,23,42,0.18)] space-y-4 my-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-center text-[#2563EB]">
-                  <UploadCloud className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 id="upload-modal-title" className="text-[16px] font-bold text-[#0F172A]">
-                    Upload & Confirm Resume Facts
-                  </h3>
-                  <p className="text-[12px] text-[#475569]">
-                    Extract and confirm your background facts without invented achievements.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsUploadModalOpen(false)}
-                aria-label="Close upload dialog"
-                className="text-[#475569] hover:text-[#0F172A] p-1.5 rounded-full hover:bg-[#F1F5F9] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt" aria-label="Choose resume file" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) setSelectedFile(file); event.target.value = ""; }} />
+      {selectedFile && <section aria-label="Review uploaded resume" className="w-full max-w-4xl mx-auto px-4 py-4">
+        <ResumeUploadAndConfirm key={`${selectedFile.name}-${selectedFile.lastModified}-${selectedFile.size}`} reviewOnly selectedFile={selectedFile} isPro={isPro} onProfileConfirmed={handleProfileConfirmed} />
+      </section>}
 
-            <div className="pt-2">
-              <ResumeUploadAndConfirm isPro={isPro} onProfileConfirmed={handleProfileConfirmed} />
-            </div>
-          </div>
-        </div>
-      )}
     </LoggedInAppShell>
   );
 }
