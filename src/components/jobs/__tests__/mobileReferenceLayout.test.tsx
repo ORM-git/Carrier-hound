@@ -33,3 +33,11 @@ it('uses CM blue instead of reference green for phone accents',()=>{
  expect(css).toContain('stop-color: #2563eb');
  expect(css).not.toMatch(/#00dba0|#97f8e7|#8cecc2|#d8fbc8|#e3faf3/);
 });
+
+it('phone density hides age/source text, keeps action row, and bolds filter navigation',()=>{
+ const css=readFileSync('src/app/jobs/mobile-reference.css','utf8');
+ expect(css).toContain('> div:last-child > span { display: none; }');
+ expect(css).toContain('padding-top: 0; border-color: transparent; gap: 6px; justify-content: flex-end;');
+ expect(css).toContain('font-weight: 700; justify-content: flex-start');
+ expect(css).toContain('transparent; padding: 12px;');
+});
