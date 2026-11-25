@@ -42,6 +42,7 @@ from .engine import (
     validate_row_cap,
     ingestion_has_errors,
 )
+from . import fetch_aggregators_and_india as aggregators_mod
 from .fetch_aggregators_and_india import (
     fetch_adzuna,
     fetch_arbeitnow,
@@ -181,8 +182,11 @@ def plan_sources(config: dict[str, Any]) -> list[dict[str, Any]]:
         if name in layer2_cfg:
             plan.append({"id": name, "type": name, "full": False, "kind": name,
                          "seed": layer2_cfg[name], "aliases": {"layer2", name}})
-    plan.append({"id": "jobspy:india", "type": "jobspy", "full": False, "kind": "jobspy",
-                 "seed": None, "aliases": {"layer3", "jobspy", "india"}})
+    # Source policy: JobSpy is not scheduled while every configured site is blocked, so a disabled source never
+    # reports as a completed zero-row board and --source jobspy takes the unknown-selection error path.
+    if any(s not in aggregators_mod.BLOCKED_JOBSPY_SITES for s in aggregators_mod.JOBSPY_SITES):
+        plan.append({"id": "jobspy:india", "type": "jobspy", "full": False, "kind": "jobspy",
+                     "seed": None, "aliases": {"layer3", "jobspy", "india"}})
     plan.append({"id": "arbeitnow", "type": "arbeitnow", "full": False, "kind": "arbeitnow",
                  "seed": None, "aliases": {"layer3", "arbeitnow"}})
     plan.append({"id": "adzuna:in", "type": "adzuna", "full": False, "kind": "adzuna",
