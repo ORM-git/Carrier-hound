@@ -5,7 +5,8 @@
 // lower page = ORM-git/ssampe @ 3386250 stats row .. footer + sticky bar (scoped .landing-wrapper).
 import React, { useEffect, useRef } from "react";
 import LiveLandingTicker from "@/components/landing/LiveLandingTicker";
-import LandingJobsPreview from "@/components/landing/LandingJobsPreview";
+import dynamic from "next/dynamic";
+const LandingJobsPreview = dynamic(() => import("@/components/landing/LandingJobsPreview"));
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "@/styles/careermonke-landing.css";
 import "@/styles/careermonke-landing-lower.css";
