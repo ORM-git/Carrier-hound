@@ -723,12 +723,23 @@ async function runSuite() {
     console.log(`  [PASS] 5e. Direct company URL resolved to valid domain: '${directDomain}'`);
   }
 
-  // 5f. Uses self-hosted logo first
-  // Candidate order: stored logo_url first, then the domain logo (behaviour covered by companyLogo.test.tsx)
-  if (!logoCode.includes("[logoUrl, unavatarUrl]")) {
-    failures.push("CompanyLogo must prioritize self-hosted logoUrl first");
+  // 5f. Stored company identity wins over an ingest-supplied job logo.
+  // Behavioural error/remount/locked coverage also lives in companyLogo.test.tsx.
+  if (!logoCode.includes("[companyLogoUrl, logoUrl, unavatarUrl]")) {
+    failures.push("CompanyLogo must try stored company logo, job logo, then domain logo in that order");
   } else {
-    console.log("  [PASS] 5f. CompanyLogo prioritizes self-hosted logoUrl first");
+    console.log("  [PASS] 5f. Stored company logo precedes job and domain fallbacks");
+  }
+  // Keep the error chain and locked early-return contract, not only the new first source.
+  if (!logoCode.includes("candidates.find((u) => !hasFailed(u))") ||
+      !logoCode.includes("onError={() => markFailed(src)}")) {
+    failures.push("CompanyLogo must skip failed sources and advance on image errors");
+  }
+  const lockedReturn = logoCode.indexOf("if (locked)");
+  const imageReturn = logoCode.indexOf("<img");
+  if (lockedReturn < 0 || imageReturn < 0 || lockedReturn > imageReturn ||
+      !logoCode.includes('data-testid="company-logo-locked"')) {
+    failures.push("CompanyLogo must return the neutral locked silhouette before any image element");
   }
 
   // 5g. Letter tile rendered if both fail or if no non-ATS domain exists

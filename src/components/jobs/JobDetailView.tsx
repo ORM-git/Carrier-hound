@@ -445,6 +445,7 @@ export default function JobDetailView({
                   locked={!isUnlocked}
                   applyUrl={job.applyUrl}
                   logoUrl={job.logoUrl}
+                  companyLogoUrl={job.companyLogoUrl}
                   domain={job.companyDomain}
                   className="w-6 h-6 rounded object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
                 />
@@ -665,6 +666,7 @@ export default function JobDetailView({
             locked={!isUnlocked}
             applyUrl={job.applyUrl}
             logoUrl={job.logoUrl}
+            companyLogoUrl={job.companyLogoUrl}
             domain={job.companyDomain}
             className="w-16 h-16 rounded-2xl object-contain p-1.5 border border-[#E2E8F0] bg-white shrink-0"
           />
@@ -731,6 +733,7 @@ export default function JobDetailView({
                 locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
+                companyLogoUrl={job.companyLogoUrl}
                 domain={job.companyDomain}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
               />
@@ -1153,6 +1156,7 @@ export default function JobDetailView({
                 locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
+                companyLogoUrl={job.companyLogoUrl}
                 domain={job.companyDomain}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
               />

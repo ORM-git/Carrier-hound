@@ -58,6 +58,8 @@ export interface LiveJob {
   companyId?: string | null;
   companyGroupId?: string | null;
   logoUrl?: string | null;
+  /** Stored companies.logo_url (Pro only); CompanyLogo tries it before logoUrl. */
+  companyLogoUrl?: string | null;
   logo_url?: string | null;
   companyDomain?: string | null;
   salary_display?: string | null;
@@ -951,10 +953,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                         job.top_keywords = extractTopKeywords(job.title, u.description, u.skills, 8);
                       }
                       if (u.role_category) job.role_category = u.role_category;
-                      if (u.logo_url || u.logoUrl) {
-                        job.logoUrl = u.logo_url || u.logoUrl;
-                        job.logo_url = u.logo_url || u.logoUrl;
+                      // Same resolution as the search / recommended serializers: job logo, then companies.*.
+                      const unlockedLogo = u.logo_url || u.logoUrl || u.companies?.logo_url || null;
+                      if (unlockedLogo) {
+                        job.logoUrl = unlockedLogo;
+                        job.logo_url = unlockedLogo;
                       }
+                      if (u.companies?.logo_url) job.companyLogoUrl = u.companies.logo_url;
+                      if (u.companies?.domain) job.companyDomain = u.companies.domain;
                     }
                   });
                 }
@@ -1021,6 +1027,7 @@ export function keepSameJobLogoIdentity(detail: LiveJob, listing: LiveJob | null
     ...detail,
     logoUrl: detail.logoUrl || listing.logoUrl || null,
     logo_url: detail.logo_url || detail.logoUrl || listing.logo_url || listing.logoUrl || null,
+    companyLogoUrl: detail.companyLogoUrl || listing.companyLogoUrl || null,
     companyDomain: detail.companyDomain || listing.companyDomain || null,
   };
 }
@@ -1087,6 +1094,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 // Same employer logo / domain resolution as the Pro listing (search route): job logo, then companies.*.
                 logoUrl: job.logo_url || job.logoUrl || job.companies?.logo_url || null,
                 logo_url: job.logo_url || job.logoUrl || job.companies?.logo_url || null,
+                companyLogoUrl: job.companies?.logo_url || null,
                 companyDomain: job.companies?.domain || null,
                 companyId: job.company_id || job.companyId || job.companyProfile?.companyId || null,
                 company_id: job.company_id || job.companyId || job.companyProfile?.companyId || null,

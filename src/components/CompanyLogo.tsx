@@ -8,6 +8,8 @@ export interface CompanyLogoProps {
   applyUrl?: string;
   sourceUrl?: string;
   logoUrl?: string | null;
+  /** Stored companies.logo_url; tried before the job-level logoUrl. */
+  companyLogoUrl?: string | null;
   /** Company website domain from companies.domain */
   domain?: string | null;
   className?: string;
@@ -63,15 +65,25 @@ export function extractDomainFromUrl(urlStr?: string): string {
   }
 }
 
-// Logo URLs that failed this session (error, CSP block, cached failure or zero-size load). Kept for the
-// page lifetime so a failed stored logo stays on the next candidate / letter tile, including on remount.
-const failedLogoSrcs = new Set<string>();
+// Logo URLs that failed (error, CSP block, cached failure or zero-size load) -> when. A failed URL stays on the
+// next candidate / letter tile, including on remount, until the TTL passes; then one remount may retry it, so a
+// transient network failure is not a page-lifetime trap and a broken URL is retried at most once per TTL.
+export const FAILED_LOGO_TTL_MS = 10 * 60 * 1000;
+const failedLogoSrcs = new Map<string, number>();
+const hasFailed = (u: string) => {
+  const at = failedLogoSrcs.get(u);
+  if (at === undefined) return false;
+  if (Date.now() - at < FAILED_LOGO_TTL_MS) return true;
+  failedLogoSrcs.delete(u);
+  return false;
+};
 
 export default function CompanyLogo({
   company,
   applyUrl,
   sourceUrl,
   logoUrl,
+  companyLogoUrl,
   domain: companyDomain,
   className = "w-10 h-10",
   locked = false,
@@ -87,14 +99,16 @@ export default function CompanyLogo({
     extractDomainFromUrl(sourceUrl);
   const unavatarUrl = domain ? `https://unavatar.io/${domain}?fallback=false` : null;
 
-  // Order: stored logo_url -> domain logo (unavatar) -> letter tile. The first candidate that has not
-  // failed is shown; no reset effect, so a failure can never be raced back to a broken image.
-  const candidates = [logoUrl, unavatarUrl].filter((u): u is string => Boolean(u));
+  // Order: stored company logo (resolver-validated, self-hosted, same for every job of the employer and what the
+  // detail page shows) -> job-level logo_url (ingest-supplied, may be a CSP-blocked host) -> domain logo (unavatar)
+  // -> letter tile. The first candidate that has not failed is shown; no reset effect, so a failure can never be
+  // raced back to a broken image.
+  const candidates = [companyLogoUrl, logoUrl, unavatarUrl].filter((u): u is string => Boolean(u));
   const [, bumpFailures] = useState(0);
-  const src = candidates.find((u) => !failedLogoSrcs.has(u)) ?? null;
+  const src = candidates.find((u) => !hasFailed(u)) ?? null;
   // Always re-render this instance: another instance may already have recorded the same URL as failed.
   const markFailed = useCallback((u: string) => {
-    failedLogoSrcs.add(u);
+    failedLogoSrcs.set(u, Date.now());
     bumpFailures((n) => n + 1);
   }, []);
   // Catches failures that happened before React attached onError (CSP block, cached failure).

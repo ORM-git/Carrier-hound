@@ -325,6 +325,7 @@ async function getHandler(req: Request) {
         isExpired: isInactive,
         status: isInactive ? "expired" : (jobRow.status || "active"),
         companyDomain: (isPro && !isInactive) ? (jobRow.companies?.domain || null) : null,
+        companyLogoUrl: (isPro && !isInactive) ? (jobRow.companies?.logo_url || null) : null,
         logoUrl: (isPro && !isInactive) ? resolvedLogo : null,
         logo_url: (isPro && !isInactive) ? resolvedLogo : null,
       };
@@ -877,6 +878,7 @@ async function getHandler(req: Request) {
           matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
           postedAt: row.posted_at || row.created_at,
           companyDomain: row.companies?.domain || null,
+          companyLogoUrl: row.companies?.logo_url || null,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
         };

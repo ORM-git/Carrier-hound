@@ -49,6 +49,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                     locked={!isPro}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
+                                    companyLogoUrl={job.companyLogoUrl}
                                     domain={job.companyDomain}
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
@@ -324,6 +325,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                     locked={!isPro}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
+                                    companyLogoUrl={job.companyLogoUrl}
                                     domain={job.companyDomain}
                                     className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
                                   />

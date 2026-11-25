@@ -28,4 +28,11 @@ describe("getLiveJobById (Pro) logo identity", () => {
     const job = await getLiveJobById("fx-1", true);
     expect([job?.logoUrl, job?.companyDomain]).toEqual(["https://cdn.row.invalid/r.png", null]);
   });
+
+  it("ElevenLabs favicon duplicate: detail keeps the job favicon and exposes the stored company logo to try first", async () => {
+    const store = "https://szakevhxhwpeskidvtfs.supabase.co/storage/v1/object/public/company-logos/bfda93c7-772e-4fb7-b8a2-49c867d8310b.png";
+    serve({ ...base, logo_url: "https://www.google.com/s2/favicons?domain=elevenlabs.io&sz=128", companies: { logo_url: store, domain: "elevenlabs.io" } });
+    const job = await getLiveJobById("fx-1", true);
+    expect([job?.companyLogoUrl, job?.logoUrl, job?.companyDomain]).toEqual([store, "https://www.google.com/s2/favicons?domain=elevenlabs.io&sz=128", "elevenlabs.io"]);
+  });
 });
