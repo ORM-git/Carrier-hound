@@ -1,5 +1,5 @@
 import { describe,it,expect,vi } from 'vitest';
-vi.mock('@/lib/onboarding/resumeParse',()=>({loadResumeProfileForRanking:vi.fn(async()=>null)}));
+vi.mock('@/lib/onboarding/resumeParse',()=>({readResumeProfileForRanking:vi.fn(async()=>({status:'missing'}))}));
 vi.mock('@/config/onboarding',()=>({isOnboardingStep2EnabledServer:()=>false}));
 import {loadDisplayScoreAnswers,sharedDisplayScore} from '../displayScore';
 import {scoreJobRecommendation} from '../recommendations';
