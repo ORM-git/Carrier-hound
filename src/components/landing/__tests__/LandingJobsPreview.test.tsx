@@ -41,6 +41,10 @@ describe("actual-card landing preview", () => {
     expect(actions).toHaveLength(8);
     expect(actions.every(el => el.getAttribute("href") === "/jobs")).toBe(true);
     expect(screen.getAllByText("Browse jobs")).toHaveLength(4);
+    expect(screen.getAllByText("Apply")).toHaveLength(4);
+    expect(screen.getAllByText("Apply")[0].className).toBe("sm:hidden");
+    expect(container.querySelector("#landing-preview-heading")?.className).toContain("hidden sm:block");
+    expect(screen.getAllByText("Jobs preview")[0].className).toBe("hidden sm:inline");
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
   it("keeps the faded second preview inert and hidden from assistive technology", () => {

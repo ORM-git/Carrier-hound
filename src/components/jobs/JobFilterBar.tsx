@@ -193,7 +193,7 @@ export default function JobFilterBar({
       {/* =================================================================== */}
       {/* 1. MOBILE FILTER ROW (< 768px)                                      */}
       {/* =================================================================== */}
-      <div className="flex md:hidden items-center justify-between w-full gap-2 px-1">
+      <div data-testid="mobile-reference-filters" className="flex md:hidden items-center justify-between w-full gap-2 px-1">
         <button
           ref={mobileFiltersTriggerRef}
           type="button"

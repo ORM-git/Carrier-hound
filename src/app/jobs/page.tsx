@@ -23,6 +23,7 @@ import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
+import "./mobile-reference.css";
 import JobDetailView, { type ResumeState } from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import { formatJobType } from "@/lib/jobs/formatJobType";
@@ -315,6 +316,15 @@ function JobsPageInner() {
   const pendingJobIdRef = useRef<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const [viewHiddenJobs, setViewHiddenJobs] = useState(false);
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsPhone(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  const effectiveViewHiddenJobs = viewHiddenJobs && !isPhone;
 
   // Search & Filter state
   const [search, setSearch] = useState("");
@@ -593,6 +603,7 @@ function JobsPageInner() {
     selectedExperience,
     remoteOnly,
     viewHiddenJobs,
+    effectiveViewHiddenJobs,
     sortBy,
     selectedWorkModel,
     selectedIndustry,
@@ -1196,7 +1207,7 @@ function JobsPageInner() {
     }
 
     let result = sourceJobs.filter((job) => {
-      if (viewHiddenJobs) {
+      if (effectiveViewHiddenJobs) {
         return hiddenJobIds.includes(job.id);
       }
       return !hiddenJobIds.includes(job.id);
@@ -1293,6 +1304,7 @@ function JobsPageInner() {
     resolvedJobsMap,
     hiddenJobIds,
     viewHiddenJobs,
+    effectiveViewHiddenJobs,
     selectedCountryCode,
     selectedLocation,
     selectedWorkModel,
@@ -1689,7 +1701,7 @@ function JobsPageInner() {
     (selectedSalaryMin ? 1 : 0) +
     (selectedSourceType ? 1 : 0) +
     (selectedCompany ? 1 : 0) +
-    (viewHiddenJobs ? 1 : 0);
+    (effectiveViewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
   const filterValues: JobFilterValues = useMemo(() => ({
@@ -1704,7 +1716,7 @@ function JobsPageInner() {
     salaryMin: selectedSalaryMin,
     sourceType: selectedSourceType,
     company: selectedCompany,
-    hidden: viewHiddenJobs,
+    hidden: effectiveViewHiddenJobs,
     sort: sortBy,
   }), [
     selectedCountryCode,
@@ -1720,6 +1732,7 @@ function JobsPageInner() {
     selectedSourceType,
     selectedCompany,
     viewHiddenJobs,
+    effectiveViewHiddenJobs,
     sortBy,
   ]);
 
@@ -1810,7 +1823,7 @@ function JobsPageInner() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+    <div className={`cm-jobs-reference ${isListView ? "cm-mobile-list" : "cm-mobile-detail"} min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans`}>
       {/* <GuideHeader /> replaced by unified AppIconRail / AppTopBar shell before and after login (!user) */}
 
       {/* Left Icon Rail (fixed 72px wide narrow / 240px expanded on desktop, bottom tab bar on mobile) */}
@@ -1829,7 +1842,7 @@ function JobsPageInner() {
           isPro={isPro}
           hidePlanPill
           // Mobile feed: Recommended / Saved / Applied only (External and search stay on sm+).
-          mobileTabs={isListView ? jobTabs.filter((tab) => tab.id !== "external") : undefined}
+          mobileTabs={isListView ? jobTabs : undefined}
         />
         <main
           id="main-content"
@@ -1937,7 +1950,7 @@ function JobsPageInner() {
                 />
 
                 <AllFiltersDrawer
-                  isOpen={allFiltersDrawerOpen}
+                  isOpen={allFiltersDrawerOpen && !isPhone}
                   onClose={() => {
                     setAllFiltersDrawerOpen(false);
                     allFiltersTriggerRef.current?.focus();
@@ -1960,6 +1973,7 @@ function JobsPageInner() {
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
                   hiddenCount={hiddenJobIds.length}
+                  hideHiddenJobs={isPhone}
                   triggerRef={filtersTriggerRef}
                 />
               </div>
@@ -2036,7 +2050,7 @@ function JobsPageInner() {
                         )}
                       </div>
                       <h3 className="text-base font-bold text-[#0F172A]">
-                        {viewHiddenJobs
+                        {effectiveViewHiddenJobs
                           ? "No hidden positions"
                           : (activeTab === "saved" || activeTab === "liked")
                           ? savedCount === 0
@@ -2051,7 +2065,7 @@ function JobsPageInner() {
                           : "No positions currently found"}
                       </h3>
                       <p className="text-xs text-[#475569] max-w-sm mx-auto">
-                        {viewHiddenJobs
+                        {effectiveViewHiddenJobs
                           ? "Positions you hide from the feed will appear here so you can unhide them anytime."
                           : (activeTab === "saved" || activeTab === "liked")
                           ? savedCount === 0

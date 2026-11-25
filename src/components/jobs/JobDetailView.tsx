@@ -18,6 +18,7 @@ import type { CompanyFactKey } from "@/lib/company-profile/types";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Ban,
   FileText,
   Heart,
@@ -358,6 +359,7 @@ export default function JobDetailView({
     <div
       // Mobile: clear the 64px bottom nav (shown during detail, item 16) + 1rem; desktop keeps its 7rem tail.
       style={{ "--cookie-h": `${cookieNoticeHeight}px` } as React.CSSProperties}
+      data-testid="mobile-reference-detail"
       className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+1.5rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
     >
       {/* Expired Job Banner */}
@@ -597,6 +599,7 @@ export default function JobDetailView({
           <div className="flex items-center gap-1 bg-[#F1F5F9] p-0.5 rounded-lg shrink-0">
             <button
               type="button"
+              aria-pressed={activeTab === "overview"}
               onClick={() => {
                 setActiveTab("overview");
                 window.scrollTo({ top: 0, behavior: "smooth" });
@@ -611,6 +614,7 @@ export default function JobDetailView({
             </button>
             <button
               type="button"
+              aria-pressed={activeTab === "company"}
               onClick={() => {
                 void openCompanyTab();
               }}
@@ -658,7 +662,7 @@ export default function JobDetailView({
       />
 
       {/* (2) HEADER BODY CARD */}
-      <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none">
+      <div data-testid="overview-body" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none">
         {/* Mobile action row: 64px rounded logo, Hide (block icon) circle, heart circle, Apply pill. Desktop keeps these in the sticky strip. */}
         <div data-testid="overview-logo-row" className="md:hidden flex items-center gap-2.5">
           <CompanyLogo
@@ -710,7 +714,7 @@ export default function JobDetailView({
               onClick={onApply}
               className="inline-flex items-center gap-1 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
             >
-              <span>Apply</span>
+              <span className="sm:hidden">APPLY NOW</span><span className="hidden sm:inline">Apply</span><ArrowUpRight aria-hidden="true" className="w-5 h-5 sm:hidden" />
             </a>
           ) : (
             <button
@@ -719,7 +723,7 @@ export default function JobDetailView({
               className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
             >
               {!isUnlocked && <Lock className="w-3.5 h-3.5" />}
-              <span>Apply</span>
+              <span className="sm:hidden">APPLY NOW</span><span className="hidden sm:inline">Apply</span><ArrowUpRight aria-hidden="true" className="w-5 h-5 sm:hidden" />
             </button>
           )}
         </div>
