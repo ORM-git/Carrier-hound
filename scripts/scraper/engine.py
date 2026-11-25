@@ -25,7 +25,7 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
-from .persistence import db_error_diagnostic, is_duplicate_apply_url, prevalidate_jobs, rejection, sanitize_salaries
+from .persistence import db_error_diagnostic, is_duplicate_apply_url, key_set_summary, prevalidate_jobs, rejection, sanitize_salaries
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
 DEFAULT_SEEDS_PATH = Path(__file__).resolve().parent / "company_seeds.json"
@@ -546,7 +546,8 @@ class SupabaseSetDiffWriter:
                 json=rows,
             )
         except Exception as exc:  # timeout / connection reset: outcome unknown, never retried
-            return "error", f"Job insert exception: {redact_sensitive_params(str(exc))}"
+            # Type only: exception text can carry the request URL or key.
+            return "error", f"Job insert exception: {type(exc).__name__[:40]}"
         if resp.status_code >= 300:
             code, reason = db_error_diagnostic(resp.status_code, resp.text)
             if is_duplicate_apply_url(resp.status_code, resp.text):
@@ -569,6 +570,18 @@ class SupabaseSetDiffWriter:
         jobs_apply_url_unique 23505 rejection of the atomic batch is isolated row by row (bounded by the batch
         size); every other failure stops writes."""
         clean = [{k: v for k, v in row.items() if k in db_columns} for row in to_insert]
+        # PostgREST needs one key set per bulk insert. Split into contiguous same-key runs, in order, rather
+        # than padding missing columns with null (that would override their DB defaults) or regrouping rows.
+        if any(clean[i].keys() != clean[0].keys() for i in range(1, len(clean))):
+            persisted: list[dict[str, Any]] = []
+            start = 0
+            for end in range(1, len(clean) + 1):
+                if end == len(clean) or clean[end].keys() != clean[start].keys():
+                    persisted += await self._insert_jobs(client, to_insert[start:end], db_columns, stats)
+                    if self.persistence_failed:
+                        break
+                    start = end
+            return persisted
         outcome, payload = await self._post_jobs(client, clean)
         if outcome in ("check", "duplicate") and len(clean) > 1:
             persisted: list[dict[str, Any]] = []
@@ -586,7 +599,9 @@ class SupabaseSetDiffWriter:
         if outcome == "error":
             self.failed_writes += len(clean)
             self.persistence_failed = True
-            self.write_errors.append(f"Job insert error: {payload}")
+            # Redacted reason + allowed-column key-set groups; never response text or row values.
+            prefix = "" if payload.startswith("Job insert exception") else "Job insert error: "
+            self.write_errors.append(f"{prefix}{payload}; {key_set_summary(clean, db_columns)}")
             return []
         stats["inserted"] += len(payload)
         stats["persisted_ids"].extend(row["id"] for row in payload)
