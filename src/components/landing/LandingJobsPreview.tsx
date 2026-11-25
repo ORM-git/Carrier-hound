@@ -13,10 +13,10 @@ export const LANDING_PREVIEW_JOBS: LiveJob[] = [
 ];
 const noop = () => {};
 function PreviewActions() {
-  return <div className="flex items-center justify-end gap-1.5">
+  return <div className="flex w-full sm:w-auto items-center justify-end gap-1.5">
     <Link href="/jobs" aria-label="Browse job options" className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-[#475569]"><MoreHorizontal className="w-4 h-4" /></Link>
     <Link href="/jobs" aria-label="Open Jobs to save roles" className="w-10 h-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-[#E2E8F0] bg-[#F1F5F9] text-[#475569]"><Heart className="w-4 h-4" /></Link>
-    <Link href="/jobs" className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] text-white text-xs font-bold">Browse jobs<ArrowRight className="w-3.5 h-3.5" /></Link>
+    <Link href="/jobs" className="inline-flex min-w-[132px] sm:min-w-0 justify-center items-center gap-1.5 px-6 sm:px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] text-white text-xs font-bold"><span className="sm:hidden">Apply</span><span className="hidden sm:inline">Browse jobs</span><ArrowRight className="w-3.5 h-3.5" /></Link>
   </div>;
 }
 
@@ -34,10 +34,10 @@ export default function LandingJobsPreview() {
     return () => window.clearTimeout(timer);
   }, []);
   return <section className="landing-actual-preview" aria-labelledby="landing-preview-heading">
-    <p id="landing-preview-heading" className="preview-heading">Preview of the Jobs experience · sample scores</p>
+    <p id="landing-preview-heading" className="preview-heading hidden sm:block">Preview of the Jobs experience · sample scores</p>
     <div className="space-y-3">
       {LANDING_PREVIEW_JOBS.map((job, index) => <div key={job.id} className={index === 1 ? "peek" : undefined} aria-hidden={index === 1 || undefined} ref={node => { if (node && index === 1) node.setAttribute("inert", ""); }}><article data-testid="landing-job-card" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none min-h-fit">
-        <JobCardContent job={job} index={index} isPro isSaved={false} matchScore={scores[index]} scoreDescription={`Preview score: ${scores[index]}%, not your personal match`} cardZeroSkills={false} isRecent={false} postedRelative={null} companyPills={["Engineering"]} locInfo={{ primary: job.location, extraCount: 0, all: [job.location] }} jobLevel="Staff / Lead" formattedJobType={null} getTagColorClass={() => "bg-blue-50 text-blue-700 border-blue-200"} formatRelativeTime={() => ""} handleHideJob={noop} handleToggleApplied={noop} handleSaveJob={noop} handleSelectJob={noop} handleLockedAction={noop} footerText="Jobs preview" footerActions={<PreviewActions />} />
+        <JobCardContent job={job} index={index} isPro isSaved={false} matchScore={scores[index]} scoreDescription={`Preview score: ${scores[index]}%, not your personal match`} cardZeroSkills={false} isRecent={false} postedRelative={null} companyPills={["Engineering"]} locInfo={{ primary: job.location, extraCount: 0, all: [job.location] }} jobLevel="Staff / Lead" formattedJobType={null} getTagColorClass={() => "bg-blue-50 text-blue-700 border-blue-200"} formatRelativeTime={() => ""} handleHideJob={noop} handleToggleApplied={noop} handleSaveJob={noop} handleSelectJob={noop} handleLockedAction={noop} footerText={<span className="hidden sm:inline">Jobs preview</span>} footerActions={<PreviewActions />} />
       </article></div>)}
     </div>
   </section>;
