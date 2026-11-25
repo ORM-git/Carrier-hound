@@ -905,6 +905,12 @@ function JobsPageInner() {
   // last background append. Our own anchor correction is excluded, so re-ranked appends never count as reading.
   const readerScrolledRef = useRef(false);
   const programmaticScrollRef = useRef(false);
+  const programmaticRafOuterRef = useRef(0);
+  const programmaticRafInnerRef = useRef(0);
+  useEffect(() => () => {
+    cancelAnimationFrame(programmaticRafOuterRef.current);
+    cancelAnimationFrame(programmaticRafInnerRef.current);
+  }, []);
   // Page 1 of the current query; aborted when the query changes or the page unmounts.
   const firstPageAbortRef = useRef<AbortController | null>(null);
   useEffect(() => () => {
@@ -1457,7 +1463,11 @@ function JobsPageInner() {
     if (Math.abs(moved) >= 1) {
       programmaticScrollRef.current = true;
       window.scrollBy({ top: moved, left: 0, behavior: "instant" as ScrollBehavior });
-      requestAnimationFrame(() => requestAnimationFrame(() => { programmaticScrollRef.current = false; }));
+      cancelAnimationFrame(programmaticRafOuterRef.current);
+      cancelAnimationFrame(programmaticRafInnerRef.current);
+      programmaticRafOuterRef.current = requestAnimationFrame(() => {
+        programmaticRafInnerRef.current = requestAnimationFrame(() => { programmaticScrollRef.current = false; });
+      });
     }
     readerScrolledRef.current = false;
   }, [displayedJobs]);
