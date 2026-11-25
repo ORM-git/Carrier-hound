@@ -23,11 +23,13 @@ describe("CompanyLogo locked silhouette (item 14)", () => {
 
   it("every job card/detail logo passes the lock, and locked company text is a placeholder, not CSS-blurred", () => {
     const page = readFileSync("src/app/jobs/page.tsx", "utf8");
+    const card = readFileSync("src/components/jobs/JobCardContent.tsx", "utf8");
+    expect(page).toMatch(/<JobCardContent\b[\s\S]*?isPro=\{isPro\}/);
     const detail = readFileSync("src/components/jobs/JobDetailView.tsx", "utf8");
-    expect(page.match(/<CompanyLogo\s+company=\{job\.company\}\s+locked=\{!isPro\}/g)).toHaveLength(2);
+    expect(card.match(/<CompanyLogo\s+company=\{job\.company\}\s+locked=\{!isPro\}/g)).toHaveLength(2);
     expect(detail.match(/<CompanyLogo\b[^>]*locked=\{!isUnlocked\}/g)).toHaveLength(5);
     expect(detail).toMatch(/<JobCardMenu\b[^>]*locked=\{!isUnlocked\}/);
-    expect(page).not.toContain('{job.company || "Verified Employer"}');
+    expect(card).not.toContain('{job.company || "Verified Employer"}');
     expect(detail).not.toMatch(/\{(job|simJob)\.company \|\| "Verified Employer"\}/);
   });
 });

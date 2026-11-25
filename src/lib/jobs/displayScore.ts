@@ -28,8 +28,9 @@ export async function loadDisplayScoreAnswers(db: any, userId: string | null, en
 }
 
 /** Display score is separate from list ordering. Detail reloads must not switch to a different scoring algorithm. */
-export function sharedDisplayScore(row: any, answers: OnboardingAnswers | null, includePaidInputs = true): number | null {
+/** `now`: the response's reference instant, also passed to scoreInputRevision for the same row. */
+export function sharedDisplayScore(row: any, answers: OnboardingAnswers | null, includePaidInputs = true, now: number = Date.now()): number | null {
   if (!answers) return null;
   const input = includePaidInputs ? row : { ...row, description: undefined, skills: undefined, salary_text: undefined, salary_min: undefined, salary_max: undefined, currency: undefined };
-  return clampMatchScore(scoreJobRecommendation(input, answers).score);
+  return clampMatchScore(scoreJobRecommendation(input, answers, now).score);
 }

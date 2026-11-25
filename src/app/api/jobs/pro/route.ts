@@ -185,6 +185,8 @@ export async function GET(req: Request) {
 
     const supabaseAdmin = getSupabaseAdmin();
     const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, authCheck.user.id);
+    // One reference instant per response: every score and revision below is computed at it.
+    const scoredAt = Date.now();
 
     // Fetch user preferences for preferred currency (convert only when explicitly set, not default 'USD')
     let userSalaryCurrency: string | undefined;
@@ -238,8 +240,8 @@ export async function GET(req: Request) {
             ...j,
             companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
             description: resolvedDesc,
-            scoreRevision: scoreInputRevision(j, true),
-            matchScore: sharedDisplayScore(j, displayAnswers),
+            scoreRevision: scoreInputRevision(j, true, scoredAt),
+            matchScore: sharedDisplayScore(j, displayAnswers, true, scoredAt),
             role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
             top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
               ? j.top_keywords.slice(0, 8)
@@ -283,8 +285,8 @@ export async function GET(req: Request) {
       ...job,
       companyProfile: job.company_id ? profileMap.get(job.company_id) || null : null,
       description: resolvedSingleDesc,
-      scoreRevision: scoreInputRevision(row, true),
-      matchScore: sharedDisplayScore(row, displayAnswers),
+      scoreRevision: scoreInputRevision(row, true, scoredAt),
+      matchScore: sharedDisplayScore(row, displayAnswers, true, scoredAt),
       role_category: job.role_category || detectRoleCategory(job.title, job.category, job.skills),
       top_keywords: Array.isArray(job.top_keywords) && job.top_keywords.length > 0
         ? job.top_keywords.slice(0, 8)
@@ -341,6 +343,8 @@ export async function POST(req: Request) {
 
     const supabaseAdmin = getSupabaseAdmin();
     const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, authCheck.user.id);
+    // One reference instant per response: every score and revision below is computed at it.
+    const scoredAt = Date.now();
 
     // Fetch user preferences for preferred currency (convert only when explicitly set, not default 'USD')
     let userSalaryCurrency: string | undefined;
@@ -383,8 +387,8 @@ export async function POST(req: Request) {
         ...j,
       companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
         description: resolvedDesc,
-        scoreRevision: scoreInputRevision(j, true),
-            matchScore: sharedDisplayScore(j, displayAnswers),
+        scoreRevision: scoreInputRevision(j, true, scoredAt),
+            matchScore: sharedDisplayScore(j, displayAnswers, true, scoredAt),
         role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),
         top_keywords: Array.isArray(j.top_keywords) && j.top_keywords.length > 0
           ? j.top_keywords.slice(0, 8)

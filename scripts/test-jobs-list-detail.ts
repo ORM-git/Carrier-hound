@@ -18,13 +18,15 @@ function run() {
   }
 
   let jobsCode = fs.readFileSync(jobsPath, "utf-8");
+  let cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+  if (!jobsCode.includes('import JobCardContent from "@/components/jobs/JobCardContent"') || !/<JobCardContent\b[\s\S]*?matchScore=\{matchScore\}/.test(jobsCode)) throw new Error("Jobs must adopt shared card with computed score");
   let detailCode = fs.readFileSync(detailViewPath, "utf-8");
 
   if (isNegativeControl) {
     // Inject corruptions to verify negative control
     jobsCode = jobsCode.replace(/max-w-\[880px\]/g, "max-w-[1400px]");
-    jobsCode = jobsCode.replace(/w-\[56px\] h-\[56px\] sm:w-\[72px\] sm:h-\[72px\]|w-12 h-12/g, "w-20 h-20");
-    jobsCode = jobsCode.replace(/text-\[16px\] font-bold text-\[#0F172A\]/g, "text-[12px]");
+    cardCode = cardCode.replace(/w-\[56px\] h-\[56px\] sm:w-\[72px\] sm:h-\[72px\]|w-12 h-12/g, "w-20 h-20");
+    cardCode = cardCode.replace(/text-\[16px\] font-bold text-\[#0F172A\]/g, "text-[12px]");
     jobsCode = jobsCode.replace(/hover:ring-\[#93C5FD\]/g, "");
     jobsCode = jobsCode + '\n<article className="hover:-translate-y-2">Moving Card</article>';
     detailCode = detailCode.replace(/text-\[24px\] font-bold text-\[#0F172A\]/g, "text-[14px]");
@@ -65,7 +67,7 @@ function run() {
   }
 
   // 1c. Left: 48px company logo square (CompanyLogo or fallback)
-  const has48pxLogo = (jobsCode.includes("w-[56px] h-[56px] sm:w-[72px] sm:h-[72px]") || jobsCode.includes("w-12 h-12 rounded-xl")) && jobsCode.includes("CompanyLogo");
+  const has48pxLogo = (cardCode.includes("w-[56px] h-[56px] sm:w-[72px] sm:h-[72px]") || cardCode.includes("w-12 h-12 rounded-xl")) && cardCode.includes("CompanyLogo");
   if (!has48pxLogo) {
     failures.push("LOGO FAIL: Left logo must be a 48px square (w-12 h-12 rounded-xl) using CompanyLogo.");
   } else {
@@ -73,9 +75,9 @@ function run() {
   }
 
   // 1d. Middle: title bold 16px ink, company 14px #475569, then row of small gray chips
-  const has16pxTitle = jobsCode.includes("text-[16px] font-bold text-[#0F172A]");
-  const has14pxCompany = jobsCode.includes("text-[14px] text-[#475569]");
-  const hasGrayChips = jobsCode.includes("bg-[#F1F5F9] text-[#475569]") && jobsCode.includes("text-[12px]");
+  const has16pxTitle = cardCode.includes("text-[16px] font-bold text-[#0F172A]");
+  const has14pxCompany = cardCode.includes("text-[14px] text-[#475569]");
+  const hasGrayChips = cardCode.includes("bg-[#F1F5F9] text-[#475569]") && cardCode.includes("text-[12px]");
   if (!has16pxTitle || !has14pxCompany || !hasGrayChips) {
     failures.push("CARD TYPOGRAPHY FAIL: Card middle must have title bold 16px ink, company 14px #475569, and row of small gray chips (text-[12px]).");
   } else {
@@ -84,9 +86,9 @@ function run() {
 
   // 1e. Right: Inset panel geometry preserved with Job Facts (listings-only) or legacy Fit Match
   const hasInsetPanelRight =
-    jobsCode.includes("w-44 shrink-0") &&
-    (jobsCode.includes("rounded-[16px]") || jobsCode.includes("rounded-xl")) &&
-    (jobsCode.includes("Job Facts") || jobsCode.includes("matchScore !== null ?"));
+    cardCode.includes("w-44 shrink-0") &&
+    (cardCode.includes("rounded-[16px]") || cardCode.includes("rounded-xl")) &&
+    (cardCode.includes("Job Facts") || cardCode.includes("matchScore !== null ?"));
   if (!hasInsetPanelRight) {
     failures.push("INSET PANEL FAIL: Right inset panel geometry must be preserved with listings-only Job Facts or Fit Match.");
   } else {
@@ -202,8 +204,8 @@ function run() {
   // 4. MOBILE LAYOUT SPECIFICATIONS
   // -------------------------------------------------------------------------
   const hasMobileResponsiveLayout =
-    jobsCode.includes("sm:hidden") &&
-    (jobsCode.includes("w-[54px]") || jobsCode.includes("Fit Match") || jobsCode.includes("grid-cols-2") || jobsCode.includes("CompanyLogo"));
+    cardCode.includes("sm:hidden") &&
+    (cardCode.includes("w-[54px]") || cardCode.includes("Fit Match") || cardCode.includes("grid-cols-2") || cardCode.includes("CompanyLogo"));
   if (!hasMobileResponsiveLayout) {
     failures.push("MOBILE RESPONSIVENESS FAIL: On mobile, cards must stack compactly with responsive facts.");
   } else {

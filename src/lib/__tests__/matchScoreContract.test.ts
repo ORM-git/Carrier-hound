@@ -5,6 +5,8 @@ import { candidateProfileVersion, matchScoreSnapshot, recallMatchScore, reconcil
 import { withFeedScore } from "@/lib/jobs/recommendations";
 import type { CandidateProfile } from "@/lib/resume/types";
 
+const NOW = Date.parse("2026-11-25T00:00:00Z"); // fixed reference instant for revisions
+
 // CM mobile item 18: one score per job score-input revision + candidate snapshot + scoring version, on the
 // feed card, the detail header and Match Insights, invalidated together when any input changes.
 const mem = new Map<string, string>();
@@ -56,7 +58,7 @@ const liveJob = (r: Row, extra: Record<string, unknown> = {}) => ({
   salary: r.salary_text,
   postedAt: r.posted_at,
   applyUrl: "",
-  scoreRevision: scoreInputRevision(r, true) as string | null,
+  scoreRevision: scoreInputRevision(r, true, NOW) as string | null,
   matchScore: undefined as number | null | undefined,
   ...extra,
 });
@@ -74,14 +76,14 @@ describe("scoreInputRevision covers every scoring input", () => {
     ["job type", { job_type: "contract" }],
     ["posted date", { posted_at: "2026-11-23T00:00:00Z" }],
   ])("a changed %s gives a new revision", (_label, change) => {
-    expect(scoreInputRevision({ ...row, ...change }, true)).not.toBe(scoreInputRevision(row, true));
+    expect(scoreInputRevision({ ...row, ...change }, true, NOW)).not.toBe(scoreInputRevision(row, true, NOW));
   });
 
   it("is stable for the same inputs, carries the scoring version, and free rows hash only what free scoring reads", () => {
-    expect(scoreInputRevision({ ...row }, true)).toBe(scoreInputRevision(row, true));
-    expect(scoreInputRevision(row, true).startsWith(`${MATCH_SCORE_VERSION}.p.`)).toBe(true);
-    expect(scoreInputRevision({ ...row, description: "", skills: [] }, false)).toBe(scoreInputRevision(row, false));
-    expect(scoreInputRevision({ ...row, title: "Staff Frontend Engineer" }, false)).not.toBe(scoreInputRevision(row, false));
+    expect(scoreInputRevision({ ...row }, true, NOW)).toBe(scoreInputRevision(row, true, NOW));
+    expect(scoreInputRevision(row, true, NOW).startsWith(`${MATCH_SCORE_VERSION}.p.`)).toBe(true);
+    expect(scoreInputRevision({ ...row, description: "", skills: [] }, false, NOW)).toBe(scoreInputRevision(row, false, NOW));
+    expect(scoreInputRevision({ ...row, title: "Staff Frontend Engineer" }, false, NOW)).not.toBe(scoreInputRevision(row, false, NOW));
   });
 });
 
