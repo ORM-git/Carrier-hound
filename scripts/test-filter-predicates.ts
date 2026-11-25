@@ -13,6 +13,7 @@
  * Supports --negative-control to verify non-zero exit on corrupted expectations.
  */
 
+import { verifyDateGuard } from "./lib/date-guard-contract";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -149,7 +150,7 @@ async function run() {
 
     // 2f. Date Posted predicate
     const hasDateParam = routeCode.includes('searchParams.get("datePosted")');
-    const hasDatePredicate = routeCode.includes('.gte("posted_at", cutoff)');
+    const hasDatePredicate = verifyDateGuard(routeCode, "dateParam");
     if (!hasDateParam || !hasDatePredicate) {
       failures.push("route.ts: datePosted parameter parsing or gte('posted_at') predicate missing!");
     } else {
