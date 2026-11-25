@@ -64,6 +64,7 @@ import {
 import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
 import { workModelLabel } from "@/lib/jobs/workModel";
+import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader } from "@/lib/jobs/pagination";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
@@ -602,7 +603,8 @@ function JobsPageInner() {
 
     if (qSearch) setSearch(qSearch);
     if (qCategory) setSelectedCategory(qCategory);
-    if (qRemote) setRemoteOnly(true);
+    // A stale remote=true next to Remote + Hybrid/Onsite (written by the old handlers) is not a Remote-only link.
+    if (qRemote && (!qWorkModel || isRemoteOnlyWorkModel(qWorkModel))) setRemoteOnly(true);
     if (qLocation) setSelectedLocation(qLocation);
     if (qLevel) setSelectedLevel(qLevel);
     if (qType) setSelectedJobType(qType);
@@ -798,7 +800,7 @@ function JobsPageInner() {
 
       setSearch(qSearch);
       setSelectedCategory(qCategory);
-      setRemoteOnly(qRemote);
+      setRemoteOnly(qRemote && (!qWorkModel || isRemoteOnlyWorkModel(qWorkModel)));
       setSelectedLocation(qLocation);
       setSelectedLevel(qLevel);
       setSelectedJobType(qType);
@@ -1332,14 +1334,8 @@ function JobsPageInner() {
       );
     }
 
-    if (selectedWorkModel && selectedWorkModel.toLowerCase() !== "all") {
-      const wm = selectedWorkModel.toLowerCase();
-      result = result.filter((job) => {
-        if (wm === "remote") return job.remote || (job.location || "").toLowerCase().includes("remote");
-        if (wm === "hybrid") return (job.location || "").toLowerCase().includes("hybrid") || (job.remoteScope || "").toLowerCase() === "hybrid";
-        if (wm === "onsite") return !job.remote || (job.location || "").toLowerCase().includes("onsite");
-        return true;
-      });
+    if (selectedWorkModel) {
+      result = result.filter((job) => matchesWorkModelFilter(job, selectedWorkModel));
     }
 
     if (selectedLevel) {
@@ -1349,9 +1345,7 @@ function JobsPageInner() {
     }
 
     if (selectedJobType) {
-      result = result.filter((job) =>
-        (job.type || "").toLowerCase().includes(selectedJobType.toLowerCase())
-      );
+      result = result.filter((job) => matchesJobTypeFilter(job.type, selectedJobType));
     }
 
     if (selectedDatePosted) {
@@ -1853,11 +1847,7 @@ function JobsPageInner() {
     if (patch.jobType !== undefined) setSelectedJobType(patch.jobType);
     if (patch.workModel !== undefined) {
       setSelectedWorkModel(patch.workModel);
-      if (patch.workModel.toLowerCase().includes("remote")) {
-        setRemoteOnly(true);
-      } else if (patch.workModel) {
-        setRemoteOnly(false);
-      }
+      setRemoteOnly(isRemoteOnlyWorkModel(patch.workModel));
     }
     if (patch.datePosted !== undefined) setSelectedDatePosted(patch.datePosted);
     if (patch.experience !== undefined) setSelectedExperience(patch.experience);
@@ -1876,11 +1866,7 @@ function JobsPageInner() {
     setSelectedLevel(updated.level);
     setSelectedJobType(updated.jobType);
     setSelectedWorkModel(updated.workModel);
-    if (updated.workModel.toLowerCase().includes("remote")) {
-      setRemoteOnly(true);
-    } else if (updated.workModel) {
-      setRemoteOnly(false);
-    }
+    setRemoteOnly(isRemoteOnlyWorkModel(updated.workModel));
     setSelectedDatePosted(updated.datePosted);
     if (updated.experience !== undefined) setSelectedExperience(updated.experience);
     setSelectedSalaryMin(updated.salaryMin !== undefined ? String(updated.salaryMin) : "");

@@ -131,7 +131,7 @@ async function run() {
 
     // 2d. Job Type predicate
     const hasJobTypeParam = routeCode.includes('searchParams.get("jobType")');
-    const hasJobTypePredicate = routeCode.includes("job_type.ilike.%full%") || routeCode.includes("job_type.eq.full-time");
+    const hasJobTypePredicate = routeCode.includes("job_type.ilike.%full%") || routeCode.includes("job_type.eq.full-time") || routeCode.includes("jobTypeOrClause(jobTypeParam)");
     if (!hasJobTypeParam || !hasJobTypePredicate) {
       failures.push("route.ts: jobType parameter parsing or predicate missing!");
     } else {
@@ -140,7 +140,7 @@ async function run() {
 
     // 2e. Work Model predicate
     const hasWorkModelParam = routeCode.includes('searchParams.get("workModel")');
-    const hasWorkModelPredicate = routeCode.includes("remote.eq.true") && routeCode.includes("location.ilike.%hybrid%");
+    const hasWorkModelPredicate = (routeCode.includes("remote.eq.true") && routeCode.includes("location.ilike.%hybrid%")) || routeCode.includes("workModelOrClause(workModelParam)");
     if (!hasWorkModelParam || !hasWorkModelPredicate) {
       failures.push("route.ts: workModel parameter parsing or predicate missing!");
     } else {
