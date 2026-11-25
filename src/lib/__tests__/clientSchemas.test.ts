@@ -11,11 +11,11 @@ describe("parseStatsResponse", () => {
     const r = parseStatsResponse({ totalJobs: 7, companiesScanned: 3 });
     expect(r?.activeJobs).toBe(7);
     expect(r?.companies).toBe(3);
-    expect(r?.jobsToday).toBe(0);
+    expect(r?.jobsToday).toBeNull();
   });
   it("turns wrong types into null", () => {
     expect(parseStatsResponse({ activeJobs: "999", companies: {}, jobsToday: null, updatedAt: 5 })).toEqual({
-      activeJobs: null, companies: null, jobsToday: 0, totalJobs: null, companiesScanned: null, updatedAt: undefined,
+      activeJobs: null, companies: null, jobsToday: null, totalJobs: null, companiesScanned: null, updatedAt: undefined,
     });
   });
   it("rejects non-object payloads", () => {
