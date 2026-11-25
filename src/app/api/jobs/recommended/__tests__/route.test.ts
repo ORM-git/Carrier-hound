@@ -1471,4 +1471,51 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     expect(after.jobs.map((j: any) => j.id)).toEqual(before.jobs.map((j: any) => j.id).filter((id: string) => id !== victim));
     expect(after.jobs.every((j: any) => j.description && j.applyUrl)).toBe(true);
   });
+
+  // Each way a ranked job can become ineligible between the candidate query and hydration.
+  const inactiveChanges: Array<[string, (row: any) => void]> = [
+    ["is_active becomes false", (row) => { row.is_active = false; }],
+    ["status becomes closed", (row) => { row.status = "closed"; }],
+    ["status becomes expired", (row) => { row.status = "expired"; }],
+    ["status becomes null", (row) => { row.status = null; }],
+    ["both status and is_active change", (row) => { row.status = "closed"; row.is_active = false; }],
+  ];
+  it.each(inactiveChanges)("a job that goes inactive after ranking (%s) is left out of the Pro page; the rest keep their order", async (_label, change) => {
+    const before = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    // First, middle and last positions of the page.
+    const victims = [before.jobs[0].id, before.jobs[9].id, before.jobs[before.jobs.length - 1].id];
+    state.queries = [];
+    const origPush = state.queries.push.bind(state.queries);
+    let changed = false;
+    state.queries.push = ((q: any) => {
+      if (!changed && !isHydrate(q)) {
+        // The candidate query has already returned these rows as active; change them before hydration runs.
+        for (const id of victims) change(state.tables.jobs.find((j: any) => j.id === id));
+        changed = true;
+      }
+      return origPush(q);
+    }) as any;
+    const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
+    expect(res.status).toBe(200);
+    const after = await res.json();
+    expect(changed).toBe(true);
+    expect(after.jobs.map((j: any) => j.id)).toEqual(before.jobs.map((j: any) => j.id).filter((id: string) => !victims.includes(id)));
+    expect(after.jobs.every((j: any) => j.description && j.applyUrl && j.company !== "Verified Employer")).toBe(true);
+    // The candidate query did see them: only hydration's recheck removed them.
+    const candidate = state.queries.find((q: any) => !isHydrate(q))!;
+    expect(victims.every((id) => candidate.ids.includes(id))).toBe(true);
+    const hydrate = state.queries.find(isHydrate)!;
+    expect(victims.some((id) => hydrate.ids.includes(id))).toBe(false);
+  });
+
+  it("a hydration query error with some jobs gone inactive is still a 503, never a partial or empty success", async () => {
+    const before = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
+    state.tables.jobs.find((j: any) => j.id === before.jobs[2].id).is_active = false;
+    state.failWhen = (_t, cols) => cols.startsWith("id, apply_url");
+    const res = await recommendedRoute(req(url, "tok-pro-with-answers"));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toBeTruthy();
+    expect(body.jobs).toEqual([]);
+  });
 });

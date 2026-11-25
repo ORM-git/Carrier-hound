@@ -500,7 +500,10 @@ export async function GET(req: Request) {
       const { data: details, error: detailError } = await supabaseAdmin
         .from("jobs")
         .select(PRO_HYDRATE_COLS)
-        .in("id", paginatedJobs.map((row: any) => row.id));
+        .in("id", paginatedJobs.map((row: any) => row.id))
+        // Same eligibility as the candidate query: a job that went inactive after it was ranked is not returned.
+        .eq("status", "active")
+        .eq("is_active", true);
       if (detailError) {
         log.error("Failed to load details for recommended jobs", { error: detailError.message || detailError });
         return respond(
@@ -509,7 +512,7 @@ export async function GET(req: Request) {
         );
       }
       const byId = new Map<string, any>((details || []).map((d: any) => [d.id, d]));
-      // A row missing here was deleted after ranking: leave it out rather than return a half-empty Pro card.
+      // A row missing here was deleted or went inactive after ranking: leave it out, keep the rest in order.
       paginatedJobs = paginatedJobs.filter((row: any) => byId.has(row.id)).map((row: any) => ({ ...row, ...byId.get(row.id), id: row.id }));
     }
 
