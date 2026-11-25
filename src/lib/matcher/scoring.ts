@@ -1,5 +1,6 @@
 import { CandidateProfile, WorkExperienceItem } from "../resume/types";
 import { SKILLS_TAXONOMY } from "../resume/parser";
+import { recencyPoints } from "../jobs/recommendations";
 
 export interface FitDiagnosticsResult {
   score: number; // 0 to 100
@@ -715,11 +716,14 @@ const PAID_SCORE_INPUT_COLUMNS = ["description", "skills", "salary_text", "salar
 /**
  * Authoritative revision of a job's score inputs, stamped by every jobs API route (list and detail) from the
  * same jobs-table columns, so the client only reuses a feed score for a job whose inputs are unchanged.
- * Includes MATCH_SCORE_VERSION, so a scoring change also invalidates.
+ * Includes MATCH_SCORE_VERSION, so a scoring change also invalidates. Also includes the score's recency points at
+ * `now` (the same reference instant the response scored this row at), so a job ageing across a recency boundary
+ * gets a new revision exactly when its score changes, and never in between.
  */
-export function scoreInputRevision(row: Record<string, unknown>, includePaidInputs: boolean): string {
+export function scoreInputRevision(row: Record<string, unknown>, includePaidInputs: boolean, now: number): string {
   const cols: readonly string[] = includePaidInputs ? [...SCORE_INPUT_COLUMNS, ...PAID_SCORE_INPUT_COLUMNS] : SCORE_INPUT_COLUMNS;
-  return `${MATCH_SCORE_VERSION}.${includePaidInputs ? "p" : "f"}.${fnv1aHex(JSON.stringify(cols.map((c) => row[c] ?? null)))}`;
+  const inputs = [...cols.map((c) => row[c] ?? null), recencyPoints(row as Parameters<typeof recencyPoints>[0], now)];
+  return `${MATCH_SCORE_VERSION}.${includePaidInputs ? "p" : "f"}.${fnv1aHex(JSON.stringify(inputs))}`;
 }
 
 /**
