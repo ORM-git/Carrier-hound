@@ -16,6 +16,8 @@ function run() {
   }
 
   let code = fs.readFileSync(jobsPath, "utf-8");
+  let cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+  if (!/<JobCardContent\b[\s\S]*?matchScore=\{matchScore\}/.test(code)) throw new Error("Jobs must adopt shared renderer");
 
   if (isNegativeControl) {
     // Inject corruptions
@@ -23,8 +25,8 @@ function run() {
     code = code.replace(/data-testid="job-card"/g, "");
     code = code.replace(/useReducedMotion/g, "badMotion");
     code = code.replace(/aria-label="Sort by"/g, "");
-    code = code.replace(/matchScore !== null/g, "true");
-    code = code.replace(/Upload your resume to see your real match/g, "Corrupted CTA Text");
+    cardCode = cardCode.replace(/matchScore !== null/g, "true");
+    cardCode = cardCode.replace(/Upload your resume to see your real match/g, "Corrupted CTA Text");
     code = code.replace("return null;", "return 62 + (hash % 33);");
     code = code + '\nimport { useSearchParams } from "next/navigation";';
   }
@@ -137,8 +139,8 @@ function run() {
   // Check 14: the Listing Facts panel was reverted (no prior git history ever had it); the
   // card's right panel is back to the single match-score/upload-CTA panel, shown at every
   // width (no lg:hidden split between a facts panel and a separately-hidden score panel).
-  const hasListingFactsPanel = code.includes("Listing facts") || code.includes("job-card-facts") || code.includes("tour-job-facts");
-  const scorePanels = code.match(/className="[^"]*bg-gradient-to-b from-\[#09151E\][^"]*"/g) || [];
+  const hasListingFactsPanel = cardCode.includes("Listing facts") || cardCode.includes("job-card-facts") || cardCode.includes("tour-job-facts");
+  const scorePanels = cardCode.match(/className="[^"]*bg-gradient-to-b from-\[#09151E\][^"]*"/g) || [];
   const hasDesktopHiddenScorePanel = scorePanels.some((c) => c.includes("lg:hidden"));
 
   if (hasListingFactsPanel || hasDesktopHiddenScorePanel || scorePanels.length === 0) {
@@ -152,7 +154,7 @@ function run() {
   }
 
   // Check 15: Exact layout and card size preservation for CTA
-  const hasMatchingCardSize = code.includes("w-44 shrink-0") && code.includes("rounded-[16px]");
+  const hasMatchingCardSize = cardCode.includes("w-44 shrink-0") && cardCode.includes("rounded-[16px]");
   if (!hasMatchingCardSize) {
     failures.push("LAYOUT SHIFT FAIL: Upload resume CTA must match desktop Fit Match panel size (w-44 shrink-0 rounded-[16px]).");
   } else {

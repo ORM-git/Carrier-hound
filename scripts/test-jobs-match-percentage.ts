@@ -16,6 +16,8 @@ function run() {
   }
 
   let code = fs.readFileSync(jobsPath, "utf-8");
+  let cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+  if (!code.includes('import JobCardContent from "@/components/jobs/JobCardContent"') || !/<JobCardContent\b[\s\S]*?matchScore=\{matchScore\}/.test(code)) throw new Error("Jobs must adopt shared card with computed score");
 
   if (isNegativeControl) {
     // Intentionally inject corruption: return a fake percentage when confirmedAt is missing
@@ -55,7 +57,7 @@ function run() {
   }
 
   // Check 3: CircularMatchRing is strictly guarded by matchScore !== null
-  const hasUnguardedRing = code.includes("<CircularMatchRing") && !code.includes("matchScore !== null");
+  const hasUnguardedRing = cardCode.includes("<CircularMatchRing") && !cardCode.includes("matchScore !== null");
   if (hasUnguardedRing) {
     failures.push("RENDER LEAK: CircularMatchRing rendered without matchScore !== null guard.");
   } else {
@@ -64,8 +66,8 @@ function run() {
 
   // Check 4: Listings-only card panel verification; zero unconfirmed percentage leak
   const hasListingFacts =
-    code.includes("Job Facts") ||
-    (code.includes("matchScore !== null ?") && code.includes("Upload your resume to see your real match"));
+    cardCode.includes("Job Facts") ||
+    (cardCode.includes("matchScore !== null ?") && cardCode.includes("Upload your resume to see your real match"));
   if (!hasListingFacts) {
     failures.push('PANEL ERROR: Missing listing facts panel or conditioned Fit Match panel.');
   } else {

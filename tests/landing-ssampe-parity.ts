@@ -127,11 +127,16 @@ function check(x: Input) {
   const LOW_OPEN = '<div className="landing-wrapper" ref={lowerRef}>';
   const t0 = x.page.indexOf(TOP_OPEN), l0 = x.page.indexOf(LOW_OPEN), end = x.page.lastIndexOf("</>");
   assert.ok(t0 > 0 && l0 > t0 && end > l0, "page must render .cm-top then .landing-wrapper as siblings");
-  const top = x.page.slice(t0 + TOP_OPEN.length, l0);
+  let top = x.page.slice(t0 + TOP_OPEN.length, l0);
   let lower = x.page.slice(l0 + LOW_OPEN.length, end);
 
   // --- 1. top fold: unchanged from f21504b (text, classes), only the three hrefs and the header logo ---
   const topSrc = read("tests/landing-ssampe-parity.source.html");
+  // Approved replacement is checked separately, then only the old card region is normalised
+  // to preserve every unrelated pinned hero/header/CTA assertion and negative control.
+  assert.match(top, /<LandingJobsPreview \/>/, "shared Jobs preview must remain mounted");
+  const pinnedCards = topSrc.match(/<div class="listings">([\s\S]*?)<\/div>\s*<\/div>\s*<\/section>/)![1];
+  top = top.replace("<LandingJobsPreview />", pinnedCards.replace(/class=/g, "className=").replace(/href="#"/g, 'href="/jobs"'));
   const CM_BADGE = '<a href="#" class="brand"><span class="brand-mark">CM</span>CareerMonke</a>';
   assert.ok(topSrc.includes(CM_BADGE), "fixture must still hold the original CM badge");
   const SRC_H1 = '<h1>Start jobma<span class="xx">XX</span>ing with AI</h1>';
@@ -140,6 +145,8 @@ function check(x: Input) {
   // uses the approved ssampe@3386250 ascending m/a/x/x treatment (same words, accessible name on the h1).
   const topBody = topSrc
     .match(/<body>([\s\S]*?)<script>/)![1]
+    .replace("1,240 new jobs found today", "Daily jobs count pending verification")
+    .replace('class="pill"', 'class="pill daily-count-pending" aria-hidden="true"')
     .replace(CM_BADGE, '<a href="#" class="brand" aria-label="Career Monke home"><img class="brand-logo" src="/careermonke-logo-v2.png" alt="" width="534" height="232"></a>')
     .replace(
       SRC_H1,
@@ -153,7 +160,7 @@ function check(x: Input) {
   assert.ok(!top.includes('className="xx"'), "flat gradient XX must be gone");
   assert.deepEqual(words(top), words(topBody.replace("Sign up free", "Sign up for free")), "top fold text must match f21504b word for word");
   assert.deepEqual(attrs(top, "className"), attrs(topBody, "class"), "top fold classes must match f21504b");
-  assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", "/jobs", "/jobs", "/jobs"], "top fold links: Sign in /login, Sign up for free /signup, View Jobs /jobs");
+  assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", "/jobs"], "top fold links: Sign in /login, Sign up for free /signup, View Jobs /jobs");
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
@@ -253,7 +260,10 @@ function check(x: Input) {
   const HERO_MARK = "/* ---- Approved hero text";
   const heroAt = x.topCss.indexOf(HERO_MARK);
   assert.ok(heroAt > 0, "top CSS must keep the approved hero text block last");
-  const topGot = decls(x.topCss.slice(0, heroAt))
+  const topGot = decls(x.topCss.slice(0, heroAt)
+    .replace(":where(*:not(.landing-actual-preview *))", "*")
+    .replace(":where(a:not(.landing-actual-preview a))", "a")
+    .replace(":where(button:not(.landing-actual-preview button))", "button"))
     .replace(/\.cm-top a,\.cm-top button\{transition:none\}\.cm-top \.ring\{box-shadow:none\}@media \(max-width:359px\)\{\.cm-top \.job\{grid-template-columns:minmax\(0,1fr\)\}\.cm-top \.meta\{grid-template-columns:auto\}\}$/, "")
     .replace(/\.cm-top,\.cm-top \*\{/, "*{")
     .replace(/(^|\})\.cm-top\{--navy/, "$1:root{--navy")
@@ -265,7 +275,13 @@ function check(x: Input) {
   assert.ok(topGot.includes(LOGO_RULE), "top CSS must size the header logo to 32px without distortion");
   assert.equal(topGot.replace(LOGO_RULE, BADGE_RULE), topWant, "top CSS must equal the f21504b CSS (scoped) plus the documented host neutralisers and the header-logo rule");
   // The appended hero block may only restyle the hero text (badge, kicker, headline, maxx letters, subtext).
-  const heroBlock = x.topCss.slice(heroAt);
+  const previewAt = x.topCss.indexOf("/* Reuse the actual Jobs renderer");
+  assert.ok(previewAt > heroAt, "shared preview CSS stays after hero block");
+  const previewBlock = x.topCss.slice(previewAt).replace(".cm-top .daily-count-pending { visibility:hidden; }", "");
+  assert.ok(x.topCss.includes(".cm-top .daily-count-pending { visibility:hidden; }"), "Pending automatic count must stay hidden");
+  assert.ok(previewBlock.includes("transition:none !important; animation:none !important;"), "shared preview reduced motion must disable stroke animation");
+  for (const selector of selectors(previewBlock)) assert.ok(selector.startsWith(".cm-top .landing-actual-preview"), "preview styles stay scoped to shared cards");
+  const heroBlock = x.topCss.slice(heroAt, previewAt);
   const HERO_SELECTORS = new Set(
     [".pill", ".pill-dot", ".kicker", "h1", "h1 .nw", "h1 .mx", "h1 .mx span", "h1 .m1", "h1 .m2", "h1 .m3", "h1 .m4", ".subhead"].map((s) => `.cm-top ${s}`)
   );
@@ -374,7 +390,7 @@ const mut = (k: keyof Omit<Input, "asset">, a: string | RegExp, b: string): Inpu
 const controls: [string, Input][] = [ // each must fail for its own reason (see WHY below)
   ["live ticker removed", mut("page", "<LiveLandingTicker />", "")],
   ["live ticker wrapper redesigned", mut("page", 'className="ls" aria-label="Companies hiring now"', 'className="new-strip" aria-label="Companies hiring now"')],
-  ["hero copy changed", mut("page", "1,240 new jobs found today", "1,250 new jobs found today")],
+  ["hero copy changed", mut("page", "Daily jobs count pending verification", "1,240 new jobs found today")],
   ["kicker removed", mut("page", '<p className="kicker">Skip LinkedIn competition</p>', "")],
   ["top link changed", mut("page", 'href="/login"', 'href="/signin"')],
   ["lower copy changed", mut("page", "Orissa here!", "Orissa here")],
@@ -442,8 +458,8 @@ const WHY: Record<string, RegExp> = {
   "AI-resume panel back": /lower page classes|removed block|lower page copy/,
   "footer GitHub link back": /lower page links/,
   "top CSS value changed": /top CSS must equal/,
-  "top CSS unscoped rule": /top CSS must equal|hero text CSS may not style anything else/,
-  "top CSS reaches lower": /top CSS must equal|hero text CSS may not style anything else/,
+  "top CSS unscoped rule": /top CSS must equal|hero text CSS may not style anything else|preview styles stay scoped/,
+  "top CSS reaches lower": /top CSS must equal|hero text CSS may not style anything else|preview styles stay scoped/,
   "lower CSS value changed": /lower CSS must equal/,
   "lower CSS global body": /lower CSS must equal|may not style anything else/,
   "keyframes collide": /lower CSS must equal/,
@@ -471,7 +487,7 @@ const WHY: Record<string, RegExp> = {
   "gradient XX back": /solid navy in the system font/,
   "hero font reverted to Jakarta": /approved 3386250 treatment: font-family/,
   "hero CSS changes spacing": /must not change layout, spacing or animation/,
-  "hero CSS styles the cards": /hero text CSS may not style anything else: \.cm-top \.card/,
+  "hero CSS styles the cards": /preview styles stay scoped/,
 };
 for (const [name, input] of controls) {
   assert.throws(() => check(input), (e: Error) => WHY[name].test(e.message), `negative control "${name}" must fail with /${WHY[name]?.source}/`);

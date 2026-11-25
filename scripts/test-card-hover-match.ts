@@ -17,6 +17,8 @@ function run() {
   }
 
   let code = fs.readFileSync(jobsPath, "utf-8");
+  let cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+  if (!code.includes('import JobCardContent from "@/components/jobs/JobCardContent"') || !/<JobCardContent\b[\s\S]*?matchScore=\{matchScore\}/.test(code)) throw new Error("Jobs must adopt shared card with computed score");
 
   if (isNegativeControl) {
     // Deliberate corruption: re-inject old hover panel, getDiagnosticsSummary, generic fallback, and hover hide
@@ -35,7 +37,7 @@ function run() {
   // CHECK 1: Brand & Asset Purity
   // Zero Jobright mascot, logo, or copy
   // ============================================================================
-  const lowerCode = code.toLowerCase();
+  const lowerCode = [code, cardCode].map(s => s.toLowerCase()).join(" ");
   const hasJobright = lowerCode.includes("jobright") || lowerCode.includes("monke-agent");
   if (hasJobright) {
     failures.push("PURITY FAIL: Detected Jobright mascot/copy/brand in src/app/jobs/page.tsx");
@@ -47,21 +49,21 @@ function run() {
   // CHECK 2: No Hover Panel or Popover of Any Kind on /jobs List Card
   // card-hover-match-panel and "Why this job is a match" MUST be absent from /jobs
   // ============================================================================
-  const hasHoverPanelTestId = code.includes('data-testid="card-hover-match-panel"');
+  const hasHoverPanelTestId = (code.includes('data-testid="card-hover-match-panel"') || cardCode.includes('data-testid="card-hover-match-panel"'));
   if (hasHoverPanelTestId) {
     failures.push("STRUCTURE FAIL: /jobs list card still contains data-testid='card-hover-match-panel'. Old hover panel must be removed.");
   } else {
     console.log("  [PASS] Check 2a: data-testid='card-hover-match-panel' successfully removed from /jobs");
   }
 
-  const hasWhyMatchTitle = code.includes("Why this job is a match");
+  const hasWhyMatchTitle = (code.includes("Why this job is a match") || cardCode.includes("Why this job is a match"));
   if (hasWhyMatchTitle) {
     failures.push("HOVER LEAK: Found 'Why this job is a match' text in src/app/jobs/page.tsx. Hover popover must be completely removed.");
   } else {
     console.log("  [PASS] Check 2b: Zero 'Why this job is a match' text in src/app/jobs/page.tsx");
   }
 
-  const hasHoverFadeOut = code.includes("sm:group-hover:opacity-0");
+  const hasHoverFadeOut = (code.includes("sm:group-hover:opacity-0") || cardCode.includes("sm:group-hover:opacity-0"));
   if (hasHoverFadeOut) {
     failures.push("LAYOUT STABILITY FAIL: Base card still crossfades out on hover (sm:group-hover:opacity-0 detected). Original card must always remain visible.");
   } else {
@@ -72,14 +74,14 @@ function run() {
   // CHECK 3: No getDiagnosticsSummary or Generic Fallback Copy in page.tsx
   // No card may render "Evaluated against your confirmed resume facts and requirements."
   // ============================================================================
-  const hasGetDiagnosticsSummary = code.includes("getDiagnosticsSummary");
+  const hasGetDiagnosticsSummary = (code.includes("getDiagnosticsSummary") || cardCode.includes("getDiagnosticsSummary"));
   if (hasGetDiagnosticsSummary) {
     failures.push("IMPORT/USAGE LEAK: src/app/jobs/page.tsx still references getDiagnosticsSummary. It must be completely removed.");
   } else {
     console.log("  [PASS] Check 3a: getDiagnosticsSummary is completely absent from src/app/jobs/page.tsx");
   }
 
-  const hasEvaluatedAgainst = code.includes("Evaluated against");
+  const hasEvaluatedAgainst = (code.includes("Evaluated against") || cardCode.includes("Evaluated against"));
   if (hasEvaluatedAgainst) {
     failures.push("COPY LEAK: src/app/jobs/page.tsx contains generic fallback 'Evaluated against'.");
   } else {
@@ -91,12 +93,12 @@ function run() {
   // Logo, badges, title, company, 2x3 metadata grid, Apply, Save
   // ============================================================================
   const hasBaseCardElements =
-    code.includes("<CompanyLogo") &&
-    code.includes("Early applicant") &&
-    code.includes("Remote Eligible") &&
-    code.includes("grid grid-cols-3 grid-rows-2") &&
-    code.includes('aria-label={isSaved ? "Unlike job" : "Save job"}') &&
-    code.includes("<span>Apply</span>");
+    cardCode.includes("<CompanyLogo") &&
+    cardCode.includes("Early applicant") &&
+    cardCode.includes("Remote Eligible") &&
+    cardCode.includes("grid grid-cols-3 grid-rows-2") &&
+    cardCode.includes('aria-label={isSaved ? "Unlike job" : "Save job"}') &&
+    cardCode.includes("<span>Apply</span>");
 
   if (!hasBaseCardElements) {
     failures.push("LAYOUT REGRESSION: One or more base card elements (CompanyLogo, badges, 2x3 grid, Save, Apply) missing from page.tsx.");
