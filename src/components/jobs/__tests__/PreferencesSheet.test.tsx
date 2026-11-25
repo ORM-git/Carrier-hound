@@ -263,3 +263,18 @@ describe("PreferencesSheet", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("Preferences focus lifecycle", () => {
+  it("focuses committed picker nodes synchronously and never schedules stale focus", () => {
+    setup();
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Frontend Developer, Backend Engineer/ }));
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search job functions" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(document.activeElement!);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+  });
+});
