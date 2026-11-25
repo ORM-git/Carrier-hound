@@ -288,7 +288,6 @@ export default function Footer({ isGuide = false }: FooterProps) {
         <div className="pt-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center">
             <BrandIcon variant="full" width={28} height={34} className="h-7 w-auto" />
-            <span className="ml-2 text-base font-bold">Career Monke</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#64748B]">
             <Link href="/about" className="hover:text-[#2563EB] transition-colors">
