@@ -46,11 +46,17 @@ import Link from "next/link";
 export interface ResumeUploadAndConfirmProps {
   onProfileConfirmed?: (profile: CandidateProfile) => void;
   isPro?: boolean;
+  selectedFile?: File | null;
+  manualEntry?: boolean;
+  reviewOnly?: boolean;
 }
 
 export default function ResumeUploadAndConfirm({
   onProfileConfirmed,
   isPro,
+  selectedFile = null,
+  manualEntry = false,
+  reviewOnly = false,
 }: ResumeUploadAndConfirmProps = {}) {
   const [isProUser, setIsProUser] = useState<boolean | null>(
     typeof isPro === "boolean" ? isPro : null
@@ -68,6 +74,7 @@ export default function ResumeUploadAndConfirm({
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [showExports, setShowExports] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newSkillInput, setNewSkillInput] = useState("");
   const [newCertInput, setNewCertInput] = useState("");
@@ -77,11 +84,14 @@ export default function ResumeUploadAndConfirm({
   const [initialProfileStr, setInitialProfileStr] = useState<string>("");
   const [showReplaceUpload, setShowReplaceUpload] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const parsedFileRef = useRef<File | null>(null);
+  const focusedFileRef = useRef<File | null>(null);
 
   // Load existing profile on mount
   useEffect(() => {
     getCandidateProfile().then((p) => {
-      setProfile(p);
+      setProfile(p || (manualEntry ? { name: "", email: "", phone: "", location: "", headline: "", summary: "", skills: [], experience: [], education: [], certifications: [], rawText: "", updatedAt: new Date().toISOString() } : null));
       if (p) {
         setInitialProfileStr(JSON.stringify(p));
       }
@@ -89,9 +99,10 @@ export default function ResumeUploadAndConfirm({
     }).catch(() => {
       setIsLoadingProfile(false);
     });
-  }, []);
+  }, [manualEntry]);
 
   const processFile = async (file: File) => {
+    if (reviewOnly) setProfile(null);
     const validation = validateResumeUploadFile(file);
     if (!validation.valid) {
       setParseError(validation.error || "Unsupported or invalid file.");
@@ -116,17 +127,38 @@ export default function ResumeUploadAndConfirm({
       if (isProUser && getGroqApiKey()) {
         profileResult = await extractResumeFactsWithGroq(text, parsed.profile);
       }
+      if (reviewOnly) parsedFileRef.current = file;
       setProfile(profileResult);
     } catch (err: any) {
       console.error("Resume parsing error:", err);
       setParseError(
-        err?.message || "Failed to parse resume document. You can try our sample profile or paste plain text."
+        err?.message || "Could not read this file. Try another file or enter your details manually."
       );
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  const processedFile = useRef<File | null>(null);
+  useEffect(() => {
+    if (!isLoadingProfile && selectedFile && processedFile.current !== selectedFile) {
+      processedFile.current = selectedFile;
+      void processFile(selectedFile);
+    }
+  // Process each chosen File once, after initial profile loading cannot overwrite its parsed facts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFile, isLoadingProfile]);
+
+  useEffect(() => {
+    if (!reviewOnly || !selectedFile || isParsing || !profile || parsedFileRef.current !== selectedFile || focusedFileRef.current === selectedFile) return;
+    const heading = reviewHeadingRef.current;
+    if (!heading) return;
+    focusedFileRef.current = selectedFile;
+    heading.focus({ preventScroll: true });
+    const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    heading.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  }, [reviewOnly, selectedFile, isParsing, profile]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -281,11 +313,11 @@ export default function ResumeUploadAndConfirm({
     if (!profile) return;
     const newExp: WorkExperienceItem = {
       id: `exp-${Date.now()}`,
-      company: "Company Name",
-      role: "Software Engineer",
-      startDate: "2023",
-      endDate: "Present",
-      bullets: ["Built scalable backend services and UI features."],
+      company: manualEntry ? "" : "Company Name",
+      role: manualEntry ? "" : "Software Engineer",
+      startDate: manualEntry ? "" : "2023",
+      endDate: manualEntry ? "" : "Present",
+      bullets: manualEntry ? [] : ["Built scalable backend services and UI features."],
       needsReview: false,
     };
     setProfile({
@@ -319,9 +351,9 @@ export default function ResumeUploadAndConfirm({
     if (!profile) return;
     const newEdu: EducationItem = {
       id: `edu-${Date.now()}`,
-      degree: "Bachelor of Science in Computer Science",
-      institution: "University Name",
-      year: "2022",
+      degree: manualEntry ? "" : "Bachelor of Science in Computer Science",
+      institution: manualEntry ? "" : "University Name",
+      year: manualEntry ? "" : "2022",
       needsReview: false,
     };
     setProfile({
@@ -517,14 +549,14 @@ export default function ResumeUploadAndConfirm({
   const renderFactReview = () => {
     if (!profile) return null;
     return (
-      <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-8 animate-fadeInUp">
+      <div className={manualEntry ? "space-y-8" : "bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-8 animate-fadeInUp"}>
         {/* Header & Verification Banner */}
         <div className="border-b border-slate-200 pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900">
-                Extracted Facts Review
-              </h3>
+              {!manualEntry && <h3 ref={reviewHeadingRef} tabIndex={-1} className="text-xl sm:text-2xl font-bold text-slate-900 focus:outline-none scroll-mt-24">
+                Review resume details
+              </h3>}
               {isDirty ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
                   <AlertTriangle className="w-3 h-3 text-amber-600" />
@@ -537,17 +569,19 @@ export default function ResumeUploadAndConfirm({
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                  Review Before Saving
+                  Not saved
                 </span>
               )}
             </div>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Verify your extracted profile details below. Changes need to be confirmed before saving. Click &apos;Confirm Facts &amp; Save Profile&apos; below to update your profile.
+              Review your details, then confirm and save.
             </p>
           </div>
 
           {/* ATS Download Quick Actions */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="space-y-2">
+            {(manualEntry || reviewOnly) && <button type="button" onClick={() => setShowExports(!showExports)} className="min-h-[44px] text-xs text-blue-700">{showExports ? "Hide exports" : "Export options"}</button>}
+            <div className={`${(manualEntry || reviewOnly) && !showExports ? "hidden" : "flex"} flex-wrap items-center gap-2`}>
             <button
               type="button"
               onClick={() => downloadAtsResumeDocx(profile)}
@@ -575,6 +609,7 @@ export default function ResumeUploadAndConfirm({
               <span>Score this resume against jobs</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
+            </div>
           </div>
         </div>
 
@@ -583,7 +618,7 @@ export default function ResumeUploadAndConfirm({
           <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>You have unsaved edits in your resume facts. Confirm and save below to update your match scores.</span>
+              <span>Unsaved changes. Confirm and save to update your scores.</span>
             </div>
             <button
               type="button"
@@ -604,7 +639,7 @@ export default function ResumeUploadAndConfirm({
               <strong className="font-bold">
                 {needsReviewTotal} item{needsReviewTotal > 1 ? "s" : ""} need{needsReviewTotal === 1 ? "s" : ""} review:
               </strong>{" "}
-              Some dates or company names were ambiguous in your resume file. Please verify them below before confirming.
+              Check flagged dates and company names.
             </div>
           </div>
         )}
@@ -744,7 +779,7 @@ export default function ResumeUploadAndConfirm({
           <div className="space-y-4 pt-2 border-t border-slate-100">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                3. Work Experience Timeline ({profile.experience.length})
+                3. Experience ({profile.experience.length})
               </h4>
               <button
                 type="button"
@@ -861,9 +896,9 @@ export default function ResumeUploadAndConfirm({
               ))}
               {profile.experience.length === 0 && (
                 <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/80 text-center space-y-1">
-                  <p className="text-xs font-medium text-slate-700">No work experience detected in document.</p>
+                  <p className="text-xs font-medium text-slate-700">No experience added.</p>
                   <p className="text-[11px] text-slate-500">
-                    If you are a fresher or student, this remains completely empty. If you have past roles to include, click &quot;Add Position&quot; above.
+                    Add a position, or leave blank.
                   </p>
                 </div>
               )}
@@ -890,9 +925,9 @@ export default function ResumeUploadAndConfirm({
 
               {profile.education.length === 0 && (
                 <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/80 text-center space-y-1">
-                  <p className="text-xs font-medium text-slate-700">No education detected.</p>
+                  <p className="text-xs font-medium text-slate-700">No education added.</p>
                   <p className="text-[11px] text-slate-500">
-                    Click &quot;Add Degree&quot; above if you wish to record degrees or coursework.
+                    Add a degree, or leave blank.
                   </p>
                 </div>
               )}
@@ -1005,17 +1040,17 @@ export default function ResumeUploadAndConfirm({
           </div>
 
           {/* Confirm & Save Actions (Sticky on Mobile) */}
-          <div className="pt-4 border-t border-slate-200 sticky bottom-0 bg-white/95 backdrop-blur-xs py-3 -mx-6 sm:mx-0 px-6 sm:px-0">
+          <div className={`pt-4 border-t border-slate-200 bg-white/95 py-3 ${manualEntry || reviewOnly ? "" : "sticky bottom-0 backdrop-blur-xs -mx-6 sm:mx-0 px-6 sm:px-0"}`}>
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-xs text-slate-500 text-center sm:text-left">
                 {isSaved ? (
                   <span className="text-emerald-600 font-bold flex items-center gap-1 justify-center sm:justify-start">
                     <CheckCircle2 className="w-4 h-4" />
-                    Facts confirmed and synced to your profile!
+                    Resume saved.
                   </span>
                 ) : (
                   <span>
-                    Saving updates your real-time match scores across all job openings.
+                    Confirm details to update your match scores.
                   </span>
                 )}
               </div>
@@ -1032,7 +1067,7 @@ export default function ResumeUploadAndConfirm({
                   ) : (
                     <>
                       <ShieldCheck className="w-4 h-4 text-blue-200" />
-                      <span>Confirm Facts & Save Profile</span>
+                      <span>Confirm & save</span>
                     </>
                   )}
                 </button>
@@ -1065,6 +1100,12 @@ export default function ResumeUploadAndConfirm({
       </div>
     );
   }
+
+  if (reviewOnly || manualEntry) return <div className="space-y-4">
+    {isParsing && <p role="status">Reading your resume...</p>}
+    {parseError && <p role="alert" className="text-sm text-amber-800">{parseError}</p>}
+    {!isParsing && profile && renderFactReview()}
+  </div>;
 
   return (
     <div className="space-y-8">
