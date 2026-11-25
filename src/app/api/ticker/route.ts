@@ -57,6 +57,7 @@ function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: st
   if (!rawLogoUrl || typeof rawLogoUrl !== "string") return null;
   try {
     const parsed = new URL(rawLogoUrl);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) return null;
     if (supabaseUrl) {
       try {
         const expectedHost = new URL(supabaseUrl).host;
@@ -142,6 +143,7 @@ async function getHandler(req: Request) {
       company: string;
       cleanCompany: string;
       company_id?: string | null;
+      logo_url?: string | null;
       title: string;
       rawTimestamp: string;
     }> = [];
@@ -155,7 +157,7 @@ async function getHandler(req: Request) {
 
       const { data: pageRows, error: jobsError } = await supabase
         .from("jobs")
-        .select("id, company, company_id, title, posted_at, created_at").or(VISIBLE_SOURCE_FILTER)
+        .select("id, company, company_id, title, posted_at, created_at, logo_url").or(VISIBLE_SOURCE_FILTER)
         .eq("status", "active")
         .eq("is_active", true)
         .order("posted_at", { ascending: false, nullsFirst: false })
@@ -222,6 +224,7 @@ async function getHandler(req: Request) {
           company: row.company,
           cleanCompany,
           company_id: row.company_id,
+          logo_url: row.logo_url,
           title: row.title,
           rawTimestamp,
         });
@@ -344,6 +347,10 @@ async function getHandler(req: Request) {
       } else if (cleanCompany && nameToLogo.has(cleanCompany.toLowerCase())) {
         resolvedLogo = nameToLogo.get(cleanCompany.toLowerCase())!;
       }
+
+      // Job-level assets must belong to this project, not another Supabase tenant.
+      const jobLogo = sanitizeLogoUrl(row.logo_url, supabaseUrl);
+      if (!resolvedLogo && jobLogo && new URL(jobLogo).host === new URL(supabaseUrl).host) resolvedLogo = jobLogo;
 
       tickerItems.push({
         company: cleanCompany,
