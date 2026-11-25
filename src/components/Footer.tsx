@@ -162,7 +162,7 @@ function LandingFooter() {
 
 /* Prompt 2 Rebuild: Public shell footer for non-landing pages */
 const publicFooterLinkClass =
-  "inline-flex items-center min-h-[44px] sm:min-h-[28px] text-[14px] text-[#475569] hover:text-[#2563EB] transition-colors duration-200";
+  "inline-flex items-center min-h-[28px] text-[14px] text-[#475569] hover:text-[#2563EB] transition-colors duration-200";
 
 export default function Footer({ isGuide = false }: FooterProps) {
   const pathname = usePathname();
@@ -173,16 +173,16 @@ export default function Footer({ isGuide = false }: FooterProps) {
   }
 
   return (
-    <footer className="w-full bg-white text-[#0F172A] border-t border-[#E2E8F0] pt-12 pb-24 sm:pb-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+    <footer className="w-full bg-white text-[#0F172A] border-t border-[#E2E8F0] pt-4 pb-[calc(1.25rem+var(--cm-cookie-notice-height,0px))] sm:pt-8 sm:pb-[calc(2rem+var(--cm-cookie-notice-height,0px))]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-6">
         {/* 4-column links block: existing links only, no support email, no fake social icons */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="columns-2 md:columns-auto md:grid md:grid-cols-4 gap-x-6 md:gap-8">
           {/* Column 1: Jobs & Discovery */}
-          <div className="space-y-3">
+          <div className="break-inside-avoid mb-3 md:mb-0 space-y-0.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">
               Discovery
             </h3>
-            <ul className="space-y-2">
+            <ul className="space-y-0">
               <li>
                 <Link href="/jobs" prefetch={false} className={publicFooterLinkClass}>
                   Live Job Search
@@ -207,11 +207,11 @@ export default function Footer({ isGuide = false }: FooterProps) {
           </div>
 
           {/* Column 2: Platform */}
-          <div className="space-y-3">
+          <div className="break-inside-avoid mb-3 md:mb-0 space-y-0.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">
               Platform
             </h3>
-            <ul className="space-y-2">
+            <ul className="space-y-0">
               <li>
                 <Link href="/tracker" prefetch={false} className={publicFooterLinkClass}>
                   Applications Tracker
@@ -226,11 +226,11 @@ export default function Footer({ isGuide = false }: FooterProps) {
           </div>
 
           {/* Column 3: Account */}
-          <div className="space-y-3">
+          <div className="break-inside-avoid mb-3 md:mb-0 space-y-0.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">
               Account
             </h3>
-            <ul className="space-y-2">
+            <ul className="space-y-0">
               <li>
                 <Link href="/login" className={publicFooterLinkClass}>
                   Log In
@@ -245,11 +245,11 @@ export default function Footer({ isGuide = false }: FooterProps) {
           </div>
 
           {/* Column 4: Legal & Policies */}
-          <div className="space-y-3">
+          <div className="break-inside-avoid mb-3 md:mb-0 space-y-0.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#0F172A]">
-              Legal
+              Information
             </h3>
-            <ul className="space-y-2">
+            <ul className="space-y-0">
               <li>
                 <Link href="/privacy-policy" prefetch={false} className={publicFooterLinkClass}>
                   Privacy Policy
@@ -285,7 +285,7 @@ export default function Footer({ isGuide = false }: FooterProps) {
         </div>
 
         {/* Bottom row: Brand & Copyright line */}
-        <div className="pt-6 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+        <div className="pt-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center">
             <BrandIcon variant="full" width={28} height={34} className="h-7 w-auto" />
             <span className="ml-2 text-base font-bold">Career Monke</span>

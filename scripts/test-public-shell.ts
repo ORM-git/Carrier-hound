@@ -101,7 +101,15 @@ function run() {
   }
 
   // Check 8: Footer: 4-column links block on white with top border #E2E8F0, copyright line
-  const has4ColFooter = footerCode.includes("grid-cols-2 md:grid-cols-4") && footerCode.includes("border-t border-[#E2E8F0]");
+  // The four link groups share ONE container; its class tokens must keep the 2-column mobile flow and the 4-column desktop grid.
+  const publicFooterSource = footerCode.slice(footerCode.indexOf("export default function Footer"));
+  const footerGridTokens = Array.from(publicFooterSource.matchAll(/className="([^"]*)"/g))
+    .map((m) => m[1].split(/\s+/))
+    .find((tokens) => tokens.includes("md:grid-cols-4"));
+  const has4ColFooter =
+    Boolean(footerGridTokens) &&
+    ["columns-2", "md:columns-auto", "md:grid", "md:grid-cols-4"].every((token) => footerGridTokens!.includes(token)) &&
+    footerCode.includes("border-t border-[#E2E8F0]");
   const hasCopyright = footerCode.includes("Olive Ridley Media Private Limited. All rights reserved.");
   if (!has4ColFooter || !hasCopyright) {
     failures.push("FOOTER FAIL: Footer must have simple 4-column links block on white with top border #E2E8F0 and copyright line.");
