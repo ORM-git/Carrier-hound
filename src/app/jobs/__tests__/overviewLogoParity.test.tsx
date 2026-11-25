@@ -86,7 +86,7 @@ describe("Pro: listing card and Overview show the same logo", () => {
     fireEvent.click(screen.getAllByText("Fixture Iso B")[0]);
     await flush();
     expect(overviewImgSrc()).toBeNull(); // letter tile: B has no logo, no domain and an ATS apply URL
-    expect(overviewRow().innerHTML).not.toContain("iso-a.invalid");
+    expect(overviewRow().outerHTML).not.toContain("iso-a.invalid");
   });
 
   it("direct link / reload: uses the detail's own logo fields", async () => {
