@@ -1,0 +1,146 @@
+{
+  "version": "synthetic-v1",
+  "synthetic": true,
+  "description": "SYNTHETIC test fixture authored for the offline ranking-eval harness (checklist #62). Fictional companies and profiles; labels were written by the harness author from the job text and stated preferences. Proves the harness runs end to end. It is NOT evidence of real recommendation quality.",
+  "referenceTime": "2026-11-25T00:00:00Z",
+  "jobs": [
+    { "id": "j01", "title": "Senior Frontend Engineer", "company": "Acme Labs", "category": "software", "location": "Remote - US", "country_code": "US", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "React, TypeScript, design systems.", "skills": ["React", "TypeScript"] },
+    { "id": "j02", "title": "Frontend Engineer", "company": "Beta Works", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "React and Next.js product UI.", "skills": ["React", "Next.js"] },
+    { "id": "j03", "title": "Junior Frontend Developer", "company": "Gamma Soft", "category": "software", "location": "Austin, TX, United States", "country_code": "US", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-20T09:00:00Z", "description": "HTML, CSS, JavaScript.", "skills": ["JavaScript"] },
+    { "id": "j04", "title": "Staff Frontend Engineer", "company": "Delta Cloud", "category": "software", "location": "Remote - US", "country_code": "US", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-10T09:00:00Z", "description": "Lead frontend architecture.", "skills": ["React"] },
+    { "id": "j05", "title": "React Developer", "company": "Epsilon GmbH", "category": "software", "location": "Berlin, Germany", "country_code": "DE", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "React SPA development.", "skills": ["React"] },
+    { "id": "j06", "title": "Backend Engineer", "company": "Zeta Systems", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "description": "Go and Postgres services.", "skills": ["Go", "PostgreSQL"] },
+    { "id": "j07", "title": "Data Scientist", "company": "Eta Analytics", "category": "data", "location": "Bangalore, India", "country_code": "IN", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Modelling with Python and SQL.", "skills": ["Python", "SQL"] },
+    { "id": "j08", "title": "Senior Data Scientist", "company": "Theta AI", "category": "data", "location": "Hyderabad, India", "country_code": "IN", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "Experimentation and causal inference.", "skills": ["Python", "Statistics"] },
+    { "id": "j09", "title": "Senior Data Scientist", "company": "Iota Health", "category": "data", "location": "San Francisco, CA, United States", "country_code": "US", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Clinical ML.", "skills": ["Python"] },
+    { "id": "j10", "title": "Machine Learning Engineer", "company": "Kappa Vision", "category": "data", "location": "Remote - India", "country_code": "IN", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-19T09:00:00Z", "description": "Computer vision pipelines.", "skills": ["PyTorch"] },
+    { "id": "j11", "title": "Data Analyst", "company": "Lambda Retail", "category": "data", "location": "Pune, India", "country_code": "IN", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-18T09:00:00Z", "description": "SQL dashboards in Tableau.", "skills": ["SQL", "Tableau"] },
+    { "id": "j12", "title": "Account Executive", "company": "Mu Software", "category": "sales", "location": "Berlin, Germany", "country_code": "DE", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Mid-market SaaS sales.", "skills": ["Salesforce"] },
+    { "id": "j13", "title": "Junior Account Executive", "company": "Nu Payments", "category": "sales", "location": "Munich, Germany", "country_code": "DE", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Inbound SMB sales.", "skills": ["CRM"] },
+    { "id": "j14", "title": "Sales Development Representative", "company": "Xi Security", "category": "sales", "location": "Hamburg, Germany", "country_code": "DE", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-20T09:00:00Z", "description": "Outbound prospecting.", "skills": ["Outreach"] },
+    { "id": "j15", "title": "Senior Account Executive", "company": "Omicron Data", "category": "sales", "location": "London, United Kingdom", "country_code": "GB", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "Enterprise sales.", "skills": ["Salesforce"] },
+    { "id": "j16", "title": "Lead Product Designer", "company": "Pi Studio", "category": "design", "location": "Amsterdam, Netherlands", "country_code": "NL", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Lead design for a B2B platform.", "skills": ["Figma"] },
+    { "id": "j17", "title": "Product Designer", "company": "Rho Mobility", "category": "design", "location": "Paris, France", "country_code": "FR", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "description": "Mobile app design.", "skills": ["Figma"] },
+    { "id": "j18", "title": "Principal Product Designer", "company": "Sigma Finance", "category": "design", "location": "New York, NY, United States", "country_code": "US", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Design leadership.", "skills": ["Figma"] },
+    { "id": "j19", "title": "UX Designer", "company": "Tau Commerce", "category": "design", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-20T09:00:00Z", "description": "User research and UX.", "skills": ["Research"] },
+    { "id": "j20", "title": "Graphic Designer", "company": "Upsilon Media", "category": "design", "location": "Madrid, Spain", "country_code": "ES", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-19T09:00:00Z", "description": "Brand and print.", "skills": ["Illustrator"] },
+    { "id": "j21", "title": "Backend Engineer Intern", "company": "Phi Robotics", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "internship", "posted_at": "2026-11-23T09:00:00Z", "salary_min": 20000, "salary_max": 30000, "currency": "USD", "salary_period": "yearly", "description": "Python services.", "skills": ["Python"] },
+    { "id": "j22", "title": "Junior Backend Engineer", "company": "Chi Logistics", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "salary_min": 85000, "salary_max": 100000, "currency": "USD", "salary_period": "yearly", "description": "Node.js APIs.", "skills": ["Node.js"] },
+    { "id": "j23", "title": "Backend Engineer", "company": "Psi Fintech", "category": "software", "location": "Remote - US", "country_code": "US", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "salary_min": 120000, "salary_max": 150000, "currency": "USD", "salary_period": "yearly", "description": "Payments backend in Java.", "skills": ["Java"] },
+    { "id": "j24", "title": "Senior Backend Engineer", "company": "Omega Games", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Game servers in C++.", "skills": ["C++"] },
+    { "id": "j25", "title": "Product Manager", "company": "Alpha Two", "category": "product", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "Own the roadmap.", "skills": ["Roadmapping"] },
+    { "id": "j26", "title": "Data Analyst", "company": "Beta Two", "category": "data", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "SQL and Tableau reporting, Python automation.", "skills": ["SQL", "Tableau", "Python"] },
+    { "id": "j27", "title": "Business Intelligence Analyst", "company": "Gamma Two", "category": "data", "location": "Toronto, Canada", "country_code": "CA", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "description": "SQL modelling and dashboards.", "skills": ["SQL"] }
+  ],
+  "profiles": [
+    {
+      "id": "syn-fe-mid-remote-us",
+      "split": "eval",
+      "description": "Mid-level frontend engineer, open to remote, United States.",
+      "answers": { "roles": ["Frontend Engineer"], "experienceLevel": "mid", "remotePreference": "remote", "locations": ["United States"] },
+      "candidates": ["j01", "j02", "j03", "j04", "j05", "j06", "j19", "j25"],
+      "labels": {
+        "j02": { "relevance": 3, "eligibility": "eligible" },
+        "j01": { "relevance": 2, "eligibility": "eligible" },
+        "j03": { "relevance": 1, "eligibility": "eligible" },
+        "j04": { "relevance": 1, "eligibility": "eligible" },
+        "j05": { "relevance": 2, "eligibility": "ineligible" },
+        "j06": { "relevance": 0, "eligibility": "eligible" },
+        "j25": { "relevance": 0, "eligibility": "eligible" }
+      },
+      "labelProvenance": "synthetic-author (j19 deliberately left unjudged)"
+    },
+    {
+      "id": "syn-ds-senior-hybrid-in",
+      "split": "eval",
+      "description": "Senior data scientist, hybrid, India.",
+      "answers": { "roles": ["Data Scientist"], "experienceLevel": "senior", "remotePreference": "hybrid", "locations": ["India"] },
+      "candidates": ["j07", "j08", "j09", "j10", "j11", "j26", "j27"],
+      "labels": {
+        "j08": { "relevance": 3, "eligibility": "eligible" },
+        "j07": { "relevance": 2, "eligibility": "eligible" },
+        "j10": { "relevance": 2, "eligibility": "eligible" },
+        "j09": { "relevance": 3, "eligibility": "ineligible" },
+        "j11": { "relevance": 1, "eligibility": "eligible" },
+        "j26": { "relevance": 1, "eligibility": "eligible" },
+        "j27": { "relevance": 0, "eligibility": "ineligible" }
+      },
+      "labelProvenance": "synthetic-author"
+    },
+    {
+      "id": "syn-sales-entry-onsite-de",
+      "split": "eval",
+      "description": "Entry-level account executive, on-site, Germany.",
+      "answers": { "roles": ["Account Executive"], "experienceLevel": "entry", "remotePreference": "onsite", "locations": ["Germany"] },
+      "candidates": ["j05", "j12", "j13", "j14", "j15", "j20"],
+      "labels": {
+        "j13": { "relevance": 3, "eligibility": "eligible" },
+        "j12": { "relevance": 2, "eligibility": "eligible" },
+        "j14": { "relevance": 2, "eligibility": "eligible" },
+        "j15": { "relevance": 0, "eligibility": "ineligible" },
+        "j05": { "relevance": 0, "eligibility": "eligible" }
+      },
+      "labelProvenance": "synthetic-author (j20 deliberately left unjudged)"
+    },
+    {
+      "id": "syn-design-lead-any-eu",
+      "split": "eval",
+      "description": "Lead product designer, any work model, European Union.",
+      "answers": { "roles": ["Product Designer"], "experienceLevel": "lead", "remotePreference": "any", "locations": ["European Union"] },
+      "candidates": ["j16", "j17", "j18", "j19", "j20", "j25"],
+      "labels": {
+        "j16": { "relevance": 3, "eligibility": "eligible" },
+        "j17": { "relevance": 2, "eligibility": "eligible" },
+        "j18": { "relevance": 2, "eligibility": "ineligible" },
+        "j19": { "relevance": 1, "eligibility": "eligible" },
+        "j20": { "relevance": 0, "eligibility": "eligible" },
+        "j25": { "relevance": 0, "eligibility": "eligible" }
+      },
+      "labelProvenance": "synthetic-author"
+    },
+    {
+      "id": "syn-resume-only-analyst",
+      "split": "eval",
+      "description": "No saved preferences; resume signals only (data analyst, SQL/Tableau/Python).",
+      "answers": { "resumeProfile": { "jobTitles": ["Data Analyst"], "skills": ["SQL", "Tableau", "Python"], "preferredRoles": [] } },
+      "candidates": ["j02", "j07", "j11", "j12", "j26", "j27"],
+      "labels": {
+        "j26": { "relevance": 3, "eligibility": "eligible" },
+        "j11": { "relevance": 2, "eligibility": "eligible" },
+        "j27": { "relevance": 2, "eligibility": "eligible" },
+        "j07": { "relevance": 1, "eligibility": "eligible" },
+        "j02": { "relevance": 0, "eligibility": "eligible" },
+        "j12": { "relevance": 0, "eligibility": "eligible" }
+      },
+      "labelProvenance": "synthetic-author"
+    },
+    {
+      "id": "syn-be-entry-remote-minsalary",
+      "split": "eval",
+      "description": "Entry-level backend engineer, remote, minimum salary 80,000 USD.",
+      "answers": { "roles": ["Backend Engineer"], "experienceLevel": "entry", "remotePreference": "remote", "minSalary": 80000, "salaryCurrency": "USD" },
+      "candidates": ["j06", "j21", "j22", "j23", "j24"],
+      "labels": {
+        "j22": { "relevance": 3, "eligibility": "eligible" },
+        "j06": { "relevance": 2, "eligibility": "eligible" },
+        "j23": { "relevance": 2, "eligibility": "eligible" },
+        "j21": { "relevance": 2, "eligibility": "ineligible" },
+        "j24": { "relevance": 1, "eligibility": "ineligible" }
+      },
+      "labelProvenance": "synthetic-author"
+    },
+    {
+      "id": "syn-no-relevant-pool",
+      "split": "eval",
+      "description": "Nurse profile against an off-field pool: no relevant label, so NDCG is undefined (reported, not zero).",
+      "answers": { "roles": ["Registered Nurse"], "experienceLevel": "mid" },
+      "candidates": ["j02", "j12", "j25"],
+      "labels": {
+        "j02": { "relevance": 0, "eligibility": "eligible" },
+        "j12": { "relevance": 0, "eligibility": "eligible" },
+        "j25": { "relevance": 0, "eligibility": "eligible" }
+      },
+      "labelProvenance": "synthetic-author"
+    }
+  ]
+}
