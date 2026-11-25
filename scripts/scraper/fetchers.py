@@ -56,7 +56,8 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_iso_date(raw: Any, *, missing_as_now: bool = True) -> str | None:
+def _normalize_iso_date(raw: Any, *, missing_as_now: bool = False) -> str | None:
+    # A missing/invalid source date stays unknown (None): ingestion time is not a posting date (#38).
     if raw is None or raw == "" or isinstance(raw, bool):
         return _iso_now() if missing_as_now else None
     if isinstance(raw, (int, float)):
@@ -231,7 +232,7 @@ def build_normalized_job(
     country_code_hint: str | None = None,
     infer_country_from_location: bool = True,
     country_unknown_as_location: bool = True,
-    posted_at_missing_as_now: bool = True,
+    posted_at_missing_as_now: bool = False,
     description_limit: int | None = 4000,
     description_fallback: bool = True,
     remote_eligibility: str | None = None,
