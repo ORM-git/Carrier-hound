@@ -617,9 +617,9 @@ export default function ResumePage() {
           <div data-testid="resume-empty-state" className="bg-white rounded-2xl ring-1 ring-slate-200 p-5 sm:p-6 max-w-xl mx-auto space-y-4">
             <h2 className="text-lg font-bold">Add your resume</h2>
             <p className="text-sm text-slate-600">Upload a file or enter your details.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" data-testid="empty-upload-resume-button" onClick={() => fileInputRef.current?.click()} className="min-h-[44px] px-3 py-2 rounded-full bg-blue-600 text-white font-semibold">Upload resume</button>
-              <button type="button" onClick={() => router.push("/resume/manual")} className="min-h-[44px] px-3 py-2 rounded-full border border-slate-300 font-semibold">Fill manually</button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button type="button" data-testid="empty-upload-resume-button" onClick={() => fileInputRef.current?.click()} className="min-h-[44px] px-5 py-2 rounded-full bg-blue-600 text-white font-semibold">Upload resume</button>
+              <button type="button" onClick={() => router.push("/resume/manual")} className="min-h-[44px] px-5 py-2 rounded-full border border-slate-300 font-semibold">Fill manually</button>
             </div>
             <p className="text-xs text-slate-500">PDF, DOCX or TXT. Up to 10MB.</p>
           </div>
