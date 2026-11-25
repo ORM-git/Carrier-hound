@@ -19,7 +19,7 @@
   --s3: clamp(12px, 2.6vh, 32px);
 }
 
-.cm-top, .cm-top * { box-sizing: border-box; margin: 0; padding: 0; }
+.cm-top, .cm-top :where(*:not(.landing-actual-preview *)) { box-sizing: border-box; margin: 0; padding: 0; }
 .cm-top {
   font-family: var(--font-cm-jakarta), "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--ink);
@@ -27,8 +27,8 @@
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
 }
-.cm-top a { color: inherit; text-decoration: none; }
-.cm-top button { font: inherit; cursor: pointer; border: 0; background: none; }
+.cm-top :where(a:not(.landing-actual-preview a)) { color: inherit; text-decoration: none; }
+.cm-top :where(button:not(.landing-actual-preview button)) { font: inherit; cursor: pointer; border: 0; background: none; }
 
 .cm-top .container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
@@ -309,4 +309,16 @@
   .cm-top .kicker { font-size: 28px; }
   .cm-top h1 { font-size: 72px; }
   .cm-top .subhead { max-width: 46ch; font-size: 16px; line-height: 20px; }
+}
+
+/* Reuse the actual Jobs renderer without the historical landing reset overriding
+   Tailwind spacing, borders and typography within the two preview cards. */
+.cm-top .landing-actual-preview { font-family:var(--font-inter),-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+.cm-top .landing-actual-preview .preview-heading { margin:0 0 12px; color:#475569; font-size:12px; text-align:center; }
+
+/* Reserve the original count pill space while its verified value is still blocked. */
+.cm-top .daily-count-pending { visibility:hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-top .landing-actual-preview svg * { transition:none !important; animation:none !important; }
 }

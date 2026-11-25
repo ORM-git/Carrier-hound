@@ -135,7 +135,8 @@ function run() {
     if (!pageCode.includes("isEarlyApplicant(job)")) {
       failures.push("FAIL: src/app/jobs/page.tsx must invoke isEarlyApplicant(job) for isRecent badge determination.");
     }
-    if (!pageCode.includes("Early applicant")) {
+    const cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+    if (!pageCode.includes("isRecent={isRecent}") || !cardCode.includes("Early applicant") || !cardCode.includes("isRecent ?")) {
       failures.push("FAIL: Badge text 'Early applicant' must remain in src/app/jobs/page.tsx.");
     }
   }

@@ -18,16 +18,18 @@ function run() {
   }
 
   let jobsPageCode = fs.readFileSync(jobsPagePath, "utf-8");
+  let cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+  if (!jobsPageCode.includes('import JobCardContent from "@/components/jobs/JobCardContent"') || !/<JobCardContent\b[\s\S]*?matchScore=\{matchScore\}/.test(jobsPageCode)) throw new Error("Jobs must adopt shared card with computed score");
   let menuCompCode = fs.readFileSync(menuCompPath, "utf-8");
 
   if (isNegativeControl) {
     // In-memory mutation to prove non-zero exit on invalid conditions
-    jobsPageCode = jobsPageCode.replace(/JobCardMenu/g, "FakeMissingMenu");
-    jobsPageCode = jobsPageCode.replace(/border-b border-\[#E2E8F0\]/g, "");
-    jobsPageCode = jobsPageCode.replace(/job-card-posted-tag/g, "corrupted-tag");
-    jobsPageCode = jobsPageCode.replace(/getTagColorClass/g, "corruptedColor");
-    jobsPageCode = jobsPageCode.replace(/font-semibold text-\[#0F172A\]/g, "text-gray-200");
-    jobsPageCode = jobsPageCode.replace(/Remote Eligible/g, "Corrupted Badge");
+    cardCode = cardCode.replace(/JobCardMenu/g, "FakeMissingMenu");
+    cardCode = cardCode.replace(/border-b border-\[#E2E8F0\]/g, "");
+    cardCode = cardCode.replace(/job-card-posted-tag/g, "corrupted-tag");
+    cardCode = cardCode.replace(/getTagColorClass/g, "corruptedColor");
+    cardCode = cardCode.replace(/font-semibold text-\[#0F172A\]/g, "text-gray-200");
+    cardCode = cardCode.replace(/Remote Eligible/g, "Corrupted Badge");
     jobsPageCode = jobsPageCode.replace(/formatDesktopPillTime/g, "formatBrokenPillTime");
     jobsPageCode = jobsPageCode.replace(/getCompanyTagPills\(job\.category\)/g, "getCompanyTagPills((job as any))");
     menuCompCode = menuCompCode.replace(/Remove From List/g, "Delete All");
@@ -44,8 +46,8 @@ function run() {
   // 1. CARD STRUCTURE & HORIZONTAL DIVIDERS (DESKTOP & MOBILE)
   // -------------------------------------------------------------------------
   // Must have JobCardMenu integrated on both desktop and mobile
-  const hasJobCardMenuImport = jobsPageCode.includes('import { JobCardMenu } from "@/components/jobs/JobCardMenu";');
-  const jobCardMenuUsages = (jobsPageCode.match(/<JobCardMenu/g) || []).length;
+  const hasJobCardMenuImport = cardCode.includes('import { JobCardMenu } from "@/components/jobs/JobCardMenu";');
+  const jobCardMenuUsages = (cardCode.match(/<JobCardMenu/g) || []).length;
   if (!hasJobCardMenuImport || jobCardMenuUsages < 2) {
     failures.push(`CARD STRUCTURE FAIL: JobCardMenu must be imported and rendered in both desktop and mobile views (found ${jobCardMenuUsages} occurrences).`);
   } else {
@@ -53,7 +55,7 @@ function run() {
   }
 
   // Thin 1px light gray horizontal dividers inside the card
-  const hasDividers = (jobsPageCode.match(/border-b border-\[#E2E8F0\]/g) || []).length >= 2;
+  const hasDividers = cardCode.includes('className="border-b border-[#E2E8F0]"') && cardCode.includes("pt-3 border-t border-[#E2E8F0] mt-1");
   if (!hasDividers) {
     failures.push("DIVIDERS FAIL: Card must include thin 1px light gray horizontal dividers (border-b border-[#E2E8F0]).");
   } else {
@@ -64,10 +66,10 @@ function run() {
   // 2. TOP ROW PILL TAGS (POSTED TIME & EARLY APPLICANT) & REMOTE ELIGIBLE
   // -------------------------------------------------------------------------
   // Posted time pill: Clock SVG icon, soft CM-blue pill, rendered ONLY from real postedAt via formatDesktopPillTime
-  const hasPostedPill = jobsPageCode.includes("data-testid=\"job-card-posted-tag\"") &&
-    jobsPageCode.includes("job.postedAt && postedRelative ?") &&
-    jobsPageCode.includes("<Clock className=\"w-3 h-3 text-[#2563EB]") &&
-    jobsPageCode.includes("bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]") &&
+  const hasPostedPill = cardCode.includes("data-testid=\"job-card-posted-tag\"") &&
+    cardCode.includes("job.postedAt && postedRelative ?") &&
+    cardCode.includes("<Clock className=\"w-3 h-3 text-[#2563EB]") &&
+    cardCode.includes("bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]") &&
     jobsPageCode.includes("formatDesktopPillTime(job.postedAt)");
   if (!hasPostedPill) {
     failures.push("TOP PILL FAIL: Card top row must include posted-time tag with Clock SVG icon in soft CM-blue pill derived strictly from real postedAt via formatDesktopPillTime (empty when missing).");
@@ -76,11 +78,11 @@ function run() {
   }
 
   // Early applicant pill: strictly derived from real data under 24h with matching CM-blue tint
-  const hasEarlyPill = jobsPageCode.includes("data-testid=\"job-card-early-tag\"") &&
-    jobsPageCode.includes("isRecent ?") &&
+  const hasEarlyPill = cardCode.includes("data-testid=\"job-card-early-tag\"") &&
+    cardCode.includes("isRecent ?") &&
     jobsPageCode.includes("isPostedUnder24Hours") &&
-    jobsPageCode.includes("Early applicant") &&
-    jobsPageCode.includes("className=\"h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center\"");
+    cardCode.includes("Early applicant") &&
+    cardCode.includes("className=\"h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center\"");
   if (!hasEarlyPill) {
     failures.push("EARLY APPLICANT FAIL: Card top row must include Early applicant tag in CM-blue family derived strictly from real data posted within 24h.");
   } else {
@@ -88,9 +90,9 @@ function run() {
   }
 
   // Remote Eligible badge on desktop top row
-  const hasRemoteBadge = jobsPageCode.includes("job.remote &&") &&
-    jobsPageCode.includes("Remote Eligible") &&
-    jobsPageCode.includes("bg-slate-100 text-[#475569]");
+  const hasRemoteBadge = cardCode.includes("job.remote &&") &&
+    cardCode.includes("Remote Eligible") &&
+    cardCode.includes("bg-slate-100 text-[#475569]");
   if (!hasRemoteBadge) {
     failures.push("REMOTE BADGE FAIL: Desktop top row must preserve the Remote Eligible badge when job.remote is true.");
   } else {
@@ -101,9 +103,9 @@ function run() {
   // 3. COMPANY & CATEGORY/TYPE COLORED PILLS
   // -------------------------------------------------------------------------
   // Category words rendered as separate small colored pills with soft tints by stable hash; only real category
-  const hasCompanyPills = jobsPageCode.includes("data-testid=\"job-card-category-pills\"") &&
-    jobsPageCode.includes("companyPills.length > 0 &&") &&
-    jobsPageCode.includes("getTagColorClass(pill)") &&
+  const hasCompanyPills = cardCode.includes("data-testid=\"job-card-category-pills\"") &&
+    cardCode.includes("companyPills.length > 0 &&") &&
+    cardCode.includes("getTagColorClass(pill)") &&
     jobsPageCode.includes("getCompanyTagPills(job.category)") &&
     jobsPageCode.includes("bg-blue-50 text-[#1D4ED8]") &&
     jobsPageCode.includes("bg-emerald-50 text-emerald-800") &&
@@ -121,19 +123,19 @@ function run() {
   // -------------------------------------------------------------------------
   // 4. META GRID (3x2): SVG ICONS, SALARY WEIGHT & NO INVENTED DEFAULTS
   // -------------------------------------------------------------------------
-  const hasMetaGridIcons = jobsPageCode.includes("grid grid-cols-3 grid-rows-2") &&
-    jobsPageCode.includes("<MapPin className=\"w-4 h-4 text-[#475569]") &&
-    jobsPageCode.includes("<Briefcase className=\"w-4 h-4 text-[#475569]") &&
-    jobsPageCode.includes("<DollarSign className=\"w-4 h-4 text-[#475569]") &&
-    jobsPageCode.includes("<Laptop className=\"w-4 h-4 text-[#475569]") &&
-    jobsPageCode.includes("<TrendingUp className=\"w-4 h-4 text-[#475569]");
+  const hasMetaGridIcons = cardCode.includes("grid grid-cols-3 grid-rows-2") &&
+    cardCode.includes("<MapPin className=\"w-4 h-4 text-[#475569]") &&
+    cardCode.includes("<Briefcase className=\"w-4 h-4 text-[#475569]") &&
+    cardCode.includes("<DollarSign className=\"w-4 h-4 text-[#475569]") &&
+    cardCode.includes("<Laptop className=\"w-4 h-4 text-[#475569]") &&
+    cardCode.includes("<TrendingUp className=\"w-4 h-4 text-[#475569]");
   if (!hasMetaGridIcons) {
     failures.push("META GRID ICONS FAIL: Meta grid must have small SVG icon before every item (MapPin, Briefcase, DollarSign, Laptop, TrendingUp).");
   } else {
     console.log("  [PASS] Meta grid icons: Small SVG icon before every item (MapPin, Briefcase, DollarSign, Laptop, TrendingUp)");
   }
 
-  const hasSalaryHighlight = jobsPageCode.includes("font-semibold text-[#0F172A]");
+  const hasSalaryHighlight = cardCode.includes("font-semibold text-[#0F172A]");
   if (!hasSalaryHighlight) {
     failures.push("SALARY HIGHLIGHT FAIL: Salary value must be highlighted in stronger font weight (font-semibold text-[#0F172A]).");
   } else {
@@ -165,9 +167,9 @@ function run() {
 
   // Right panel preserved (listings-only Job Facts panel or legacy dark match panel)
   const hasDarkMatchPanel =
-    jobsPageCode.includes("w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px]") ||
-    jobsPageCode.includes("Job Facts") ||
-    jobsPageCode.includes("CircularMatchRing");
+    cardCode.includes("w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px]") ||
+    cardCode.includes("Job Facts") ||
+    cardCode.includes("CircularMatchRing");
   if (!hasDarkMatchPanel) {
     failures.push("MATCH PANEL FAIL: Right dark match panel or Job Facts panel must be preserved.");
   } else {
@@ -175,8 +177,8 @@ function run() {
   }
 
   // Mobile below 640px preserved
-  const hasMobilePreserved = jobsPageCode.includes("flex sm:hidden flex-col justify-between w-full space-y-3") &&
-    jobsPageCode.includes("w-8 h-8 rounded-lg shrink-0 object-contain");
+  const hasMobilePreserved = cardCode.includes("flex sm:hidden flex-col justify-between w-full space-y-3") &&
+    cardCode.includes("w-8 h-8 rounded-lg shrink-0 object-contain");
   if (!hasMobilePreserved) {
     failures.push("MOBILE PRESERVATION FAIL: Mobile view (<640px) must be preserved identical to main.");
   } else {

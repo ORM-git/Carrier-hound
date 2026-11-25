@@ -39,6 +39,8 @@ function runAudit(corruptions: {
   const whyMatchPath = path.resolve(process.cwd(), "src/components/dashboard/WhyMatchPanel.tsx");
 
   let jobsCode = fs.readFileSync(jobsPath, "utf-8");
+  let cardCode = fs.readFileSync(path.resolve(process.cwd(), "src/components/jobs/JobCardContent.tsx"), "utf-8");
+  if (!jobsCode.includes('import JobCardContent from "@/components/jobs/JobCardContent"') || !/<JobCardContent\b[\s\S]*?matchScore=\{matchScore\}/.test(jobsCode)) throw new Error("Jobs must adopt shared card with computed score");
   let topBarCode = fs.readFileSync(topBarPath, "utf-8");
   let filterBarCode = fs.readFileSync(filterBarPath, "utf-8");
   let detailCode = fs.readFileSync(detailPath, "utf-8");
@@ -93,7 +95,7 @@ function runAudit(corruptions: {
 
   // Check 3: Job card padding 16px & no empty space under meta grid (height ~230px)
   const hasCardPadding16 = jobsCode.includes("p-4");
-  const hasCompactInnerHeight = jobsCode.includes("min-h-[196px]") && jobsCode.includes("gap-2.5");
+  const hasCompactInnerHeight = cardCode.includes("min-h-[196px]") && cardCode.includes("gap-2.5");
   if (!hasCardPadding16 || !hasCompactInnerHeight) {
     failures.push("JOB CARD FAIL: Job card must have 16px padding (p-4) and no empty space under meta grid (min-h-[196px], gap-2.5).");
   }

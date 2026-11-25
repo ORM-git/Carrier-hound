@@ -45,6 +45,7 @@ async function main() {
   assert.ok(fs.existsSync(runtimePath), "src/components/landing/careermonke-landing-runtime.ts must exist");
 
   const pageSrc = fs.readFileSync(pagePath, "utf8");
+  const previewSrc = fs.readFileSync(path.join(ROOT, "src/components/landing/LandingJobsPreview.tsx"), "utf8");
   const cssSrc = fs.readFileSync(cssPath, "utf8");
   const lowerCssSrc = fs.readFileSync(path.join(ROOT, "src", "styles", "careermonke-landing-lower.css"), "utf8");
   // JSX wraps long copy across lines; compare copy on whitespace-normalised source.
@@ -58,8 +59,8 @@ async function main() {
     "page.tsx must contain exact kicker 'Skip LinkedIn competition' and headline 'Start jobmaxxing with AI' with the ascending maxx letters"
   );
   assert.ok(
-    pageSrc.includes("1,240 new jobs found today"),
-    "page.tsx must contain exact badge '1,240 new jobs found today'"
+    pageSrc.includes('className="pill daily-count-pending" aria-hidden="true"') && pageSrc.includes("Daily jobs count pending verification") && !pageSrc.includes("1,240 new jobs found today"),
+    "Daily count stays hidden until verified automatic backend is available"
   );
   assert.ok(
     flatSrc.includes("Find verified employer jobs and tailor your resume to clear their ATS in seconds."),
@@ -77,11 +78,13 @@ async function main() {
   assert.ok(pageSrc.includes('href="/jobs" className="btn-cta"'), "Top-fold View Jobs must link to /jobs");
   assert.ok(!pageSrc.includes('id="try-demo"'), "Old hero #try-demo button must not come back");
 
-  assert.equal((pageSrc.match(/href="\/jobs" className="btn-apply"/g) || []).length, 2, "Both preview Apply links must use View Jobs destination /jobs");
+  assert.ok(pageSrc.includes("<LandingJobsPreview />"), "Home must adopt actual shared Jobs preview");
+  assert.ok(previewSrc.includes('import JobCardContent from "@/components/jobs/JobCardContent"') && previewSrc.includes("<JobCardContent"), "Preview must adopt shared Jobs renderer");
+  assert.equal((previewSrc.match(/href="\/jobs"/g) || []).length, 3, "Preview action types must all open Jobs");
 
-  // 3. Top fold structure: one full job card and a half-visible second card (peek) above the CTA
-  assert.ok(pageSrc.includes('id="first-card"'), "Top fold must include the full first job card");
-  assert.ok(pageSrc.includes('<div className="peek" aria-hidden="true">'), "Top fold must include the half-visible second card");
+  // 3. Top fold: full first card and a faded fixed 120px crop of the second above the CTA
+  assert.ok(previewSrc.includes('data-testid="landing-job-card"'), "Preview must render real Jobs card structure");
+  assert.ok(previewSrc.includes('index === 1 ? "peek"') && previewSrc.includes('aria-hidden={index === 1 || undefined}'), "Second card must stay faded and hidden from assistive technology");
   assert.ok(!pageSrc.includes('id="demo"'), "Old interactive demo must not come back");
 
   // 4. Old demo states stay removed
@@ -126,6 +129,7 @@ async function main() {
   const wrapperMatch = pageSrc.match(/return \(\s*<>([\s\S]*?)<\/>\s*\);\s*\}/);
   assert.ok(wrapperMatch, "page.tsx must render the .cm-top fold and the .landing-wrapper lower page as siblings");
   const cleanMarkup = wrapperMatch[1]
+    .replace("<LandingJobsPreview />", '<section class="landing-actual-preview"><article data-testid="landing-job-card"></article><div class="peek" aria-hidden="true"><article data-testid="landing-job-card"></article></div></section>')
     .replace(/className=\{`cm-top \$\{jakarta\.variable\}`\}/, 'class="cm-top"')
     .replace(/\sref=\{lowerRef\}/, "")
     .replace(/className=/g, "class=")
@@ -202,6 +206,12 @@ async function main() {
   (dom.window.Element.prototype as any).scrollIntoView = () => {};
 
   const lowerRoot = document.querySelector<HTMLElement>(".landing-wrapper")!;
+  // New shared preview deliberately uses the CSS 120px peek fallback; legacy observer must no-op.
+  const stopAbsentLegacyCard = initCareerMonkeLanding();
+  stopAbsentLegacyCard();
+  assert.strictEqual(live.observers, 0, "Shared preview without first-card must not create the legacy observer");
+  assert.ok(cssSrc.includes("var(--peek-h, 120px)"), "Shared preview keeps the approved CSS peek fallback");
+  document.querySelector('[data-testid="landing-job-card"]')!.id = "first-card";
   const mount = () => {
     const stopTop = initCareerMonkeLanding();
     const stopLower = initCareerMonkeLandingLower(lowerRoot);

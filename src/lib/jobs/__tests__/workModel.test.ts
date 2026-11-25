@@ -20,9 +20,9 @@ describe("workModelLabel", () => {
   });
 
   it("the mobile card and the detail metadata use it", () => {
-    const page = readFileSync("src/app/jobs/page.tsx", "utf8");
+    const card = readFileSync("src/components/jobs/JobCardContent.tsx", "utf8");
     const detail = readFileSync("src/components/jobs/JobDetailView.tsx", "utf8");
-    const mobileCard = page.slice(page.indexOf("MOBILE VIEW (under sm"), page.indexOf("{/* Load More"));
+    const mobileCard = card.slice(card.indexOf("MOBILE VIEW (under sm"), card.indexOf("function CircularMatchRing("));
     expect(mobileCard).toContain("{workModelLabel(job)}");
     expect(mobileCard).not.toContain('{job.remote ? "Remote" : "On-site"}');
     expect(detail).toContain("{workModelLabel(job)}");
