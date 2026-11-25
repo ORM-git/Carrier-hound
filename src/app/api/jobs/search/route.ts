@@ -1,4 +1,5 @@
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
+import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams, hasFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
@@ -340,7 +341,17 @@ async function getHandler(req: Request) {
       });
     }
 
+    // Saved feed constraints (Preferences sheet). Company ones need jobs.company: fail rather than broaden.
+    const feedConstraints = feedConstraintsFromParams(searchParams);
+    if (companyConstraintsActive(feedConstraints) && !hasServiceKey) {
+      return NextResponse.json(
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
+        { status: 503 }
+      );
+    }
+
     const hasActiveFilter = Boolean(
+      hasFeedConstraints(feedConstraints) ||
       (category && category !== "all") ||
       remoteOnly ||
       (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") ||
@@ -475,21 +486,11 @@ async function getHandler(req: Request) {
     const workModelClause = workModelOrClause(workModelParam);
     if (workModelClause) query = query.or(workModelClause);
 
-    if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
-      const dp = dateParam.trim().toLowerCase();
-      const ms =
-        dp === "24h" || dp.includes("24")
-          ? 24 * 60 * 60 * 1000
-          : dp === "7d" || dp.includes("week")
-          ? 7 * 24 * 60 * 60 * 1000
-          : dp === "30d" || dp.includes("month")
-          ? 30 * 24 * 60 * 60 * 1000
-          : 0;
-      if (ms > 0) {
-        const cutoff = new Date(Date.now() - ms).toISOString();
-        query = query.gte("posted_at", cutoff);
-      }
-    }
+    // 24h / 3d / 7d / 30d. A NULL posted_at (unknown source date) never passes an active window.
+    const postedCutoff = datePostedCutoff(dateParam);
+    if (postedCutoff) query = query.gte("posted_at", postedCutoff);
+
+    query = applyFeedConstraints(query, feedConstraints);
 
     // Company filter (server-side)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {

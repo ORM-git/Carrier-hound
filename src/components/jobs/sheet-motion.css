@@ -1,0 +1,18 @@
+/* CM sheet motion: phone rises from the bottom; Preferences uses a right drawer from 640px. */
+.cm-sheet-panel { animation: cm-sheet-up 300ms cubic-bezier(.2,.8,.2,1) both; }
+.cm-sheet-backdrop { animation: cm-sheet-fade-in 300ms ease both; }
+[data-sheet-state="closing"] .cm-sheet-panel { animation-name: cm-sheet-down; pointer-events: none; }
+[data-sheet-state="closing"] .cm-sheet-backdrop { animation-name: cm-sheet-fade-out; pointer-events: none; }
+@keyframes cm-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes cm-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes cm-sheet-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cm-sheet-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@media (min-width:640px) {
+ .cm-sheet-preferences .cm-sheet-panel { animation-name: cm-sheet-right-in; }
+ .cm-sheet-preferences[data-sheet-state="closing"] .cm-sheet-panel { animation-name: cm-sheet-right-out; }
+}
+@keyframes cm-sheet-right-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes cm-sheet-right-out { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion:reduce) {
+ .cm-sheet-panel, .cm-sheet-backdrop { animation: none !important; }
+}

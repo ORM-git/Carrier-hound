@@ -1,5 +1,7 @@
 "use client";
 
+import { useSheetPresence } from "./hooks/useSheetPresence";
+import "./sheet-motion.css";
 import React, { useState, useEffect, useRef } from "react";
 import {
   X,
@@ -37,10 +39,18 @@ export default function MobileFilterSheet({
   hideHiddenJobs = false,
   triggerRef,
 }: MobileFilterSheetProps) {
+  const { present, exiting } = useSheetPresence(isOpen);
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [basicExpanded, setBasicExpanded] = useState(true);
 
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const close = () => {
+    onCloseRef.current();
+    const activeDialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(dialog => dialog !== sheetRef.current && !dialog.closest('[aria-hidden="true"]'));
+    if (!activeDialog) triggerRef?.current?.focus();
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -52,11 +62,13 @@ export default function MobileFilterSheet({
   useEffect(() => {
     if (!isOpen) return;
 
+    // Move keyboard focus into the newly opened sheet before its first Tab.
+    const initial = sheetRef.current?.querySelector<HTMLElement>('button, input, select, textarea');
+    initial?.focus();
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
-        triggerRef?.current?.focus();
+        close();
         return;
       }
       if (e.key === "Tab" && sheetRef.current) {
@@ -68,12 +80,12 @@ export default function MobileFilterSheet({
         const last = focusable[focusable.length - 1];
 
         if (e.shiftKey) {
-          if (document.activeElement === first) {
+          if (document.activeElement === first || !sheetRef.current.contains(document.activeElement)) {
             e.preventDefault();
             last?.focus();
           }
         } else {
-          if (document.activeElement === last) {
+          if (document.activeElement === last || !sheetRef.current.contains(document.activeElement)) {
             e.preventDefault();
             first?.focus();
           }
@@ -82,16 +94,15 @@ export default function MobileFilterSheet({
     };
 
     document.addEventListener("keydown", handleKeyDown);
-    const origOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = origOverflow;
     };
-  }, [isOpen, onClose, triggerRef]);
+  // The latest callback is read through its ref; filter draft changes must not refocus the header.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!present) return null;
 
   const toggleMulti = (key: "level" | "jobType" | "workModel", item: string) => {
     setDraft((prev) => {
@@ -130,8 +141,7 @@ export default function MobileFilterSheet({
 
   const handleApply = () => {
     onApply({ ...draft, hidden: hideHiddenJobs ? false : draft.hidden });
-    onClose();
-    triggerRef?.current?.focus();
+    close();
   };
 
   const handleResetDraft = () => {
@@ -154,11 +164,11 @@ export default function MobileFilterSheet({
   };
 
   return (
-    <>
+    <div data-sheet-state={exiting ? "closing" : "open"} ref={(element) => { if (element) element.inert = exiting; }} aria-hidden={exiting || undefined}>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-[#0F172A]/60 z-[70] backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        className="cm-sheet-backdrop fixed inset-0 bg-[#0F172A]/60 z-[70] backdrop-blur-xs transition-opacity"
+        onClick={close}
         aria-hidden="true"
       />
 
@@ -168,7 +178,7 @@ export default function MobileFilterSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Filter positions"
-        className="fixed inset-x-0 bottom-0 max-h-[88vh] bg-white rounded-t-3xl shadow-2xl z-[71] flex flex-col font-sans animate-in slide-in-from-bottom duration-300"
+        className="cm-sheet-panel fixed inset-x-0 bottom-0 max-h-[88vh] bg-white rounded-t-3xl shadow-2xl z-[71] flex flex-col font-sans"
       >
         {/* Handle bar indicator */}
         <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mt-3 mb-1 shrink-0" />
@@ -201,7 +211,7 @@ export default function MobileFilterSheet({
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={close}
               aria-label="Close filter settings"
               className="w-9 h-9 min-h-[44px] min-w-[44px] rounded-full flex items-center justify-center text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 transition cursor-pointer"
             >
@@ -515,6 +525,7 @@ export default function MobileFilterSheet({
                     {[
                       { id: "", label: "Any time" },
                       { id: "24h", label: "Past 24 hours" },
+                      { id: "3d", label: "Past 3 days" },
                       { id: "7d", label: "Past week" },
                       { id: "30d", label: "Past month" },
                     ].map((item) => (
@@ -637,6 +648,6 @@ export default function MobileFilterSheet({
           </div>}
         </div>
       </div>
-    </>
+    </div>
   );
 }
