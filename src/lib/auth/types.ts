@@ -1,3 +1,5 @@
+import type { DatePostedWindow, WorkModel } from "@/lib/preferences/feedConstraints";
+
 export interface UserPreferences {
   roles: string[];
   categories: string[];
@@ -13,6 +15,16 @@ export interface UserPreferences {
   dailyDigestOptIn: boolean;
   onboardingCompleted: boolean;
   eligibilityFilter?: boolean;
+  // Saved feed constraints (migration 20261125a). undefined = not read / not touched by a save,
+  // so callers that do not know these fields never erase them.
+  /** Multi-select work model; remotePreference stays the legacy single value derived from it. */
+  workModels?: WorkModel[];
+  datePosted?: DatePostedWindow | null;
+  excludedTitles?: string[];
+  includedCompanies?: string[];
+  excludedCompanies?: string[];
+  /** false when the constraint columns are not migrated yet: those controls are shown unavailable. */
+  feedConstraintsAvailable?: boolean;
   updatedAt: string;
 }
 

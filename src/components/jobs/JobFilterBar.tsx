@@ -827,6 +827,7 @@ export default function JobFilterBar({
                   {[
                     { id: "", label: "Any time" },
                     { id: "24h", label: "Past 24 hours" },
+                    { id: "3d", label: "Past 3 days" },
                     { id: "7d", label: "Past week" },
                     { id: "30d", label: "Past month" },
                   ].map((item) => (

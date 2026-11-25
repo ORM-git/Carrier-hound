@@ -1,4 +1,5 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
+import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
@@ -360,21 +361,17 @@ export async function GET(req: Request) {
     if (workModelClause) query = query.or(workModelClause);
 
     // 9. Date posted hard filter
-    if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
-      const dp = dateParam.trim().toLowerCase();
-      const ms =
-        dp === "24h" || dp.includes("24")
-          ? 24 * 60 * 60 * 1000
-          : dp === "7d" || dp.includes("week")
-          ? 7 * 24 * 60 * 60 * 1000
-          : dp === "30d" || dp.includes("month")
-          ? 30 * 24 * 60 * 60 * 1000
-          : 0;
-      if (ms > 0) {
-        const cutoff = new Date(Date.now() - ms).toISOString();
-        query = query.gte("posted_at", cutoff);
-      }
+    // 24h / 3d / 7d / 30d. A NULL posted_at (unknown source date) never passes an active window.
+    const postedCutoff = datePostedCutoff(dateParam);
+    if (postedCutoff) query = query.gte("posted_at", postedCutoff);
+
+    // 9b. Saved feed constraints (Preferences sheet), AND-ed with everything else, before the pool range.
+    // Company constraints need the jobs.company column: without it, fail rather than silently broaden.
+    const feedConstraints = feedConstraintsFromParams(searchParams);
+    if (companyConstraintsActive(feedConstraints) && !hasServiceKey) {
+      return respond({ error: "Company preferences unavailable", jobs: [], totalCount: 0 }, { status: 503 });
     }
+    query = applyFeedConstraints(query, feedConstraints);
 
     // 10. Company hard filter (server-side, jobs table only)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
