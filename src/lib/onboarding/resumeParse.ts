@@ -176,14 +176,17 @@ export async function saveResumeProfile(
   }
 }
 
+/** A ranking-profile read: `error` (query failed or threw) is kept apart from `missing` so callers can retry it. */
+export type ResumeProfileRead =
+  | { status: "found"; profile: OnboardingResumeProfile }
+  | { status: "missing" }
+  | { status: "error" };
+
 /**
- * Reads the user's current parsed profile for ranking. Returns null when there is none,
- * when it failed to parse, when it belongs to an older upload, or on any error.
+ * Reads the user's current parsed profile for ranking. `missing` when there is none, when it
+ * failed to parse or when it belongs to an older upload; `error` on any query error. Never throws.
  */
-export async function loadResumeProfileForRanking(
-  supabaseAdmin: any,
-  userId: string
-): Promise<OnboardingResumeProfile | null> {
+export async function readResumeProfileForRanking(supabaseAdmin: any, userId: string): Promise<ResumeProfileRead> {
   try {
     const [profileRes, pointerRes] = await Promise.all([
       supabaseAdmin
@@ -193,15 +196,24 @@ export async function loadResumeProfileForRanking(
         .maybeSingle(),
       supabaseAdmin.from("onboarding_resume_uploads").select("storage_path").eq("user_id", userId).maybeSingle(),
     ]);
-    if (profileRes?.error || pointerRes?.error) return null;
+    if (profileRes?.error || pointerRes?.error) return { status: "error" };
     const row = profileRes?.data;
-    if (!row || row.parse_status !== "parsed") return null;
-    if (!pointerRes?.data?.storage_path || pointerRes.data.storage_path !== row.source_storage_path) return null;
+    if (!row || row.parse_status !== "parsed") return { status: "missing" };
+    if (!pointerRes?.data?.storage_path || pointerRes.data.storage_path !== row.source_storage_path) return { status: "missing" };
     const profile = normalizeStoredProfile(row.profile);
-    return hasProfileSignal(profile) ? profile : null;
+    return profile && hasProfileSignal(profile) ? { status: "found", profile } : { status: "missing" };
   } catch {
-    return null;
+    return { status: "error" };
   }
+}
+
+/** Same read as a profile or null (none, older upload, or any error). */
+export async function loadResumeProfileForRanking(
+  supabaseAdmin: any,
+  userId: string
+): Promise<OnboardingResumeProfile | null> {
+  const read = await readResumeProfileForRanking(supabaseAdmin, userId);
+  return read.status === "found" ? read.profile : null;
 }
 
 /** Small, user-facing summary returned to Step 2 (the user's own data only). */

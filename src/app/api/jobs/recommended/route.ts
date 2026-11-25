@@ -1,5 +1,5 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
-import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
+import { createSavedProfileReads, loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
@@ -12,7 +12,6 @@ import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers, hasR
 import { createLogger } from "@/lib/observability/logger";
 import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
-import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 import { applyExperienceLevelQuery, parseExperienceLevels, EARLY_CAREER_OR_CLAUSE } from "@/lib/jobs/experienceLevels";
 import { normalizeUserCountries as normalizeEligibleCountries } from "@/lib/jobs/eligibility";
 
@@ -140,14 +139,16 @@ export async function GET(req: Request) {
         if (user) {
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);
-          displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, user.id, cfEnv);
+          // One request-local read set for this user: display score and ranking share a successful
+          // preferences/resume read; a failed read is retried once (MAX_READ_ATTEMPTS), never cached across requests.
+          const reads = createSavedProfileReads(supabaseAdmin, user.id);
+          displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, user.id, cfEnv, reads);
 
           // Fetch user preferences for onboarding answers
-          const { data: prefs } = await supabaseAdmin
-            .from("user_preferences")
-            .select("roles, experience_level, remote_preference, locations, employment_types, categories, min_salary, salary_currency")
-            .eq("user_id", user.id)
-            .maybeSingle();
+          const prefsRead = await reads.preferences();
+          // A thrown read still falls through to the auth catch below, as the inline read did.
+          if (prefsRead.status === "error" && "thrown" in prefsRead) throw prefsRead.thrown;
+          const prefs = prefsRead.status === "found" ? prefsRead.row : null;
 
           if (prefs) {
             dbAnswers = {
@@ -167,7 +168,8 @@ export async function GET(req: Request) {
           // Parsed onboarding resume / LinkedIn PDF: soft ranking boost, behind the Step 2 flag.
           // Read server-side for this user only; null on any error, so ranking never breaks.
           if (isOnboardingStep2EnabledServer(cfEnv)) {
-            dbAnswers.resumeProfile = await loadResumeProfileForRanking(supabaseAdmin, user.id);
+            const resume = await reads.resumeProfile();
+            dbAnswers.resumeProfile = resume.status === "found" ? resume.profile : null;
           }
         }
       } catch (authErr) {
