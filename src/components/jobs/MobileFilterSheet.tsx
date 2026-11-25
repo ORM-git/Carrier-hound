@@ -22,6 +22,7 @@ interface MobileFilterSheetProps {
   onResetAll: () => void;
   activeCount: number;
   hiddenCount: number;
+  hideHiddenJobs?: boolean;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
@@ -33,6 +34,7 @@ export default function MobileFilterSheet({
   onResetAll,
   activeCount,
   hiddenCount,
+  hideHiddenJobs = false,
   triggerRef,
 }: MobileFilterSheetProps) {
   const [draft, setDraft] = useState<JobFilterValues>(filters);
@@ -42,9 +44,9 @@ export default function MobileFilterSheet({
 
   useEffect(() => {
     if (isOpen) {
-      setDraft({ ...filters });
+      setDraft({ ...filters, hidden: hideHiddenJobs ? false : filters.hidden });
     }
-  }, [isOpen, filters]);
+  }, [isOpen, filters, hideHiddenJobs]);
 
   // Trap focus, handle Escape key, and lock body overflow
   useEffect(() => {
@@ -123,11 +125,11 @@ export default function MobileFilterSheet({
     draft.salaryMin,
     draft.sourceType,
     draft.company,
-    draft.hidden,
+    !hideHiddenJobs && draft.hidden,
   ].filter((v) => Boolean(v && v !== "all")).length;
 
   const handleApply = () => {
-    onApply(draft);
+    onApply({ ...draft, hidden: hideHiddenJobs ? false : draft.hidden });
     onClose();
     triggerRef?.current?.focus();
   };
@@ -311,7 +313,7 @@ export default function MobileFilterSheet({
                 </button>
               </span>
             )}
-            {draft.hidden && (
+            {!hideHiddenJobs && draft.hidden && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#CBD5E1] text-[#0F172A] font-medium text-[11px]">
                 <span>Hidden Jobs</span>
                 <button
@@ -609,7 +611,7 @@ export default function MobileFilterSheet({
 
 
           {/* Section 3: Hidden Positions Toggle */}
-          <div className="p-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between">
+          {!hideHiddenJobs && <div className="p-4 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] flex items-center justify-between">
             <div>
               <p className="text-xs font-bold text-[#0F172A]">View Hidden Positions</p>
               <p className="text-[10px] text-[#64748B]">
@@ -632,7 +634,7 @@ export default function MobileFilterSheet({
                 }`}
               />
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     </>
