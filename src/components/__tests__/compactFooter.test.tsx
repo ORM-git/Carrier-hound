@@ -42,4 +42,17 @@ describe('public footer', () => {
     const cls = container.querySelector('footer')?.className ?? '';
     expect(cls).toContain('--cm-cookie-notice-height');
   });
+
+  it('keeps the four link groups in one container with the mobile two-column and desktop four-column tokens', () => {
+    render(<Footer />);
+    const headings = screen.getAllByRole('heading', { level: 3 });
+    expect(headings).toHaveLength(4);
+    const groups = headings.map((h) => h.parentElement as HTMLElement);
+    const container = groups[0].parentElement as HTMLElement;
+    for (const group of groups) expect(group.parentElement).toBe(container);
+    const tokens = container.className.split(/\s+/);
+    for (const token of ['columns-2', 'md:columns-auto', 'md:grid', 'md:grid-cols-4']) {
+      expect(tokens).toContain(token);
+    }
+  });
 });
