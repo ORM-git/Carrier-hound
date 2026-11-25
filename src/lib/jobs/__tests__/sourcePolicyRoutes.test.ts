@@ -6,7 +6,7 @@ import { HIDDEN_SOURCE_TYPE, VISIBLE_SOURCE_FILTER, isHiddenSource } from "@/lib
 
 const db = vi.hoisted(() => ({
   tables: {} as Record<string, any[]>,
-  queries: [] as Array<{ table: string; method: string; ors: string[] }>,
+  queries: [] as Array<{ table: string; method: string; ors: string[]; eqs: string[] }>,
   users: {} as Record<string, { id: string; user_metadata: Record<string, unknown> }>,
 }));
 
@@ -14,13 +14,14 @@ vi.mock("@supabase/supabase-js", () => {
   function from(table: string) {
     const preds: Array<(r: any) => boolean> = [];
     const ors: string[] = [];
+    const eqs: string[] = [];
     let range: [number, number] | null = null;
     let limit: number | null = null;
     let head = false;
     let method = "select";
     const orders: Array<{ col: string; asc: boolean }> = [];
     const run = () => {
-      db.queries.push({ table, method, ors: [...ors] });
+      db.queries.push({ table, method, ors: [...ors], eqs: [...eqs] });
       if (method !== "select") return { data: [], error: null, count: 0 };
       let rows = (db.tables[table] || []).filter((r) => preds.every((p) => p(r)));
       for (const o of [...orders].reverse()) rows = [...rows].sort((a, b) => (a[o.col] === b[o.col] ? 0 : (a[o.col] > b[o.col] ? 1 : -1) * (o.asc ? 1 : -1)));
@@ -35,7 +36,7 @@ vi.mock("@supabase/supabase-js", () => {
         if (p === "maybeSingle" || p === "single") return async () => { const r = run(); return { data: r.data?.[0] ?? null, error: null }; };
         if (p === "select") return (_c?: string, o?: { head?: boolean }) => { head = Boolean(o?.head); return b; };
         if (p === "insert" || p === "update" || p === "upsert" || p === "delete") return () => { method = String(p); return b; };
-        if (p === "eq") return (c: string, v: unknown) => { preds.push((r) => r[c] === v); return b; };
+        if (p === "eq") return (c: string, v: unknown) => { eqs.push(c); preds.push((r) => r[c] === v); return b; };
         if (p === "neq") return (c: string, v: unknown) => { preds.push((r) => r[c] !== v); return b; };
         if (p === "in") return (c: string, vs: unknown[]) => { preds.push((r) => vs.includes(r[c])); return b; };
         if (p === "or") return (e: string) => { ors.push(e); preds.push((r) => matchesPostgrestOr(e, r)); return b; };
@@ -175,12 +176,28 @@ describe("/api/jobs/pro", () => {
 });
 
 describe("counts and other lists", () => {
-  it("/api/stats active count excludes jobspy", async () => {
+  it("/api/stats active count excludes jobspy; retained-today count is intentionally raw", async () => {
+    const { GET } = await import("@/app/api/stats/route");
+    await GET(req("/api/stats", "tok-pro"));
+    const reads = jobReads();
+    // Retained-today read (lib/api/retainedJobsToday): raw public.jobs, no source/active/status filter by design.
+    const raw = reads.filter((q) => q.table === "jobs");
+    expect(raw.length).toBe(1);
+    expect(raw[0].ors).toEqual([]);
+    expect(raw[0].eqs).toEqual([]);
+    // Every other jobs read (the active corpus count) must keep the source policy.
+    const filtered = reads.filter((q) => q.table !== "jobs");
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(filtered.every((q) => q.ors.includes(VISIBLE_SOURCE_FILTER))).toBe(true);
+  });
+
+  it("/api/stats anonymous: only the retained raw read, no active count read", async () => {
     const { GET } = await import("@/app/api/stats/route");
     await GET(req("/api/stats"));
-    const counts = jobReads();
-    expect(counts.length).toBeGreaterThan(0);
-    expect(counts.every((q) => q.ors.includes(VISIBLE_SOURCE_FILTER))).toBe(true);
+    const reads = jobReads();
+    expect(reads.map((q) => q.table)).toEqual(["jobs"]);
+    expect(reads[0].ors).toEqual([]);
+    expect(reads[0].eqs).toEqual([]);
   });
 
   it("service.getLiveJobById: jobspy id is not found, visible id is", async () => {

@@ -15,7 +15,7 @@ const SITES: Record<string, number> = {
   "src/app/api/jobs/top10/route.ts": 3,
   "src/app/api/jobs/recommended/route.ts": 2,
   "src/app/api/jobs/suggest/route.ts": 1,
-  "src/app/api/stats/route.ts": 2,
+  "src/app/api/stats/route.ts": 1,
   "src/app/api/radar/route.ts": 2,
   "src/app/api/ticker/route.ts": 1,
   "src/components/JobRadarGlobe.tsx": 1,
@@ -23,7 +23,7 @@ const SITES: Record<string, number> = {
   "netlify/functions/jobs-pro.ts": 3,
   "netlify/functions/jobs-search.ts": 2,
   "netlify/functions/jobs-top10.ts": 3,
-  "netlify/functions/stats.ts": 2,
+  "netlify/functions/stats.ts": 1,
   "netlify/functions/ticker.ts": 1,
 };
 const READ = /\.from\(\s*(?:["'`]jobs(?:_public)?["'`]|targetTable)\s*\)/g;
@@ -40,6 +40,23 @@ describe("every app read of jobs applies the source policy", () => {
         const stmt = tail.slice(0, tail.search(/;\s*\n/) + 1 || tail.length);
         expect(stmt, `${file}: ${stmt.slice(0, 80)}`).toContain(".or(VISIBLE_SOURCE_FILTER)");
       }
+    });
+  }
+});
+
+// The retained-today count is deliberately raw (no source/active/status filter). Pin that exemption to the one
+// helper module and require both stats entry points to use it rather than an inline unfiltered read.
+describe("retained-today raw count exemption", () => {
+  const helper = readFileSync(path.join(ROOT, "src/lib/api/retainedJobsToday.ts"), "utf8");
+  it("helper has exactly one raw jobs read with no source/active/status filter", () => {
+    const reads = Array.from(helper.matchAll(READ));
+    expect(reads.length).toBe(1);
+    expect(helper).not.toMatch(/VISIBLE_SOURCE_FILTER|\.or\(|\.eq\(\s*["'`](?:is_active|status)/);
+    expect(helper).toMatch(/\.from\("jobs"\)/);
+  });
+  for (const f of ["src/app/api/stats/route.ts", "netlify/functions/stats.ts"]) {
+    it(`${f} uses the helper`, () => {
+      expect(readFileSync(path.join(ROOT, f), "utf8")).toContain("countRetainedJobsToday(");
     });
   }
 });
