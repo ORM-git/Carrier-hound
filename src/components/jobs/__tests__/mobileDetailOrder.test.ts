@@ -16,10 +16,12 @@ describe("mobile detail order (item 17)", () => {
     expect(panel).toContain('aria-expanded={isMobileExpanded}'); // explanations stay behind the disclosure
   });
 
-  it("compact score row keeps the main and all three component scores with readable labels", () => {
-    const score = detail.slice(detail.indexOf('data-testid="mobile-match-score"'), detail.indexOf("(3) CONTENT ORDER"));
-    for (const label of ["Experience", "Skill", "Industry", "matchLabel", "expSubScore", "skillSubScore", "industrySubScore"]) expect(score).toContain(label);
-    expect(score).not.toMatch(/text-\[(9|10)px\]/);
+  it("score row keeps the overall and all three component scores with readable, honest labels", () => {
+    const score = detail.slice(detail.indexOf('testId="mobile-match-score"'), detail.indexOf("(3) CONTENT ORDER"));
+    for (const label of ["Experience Level", "Skill", "Role Match", "matchLabel", "expSubScore", "skillSubScore", "roleSubScore"]) expect(score).toContain(label);
+    expect(detail).not.toMatch(/Industry/); // no industry dimension exists in FitDiagnosticsResult
+    const tiles = detail.slice(detail.indexOf("function MatchScoreTiles"), detail.indexOf("function MatchScorePrompt"));
+    expect(score + tiles).not.toMatch(/text-\[(9|10)px\]/);
   });
 
   it("Company anchor clears the sticky header; Overview returns to the top", () => {
