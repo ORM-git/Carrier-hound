@@ -482,6 +482,29 @@ export function auditApiModuleSource(
     return null;
   }
 
+  if (fileName === "retainedJobsToday.ts") {
+    // Server-only count helper (service client, no browser fetch, no JSON body), so no clientSchemas
+    // validator applies. Statically it must never call fetch() or .json(). Count validation is NOT judged by
+    // token matching here (a literal or dead-code guard would fool that); it is proven by running the real
+    // function against bad counts in testRetainedCountRuntimeContract below.
+    const calls: ts.CallExpression[] = [];
+    function findCalls(n: ts.Node) {
+      if (ts.isCallExpression(n)) calls.push(n);
+      ts.forEachChild(n, findCalls);
+    }
+    findCalls(sf);
+    if (
+      calls.some(
+        (c) =>
+          (ts.isIdentifier(c.expression) && c.expression.text === "fetch") ||
+          (ts.isPropertyAccessExpression(c.expression) && c.expression.name.text === "json")
+      )
+    ) {
+      return `${fileName}: server-side count helper unexpectedly calls fetch() or parses JSON`;
+    }
+    return null;
+  }
+
   if (fileName === "stats.ts") {
     const imported = collectImportedClientSchemaValidators(sf, knownValidators);
     if (!imported.has("parseStatsResponse")) {
@@ -717,6 +740,95 @@ function testStaticCoverage() {
     negSecondPath !== null,
     "Static guard must fail when a second query path in the same file lacks validation"
   );
+  // Negative test 4: the server-only count helper must not call fetch() or parse JSON
+  assert.ok(
+    auditApiModuleSource(
+      "retainedJobsToday.ts",
+      `export async function c() { const r = await fetch("/x"); return r.json(); }`,
+      knownValidators
+    ) !== null,
+    "Static guard must fail when the count helper calls fetch() or parses JSON"
+  );
+  assert.equal(
+    auditApiModuleSource(
+      "retainedJobsToday.ts",
+      `export async function c(sb: any) { const r = await sb.from("jobs").select("id", { count: "exact", head: true }); return r.count; }`,
+      knownValidators
+    ),
+    null,
+    "A server-only count helper without fetch()/.json() passes the static part (count validation is a runtime contract)"
+  );
+}
+
+type CountFn = (supabase: any, now?: Date) => Promise<{ count: number | null; asOf: string; ok: boolean }>;
+
+function fakeSupabase(result: { count?: unknown; error?: unknown }) {
+  const b: any = {
+    select: () => b,
+    gte: () => b,
+    lt: () => b,
+    abortSignal: () => b,
+    then: (resolve: (v: unknown) => void) => resolve({ count: result.count ?? null, error: result.error ?? null }),
+  };
+  return { from: () => b };
+}
+
+/** Runs a count function against good and bad query results. Returns null when the contract holds. */
+export async function checkRetainedCountContract(fn: CountFn): Promise<string | null> {
+  const now = new Date("2026-11-25T10:00:00.000Z");
+  const good = await fn(fakeSupabase({ count: 7 }), now);
+  if (!(good.ok === true && good.count === 7)) return "valid count 7 must return ok:true, count:7";
+  const zero = await fn(fakeSupabase({ count: 0 }), now);
+  if (!(zero.ok === true && zero.count === 0)) return "true zero must return ok:true, count:0";
+  const bad: Array<[string, { count?: unknown; error?: unknown }]> = [
+    ["negative", { count: -1 }],
+    ["fraction", { count: 1.5 }],
+    ["NaN", { count: NaN }],
+    ["Infinity", { count: Infinity }],
+    ["unsafe integer", { count: Number.MAX_SAFE_INTEGER + 2 }],
+    ["null", { count: null }],
+    ["undefined", {}],
+    ["string", { count: "5" }],
+    ["query error with a count", { count: 5, error: new Error("boom") }],
+  ];
+  for (const [label, res] of bad) {
+    const r = await fn(fakeSupabase(res), now);
+    if (r.ok !== false || r.count !== null) return `bad count (${label}) must return ok:false, count:null, got ${JSON.stringify(r)}`;
+  }
+  return null;
+}
+
+async function testRetainedCountRuntimeContract() {
+  const { countRetainedJobsToday } = await import("../src/lib/api/retainedJobsToday");
+  assert.equal(await checkRetainedCountContract(countRetainedJobsToday as CountFn), null, "real countRetainedJobsToday must satisfy the contract");
+
+  const iso = (now?: Date) => (now ?? new Date()).toISOString();
+  const wrap = (validate: (c: any, e: any) => boolean): CountFn => async (sb, now) => {
+    const { count, error } = await sb.from("jobs").select("id").gte("created_at", "a").lt("created_at", "b");
+    return validate(count, error) ? { count, asOf: iso(now), ok: true } : { count: null, asOf: iso(now), ok: false };
+  };
+  const rawReturn: CountFn = async (sb, now) => {
+    const { count } = await sb.from("jobs").select("id").gte("created_at", "a").lt("created_at", "b");
+    return { count, asOf: iso(now), ok: true };
+  };
+  // Mutants: each must be rejected by the contract.
+  const mutants: Array<[string, CountFn]> = [
+    ["no validation (raw count returned)", rawReturn],
+    ["literal guard then raw return", async (sb, now) => { Number.isSafeInteger(1); return rawReturn(sb, now); }],
+    ["dead-code guard then raw return", async (sb, now) => { if (false as boolean) { Number.isSafeInteger(0); } return rawReturn(sb, now); }],
+    ["safe-integer check without non-negative guard", wrap((c, e) => !e && typeof c === "number" && Number.isSafeInteger(c))],
+    ["non-negative check without integer guard", wrap((c, e) => !e && typeof c === "number" && c >= 0)],
+    ["ignores query error", wrap((c) => typeof c === "number" && Number.isSafeInteger(c) && c >= 0)],
+    ["typeof number only (NaN/Infinity/fraction pass)", wrap((c, e) => !e && typeof c === "number" && c !== -1)],
+  ];
+  for (const [label, fn] of mutants) {
+    assert.notEqual(await checkRetainedCountContract(fn), null, `contract must reject mutant: ${label}`);
+  }
+  assert.equal(
+    await checkRetainedCountContract(wrap((c, e) => !e && typeof c === "number" && Number.isSafeInteger(c) && c >= 0)),
+    null,
+    "a correct implementation must satisfy the contract"
+  );
 }
 
 async function main() {
@@ -725,6 +837,7 @@ async function main() {
   testWorldwideCompanyValidator();
   await testCallerSafeDegradation();
   testStaticCoverage();
+  await testRetainedCountRuntimeContract();
   console.log(
     "[PASS] test-client-schema-coverage: all fixture, caller safe-degradation, and AST static checks passed."
   );

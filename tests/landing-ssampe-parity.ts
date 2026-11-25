@@ -137,6 +137,8 @@ function check(x: Input) {
   assert.match(top, /<LandingJobsPreview \/>/, "shared Jobs preview must remain mounted");
   const pinnedCards = topSrc.match(/<div class="listings">([\s\S]*?)<\/div>\s*<\/div>\s*<\/section>/)![1];
   top = top.replace("<LandingJobsPreview />", pinnedCards.replace(/class=/g, "className=").replace(/href="#"/g, 'href="/jobs"'));
+  const pinnedPill = '<span className="pill daily-count-pending" aria-hidden="true">\n                  <span className="pill-dot"></span>\n                  <span>Daily jobs count pending verification</span>\n                </span>';
+  top = top.replace(/\{dailyCount[\s\S]*?Daily jobs count pending verification[\s\S]*?<\/span>\s*<\/span>\s*\)\}/, pinnedPill);
   const CM_BADGE = '<a href="#" class="brand"><span class="brand-mark">CM</span>CareerMonke</a>';
   assert.ok(topSrc.includes(CM_BADGE), "fixture must still hold the original CM badge");
   const SRC_H1 = '<h1>Start jobma<span class="xx">XX</span>ing with AI</h1>';
