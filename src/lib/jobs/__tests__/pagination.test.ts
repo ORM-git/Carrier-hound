@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { appendPage, createNextPageLoader } from "../pagination";
+import { appendPage, createNextPageLoader, isStalledCursor, PREFETCH_PAGES, refillTarget } from "../pagination";
 
 // CM mobile item 21: behavior of next-page loading (dedupe, single flight, abort, stale responses, errors).
 const j = (id: string) => ({ id });
@@ -88,5 +88,42 @@ describe("createNextPageLoader", () => {
     const apply = vi.fn();
     expect(await loader.load(async () => 3, apply)).toBe("applied");
     expect(apply).toHaveBeenCalledWith(3);
+  });
+});
+
+describe("refillTarget (bounded three-page look-ahead)", () => {
+  it("refills the next three pages only while fewer than three are buffered past the reader", () => {
+    expect(PREFETCH_PAGES).toBe(3);
+    expect(refillTarget(3, 2)).toBe(6); // reader enters page 2 with pages 1-3 loaded
+    expect(refillTarget(6, 3)).toBeNull(); // three pages already ahead: nothing to fetch
+    expect(refillTarget(6, 4)).toBe(9);
+    expect(refillTarget(6, 6)).toBe(9); // reader reached the tail
+  });
+
+  it("never lets the window exceed five pages ahead, whatever page is reached", () => {
+    for (let loaded = 1; loaded < 40; loaded++) {
+      for (let reached = 1; reached <= loaded; reached++) {
+        const target = refillTarget(loaded, reached);
+        if (target !== null) expect(target - reached).toBeLessThanOrEqual(2 * PREFETCH_PAGES - 1);
+      }
+    }
+  });
+});
+
+describe("isStalledCursor", () => {
+  const seen = new Set(["c1", "c2"]);
+  it("page-numbered streams and true ends always progress", () => {
+    expect(isStalledCursor(null, { hasNextPage: true, nextCursor: null }, seen)).toBe(false);
+    expect(isStalledCursor("c2", { hasNextPage: false, nextCursor: null }, seen)).toBe(false);
+  });
+  it("a fresh cursor progresses", () => {
+    expect(isStalledCursor("c2", { hasNextPage: true, nextCursor: "c3" }, seen)).toBe(false);
+  });
+  it("a repeated or already-consumed cursor stalls", () => {
+    expect(isStalledCursor("c3", { hasNextPage: true, nextCursor: "c3" }, new Set())).toBe(true);
+    expect(isStalledCursor("c2", { hasNextPage: true, nextCursor: "c1" }, seen)).toBe(true);
+  });
+  it("a cursor stream that drops its cursor while reporting more stalls", () => {
+    expect(isStalledCursor("c2", { hasNextPage: true, nextCursor: null }, seen)).toBe(true);
   });
 });

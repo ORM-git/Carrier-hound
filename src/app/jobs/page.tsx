@@ -65,7 +65,7 @@ import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
 import { workModelLabel } from "@/lib/jobs/workModel";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
-import { appendPage, createNextPageLoader } from "@/lib/jobs/pagination";
+import { appendPage, createNextPageLoader, isStalledCursor, PREFETCH_PAGES, refillTarget, type PageLoadOutcome } from "@/lib/jobs/pagination";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -516,9 +516,9 @@ function JobsPageInner() {
 
   // Live Supabase Jobs Data
   const [liveJobs, setLiveJobs] = useState<LiveJob[]>([]);
-  // Authoritative rows for growth checks. The pending-intent settle calls handleLoadMore from the
-  // closure of an older render, so reading the liveJobs state there would compare a new page
-  // against stale rows and report growth for an all-duplicate page. This ref is updated
+  // Authoritative rows for growth checks. The look-ahead chain runs several requests from the
+  // closure of the render that started it, so reading the liveJobs state there would compare a new
+  // page against stale rows and report growth for an all-duplicate page. This ref is updated
   // synchronously wherever a page is applied.
   const liveJobsRef = useRef<LiveJob[]>([]);
   useEffect(() => {
@@ -883,7 +883,12 @@ function JobsPageInner() {
         ]);
         if (cancelled) return;
 
-        const apps = u ? await getTrackedApplications(u.id) : [];
+        // Preferences load beside the tracker and land in the same render as the account, so the feed
+        // query key changes once (one page-1 request) instead of again when preferences arrive later.
+        const [apps, prefs]: [TrackedApplication[], UserPreferences | null] = u
+          ? await Promise.all([getTrackedApplications(u.id), getUserPreferences(u.id).catch(() => null)])
+          : [[], null];
+        if (cancelled) return;
 
         setUser(u);
         setIsPro(Boolean(proRes?.isPro));
@@ -896,14 +901,7 @@ function JobsPageInner() {
         const appliedIds = appliedApps.map((a) => a.jobId || "").filter(Boolean);
         setAppliedJobIds(appliedIds);
         setAppliedCount(appliedApps.length);
-
-        if (u) {
-          getUserPreferences(u.id).then((p) => {
-            if (!cancelled) {
-              setPreferences(p);
-            }
-          });
-        }
+        if (u) setPreferences(prefs);
       } catch (err) {
         console.warn("Failed to load initial context on jobs page:", err);
       }
@@ -980,12 +978,27 @@ function JobsPageInner() {
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const autoLoadArmedRef = useRef(true);
-  // ONE coalesced downward gesture observed while a next-page request is in flight. Consumed at
-  // most once, after that request settles, and only when the list grew, a next page exists, no
-  // error/pause happened and the sentinel is still near the viewport. Cleared on query reset and
-  // unmount. Never re-armed by layout/scroll anchoring or by the IntersectionObserver itself.
-  const pendingDownwardRef = useRef(false);
-  useEffect(() => () => { pendingDownwardRef.current = false; pageLoaderRef.current.reset(); }, []);
+  // Bounded look-ahead (see refillTarget): the deepest rendered page the reader has reached, the
+  // last page the current request chain aims for, and ONE coalesced refill asked for while that
+  // chain runs. chainGenRef ends a chain between requests on query reset or unmount.
+  const reachedPageRef = useRef(1);
+  const refillTargetRef = useRef(1);
+  const pendingRefillRef = useRef(false);
+  const chainGenRef = useRef(0);
+  // Cursors this query has consumed, to detect a server that repeats one instead of advancing.
+  const seenCursorsRef = useRef<Set<string>>(new Set());
+  // Page each loaded job arrived on; the first card of each page marks a real page boundary.
+  const [jobPage, setJobPage] = useState<ReadonlyMap<string, number>>(new Map());
+  // Page 1 of the current query; aborted when the query changes or the page unmounts.
+  const firstPageAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    chainGenRef.current++;
+    pendingRefillRef.current = false;
+    firstPageAbortRef.current?.abort();
+    pageLoaderRef.current.reset();
+    // A remount (React StrictMode in dev) must request page 1 again rather than keep the aborted one.
+    lastQueryKeyRef.current = "";
+  }, []);
 
   // Fetch live active jobs from Supabase whenever search, category, filters, sorting, or profile updates
   useEffect(() => {
@@ -1027,8 +1040,16 @@ function JobsPageInner() {
     lastQueryKeyRef.current = queryKey;
 
     pageLoaderRef.current.reset();
-    autoLoadArmedRef.current = true;
-    pendingDownwardRef.current = false;
+    firstPageAbortRef.current?.abort();
+    const firstPage = new AbortController();
+    firstPageAbortRef.current = firstPage;
+    chainGenRef.current++;
+    // The warm-up supplies the first pages; the tail sentinel waits for a real downward gesture.
+    autoLoadArmedRef.current = false;
+    pendingRefillRef.current = false;
+    reachedPageRef.current = 1;
+    refillTargetRef.current = 1;
+    seenCursorsRef.current = new Set();
     setLoadingMore(false);
     setLoadMoreError(false);
     setAutoLoadPaused(false);
@@ -1058,27 +1079,37 @@ function JobsPageInner() {
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
       preferences: effectivePreferences,
+      signal: firstPage.signal,
     })
       .then((res) => {
-        if (queryKey === lastQueryKeyRef.current) {
+        if (queryKey === lastQueryKeyRef.current && !firstPage.signal.aborted) {
           liveJobsRef.current = res.jobs;
           setLiveJobs(res.jobs);
+          setJobPage(new Map(res.jobs.map((job) => [job.id, 1])));
           setTotalCount(res.totalCount);
           setHasNextPage(Boolean(res.hasNextPage));
           cursorRef.current = res.nextCursor ?? null;
+          if (res.nextCursor) seenCursorsRef.current.add(res.nextCursor);
           hasNextPageRef.current = Boolean(res.hasNextPage);
           setIsDegraded(Boolean(res.isDegraded || res.error === "degraded"));
           setAppliedEligibility(res.appliedEligibility || null);
           setLoadingJobs(false);
+          // Page 1 is on screen; warm pages 2-3 in the background, one request after another.
+          if (isRecommended && res.hasNextPage && !res.isDegraded && !res.error) {
+            refillTargetRef.current = PREFETCH_PAGES;
+            void loadAhead();
+          }
         }
       })
       .catch((err) => {
         console.warn("Failed to fetch live jobs:", err);
-        if (queryKey === lastQueryKeyRef.current) {
+        if (queryKey === lastQueryKeyRef.current && !firstPage.signal.aborted) {
           setIsDegraded(true);
           setLoadingJobs(false);
         }
       });
+    // loadAhead is this render's closure over the same query; queryKey above owns re-running.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     retryNonce,
     selectedCategory,
@@ -1103,126 +1134,168 @@ function JobsPageInner() {
     preferences,
   ]);
 
-  const handleLoadMore = async () => {
+  // One ordered request chain toward refillTargetRef, following real continuations one at a time.
+  // Short, empty or duplicate-only pages do not stop it while the server reports more; it pauses on a
+  // stalled cursor, on a whole chain that added nothing, and on errors (never advancing past the
+  // failed continuation). A query reset or unmount ends it between requests.
+  const loadAhead = async () => {
     const loader = pageLoaderRef.current;
-    if (loader.busy || !hasNextPageRef.current) return;
-    // One page per intent. Layout/scroll anchoring after append is not new user input.
-    autoLoadArmedRef.current = false;
-    const nextPage = loadedPageRef.current + 1;
+    if (loader.busy) {
+      pendingRefillRef.current = true;
+      return;
+    }
+    const gen = chainGenRef.current;
     const isRecommended = activeTab === "recommended";
     const effectiveSortBy = sortBy;
     const effectiveCandidate = (isRecommended || sortBy === "match") ? candidate : null;
     const effectivePreferences = (isRecommended || sortBy === "match") ? preferences : null;
     setLoadingMore(true);
     setLoadMoreError(false);
-    // Set only when the applied page actually grew the list AND reported a next page.
-    let appliedWithMore = false;
+    let outcome: PageLoadOutcome = "applied";
+    let requested = 0;
+    let grew = false;
+    let stalled = false;
 
-    const outcome = await loader.load(
-      (signal) =>
-        getLiveJobs({
-          page: nextPage,
-          pageSize: 25,
-          cursor: cursorRef.current ?? undefined,
-          category: selectedCategory,
-          search: debouncedSearch,
-          remoteOnly,
-          location: selectedLocation,
-          level: selectedLevel,
-          jobType: selectedJobType,
-          countryCode: selectedCountryCode,
-          workModel: selectedWorkModel,
-          datePosted: selectedDatePosted,
-          experience: selectedExperience,
-          salaryMin: selectedSalaryMin,
-          sourceType: selectedSourceType,
-          company: selectedCompany,
-          isPro,
-          sortBy: effectiveSortBy,
-          candidate: effectiveCandidate,
-          preferences: effectivePreferences,
-          signal,
-        }),
-      (res) => {
-        if (res.isDegraded || res.error) {
-          setLoadMoreError(true);
-          return;
+    while (!stalled && gen === chainGenRef.current && hasNextPageRef.current && loadedPageRef.current < refillTargetRef.current) {
+      const nextPage = loadedPageRef.current + 1;
+      const sentCursor = cursorRef.current;
+      requested++;
+      outcome = await loader.load(
+        (signal) =>
+          getLiveJobs({
+            page: nextPage,
+            pageSize: 25,
+            cursor: sentCursor ?? undefined,
+            category: selectedCategory,
+            search: debouncedSearch,
+            remoteOnly,
+            location: selectedLocation,
+            level: selectedLevel,
+            jobType: selectedJobType,
+            countryCode: selectedCountryCode,
+            workModel: selectedWorkModel,
+            datePosted: selectedDatePosted,
+            experience: selectedExperience,
+            salaryMin: selectedSalaryMin,
+            sourceType: selectedSourceType,
+            company: selectedCompany,
+            isPro,
+            sortBy: effectiveSortBy,
+            candidate: effectiveCandidate,
+            preferences: effectivePreferences,
+            signal,
+          }),
+        (res) => {
+          // Degraded/forbidden pages are failures: nothing is applied and the cursor stays put.
+          if (res.isDegraded || res.error) throw new Error(res.error || "degraded");
+          // Server order kept; ids already shown or repeated within this page are skipped.
+          const prevRows = liveJobsRef.current;
+          const nextRows = appendPage(prevRows, res.jobs);
+          const added = nextRows.slice(prevRows.length);
+          if (added.length) {
+            grew = true;
+            setJobPage((prev) => {
+              const next = new Map(prev);
+              for (const job of added) next.set(job.id, nextPage);
+              return next;
+            });
+          }
+          stalled = isStalledCursor(sentCursor, res, seenCursorsRef.current);
+          if (res.nextCursor) seenCursorsRef.current.add(res.nextCursor);
+          liveJobsRef.current = nextRows;
+          setLiveJobs(nextRows);
+          setHasNextPage(Boolean(res.hasNextPage));
+          setPage(nextPage);
+          loadedPageRef.current = nextPage;
+          cursorRef.current = res.nextCursor ?? null;
+          hasNextPageRef.current = Boolean(res.hasNextPage);
+          if (res.totalCount) setTotalCount(res.totalCount);
         }
-        // Server order kept; ids already shown or repeated within this page are skipped.
-        // Compare against the authoritative rows ref, not closure state: one request at a time, a
-        // query change makes this response stale, and the pending-intent settle may invoke this
-        // handler from an older render whose liveJobs snapshot misses the last appended page.
-        const prevRows = liveJobsRef.current;
-        const nextRows = appendPage(prevRows, res.jobs);
-        const grew = nextRows.length !== prevRows.length;
-        setAutoLoadPaused(!grew);
-        liveJobsRef.current = nextRows;
-        setLiveJobs(nextRows);
-        setHasNextPage(Boolean(res.hasNextPage));
-        setPage(nextPage);
-        loadedPageRef.current = nextPage;
-        cursorRef.current = res.nextCursor ?? null;
-        hasNextPageRef.current = Boolean(res.hasNextPage);
-        appliedWithMore = grew && Boolean(res.hasNextPage);
-        if (res.totalCount) setTotalCount(res.totalCount);
-      }
-    );
-    // A stale outcome means the query changed; its reset already cleared loading/error state.
-    if (outcome === "stale") return;
-    if (outcome === "error") {
-      // A failed request consumes any intent recorded during it. Recovery is the Retry
-      // button, which is the user's own fresh intent, never the pre-failure swipe.
-      pendingDownwardRef.current = false;
-      setLoadMoreError(true);
+      );
+      if (outcome !== "applied") break;
     }
+    // A stale chain belongs to an old query or an unmounted page; its reset already cleared state.
+    if (outcome === "stale" || gen !== chainGenRef.current) return;
     setLoadingMore(false);
-
-    // Consume the one pending downward intent, if any, exactly once. Gestures arrive faster than a
-    // multi-second request; without this a user who keeps swiping while the request runs stalls at
-    // the old end with armed=false and the sentinel already passed. Conditions mirror a fresh
-    // gesture: same query (not stale), list grew with a next page, no error, not paused, sentinel
-    // still near the viewport. The next page is itself a one-page-per-intent load, so a continued
-    // fling must gesture again during it; there is no automatic chain.
-    if (outcome === "applied" && pendingDownwardRef.current) {
-      pendingDownwardRef.current = false;
-      const el = loadMoreSentinelRef.current;
-      const rect = el?.getBoundingClientRect();
-      if (appliedWithMore && el && rect && rect.top <= window.innerHeight + 400 && rect.bottom >= -400) {
-        autoLoadArmedRef.current = true;
-        handleLoadMore();
-      }
+    if (outcome === "error") {
+      // Recovery is the Retry button at this same continuation, never a queued refill.
+      pendingRefillRef.current = false;
+      setLoadMoreError(true);
+      return;
     }
+    const paused = stalled || (requested > 0 && !grew && hasNextPageRef.current);
+    setAutoLoadPaused(paused);
+    if (paused) {
+      pendingRefillRef.current = false;
+    } else if (pendingRefillRef.current) {
+      pendingRefillRef.current = false;
+      reachPage(reachedPageRef.current);
+    }
+  };
+
+  // The reader reached rendered page `page` (a page boundary or the feed tail scrolled into view).
+  // Repeated reports coalesce: the deepest page wins and a running chain re-checks once it settles.
+  const reachPage = (page: number) => {
+    reachedPageRef.current = Math.max(reachedPageRef.current, page);
+    if (pageLoaderRef.current.busy) {
+      pendingRefillRef.current = true;
+      return;
+    }
+    const target = hasNextPageRef.current ? refillTarget(loadedPageRef.current, reachedPageRef.current) : null;
+    if (target === null) return;
+    refillTargetRef.current = target;
+    void loadAhead();
+  };
+
+  // Load More / Retry: the user's own intent. Retry resumes the unfinished chain at the failed
+  // continuation; otherwise one more bounded refill.
+  const handleLoadMore = () => {
+    autoLoadArmedRef.current = false;
+    if (refillTargetRef.current <= loadedPageRef.current) refillTargetRef.current = loadedPageRef.current + PREFETCH_PAGES;
+    void loadAhead();
   };
 
   // getLiveJobs always reports hasNextPage; a totalCount fallback would show a phantom button once
   // duplicates are dropped (shown < total while the server has no next page).
   const canLoadMore = activeTab === "recommended" && hasNextPage;
 
-  // Load the next page while scrolling on every screen size.
-  // Appending a page never re-arms automatic loading. A fresh downward gesture is required.
+  // Keep the feed supplied while scrolling on every screen size. Rendered page boundaries crossing
+  // into view drive the bounded refill; the tail sentinel is the fallback when the reader outruns the
+  // network, and it still needs a fresh downward gesture (anchoring after an append is not input).
   useEffect(() => {
     const el = loadMoreSentinelRef.current;
     if (!el || !canLoadMore || loadMoreError || autoLoadPaused || loadingJobs || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (autoLoadArmedRef.current && entries.some((e) => e.isIntersecting)) handleLoadMore();
+        if (autoLoadArmedRef.current && entries.some((e) => e.isIntersecting)) {
+          autoLoadArmedRef.current = false;
+          reachPage(loadedPageRef.current);
+        }
       },
       { rootMargin: "400px 0px" }
     );
     observer.observe(el);
+    // A boundary in view or already above the viewport (a jump) means the reader reached that page.
+    const boundaryObserver = new IntersectionObserver((entries) => {
+      let deepest = 0;
+      for (const e of entries) {
+        if (e.isIntersecting || (e.boundingClientRect?.top ?? 0) < 0) deepest = Math.max(deepest, Number((e.target as HTMLElement).dataset.feedPage) || 0);
+      }
+      if (deepest > 0) reachPage(deepest);
+    });
+    document.querySelectorAll("[data-feed-page]").forEach((boundary) => boundaryObserver.observe(boundary));
     let frame = 0;
     let touchY: number | null = null;
+    // A gesture near the tail during a running chain is not lost: reachPage keeps ONE pending refill.
     const armFromInput = () => {
-      if (pageLoaderRef.current.busy) {
-        // A swipe during a request would otherwise be lost; keep ONE pending intent for settle.
-        pendingDownwardRef.current = true;
-        return;
-      }
       autoLoadArmedRef.current = true;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const rect = el.getBoundingClientRect();
-        if (autoLoadArmedRef.current && rect.top <= window.innerHeight + 400 && rect.bottom >= -400) handleLoadMore();
+        if (autoLoadArmedRef.current && rect.top <= window.innerHeight + 400 && rect.bottom >= -400) {
+          autoLoadArmedRef.current = false;
+          reachPage(loadedPageRef.current);
+        }
       });
     };
     const onWheel = (event: WheelEvent) => { if (event.deltaY > 0) armFromInput(); };
@@ -1243,6 +1316,7 @@ function JobsPageInner() {
     window.addEventListener("touchmove", onTouchMove, { passive: true });
     return () => {
       observer.disconnect();
+      boundaryObserver.disconnect();
       cancelAnimationFrame(frame);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
@@ -1251,7 +1325,7 @@ function JobsPageInner() {
     };
     // Refresh closures when the list changes, but preserve the consumed intent across observers
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canLoadMore, loadMoreError, autoLoadPaused, loadingJobs, loadingMore, liveJobs.length]);
+  }, [canLoadMore, loadMoreError, autoLoadPaused, loadingJobs, loadingMore, liveJobs.length, jobPage]);
 
   const savedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "saved"), [trackedApplications]);
   const appliedApps = useMemo(() => trackedApplications.filter((a) => a.stage === "applied"), [trackedApplications]);
@@ -1422,6 +1496,16 @@ function JobsPageInner() {
   ]);
 
   const displayedJobs = filteredJobs;
+  // First displayed card of each later page: the rendered page boundaries the look-ahead observes.
+  const pageBoundaryAt = useMemo(() => {
+    const starts = new Map<string, number>();
+    let deepest = 1;
+    for (const job of displayedJobs) {
+      const p = jobPage.get(job.id) ?? 1;
+      if (p > deepest) starts.set(job.id, (deepest = p));
+    }
+    return starts;
+  }, [displayedJobs, jobPage]);
 
   // Similar jobs: same category first, country only as fallback; API-fetched if direct link
   const similarJobs = useMemo(() => {
@@ -2218,6 +2302,7 @@ function JobsPageInner() {
                           <motion.article
                             key={job.id}
                             data-testid="job-card"
+                            data-feed-page={pageBoundaryAt.get(job.id)}
                             data-tour={index === 0 ? "tour-job-details" : undefined}
                             initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
