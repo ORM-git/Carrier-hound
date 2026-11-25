@@ -1,3 +1,4 @@
+import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
@@ -59,7 +60,15 @@ function formatDate(dateStr?: string | null): string {
  * - Fallback when a user has no answers: latest jobs.
  */
 export async function GET(req: Request) {
-  const log = baseLog.child({ requestId: req?.headers.get("x-request-id") ?? "unknown" });
+  const timing = recommendationTiming(req.headers.get("cf-ray"));
+  let responseStatus = 500;
+  const respond = (body: any, init?: ResponseInit) => {
+    responseStatus = init?.status ?? 200;
+    const response = NextResponse.json(body, init);
+    response.headers.set("X-CM-Request-ID", timing.requestId);
+    return response;
+  };
+  const log = baseLog.child({ requestId: timing.requestId });
   try {
     const isLegacy =
       process.env.NODE_ENV === "test" &&
@@ -81,7 +90,7 @@ export async function GET(req: Request) {
       );
 
       if (!ipLimit.allowed) {
-        return NextResponse.json(
+        return respond(
           {
             error: "Rate limit exceeded. Please try again shortly.",
             retryAfter: ipLimit.retryAfter,
@@ -452,16 +461,19 @@ export async function GET(req: Request) {
       .order("id", { ascending: false })
       .range(0, RECOMMENDED_POOL_SIZE - 1);
 
+    timing.begin("db");
     const { data: rawJobs, error } = await query;
+    timing.rows("candidateRows", rawJobs?.length ?? 0);
 
     if (error) {
       log.error("Failed to query candidate jobs for recommendations", { error: error.message || error });
-      return NextResponse.json(
+      return respond(
         { error: "Database service unavailable", jobs: [], totalCount: 0 },
         { status: 503 }
       );
     }
 
+    timing.begin("scoring");
     const candidateJobs = rawJobs || [];
     const hasResume = hasResumeSignals(answers.resumeProfile);
     const rankedJobs = isPersonalized || hasResume
@@ -478,6 +490,10 @@ export async function GET(req: Request) {
     totalCount = cappedJobs.length; // Honestly reports the bounded pool total after exclusions
     paginatedJobs = cappedJobs.slice(from, to + 1);
 
+    timing.rows("rankedRows", cappedJobs.length);
+    timing.rows("returnedRows", paginatedJobs.length);
+    timing.begin("format");
+
     // Build company group ID map for non-Pro responses to prevent company_id leakage
     // Fails closed with 503 if HMAC secret is missing or unavailable
     let listGroupIds = new Map<string, string>();
@@ -489,7 +505,7 @@ export async function GET(req: Request) {
         log.error("Company group secret unavailable; refusing non-Pro response in /api/jobs/recommended", {
           error: groupErr?.message || groupErr,
         });
-        return NextResponse.json(
+        return respond(
           { error: "Database service unavailable", jobs: [], totalCount: 0 },
           { status: 503 }
         );
@@ -561,7 +577,7 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json({
+    return respond({
       jobs: formattedJobs,
       totalCount,
       personalized: isPersonalized || hasResume,
@@ -571,9 +587,11 @@ export async function GET(req: Request) {
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });
-    return NextResponse.json(
+    return respond(
       { error: "Failed to generate recommended jobs", jobs: [], totalCount: 0 },
       { status: 500 }
     );
+  } finally {
+    timing.finish(responseStatus);
   }
 }
