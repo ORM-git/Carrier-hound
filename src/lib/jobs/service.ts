@@ -349,6 +349,7 @@ const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
 import { capJobsPerCompany } from "./capping";
+import { jobTypeOrClause, workModelOrClause } from "./jobFilters";
 
 import { createLogger } from "@/lib/observability/logger";
 
@@ -630,20 +631,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
     }
 
-    if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
-      const jt = jobType.trim().toLowerCase();
-      if (jt.includes("full")) {
-        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
-      } else if (jt.includes("contract")) {
-        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
-      } else if (jt.includes("part")) {
-        query = query.ilike("job_type", "%part%");
-      } else if (jt.includes("intern")) {
-        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
-      } else {
-        query = query.ilike("job_type", "%" + jt + "%");
-      }
-    }
+    const jobTypeClause = jobTypeOrClause(jobType);
+    if (jobTypeClause) query = query.or(jobTypeClause);
 
     if (level && level.trim() && level.toLowerCase() !== "all") {
       query = applyExperienceLevelQuery(query, level);
@@ -675,18 +664,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
     }
 
-    if (workModel && workModel.trim() && workModel.toLowerCase() !== "all") {
-      const wmTokens = workModel.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
-      const orParts: string[] = [];
-      for (const wm of wmTokens) {
-        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
-        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
-        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
-      }
-      if (orParts.length > 0) {
-        query = query.or(orParts.join(","));
-      }
-    }
+    const workModelClause = workModelOrClause(workModel);
+    if (workModelClause) query = query.or(workModelClause);
 
     if (datePosted && datePosted.trim() && datePosted.toLowerCase() !== "all") {
       const dp = datePosted.trim().toLowerCase();
@@ -767,20 +746,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
             catQuery = catQuery.ilike("location", "%" + loc + "%");
           }
         }
-        if (jobType && jobType.trim() && jobType.toLowerCase() !== "all") {
-          const jt = jobType.trim().toLowerCase();
-          if (jt.includes("full")) {
-            catQuery = catQuery.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
-          } else if (jt.includes("contract")) {
-            catQuery = catQuery.or("job_type.ilike.%contract%,job_type.eq.contractor");
-          } else if (jt.includes("part")) {
-            catQuery = catQuery.ilike("job_type", "%part%");
-          } else if (jt.includes("intern")) {
-            catQuery = catQuery.or("job_type.ilike.%intern%,job_type.eq.internship");
-          } else {
-            catQuery = catQuery.ilike("job_type", "%" + jt + "%");
-          }
-        }
+        if (jobTypeClause) catQuery = catQuery.or(jobTypeClause);
+        if (workModelClause) catQuery = catQuery.or(workModelClause);
         if (level && level.trim() && level.toLowerCase() !== "all") {
           catQuery = applyExperienceLevelQuery(catQuery, level);
         }
@@ -917,7 +884,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
-          type: row.job_type === "internship" ? "Internship" : "Full-time",
+          type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
           directSource: Boolean(row.verified),
           applyUrl: "",
           description: "",
