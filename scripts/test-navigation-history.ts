@@ -110,6 +110,12 @@ export const ROUTER_REPLACE_ALLOWLIST: RouterReplaceAllowlistEntry[] = [
     expectedCount: 1,
     requiredSnippets: ['router.replace("/login?returnTo=/resume")'],
   },
+  // Unauthenticated mount guard on `/resume/manual` replaces protected URL to prevent Back-button loop
+  {
+    file: "src/app/resume/manual/page.tsx",
+    expectedCount: 1,
+    requiredSnippets: ['router.replace("/login?returnTo=/resume/manual")'],
+  },
   // Unauthenticated mount guard on `/settings` replaces protected URL to prevent Back-button loop
   {
     file: "src/app/settings/page.tsx",
