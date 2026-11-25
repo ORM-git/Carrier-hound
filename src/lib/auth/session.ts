@@ -1,6 +1,14 @@
 import { createClient } from "../supabase/client";
 import { UserPreferences, emptyUserPreferences } from "./types";
 import { COUNTRY_MIGRATION, isMissingCountryColumnError } from "./countryColumns";
+import {
+  legacyRemotePreference,
+  normalizeFeedConstraints,
+  normalizeTextList,
+  normalizeWorkModels,
+  parseDatePosted,
+  workModelsFromLegacy,
+} from "@/lib/preferences/feedConstraints";
 export { getValidReturnUrl } from "./returnTo";
 import { markAccountOnboardingCompleted } from "./onboarding";
 import { clearCandidateProfileMemoryCache } from "../resume/storage";
@@ -148,6 +156,7 @@ export async function getUserPreferences(userId?: string, clientOverride?: any):
           eligibilityFilter: data.eligibility_filter ?? true,
           updatedAt: data.updated_at || new Date().toISOString(),
         };
+        Object.assign(prefs, await readFeedConstraintColumns(supabase, userId, prefs.remotePreference));
         if (typeof window !== "undefined") {
           localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
         }
@@ -177,6 +186,72 @@ export async function getUserPreferences(userId?: string, clientOverride?: any):
   }
 
   return emptyUserPreferences();
+}
+
+const FEED_CONSTRAINT_COLUMNS = "work_models, date_posted, excluded_titles, included_companies, excluded_companies";
+export const FEED_CONSTRAINTS_MIGRATION = "20261125a_user_preferences_feed_constraints.sql";
+
+function isMissingFeedConstraintColumnError(error: any): boolean {
+  const message = String(error?.message || "");
+  return (error?.code === "42703" || error?.code === "PGRST204") &&
+    /work_models|date_posted|excluded_titles|included_companies|excluded_companies/.test(message);
+}
+
+/**
+ * Separate read so an unmigrated schema degrades to "constraints unavailable" instead of
+ * blanking every other preference. NULL columns (legacy rows) read as never saved; work models
+ * then come from the legacy single remote_preference.
+ */
+async function readFeedConstraintColumns(supabase: any, userId: string, remotePreference: string): Promise<Partial<UserPreferences>> {
+  const legacy: Partial<UserPreferences> = { workModels: workModelsFromLegacy(remotePreference) };
+  try {
+    const { data: row, error } = await supabase
+      .from("user_preferences")
+      .select(FEED_CONSTRAINT_COLUMNS)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      if (isMissingFeedConstraintColumnError(error)) {
+        log.warn("user_preferences feed constraint columns missing", { migration: FEED_CONSTRAINTS_MIGRATION });
+      }
+      return { ...legacy, feedConstraintsAvailable: false };
+    }
+    const c = normalizeFeedConstraints({
+      excludedTitles: row?.excluded_titles,
+      includedCompanies: row?.included_companies,
+      excludedCompanies: row?.excluded_companies,
+      datePosted: row?.date_posted,
+    });
+    return {
+      workModels: Array.isArray(row?.work_models) ? normalizeWorkModels(row.work_models) : legacy.workModels,
+      datePosted: c.datePosted,
+      excludedTitles: c.excludedTitles,
+      includedCompanies: normalizeTextList(row?.included_companies), // stored as saved; conflict settled at query time
+      excludedCompanies: c.excludedCompanies,
+      feedConstraintsAvailable: true,
+    };
+  } catch {
+    return { ...legacy, feedConstraintsAvailable: false };
+  }
+}
+
+/** Columns for the constraint fields the caller set (undefined leaves the saved value alone). */
+function feedConstraintColumns(p: UserPreferences): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  // Read from a schema without the columns: write none of them, so other preferences still save.
+  if (p.feedConstraintsAvailable === false) return out;
+  if (p.workModels !== undefined) out.work_models = normalizeWorkModels(p.workModels);
+  if (p.datePosted !== undefined) out.date_posted = parseDatePosted(p.datePosted);
+  if (p.excludedTitles !== undefined) out.excluded_titles = normalizeTextList(p.excludedTitles);
+  if (p.includedCompanies !== undefined) out.included_companies = normalizeTextList(p.includedCompanies);
+  if (p.excludedCompanies !== undefined) out.excluded_companies = normalizeTextList(p.excludedCompanies);
+  return out;
+}
+
+/** remote_preference stays the legacy single value: derived from workModels when the caller set them. */
+function remotePreferenceToWrite(p: UserPreferences): string {
+  if (p.workModels !== undefined) return legacyRemotePreference(normalizeWorkModels(p.workModels));
+  return p.remotePreference || "any";
 }
 
 function isMissingDeletedAtColumnError(error: any): boolean {
@@ -210,7 +285,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       experience_level: updatedPrefs.experienceLevel || null,
       employment_types: updatedPrefs.employmentTypes || [],
       locations: updatedPrefs.locations || [],
-      remote_preference: updatedPrefs.remotePreference || "any",
+      remote_preference: remotePreferenceToWrite(updatedPrefs),
       work_auth: updatedPrefs.workAuth || null,
       min_salary: updatedPrefs.minSalary ?? null,
       salary_currency: updatedPrefs.salaryCurrency || null,
@@ -219,6 +294,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
       deleted_at: null,
       updated_at: updatedPrefs.updatedAt,
+      ...feedConstraintColumns(updatedPrefs),
       ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
       ...(updatedPrefs.countryCode !== undefined
         ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
@@ -232,7 +308,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
         experience_level: updatedPrefs.experienceLevel || null,
         employment_types: updatedPrefs.employmentTypes || [],
         locations: updatedPrefs.locations || [],
-        remote_preference: updatedPrefs.remotePreference || "any",
+        remote_preference: remotePreferenceToWrite(updatedPrefs),
         work_auth: updatedPrefs.workAuth || null,
         min_salary: updatedPrefs.minSalary ?? null,
         salary_currency: updatedPrefs.salaryCurrency || null,
@@ -240,6 +316,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
         onboarding_completed: updatedPrefs.onboardingCompleted ?? false,
         eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
         updated_at: updatedPrefs.updatedAt,
+        ...feedConstraintColumns(updatedPrefs),
         ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
         ...(updatedPrefs.countryCode !== undefined
           ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
@@ -248,6 +325,12 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
     }
 
     if (upsertError) {
+      if (isMissingFeedConstraintColumnError(upsertError)) {
+        log.error("user_preferences feed constraint columns missing; refusing to save without them", {
+          migration: FEED_CONSTRAINTS_MIGRATION,
+        });
+        throw new Error("Failed to save preferences: this preference storage is not available yet. Please try again later.");
+      }
       if (isMissingCountryColumnError(upsertError)) {
         log.error("user_preferences country columns missing; refusing to save without them", {
           migration: COUNTRY_MIGRATION,

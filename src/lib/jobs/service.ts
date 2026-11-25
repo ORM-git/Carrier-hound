@@ -1,4 +1,5 @@
 import { createClient } from "../supabase/client";
+import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
@@ -412,8 +413,15 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     : [];
   const isRecommendedWithoutResume = isMatchSort && (!candidate || relevanceTerms.length === 0);
 
+  // Applying SAVED constraints is an owner decision (savedFeedConstraintsEnforced, default off): until
+  // enabled nothing saved narrows the feed. When enabled they travel only with the personalized feed's
+  // preferences (Recommended tab / match sort); the saved date window AND the browsing one: the narrower
+  // wins. Company predicates need the server (jobs_public has no company column).
+  const feedConstraints = normalizeFeedConstraints(savedFeedConstraintsEnforced() ? preferences : null);
+  const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
+
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
-  const hasServerFilter = Boolean((search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
+  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
   const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
@@ -456,7 +464,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (jobType && jobType !== "all") recParams.set("jobType", jobType);
         if (workModel && workModel !== "all") recParams.set("workModel", workModel);
         if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
-        if (datePosted && datePosted !== "all") recParams.set("datePosted", datePosted);
+        if (effectiveDatePosted) recParams.set("datePosted", effectiveDatePosted);
+        appendFeedConstraintParams(recParams, feedConstraints);
         if (experience && experience !== "all" && experience.toLowerCase() !== "all experience") recParams.set("experience", experience);
         if (salaryMin) recParams.set("salaryMin", String(salaryMin));
         if (sourceType && sourceType !== "all") recParams.set("sourceType", sourceType);
@@ -514,7 +523,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
-      if (datePosted && datePosted !== "all") params.set("datePosted", datePosted);
+      if (effectiveDatePosted) params.set("datePosted", effectiveDatePosted);
+      appendFeedConstraintParams(params, feedConstraints);
       if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
       if (experience && experience !== "all" && experience !== "All Experience") params.set("experience", experience);
       if (salaryMin) params.set("salaryMin", String(salaryMin));
@@ -563,6 +573,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     } catch (searchErr) {
       log.warn("Server search failed, falling back to public preview query:", { error: searchErr });
     }
+  }
+
+  // The direct jobs_public query cannot express saved title/company constraints: a retryable error,
+  // never a silently broadened personalized feed.
+  if (feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints)) {
+    return DEGRADED_JOBS_RESULT;
   }
 
   try {
@@ -672,21 +688,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     const workModelClause = workModelOrClause(workModel);
     if (workModelClause) query = query.or(workModelClause);
 
-    if (datePosted && datePosted.trim() && datePosted.toLowerCase() !== "all") {
-      const dp = datePosted.trim().toLowerCase();
-      const ms =
-        dp === "24h" || dp.includes("24")
-          ? 24 * 60 * 60 * 1000
-          : dp === "7d" || dp.includes("week")
-          ? 7 * 24 * 60 * 60 * 1000
-          : dp === "30d" || dp.includes("month")
-          ? 30 * 24 * 60 * 60 * 1000
-          : 0;
-      if (ms > 0) {
-        const cutoff = new Date(Date.now() - ms).toISOString();
-        query = query.gte("posted_at", cutoff);
-      }
-    }
+    // 24h / 3d / 7d / 30d. A NULL posted_at (unknown source date) never passes an active window.
+    const postedCutoff = datePostedCutoff(effectiveDatePosted);
+    if (postedCutoff) query = query.gte("posted_at", postedCutoff);
 
     // Note: company, salaryMin, and sourceType columns are not present in jobs_public view.
     // They are guarded here and safely resolved via server search (/api/jobs/search).

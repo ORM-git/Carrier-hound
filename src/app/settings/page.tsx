@@ -9,6 +9,8 @@ import AppTopBar from "@/components/shell/AppTopBar";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
 import { getAuthUser, getUserPreferences, saveUserPreferences, signOutUser } from "@/lib/auth/session";
 import { UserPreferences } from "@/lib/auth/types";
+import { categoriesForRoles } from "@/lib/onboarding/roleCategories";
+import { workModelsFromLegacy } from "@/lib/preferences/feedConstraints";
 import { getUserSubscription, cancelAutoRenewSubscription } from "@/lib/billing/subscription";
 import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
@@ -51,8 +53,11 @@ function SettingsPageInner() {
   // Preferences form state
   const [roles, setRoles] = useState<string[]>([]);
   const [customRole, setCustomRole] = useState("");
-  const [experienceLevel, setExperienceLevel] = useState<UserPreferences["experienceLevel"]>("mid");
-  const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"]>("remote");
+  // The loaded row: a save spreads it so fields this form does not edit (country, eligibility,
+  // saved feed constraints) are never erased.
+  const [loadedPrefs, setLoadedPrefs] = useState<UserPreferences | null>(null);
+  const [experienceLevel, setExperienceLevel] = useState<UserPreferences["experienceLevel"]>("");
+  const [remotePreference, setRemotePreference] = useState<UserPreferences["remotePreference"]>("any");
   const [locations, setLocations] = useState<string[]>([]);
   const [workAuth, setWorkAuth] = useState("");
   const [workAuthError, setWorkAuthError] = useState<string | null>(null);
@@ -116,9 +121,10 @@ function SettingsPageInner() {
       setUser(u);
 
       getUserPreferences(u.id).then((p) => {
+        setLoadedPrefs(p);
         setRoles(p.roles || []);
-        setExperienceLevel(p.experienceLevel || "mid");
-        setRemotePreference(p.remotePreference || "remote");
+        setExperienceLevel(p.experienceLevel || "");
+        setRemotePreference(p.remotePreference || "any");
         setLocations(p.locations || []);
         setWorkAuth(p.workAuth || "");
         setEmploymentTypes(p.employmentTypes || []);
@@ -161,10 +167,14 @@ function SettingsPageInner() {
       setWorkAuthError("Choose your work authorization before saving.");
       return;
     }
+    const remoteChanged = remotePreference !== (loadedPrefs?.remotePreference || "any");
     const updated: UserPreferences = {
+      ...(loadedPrefs ?? {}),
       roles,
-      categories: roles.map((r) => r.toLowerCase()),
-      experienceLevel,
+      categories: categoriesForRoles(roles),
+      experienceLevel: experienceLevel || undefined,
+      // An untouched select keeps a saved multi-select (e.g. Hybrid + Remote) instead of collapsing it.
+      workModels: remoteChanged ? workModelsFromLegacy(remotePreference) : loadedPrefs?.workModels,
       employmentTypes,
       locations,
       remotePreference,
@@ -178,6 +188,7 @@ function SettingsPageInner() {
     setSavingPrefs(true);
     try {
       await saveUserPreferences(updated, user?.id);
+      setLoadedPrefs(updated);
       toast.success("Job target preferences saved successfully.");
     } catch {
       // The form keeps the edited values so the user can retry.
@@ -465,6 +476,7 @@ function SettingsPageInner() {
                   onChange={(e) => setExperienceLevel(e.target.value as any)}
                   className="w-full text-xs sm:text-sm py-2.5 px-3 rounded-xl border border-slate-200 bg-white focus:outline-blue-600 shadow-2xs cursor-pointer"
                 >
+                  <option value="">Not set</option>
                   <option value="intern">Internship / Student</option>
                   <option value="entry">Entry-Level (0 - 2 years)</option>
                   <option value="mid">Mid-Level (2 - 5 years)</option>
@@ -487,6 +499,11 @@ function SettingsPageInner() {
                   <option value="onsite">On-Site Only</option>
                   <option value="any">Open to Any Setup</option>
                 </select>
+                {(loadedPrefs?.workModels?.length ?? 0) > 1 && remotePreference === (loadedPrefs?.remotePreference || "any") && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Saved in Preferences: {loadedPrefs!.workModels!.map((m) => m[0].toUpperCase() + m.slice(1)).join(" + ")}. Changing this replaces it.
+                  </p>
+                )}
               </div>
             </div>
 
