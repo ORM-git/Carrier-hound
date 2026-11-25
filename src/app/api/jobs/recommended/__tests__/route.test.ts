@@ -1269,3 +1269,25 @@ describe('item 18 saved profile revision lifecycle', () => {
     expect(oldJobReload.jobs[0].matchScore).not.toBe(oldFeed.jobs[0].matchScore);
   });
 });
+
+
+describe("recommended request phase telemetry", () => {
+  it("logs real route stages and returns a correlatable generated id without sensitive fields", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const response = await recommendedRoute(req("http://localhost/api/jobs/recommended?pageSize=20", "tok-free-with-answers"));
+      expect(response.status).toBe(200);
+      const id = response.headers.get("X-CM-Request-ID");
+      expect(id).toMatch(/^[a-f0-9-]{36}$/);
+      const rows = spy.mock.calls.map(([line]) => { try { return JSON.parse(String(line)); } catch { return null; } })
+        .filter(r => r?.msg === "recommended_request_timing" && r.requestId === id);
+      expect(rows.map(r => r.stage)).toEqual(["setup", "db", "scoring", "format", "format"]);
+      expect(rows.at(-1)).toMatchObject({ event: "finish", status: 200 });
+      expect(rows.at(-1).candidateRows).toBeGreaterThan(0);
+      expect(rows.at(-1).returnedRows).toBeLessThanOrEqual(20);
+      for (const r of rows) {
+        expect(Object.keys(r).every(k => ["route", "requestId", "cfRay", "event", "stage", "ts", "level", "msg", "setupWallMs", "dbWallMs", "scoringWallMs", "formatWallMs", "candidateRows", "rankedRows", "returnedRows", "totalWallMs", "status"].includes(k))).toBe(true);
+      }
+    } finally { spy.mockRestore(); }
+  });
+});
