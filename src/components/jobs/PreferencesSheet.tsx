@@ -1,5 +1,7 @@
 "use client";
 
+import { useSheetPresence } from "./hooks/useSheetPresence";
+import "./sheet-motion.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, ChevronDown, ChevronLeft, ChevronRight, Search, Check, Lock } from "lucide-react";
@@ -232,6 +234,7 @@ function PendingControl({ label, reason }: { label: string; reason: string }) {
 }
 
 export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, onSave, triggerRef }: PreferencesSheetProps) {
+  const { present, exiting } = useSheetPresence(isOpen);
   const [draft, setDraft] = useState<PreferencesDraft>(() => draftFromPreferences(committed));
   const [expanded, setExpanded] = useState<PreferenceGroup | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
@@ -249,6 +252,17 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const roleTriggerRef = useRef<HTMLButtonElement | null>(null);
   const roleSearchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (isOpen) closeRef.current?.focus();
+  }, [isOpen]);
+  const previousRolePickerOpen = useRef(false);
+  useEffect(() => {
+    const changed = previousRolePickerOpen.current !== rolePickerOpen;
+    previousRolePickerOpen.current = rolePickerOpen;
+    if (!isOpen || !changed) return;
+    // Commit-time focus needs no deferred callback that can outlive the sheet.
+    (rolePickerOpen ? roleSearchRef : roleTriggerRef).current?.focus();
+  }, [isOpen, rolePickerOpen]);
   const titleId = useId();
   const pendingRef = useRef(false);
 
@@ -293,13 +307,11 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
   useEffect(() => {
     if (!isOpen) return;
-    closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         if (rolePickerOpen) {
           setRolePickerOpen(false);
-          requestAnimationFrame(() => roleTriggerRef.current?.focus());
         } else close();
         return;
       }
@@ -320,11 +332,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
       }
     };
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
     // close/rolePickerOpen read fresh via closure each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,7 +346,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
   const committedDraftJson = useMemo(() => JSON.stringify(draftFromPreferences(committed)), [committed]);
   const isDirty = JSON.stringify(draft) !== committedDraftJson;
 
-  if (!isOpen || ownerChanged) return null;
+  if (!present || ownerChanged) return null;
 
   const set = <K extends keyof PreferencesDraft>(key: K, value: PreferencesDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const toggleIn = <T extends string>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
@@ -429,7 +438,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
           type="button"
           onClick={() => {
             setRolePickerOpen(false);
-            requestAnimationFrame(() => roleTriggerRef.current?.focus());
+
           }}
           className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-[14px] font-semibold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
         >
@@ -528,14 +537,14 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
   // Portalled so a transformed/animated feed ancestor can't offset the fixed overlay.
   return createPortal(
-    <div className="fixed inset-0 z-[80]" data-testid="preferences-sheet">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={close} aria-hidden="true" />
+    <div className="cm-sheet-preferences fixed inset-0 z-[80]" data-sheet-state={exiting ? "closing" : "open"} ref={(element) => { if (element) element.inert = exiting; }} aria-hidden={exiting || undefined} data-testid="preferences-sheet">
+      <button type="button" tabIndex={-1} aria-label="Close preferences" className="cm-sheet-backdrop absolute inset-0 border-0 bg-slate-900/40" onClick={close} />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:rounded-l-2xl"
+        className="cm-sheet-panel absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[480px] sm:rounded-none sm:rounded-l-2xl"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto mb-1 mt-3 h-1.5 w-12 shrink-0 rounded-full bg-slate-300 sm:hidden" aria-hidden="true" />
@@ -614,7 +623,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                     type="button"
                     onClick={() => {
                       setRolePickerOpen(true);
-                      requestAnimationFrame(() => roleSearchRef.current?.focus());
+
                     }}
                     className="flex min-h-[44px] w-full items-center justify-between rounded-xl border border-[#CBD5E1] px-3 text-left text-[14px] text-[#0F172A] hover:border-[#94A3B8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
                   >
