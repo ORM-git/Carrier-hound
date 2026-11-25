@@ -15,7 +15,6 @@ export interface JobCardContentProps {
   footerActions?: React.ReactNode;
   job: LiveJob;
   index: number;
-
   isPro: boolean;
   isSaved: boolean;
   matchScore: number | null;
@@ -321,7 +320,6 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                               {/* Top row: company and 52px match ring; menu sits beside the heart below. */}
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-
                                   <CompanyLogo
                                     company={job.company}
                                     locked={!isPro}
@@ -394,7 +392,6 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                     {formattedJobType}
                                   </span>
                                 )}
-
                                 {/* Work model always shown, from remoteScope (Remote / Hybrid / On-site / Flexible) */}
                                 <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <Laptop className="w-3 h-3 text-[#475569]" />
@@ -465,12 +462,12 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                         e.stopPropagation();
                                         handleSelectJob(job);
                                       }}
+                                      data-mobile-list-apply="true
                                       data-mobile-list-apply="true"
                                       data-mobile-list-apply="true"
                                       className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition cursor-pointer"
                                     >
                                       <span>Apply</span>
-
                                       <ArrowRight className="w-3.5 h-3.5" />
                                     </button>
                                   ) : (
@@ -483,7 +480,6 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                       className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition cursor-pointer"
                                     >
                                       <Lock className="w-3.5 h-3.5" />
-
                                       <span>Apply</span>
                                     </button>
                                   )}
