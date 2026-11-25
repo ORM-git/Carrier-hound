@@ -951,10 +951,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                         job.top_keywords = extractTopKeywords(job.title, u.description, u.skills, 8);
                       }
                       if (u.role_category) job.role_category = u.role_category;
-                      if (u.logo_url || u.logoUrl) {
-                        job.logoUrl = u.logo_url || u.logoUrl;
-                        job.logo_url = u.logo_url || u.logoUrl;
-                      }
+                      const companyLogo = u.logo_url || u.logoUrl || u.companies?.logo_url || null;
+                      job.logoUrl = companyLogo;
+                      job.logo_url = companyLogo;
+                      job.companyDomain = u.companies?.domain || null;
                     }
                   });
                 }
