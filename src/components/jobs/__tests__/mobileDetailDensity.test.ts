@@ -38,7 +38,7 @@ describe("mobile detail density", () => {
   });
 
   it("the match score cards follow the facts, before the description", () => {
-    expect(detail.indexOf('data-testid="mobile-job-facts"')).toBeLessThan(detail.indexOf('data-testid="mobile-match-score"'));
-    expect(detail.indexOf('data-testid="mobile-match-score"')).toBeLessThan(detail.indexOf("(3) CONTENT ORDER"));
+    expect(detail.indexOf('data-testid="mobile-job-facts"')).toBeLessThan(detail.indexOf('testId="mobile-match-score"'));
+    expect(detail.indexOf('testId="mobile-match-score"')).toBeLessThan(detail.indexOf("(3) CONTENT ORDER"));
   });
 });

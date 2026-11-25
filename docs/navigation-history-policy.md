@@ -47,6 +47,7 @@ Audit baseline: `origin/main` (`539c1c8b`). Sites corrected in this PR: **0** (a
 | `src/app/profile/page.tsx` | 73 | Unauthenticated mount guard on `/profile` | `router.replace("/login?returnTo=/profile")` | `replace` | Compliant |
 | `src/app/radar/page.tsx` | 49 | Unauthenticated mount guard on `/radar` | `router.replace("/login?returnTo=/radar")` | `replace` | Compliant |
 | `src/app/resume/page.tsx` | 130 | Unauthenticated mount guard on `/resume` | `router.replace("/login?returnTo=/resume")` | `replace` | Compliant |
+| `src/app/resume/manual/page.tsx` | 13 | Unauthenticated mount guard on `/resume/manual` | `router.replace("/login?returnTo=/resume/manual")` | `replace` | Compliant |
 | `src/app/settings/page.tsx` | 64 | Unauthenticated mount guard on `/settings` | `router.replace("/login?returnTo=/settings")` | `replace` | Compliant |
 | `src/app/signup/page.tsx` | 90 | Single onboarding-aware, already-authenticated auto-redirect off `/signup` | `router.replace(target)` | `replace` | Compliant |
 | `src/app/tracker/page.tsx` | 105 | Unauthenticated mount guard on `/tracker` | `router.replace("/login?returnTo=/tracker")` | `replace` | Compliant |

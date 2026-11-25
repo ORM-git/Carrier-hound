@@ -1008,6 +1008,21 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 /**
  * Fetches single job detail by ID with strict server/payload-level Pro gating.
  */
+/**
+ * Detail data for the job the viewer already has from the listing may omit the employer logo / domain the listing
+ * carried. Keep those permitted fields for the SAME job only (matched by id); a different job, or a detail that
+ * failed to unlock, never inherits them. Nothing is guessed: only values the listing object already held are kept.
+ */
+export function keepSameJobLogoIdentity(detail: LiveJob, listing: LiveJob | null | undefined): LiveJob {
+  if (!listing || listing.id !== detail.id || detail.proUnlockError) return detail;
+  return {
+    ...detail,
+    logoUrl: detail.logoUrl || listing.logoUrl || null,
+    logo_url: detail.logo_url || detail.logoUrl || listing.logo_url || listing.logoUrl || null,
+    companyDomain: detail.companyDomain || listing.companyDomain || null,
+  };
+}
+
 export async function getLiveJobById(jobId: string, isPro: boolean = false): Promise<LiveJob | null> {
   if (!jobId || !jobId.trim()) return null;
   const cleanId = jobId.trim();
@@ -1065,8 +1080,10 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
-                logoUrl: job.logo_url || job.logoUrl || null,
-                logo_url: job.logo_url || job.logoUrl || null,
+                // Same employer logo / domain resolution as the Pro listing (search route): job logo, then companies.*.
+                logoUrl: job.logo_url || job.logoUrl || job.companies?.logo_url || null,
+                logo_url: job.logo_url || job.logoUrl || job.companies?.logo_url || null,
+                companyDomain: job.companies?.domain || null,
                 companyId: job.company_id || job.companyId || job.companyProfile?.companyId || null,
                 company_id: job.company_id || job.companyId || job.companyProfile?.companyId || null,
                 companyProfile: mapCompanyProfilePayload(job.companyProfile, job.company_id),
