@@ -16,6 +16,7 @@ export const h = {
   user: null as null | { id: string; email: string },
   isPro: false,
   apps: [] as any[],
+  prefs: null as any,
   transport: (async () => ({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null })) as Transport,
   byId: (async () => null) as (id: string, isPro: boolean) => Promise<LiveJob | null>,
   calls: [] as any[],
@@ -27,6 +28,7 @@ export function resetHarness() {
   h.user = null;
   h.isPro = false;
   h.apps = [];
+  h.prefs = null;
   h.transport = async () => ({ jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null });
   h.byId = async () => null;
   h.calls = [];
@@ -50,7 +52,7 @@ export const jobsServiceMock = async () => {
 };
 export const sessionMock = async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/session")>("@/lib/auth/session");
-  return { ...actual, getAuthUser: async () => h.user, getUserPreferences: async () => null };
+  return { ...actual, getAuthUser: async () => h.user, getUserPreferences: async () => (await h.prefs) ?? null };
 };
 export const billingMock = () => ({
   getProAccessStatus: async () => ({ isPro: h.isPro, isDefinitive: true }),
