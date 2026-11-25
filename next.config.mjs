@@ -51,8 +51,11 @@ export default withSentryConfig(nextConfig, {
   sourcemaps: { deleteSourcemapsAfterUpload: true },
   disableLogger: true,
   // Disable automatic server/edge handler instrumentation to prevent
-  // duplicate webpack module identifier collisions under @cloudflare/next-on-pages
-  autoInstrumentServerFunctions: false,
-  autoInstrumentMiddleware: false,
-  autoInstrumentAppDirectory: false,
+  // duplicate webpack module identifier collisions under @cloudflare/next-on-pages.
+  // @sentry/nextjs 11 reads these only under `webpack`; at the top level they are ignored.
+  webpack: {
+    autoInstrumentServerFunctions: false,
+    autoInstrumentMiddleware: false,
+    autoInstrumentAppDirectory: false,
+  },
 });
