@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // /jobs feed on the real page (FIXTURE transport + IntersectionObserver): page 1 renders first, pages 2-3
-// warm in the background, and crossing a rendered page boundary refills the next three pages inside a
-// bounded look-ahead window. Covers order, dedupe, continuation, failure/Retry and stale-response isolation.
+// warm in the background, and reading past a rendered page of cards refills the next three pages inside a
+// bounded look-ahead window. Browser-like observer geometry and re-ranked appends: jobsFeedGeometry.test.tsx. Covers order, dedupe, continuation, failure/Retry and stale-response isolation.
 import React from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -50,13 +50,14 @@ function fire(match: (el: HTMLElement) => boolean) {
 }
 /** Waits until no look-ahead request is running (the tail indicator is gone). */
 const idle = () => waitFor(() => expect(screen.queryByText("Loading Positions...")).toBeNull(), { timeout: 10000 });
-/** The first card of rendered page k scrolls into view; by default waits for the resulting chain to settle. */
+/** The reader has seen the displayed cards up to the first card of rendered page k; by default waits for the chain to settle. */
 const reach = async (k: number, settle = true) => {
-  await act(async () => fire((el) => el.dataset.feedPage === String(k)));
+  const seen = Array.from(document.querySelectorAll("[data-job-id]")).slice(0, (k - 1) * 25 + 1);
+  await act(async () => fire((el) => seen.includes(el)));
   await flush();
   if (settle) await idle();
 };
-/** Only the tail sentinel enters view (no page boundary), optionally after a downward wheel. */
+/** Only the tail sentinel enters view (no card), optionally after a downward wheel. */
 const tail = async (userInput: boolean) => {
   await act(async () => {
     if (userInput) window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
@@ -173,6 +174,7 @@ describe("three-page warm-up and bounded look-ahead", () => {
     for (let k = 0; k < 4; k++) await reach(3, false);
     await act(async () => {
       for (let k = 0; k < 6; k++) window.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+      await new Promise((r) => setTimeout(r, 50)); // the gesture's animation-frame check runs while page 4 is in flight
     });
     await flush();
     expect(pagesRequested()).toEqual([1, 2, 3, 4]);

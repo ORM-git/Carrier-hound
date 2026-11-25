@@ -51,6 +51,9 @@ export function createNextPageLoader<R>() {
   };
 }
 
+/** Jobs per feed request. */
+export const FEED_PAGE_SIZE = 25;
+
 /** Pages warmed behind page 1, and fetched per refill once the reader moves down the feed. */
 export const PREFETCH_PAGES = 3;
 
