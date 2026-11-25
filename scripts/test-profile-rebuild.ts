@@ -134,8 +134,8 @@ function run() {
   const hasTimelineTreatment =
     profileCode.includes("before:w-[2px]") &&
     profileCode.includes("before:bg-[#BFDBFE]") &&
-    profileCode.includes("bg-[#2563EB]");
-  const hasWrappedSkills = profileCode.includes("flex-wrap") && profileCode.includes("bg-[#EFF6FF]") && profileCode.includes("text-[#1D4ED8]");
+    profileCode.includes("bg-[#0039F5]");
+  const hasWrappedSkills = profileCode.includes("flex-wrap") && profileCode.includes("bg-[#EFF6FF]") && profileCode.includes("text-[#0020B0]");
 
   if (!hasRoundedCards) {
     failures.push("CARDS FAIL: Section cards must be white with 16px radius (rounded-2xl) and subtle border #E2E8F0.");
@@ -144,15 +144,15 @@ function run() {
   }
 
   if (!hasTimelineTreatment) {
-    failures.push("TIMELINE FAIL: Work experience and education entries must use timeline vertical line #BFDBFE and dots #2563EB.");
+    failures.push("TIMELINE FAIL: Work experience and education entries must use timeline vertical line #BFDBFE and dots #0039F5 (CareerMonke Royal Blue).");
   } else {
-    console.log("  [PASS] timeline treatment: Vertical left track #BFDBFE with circular dot node #2563EB for experience and education");
+    console.log("  [PASS] timeline treatment: Vertical left track #BFDBFE with circular dot node #0039F5 for experience and education");
   }
 
   if (!hasWrappedSkills) {
-    failures.push("SKILLS FAIL: Skills must use wrapped chips with tokens #EFF6FF and #1D4ED8.");
+    failures.push("SKILLS FAIL: Skills must use wrapped chips with tokens #EFF6FF and #0020B0 (Deep Blue).");
   } else {
-    console.log("  [PASS] skills treatment: Wrapped chips with #EFF6FF background and #1D4ED8 text");
+    console.log("  [PASS] skills treatment: Wrapped chips with #EFF6FF background and #0020B0 text");
   }
 
   const hasHonestEmptyStates =
@@ -175,7 +175,7 @@ function run() {
     drawersCode.includes("duration-300");
   const hasHeaderUpdate =
     drawersCode.includes("drawer-header-update-btn") &&
-    drawersCode.includes("bg-[#2563EB]") &&
+    drawersCode.includes("bg-[#0039F5]") &&
     drawersCode.includes("UPDATE");
   const hasDiscardDraft = drawersCode.includes("createInitialDraft") && drawersCode.includes("onClose");
   const hasValidation =

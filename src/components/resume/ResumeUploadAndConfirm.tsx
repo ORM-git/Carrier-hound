@@ -379,8 +379,8 @@ export default function ResumeUploadAndConfirm({
 
   const renderDropzoneContent = () => (
     <div className="max-w-2xl mx-auto text-center space-y-4">
-      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-        <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-[#0020B0] border border-blue-100">
+        <Sparkles className="w-3.5 h-3.5 text-[#0039F5]" />
         <span>Structured Fact Extraction</span>
       </div>
 
@@ -410,10 +410,10 @@ export default function ResumeUploadAndConfirm({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`mt-6 border-2 border-dashed ${
-          isDragging ? "border-blue-500 bg-blue-100/50" : "border-blue-200 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50/70"
+          isDragging ? "border-[#0039F5] bg-blue-100/50" : "border-blue-200 hover:border-[#0082FF] bg-blue-50/40 hover:bg-blue-50/70"
         } rounded-2xl p-8 sm:p-10 cursor-pointer transition-all flex flex-col items-center justify-center gap-3 text-center group`}
       >
-        <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+        <div className="w-14 h-14 rounded-2xl bg-[#0039F5] text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
           {isParsing ? (
             <RefreshCw className="w-6 h-6 animate-spin" />
           ) : (
@@ -454,9 +454,9 @@ export default function ResumeUploadAndConfirm({
         <button
           type="button"
           onClick={handleManualEntry}
-          className="text-xs font-bold text-slate-700 hover:text-blue-600 hover:underline inline-flex items-center gap-1.5 cursor-pointer min-h-[44px] py-2 px-1"
+          className="text-xs font-bold text-slate-700 hover:text-[#0039F5] hover:underline inline-flex items-center gap-1.5 cursor-pointer min-h-[44px] py-2 px-1"
         >
-          <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+          <Edit3 className="w-3.5 h-3.5 text-[#0039F5]" />
           <span>Skip & fill manually</span>
         </button>
         <span className="text-xs text-slate-400">•</span>
@@ -472,7 +472,7 @@ export default function ResumeUploadAndConfirm({
         <button
           type="button"
           onClick={handleLoadSample}
-          className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer min-h-[44px] py-2 px-1"
+          className="text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] hover:underline inline-flex items-center gap-1 cursor-pointer min-h-[44px] py-2 px-1"
         >
           <FileCheck className="w-3.5 h-3.5" />
           <span>Load Sample Resume</span>
@@ -503,7 +503,7 @@ export default function ResumeUploadAndConfirm({
               type="button"
               onClick={handleParsePastedText}
               disabled={isParsing || !pastedText.trim()}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+              className="px-4 py-2 bg-[#0039F5] hover:bg-[#0020B0] disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
             >
               {isParsing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
               Parse Pasted Text
@@ -531,12 +531,12 @@ export default function ResumeUploadAndConfirm({
                   Unsaved Changes
                 </span>
               ) : profile.confirmedAt ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  <Check className="w-3 h-3 text-emerald-600" />
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#EFF6FF] text-[#0020B0] border border-[#BFDBFE]">
+                  <Check className="w-3 h-3 text-[#0039F5]" />
                   Confirmed
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-[#0020B0]">
                   Review Before Saving
                 </span>
               )}
@@ -554,7 +554,7 @@ export default function ResumeUploadAndConfirm({
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
               title="Download ATS-Friendly Word Document (.docx)"
             >
-              <Download className="w-3.5 h-3.5 text-blue-600" />
+              <Download className="w-3.5 h-3.5 text-[#0039F5]" />
               <span>Export ATS Word (.docx)</span>
             </button>
             <button
@@ -568,7 +568,7 @@ export default function ResumeUploadAndConfirm({
             </button>
             <Link
               href="/jobs"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#0039F5] hover:bg-[#0020B0] text-white shadow-xs transition cursor-pointer"
               title="Score this verified resume against live jobs"
             >
               <Sparkles className="w-3.5 h-3.5 text-blue-200" />
@@ -749,7 +749,7 @@ export default function ResumeUploadAndConfirm({
               <button
                 type="button"
                 onClick={handleAddExperience}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Position</span>
@@ -881,7 +881,7 @@ export default function ResumeUploadAndConfirm({
                 <button
                   type="button"
                   onClick={handleAddEducation}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[#0039F5] hover:text-[#0020B0] cursor-pointer"
                 >
                   <Plus className="w-3 h-3" />
                   <span>Add Degree</span>
@@ -1025,7 +1025,7 @@ export default function ResumeUploadAndConfirm({
                   type="button"
                   onClick={handleSaveConfirmedProfile}
                   disabled={isSaving}
-                  className="w-full sm:w-auto px-6 py-3.5 min-h-[44px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-xl font-bold text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-6 py-3.5 min-h-[44px] bg-[#0039F5] hover:bg-[#0020B0] text-white rounded-xl font-bold text-sm shadow-md transition cursor-pointer flex items-center justify-center gap-2"
                 >
                   {isSaving ? (
                     <span>Saving Profile...</span>
@@ -1039,11 +1039,11 @@ export default function ResumeUploadAndConfirm({
 
                 <Link
                   href="/jobs"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-5 py-3.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 font-bold text-sm text-blue-700 transition"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-5 py-3.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 font-bold text-sm text-[#0020B0] transition"
                 >
-                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  <Sparkles className="w-4 h-4 text-[#0039F5]" />
                   <span>Score Against Jobs</span>
-                  <ArrowRight className="w-4 h-4 text-blue-600" />
+                  <ArrowRight className="w-4 h-4 text-[#0039F5]" />
                 </Link>
               </div>
             </div>
@@ -1081,7 +1081,7 @@ export default function ResumeUploadAndConfirm({
               className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-slate-50 transition cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0039F5] flex items-center justify-center">
                   <UploadCloud className="w-5 h-5" />
                 </div>
                 <div>
@@ -1089,7 +1089,7 @@ export default function ResumeUploadAndConfirm({
                   <p className="text-xs text-slate-500">Upload a newer PDF or DOCX file to re-extract fresh facts</p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+              <span className="text-xs font-bold text-[#0039F5] bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
                 {showReplaceUpload ? "Collapse Upload Zone" : "Upload New File"}
               </span>
             </button>
