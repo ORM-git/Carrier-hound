@@ -97,6 +97,10 @@ function reqString(
   return value;
 }
 
+function nonNegativeIntOrNull(v: unknown): number | null {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
+}
+
 export interface ParsedStats {
   activeJobs: number | null;
   companies: number | null;
@@ -106,7 +110,7 @@ export interface ParsedStats {
   updatedAt?: string;
 }
 
-/** Null when the payload is not an object; bad counts become null (jobsToday defaults to 0). */
+/** Null when the payload is not an object; bad counts become null (jobsToday requires non-negative safe integer). */
 export function parseStatsResponse(raw: unknown): ParsedStats | null {
   if (!isRecord(raw)) return null;
   const activeJobs = numOrNull(raw.activeJobs) ?? numOrNull(raw.totalJobs);
@@ -114,7 +118,7 @@ export function parseStatsResponse(raw: unknown): ParsedStats | null {
   return {
     activeJobs,
     companies,
-    jobsToday: numOrNull(raw.jobsToday) ?? 0,
+    jobsToday: nonNegativeIntOrNull(raw.jobsToday),
     totalJobs: activeJobs,
     companiesScanned: companies,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,

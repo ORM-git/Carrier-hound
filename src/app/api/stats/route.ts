@@ -110,17 +110,24 @@ async function getHandler(req: Request) {
       }
     }
 
-    // 1. Jobs posted/created today (UTC midnight to now) - required for public UI
-    const todayMidnight = new Date();
-    todayMidnight.setUTCHours(0, 0, 0, 0);
+    // 1. Jobs first seen today (UTC midnight to next midnight, start inclusive, next midnight exclusive).
+    // created_at is never written by ingestion, so a refresh does not re-count an older job. The count is
+    // of listing rows: identity is (source_id, source_job_id) + unique apply_url and dedupe_hash is advisory,
+    // so one role on two boards counts twice (see __tests__/jobIdentityForDailyCount.test.ts).
+    const now = new Date();
+    const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+    const isoNow = now.toISOString();
+
     const { count: recentJobs, error: recentErr } = await supabase
       .from("jobs_public")
       .select("id", { count: "exact", head: true }).or(VISIBLE_SOURCE_FILTER)
       .eq("is_active", true)
       .eq("status", "active")
-      .gte("created_at", todayMidnight.toISOString());
+      .gte("created_at", todayMidnight.toISOString())
+      .lt("created_at", nextMidnight.toISOString());
 
-    if (recentErr) {
+    if (recentErr || typeof recentJobs !== "number" || !Number.isSafeInteger(recentJobs) || recentJobs < 0) {
       return NextResponse.json(
         { error: "Service unavailable" },
         {
@@ -139,8 +146,8 @@ async function getHandler(req: Request) {
     if (!isAuthenticated) {
       // Identical body for every anonymous caller: safe for weak ETag / 304.
       const publicStats = {
-        jobsToday: recentJobs ?? 0,
-        updatedAt: new Date().toISOString(),
+        jobsToday: recentJobs,
+        updatedAt: isoNow,
       };
       // Edge-cacheable ONLY when the request carries no Authorization header at
       // all: any Authorization header, valid or invalid, keeps the response
@@ -201,10 +208,10 @@ async function getHandler(req: Request) {
       {
         activeJobs: totalActive ?? 0,
         companies: companyCount ?? 0,
-        jobsToday: recentJobs ?? 0,
+        jobsToday: recentJobs,
         totalJobs: totalActive ?? 0,
         companiesScanned: companyCount ?? 0,
-        updatedAt: new Date().toISOString(),
+        updatedAt: isoNow,
       },
       {
         headers: {
