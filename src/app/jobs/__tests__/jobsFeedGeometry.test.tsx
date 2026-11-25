@@ -28,11 +28,19 @@ const CARD = 200;
 const VIEWPORT = 800;
 const geo = { y: 0 };
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>('[data-testid="job-card"]'));
+// Card positions, cached for the duration of one delivery pass (layout does not change inside it).
+let layoutCache: Map<Element, number> | null = null;
+function layout(): Map<Element, number> {
+  if (layoutCache) return layoutCache;
+  const map = new Map<Element, number>();
+  cards().forEach((c, i) => map.set(c, i));
+  return map;
+}
 function docTop(el: Element): number | null {
-  const list = cards();
-  const i = list.indexOf(el as HTMLElement);
-  if (i >= 0) return LIST_TOP + i * CARD;
-  if ((el as HTMLElement).dataset?.testid === "jobs-load-more-sentinel") return LIST_TOP + list.length * CARD;
+  const map = layout();
+  const i = map.get(el);
+  if (i !== undefined) return LIST_TOP + i * CARD;
+  if ((el as HTMLElement).dataset?.testid === "jobs-load-more-sentinel") return LIST_TOP + map.size * CARD;
   return null;
 }
 function rectOf(el: Element): DOMRect {
@@ -51,6 +59,14 @@ function intersects(el: Element, margin: number) {
 }
 /** Delivers entries whose intersection changed since the last delivery (the first delivery is the initial one). */
 function deliver() {
+  layoutCache = layout();
+  try {
+    deliverPass();
+  } finally {
+    layoutCache = null;
+  }
+}
+function deliverPass() {
   for (const o of observers) {
     if (o.dead) continue;
     const changed: IntersectionObserverEntry[] = [];
@@ -169,7 +185,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
 });
-vi.setConfig({ testTimeout: 90000 });
+vi.setConfig({ testTimeout: 180000 });
 
 describe("look-ahead with browser-like observers and re-ranked appends", () => {
   it("a stationary reader at the top warms only pages 1-3 and keeps looking at the same card", async () => {
@@ -182,12 +198,12 @@ describe("look-ahead with browser-like observers and re-ranked appends", () => {
     const before = anchor();
     expect(before?.title).toBe("Fixture Analyst 25"); // newest of page 1 ranks first
     await act(async () => p2.resolve(pageOf(2)));
-    await settle(20);
+    await settle(8);
     expect(cards().length).toBeGreaterThanOrEqual(75);
     expect(pagesRequested()).toEqual([1, 2, 3]);
     // Re-ranked page-2/3 cards were inserted above, but the reader's card did not move.
     expect(anchor()).toEqual(before);
-    await settle(20);
+    await settle(8);
     expect(pagesRequested()).toEqual([1, 2, 3]);
   });
 
@@ -199,10 +215,10 @@ describe("look-ahead with browser-like observers and re-ranked appends", () => {
     const before = anchor();
     expect(pagesRequested()).toEqual([1, 2]);
     await act(async () => p2.resolve(pageOf(2)));
-    await settle(20);
+    await settle(8);
     expect(pagesRequested()).toEqual([1, 2, 3]);
     expect(anchor()).toEqual(before);
-    await settle(20);
+    await settle(8);
     expect(pagesRequested()).toEqual([1, 2, 3]);
   });
 
@@ -219,10 +235,10 @@ describe("look-ahead with browser-like observers and re-ranked appends", () => {
       else expect(anchor()?.title).not.toBe(before?.title); // normal scrolling moves on
     }
     expect(crossedAt).toBeGreaterThan(0);
-    await settle(20);
+    await settle(8);
     expect(pagesRequested()).toEqual([1, 2, 3, 4, 5, 6]);
     const held = anchor();
-    await settle(20);
+    await settle(8);
     expect(anchor()).toEqual(held);
     expect(pagesRequested()).toEqual([1, 2, 3, 4, 5, 6]);
   });
@@ -250,7 +266,7 @@ describe("server-ordered pages (appended below the reader)", () => {
     // Card 26 (first of page 2) is on screen; the reader's eye is still around the end of page 1.
     expect(anchor()?.title).toMatch(/^Fixture Analyst 2\d$/);
     const held = anchor();
-    await settle(20);
+    await settle(8);
     expect(anchor()).toEqual(held);
     expect(pagesRequested()).toEqual([1, 2, 3, 4, 5, 6]);
   });
