@@ -17,7 +17,7 @@
  */
 
 
-import { isJobEligible } from "./eligibility";
+import { isJobEligible, normalizeUserCountries, type NormalizedUserCountries } from "./eligibility";
 import { isEarlyCareerJob } from "./experienceLevels";
 import { detectPayPeriod, parseSalary } from "../salary/parser";
 import { convertCurrency } from "../salary/fx";
@@ -72,11 +72,45 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Whole-term, case-insensitive match that also works for terms like "C++", "Node.js", ".NET". */
-function containsTerm(haystack: string, term: string): boolean {
+/**
+ * Whole-term, case-insensitive matcher that also works for terms like "C++", "Node.js", ".NET"; null when the
+ * term is too short to match. Static keywords are compiled once at load; user-derived terms are compiled once per
+ * prepared ranking call (no cross-request cache, so nothing user-derived is retained or grows).
+ */
+function termRegex(term: string): RegExp | null {
   const t = term.toLowerCase().trim();
-  if (t.length < 2) return false;
-  return new RegExp(`(^|[^a-z0-9+#.])${escapeRegExp(t)}($|[^a-z0-9+#])`, "i").test(haystack);
+  if (t.length < 2) return null;
+  return new RegExp(`(^|[^a-z0-9+#.])${escapeRegExp(t)}($|[^a-z0-9+#])`, "i");
+}
+
+function termRegexes(terms: string[]): RegExp[] {
+  return terms.map(termRegex).filter((r): r is RegExp => r !== null);
+}
+
+interface PreparedResume {
+  roleTerms: string[];
+  roleTermsLower: string[];
+  tokenRes: RegExp[];
+  skills: { skill: string; re: RegExp }[];
+}
+
+/** Resume terms and matchers, built once per ranking call. Null when the resume carries no signals. */
+function prepareResume(resume?: ResumeRankingSignals | null): PreparedResume | null {
+  if (!hasResumeSignals(resume)) return null;
+  const roleTerms = [...(resume!.preferredRoles || []), ...(resume!.jobTitles || [])]
+    .filter((r): r is string => typeof r === "string" && r.trim().length >= 3)
+    .slice(0, 15);
+  const skills: { skill: string; re: RegExp }[] = [];
+  for (const s of (resume!.skills || []).slice(0, 40)) {
+    const re = typeof s === "string" ? termRegex(s) : null;
+    if (re) skills.push({ skill: s, re });
+  }
+  return {
+    roleTerms,
+    roleTermsLower: roleTerms.map((r) => r.toLowerCase().trim()),
+    tokenRes: termRegexes(extractRoleTokens(roleTerms).filter((t) => t.length >= 3 && !t.includes(" "))),
+    skills,
+  };
 }
 
 /**
@@ -87,21 +121,21 @@ export function scoreResumeMatch(
   job: JobScoringCandidate,
   resume?: ResumeRankingSignals | null
 ): { score: number; reasons: string[] } {
-  if (!hasResumeSignals(resume)) return { score: 0, reasons: [] };
+  return scorePreparedResume(job, prepareResume(resume));
+}
+
+function scorePreparedResume(job: JobScoringCandidate, resume: PreparedResume | null): { score: number; reasons: string[] } {
+  if (!resume) return { score: 0, reasons: [] };
   const reasons: string[] = [];
   const title = (job.title || "").toLowerCase();
 
-  const roleTerms = [...(resume!.preferredRoles || []), ...(resume!.jobTitles || [])]
-    .filter((r): r is string => typeof r === "string" && r.trim().length >= 3)
-    .slice(0, 15);
   let titleScore = 0;
-  const phrase = roleTerms.find((r) => title.includes(r.toLowerCase().trim()));
-  if (phrase) {
+  const phraseIdx = resume.roleTermsLower.findIndex((r) => title.includes(r));
+  if (phraseIdx >= 0) {
     titleScore = RESUME_TITLE_MAX;
-    reasons.push(`Matches your resume title: "${phrase}"`);
+    reasons.push(`Matches your resume title: "${resume.roleTerms[phraseIdx]}"`);
   } else {
-    const tokens = extractRoleTokens(roleTerms).filter((t) => t.length >= 3 && !t.includes(" "));
-    const hits = tokens.filter((t) => containsTerm(title, t)).length;
+    const hits = resume.tokenRes.filter((re) => re.test(title)).length;
     if (hits >= 2) titleScore = 6;
     else if (hits === 1) titleScore = 3;
     if (titleScore > 0) reasons.push("Similar to roles on your resume");
@@ -111,8 +145,8 @@ export function scoreResumeMatch(
   const description = typeof job.description === "string" ? job.description.slice(0, RESUME_DESCRIPTION_SCAN_CHARS) : "";
   const haystack = `${title} | ${jobSkills} | ${description}`.toLowerCase();
   const matched: string[] = [];
-  for (const s of (resume!.skills || []).slice(0, 40)) {
-    if (typeof s === "string" && containsTerm(haystack, s)) matched.push(s);
+  for (const { skill, re } of resume.skills) {
+    if (re.test(haystack)) matched.push(skill);
   }
   const skillScore = Math.min(RESUME_SKILL_MAX, matched.length * 2);
   if (matched.length > 0) reasons.push(`Matches your resume skills: ${matched.slice(0, 3).join(", ")}`);
@@ -201,16 +235,21 @@ const GATE_GENERIC_TOKENS = new Set([
 const MAX_PROFILE_SKILLS = 40;
 const MAX_PREFILTER_SKILLS = 15;
 
+const compileFieldKeywords = (m: Record<string, string[]>) =>
+  Object.entries(m).map(([field, keywords]) => [field, termRegexes(keywords)] as const);
+const EXCLUSIVE_FIELD_RES = compileFieldKeywords(EXCLUSIVE_FIELD_KEYWORDS);
+const FIELD_TITLE_RES = compileFieldKeywords(FIELD_TITLE_KEYWORDS);
+
 /** Fields a title (or a role the user typed) belongs to, from FIELD_TITLE_KEYWORDS. */
 export function fieldsForTitle(text?: string | null): Set<string> {
   const t = (text || "").toLowerCase();
   const out = new Set<string>();
   if (!t) return out;
-  for (const [field, keywords] of Object.entries(EXCLUSIVE_FIELD_KEYWORDS)) {
-    if (keywords.some((k) => containsTerm(t, k))) return new Set([field]);
+  for (const [field, res] of EXCLUSIVE_FIELD_RES) {
+    if (res.some((re) => re.test(t))) return new Set([field]);
   }
-  for (const [field, keywords] of Object.entries(FIELD_TITLE_KEYWORDS)) {
-    if (keywords.some((k) => containsTerm(t, k))) out.add(field);
+  for (const [field, res] of FIELD_TITLE_RES) {
+    if (res.some((re) => re.test(t))) out.add(field);
   }
   return out;
 }
@@ -260,13 +299,23 @@ function relevanceProfile(answers?: OnboardingAnswers | null): RelevanceProfile 
  * Users with no role/field/skill signals have nothing to compare against, so the gate is open for them.
  */
 export function isRelevantToProfile(job: JobScoringCandidate, answers?: OnboardingAnswers | null): boolean {
+  return isRelevantPrepared(job, prepareRelevance(answers));
+}
+
+type PreparedRelevance = { fields: ReadonlySet<string>; termRes: RegExp[] } | null;
+
+/** The gate's profile plus its role-word / skill matchers, built once per ranking call. */
+function prepareRelevance(answers?: OnboardingAnswers | null): PreparedRelevance {
   const profile = relevanceProfile(answers);
+  return profile && { fields: profile.fields, termRes: termRegexes([...profile.roleTokens, ...profile.skills]) };
+}
+
+function isRelevantPrepared(job: JobScoringCandidate, profile: PreparedRelevance): boolean {
   if (!profile) return true;
   const title = (job.title || "").toLowerCase();
   if (!title) return false;
 
-  const sharesRoleWordOrSkill = () =>
-    profile.roleTokens.some((t) => containsTerm(title, t)) || profile.skills.some((s) => containsTerm(title, s));
+  const sharesRoleWordOrSkill = () => profile.termRes.some((re) => re.test(title));
 
   if (profile.fields.size > 0) {
     // 1. The title's role noun decides when it names a field
@@ -451,23 +500,71 @@ export function withFeedScore<T extends { id: string; matchScore?: number | null
   return row.matchScore !== job.matchScore ? { ...job, matchScore: row.matchScore } : job;
 }
 
+function isRemoteJob(job: JobScoringCandidate): boolean {
+  return (
+    job.remote === true ||
+    (job.remote_scope || "").toLowerCase() === "remote" ||
+    (job.remote_scope || "").toLowerCase() === "worldwide" ||
+    (job.remoteScope || "").toLowerCase() === "remote" ||
+    (job.remoteScope || "").toLowerCase() === "worldwide" ||
+    (job.location || "").toLowerCase().includes("remote")
+  );
+}
+
+/** Everything the scorer derives from the answers alone, built once per ranking call instead of once per job. */
+interface PreparedAnswers {
+  answers: OnboardingAnswers;
+  userRemote: string;
+  userExp: string;
+  /** [as typed (for reasons), lowercased+trimmed] */
+  userLocations: [string, string][];
+  countries: NormalizedUserCountries;
+  userRoles: [string, string][];
+  roleTokens: string[];
+  userCategories: string[];
+  userJobTypes: string[];
+  relevance: PreparedRelevance;
+  resume: PreparedResume | null;
+}
+
+function prepareAnswers(answers: OnboardingAnswers): PreparedAnswers {
+  const userLocations = [
+    ...(answers.locations || []),
+    ...(answers.country ? [answers.country] : []),
+    ...(answers.countryCode ? [answers.countryCode] : []),
+  ].filter((l): l is string => Boolean(l && l.trim().length > 0));
+  const userRoles = (answers.roles || []).filter((r) => r && r.trim().length > 0);
+  return {
+    answers,
+    userRemote: (answers.remotePreference || "").toLowerCase().trim(),
+    userExp: (answers.experienceLevel || "").toLowerCase().trim(),
+    userLocations: userLocations.map((l) => [l, l.toLowerCase().trim()]),
+    countries: normalizeUserCountries(userLocations),
+    userRoles: userRoles.map((r) => [r, r.toLowerCase().trim()]),
+    roleTokens: extractRoleTokens(userRoles).filter((t) => t.length >= 3),
+    userCategories: (answers.categories || []).filter((c) => c && c.trim().length > 0).map((c) => c.toLowerCase()),
+    userJobTypes: (answers.employmentTypes || []).map((t) => t.toLowerCase().trim()).filter(Boolean),
+    relevance: prepareRelevance(answers),
+    resume: prepareResume(answers.resumeProfile),
+  };
+}
+
 export function scoreJobRecommendation(
   job: JobScoringCandidate,
   answers: OnboardingAnswers
 ): ScoredJobResult {
+  return scorePrepared(job, prepareAnswers(answers));
+}
+
+function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers): ScoredJobResult {
+  const { answers, userRemote, userExp, userLocations } = p;
   const reasons: string[] = [];
   const title = (job.title || "").toLowerCase();
   const category = (job.category || "").toLowerCase();
   const location = (job.location || "").toLowerCase();
   const country = (job.country || "").toLowerCase();
   const countryCode = (job.country_code || "").toLowerCase();
-  const isRemote =
-    job.remote === true ||
-    (job.remote_scope || "").toLowerCase() === "remote" ||
-    (job.remote_scope || "").toLowerCase() === "worldwide" ||
-    (job.remoteScope || "").toLowerCase() === "remote" ||
-    (job.remoteScope || "").toLowerCase() === "worldwide" ||
-    location.includes("remote");
+  const isRemote = isRemoteJob(job);
   const remoteScope = (job.remote_scope || job.remoteScope || "").toLowerCase();
   const jobType = (job.job_type || "").toLowerCase();
 
@@ -476,11 +573,9 @@ export function scoreJobRecommendation(
   // 1. Work model: a saved "remote" preference (onboarding "Open to Remote") is additive. Remote roles
   // are boosted below, but eligible preferred-location jobs stay. Only the explicit workModel feed filter
   // restricts to remote.
-  const userRemote = (answers.remotePreference || "").toLowerCase().trim();
 
   // 2. Seniority Level Hard Filter:
   // An entry-level seeker must NEVER match Senior, Staff, Lead, Principal, Director, Manager roles
-  const userExp = (answers.experienceLevel || "").toLowerCase().trim();
   const isLeadOrPrincipal = /\b(lead|staff|principal|head|director|architect|manager|vp|chief)\b/i.test(title);
   const isSenior = /\b(senior|sr\.?)\b/i.test(title);
   const isJuniorOrEntry = isEarlyCareerJob(job.title, job.job_type);
@@ -517,14 +612,8 @@ export function scoreJobRecommendation(
 
   // 3. Country / Geographic Hard Filter:
   // Jobs restricted outside user country preferences are disqualified (unless worldwide remote)
-  const userLocations = [
-    ...(answers.locations || []),
-    ...(answers.country ? [answers.country] : []),
-    ...(answers.countryCode ? [answers.countryCode] : []),
-  ].filter((l): l is string => Boolean(l && l.trim().length > 0));
-
   if (userLocations.length > 0) {
-    const eligible = isJobEligible(job, userLocations);
+    const eligible = isJobEligible(job, p.countries);
     if (!eligible) {
       return {
         job,
@@ -639,7 +728,7 @@ export function scoreJobRecommendation(
 
   // 5. Relevance gate: no overlap with the user's target role, field or skills means not recommended,
   // however well location, seniority or recency score.
-  if (!isRelevantToProfile(job, answers)) {
+  if (!isRelevantPrepared(job, p.relevance)) {
     return {
       job,
       score: 0,
@@ -658,13 +747,11 @@ export function scoreJobRecommendation(
 
   // 1. ROLE & CATEGORY MATCHING (0 - 40 pts)
   let roleScore = 0;
-  const userRoles = (answers.roles || []).filter((r) => r && r.trim().length > 0);
-  const userCategories = (answers.categories || []).filter((c) => c && c.trim().length > 0);
+  const { userRoles, userCategories } = p;
 
   if (userRoles.length > 0) {
     let exactPhraseMatch = false;
-    for (const r of userRoles) {
-      const cleanR = r.toLowerCase().trim();
+    for (const [r, cleanR] of userRoles) {
       if (cleanR.length >= 3 && title.includes(cleanR)) {
         exactPhraseMatch = true;
         reasons.push(`Target role match: "${r}"`);
@@ -675,10 +762,9 @@ export function scoreJobRecommendation(
     if (exactPhraseMatch) {
       roleScore = 40;
     } else {
-      const tokens = extractRoleTokens(userRoles);
       let matchedTokens = 0;
-      for (const t of tokens) {
-        if (t.length >= 3 && title.includes(t)) {
+      for (const t of p.roleTokens) {
+        if (title.includes(t)) {
           matchedTokens++;
         }
       }
@@ -694,7 +780,7 @@ export function scoreJobRecommendation(
 
   // Category match bonus if role didn't hit max 40
   if (roleScore < 40 && userCategories.length > 0 && category) {
-    if (userCategories.some((c) => c.toLowerCase() === category || category.includes(c.toLowerCase()))) {
+    if (userCategories.some((c) => c === category || category.includes(c))) {
       roleScore = Math.min(40, roleScore + 15);
       reasons.push(`Category match: ${category}`);
     }
@@ -731,8 +817,7 @@ export function scoreJobRecommendation(
   // Region / Country component (up to 10 pts)
   if (userLocations.length > 0) {
     let countryMatched = false;
-    for (const loc of userLocations) {
-      const cleanLoc = loc.toLowerCase().trim();
+    for (const [loc, cleanLoc] of userLocations) {
       if (cleanLoc.includes("worldwide") || cleanLoc.includes("remote")) {
         if (isRemote) {
           countryMatched = true;
@@ -804,7 +889,7 @@ export function scoreJobRecommendation(
 
   // 4. JOB TYPE / EMPLOYMENT TYPE MATCHING (0 - 10 pts)
   let jobTypeScore = 0;
-  const userJobTypes = (answers.employmentTypes || []).map((t) => t.toLowerCase().trim()).filter(Boolean);
+  const { userJobTypes } = p;
 
   if (userJobTypes.length > 0) {
     if (userJobTypes.some((t) => jobType.includes(t) || t.includes(jobType))) {
@@ -829,7 +914,7 @@ export function scoreJobRecommendation(
   }
 
   // 6. RESUME / LINKEDIN PDF BOOST (0 - 15 pts, only when a parsed profile exists)
-  const resume = scoreResumeMatch(job, answers.resumeProfile);
+  const resume = scorePreparedResume(job, p.resume);
   reasons.push(...resume.reasons);
 
   // Seniority factor: the 100 cap swallows the small experience penalty, so titles far above a mid
@@ -848,7 +933,7 @@ export function scoreJobRecommendation(
       experienceScore,
       jobTypeScore,
       recencyScore,
-      ...(hasResumeSignals(answers.resumeProfile) ? { resumeScore: resume.score } : {}),
+      ...(p.resume ? { resumeScore: resume.score } : {}),
     },
     reasons,
   };
@@ -884,10 +969,12 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
 
     // With resume but no other onboarding answers: every job relevant to the resume stays eligible
     // (relevance gate only); resume match provides a soft score boost for ranking order.
-    const scored = jobs.filter((job) => isRelevantToProfile(job, answers)).map((job) => {
-      const resume = scoreResumeMatch(job, answers!.resumeProfile);
-      return { job, score: resume.score };
-    });
+    const relevance = prepareRelevance(answers);
+    const resume = prepareResume(answers!.resumeProfile);
+    const scored = jobs.filter((job) => isRelevantPrepared(job, relevance)).map((job) => ({
+      job,
+      score: scorePreparedResume(job, resume).score,
+    }));
 
     scored.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
@@ -906,62 +993,24 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
     }));
   }
 
-  const userRemote = (answers!.remotePreference || "").toLowerCase().trim();
-  const userExp = (answers!.experienceLevel || "").toLowerCase().trim();
-  const userLocations = [
-    ...(answers!.locations || []),
-    ...(answers!.country ? [answers!.country] : []),
-    ...(answers!.countryCode ? [answers!.countryCode] : []),
-  ].filter((l): l is string => Boolean(l && l.trim().length > 0));
-
   // Determine eligibility solely from base onboarding answers (resume is a soft score boost only)
-  const baseAnswers: OnboardingAnswers = { ...answers!, resumeProfile: undefined };
+  const base = prepareAnswers({ ...answers!, resumeProfile: undefined });
+  // Without resume signals the full answers score exactly like the base answers, so the base result is reused.
+  const full = hasResumeSignals(answers!.resumeProfile) ? prepareAnswers(answers!) : null;
 
-  const qualifyingScored = jobs
-    .map((job) => ({
-      job,
-      base: scoreJobRecommendation(job, baseAnswers),
-      full: scoreJobRecommendation(job, answers!),
-    }))
-    .filter(({ job, base, full }) => {
-      // Must have positive score from base onboarding answers (resume never qualifies on its own)
-      if (base.score <= 0) return false;
-      // The relevance gate also counts resume titles/skills, so it is checked on the full answers
-      if (full.score <= 0) return false;
-
-      const title = (job.title || "").toLowerCase();
-      const location = (job.location || "").toLowerCase();
-      const isRemote =
-        job.remote === true ||
-        (job.remote_scope || "").toLowerCase() === "remote" ||
-        (job.remote_scope || "").toLowerCase() === "worldwide" ||
-        (job.remoteScope || "").toLowerCase() === "remote" ||
-        (job.remoteScope || "").toLowerCase() === "worldwide" ||
-        location.includes("remote");
-
-      // 1. Work model: "remote" is additive (see scoreJobRecommendation); only "onsite" (not open to remote) excludes.
-      if (userRemote === "onsite" && isRemote) {
-        return false;
-      }
-
-      // 2. Experience hard preference
-      const isSeniorOrLead = /\b(lead|staff|principal|head|director|architect|manager|vp|chief|senior|sr\.?)\b/i.test(title);
-      const isJuniorOrEntry = isEarlyCareerJob(job.title, job.job_type);
-      if ((userExp === "entry" || userExp === "intern") && isSeniorOrLead) {
-        return false;
-      }
-      if ((userExp === "senior" || userExp === "lead") && isJuniorOrEntry) {
-        return false;
-      }
-
-      // 3. Country / Geographic hard preference
-      if (userLocations.length > 0 && !isJobEligible(job, userLocations)) {
-        return false;
-      }
-
-      return true;
-    })
-    .map(({ full }) => full);
+  const qualifyingScored: ScoredJobResult[] = [];
+  for (const job of jobs) {
+    // Must have positive score from base onboarding answers (resume never qualifies on its own).
+    // A positive base score already passed the seniority and country hard filters (scorePrepared returns 0 on them).
+    const baseScored = scorePrepared(job, base);
+    if (baseScored.score <= 0) continue;
+    // The relevance gate also counts resume titles/skills, so it is checked on the full answers
+    const fullScored = full ? scorePrepared(job, full) : baseScored;
+    if (fullScored.score <= 0) continue;
+    // Work model: "remote" is additive (see scoreJobRecommendation); only "onsite" (not open to remote) excludes.
+    if (base.userRemote === "onsite" && isRemoteJob(job)) continue;
+    qualifyingScored.push(fullScored);
+  }
 
   qualifyingScored.sort((a, b) => {
     // 1. Primary sort: recommendation score DESC
