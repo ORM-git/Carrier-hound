@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
 import { getLiveJobs, getLiveJobById, keepSameJobLogoIdentity, LatestJobSelectionGate, LiveJob, isEarlyApplicant, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
-import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
+import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
 import { UserPreferences } from "@/lib/auth/types";
@@ -30,6 +30,8 @@ import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
+import PreferencesSheet from "@/components/jobs/PreferencesSheet";
+import { activeCount as activePreferenceCount, draftFromPreferences } from "@/lib/preferences/model";
 import JobCardContent from "@/components/jobs/JobCardContent";
 import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, displayMatchScore, toFitInput } from "@/lib/matcher/scoring";
 import { matchScoreSnapshot, recallMatchScore, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
@@ -55,6 +57,7 @@ import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader } from "@/lib/jobs/pagination";
+import { datePostedCutoff, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -346,6 +349,8 @@ function JobsPageInner() {
   const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [sortBy, setSortBy] = useState<"match" | "newest">("match");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const preferencesTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [_openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   // Debounced search for server-side execution (300ms)
@@ -1213,48 +1218,13 @@ function JobsPageInner() {
       return !hiddenJobIds.includes(job.id);
     });
 
-    if (activeTab === "external") {
-      result = result.filter((job) => Boolean(job.directSource));
-    }
-
-    if (selectedCountryCode && selectedCountryCode.toLowerCase() !== "all") {
-      result = result.filter((job) =>
-        matchCountryWithStrictFallback(job.country, job.location, selectedCountryCode)
-      );
-    }
-
-    if (selectedLocation) {
-      result = result.filter((job) =>
-        (job.location || "").toLowerCase().includes(selectedLocation.toLowerCase())
-      );
-    }
-
-    if (selectedWorkModel) {
-      result = result.filter((job) => matchesWorkModelFilter(job, selectedWorkModel));
-    }
-
-    if (selectedLevel) {
-      result = result.filter((job) =>
-        matchesExperienceLevelFilter(job, selectedLevel)
-      );
-    }
-
-    if (selectedJobType) {
-      result = result.filter((job) => matchesJobTypeFilter(job.type, selectedJobType));
-    }
-
-    if (selectedDatePosted) {
-      const now = Date.now();
+    // Same window as the server (datePostedCutoff); an unknown posting date never counts as recent.
+    const postedCutoff = datePostedCutoff(selectedDatePosted);
+    if (postedCutoff) {
+      const cutoffMs = new Date(postedCutoff).getTime();
       result = result.filter((job) => {
-        const dateStr = job.postedAt || job.date;
-        if (!dateStr) return true;
-        const jobTime = new Date(dateStr).getTime();
-        if (isNaN(jobTime)) return true;
-        const diffHours = (now - jobTime) / (1000 * 60 * 60);
-        if (selectedDatePosted === "Past 24 hours") return diffHours <= 24;
-        if (selectedDatePosted === "Past week") return diffHours <= 24 * 7;
-        if (selectedDatePosted === "Past month") return diffHours <= 24 * 30;
-        return true;
+        const jobTime = job.postedAt ? new Date(job.postedAt).getTime() : NaN;
+        return !isNaN(jobTime) && jobTime >= cutoffMs;
       });
     }
 
@@ -1933,6 +1903,45 @@ function JobsPageInner() {
           ) : (
             <>
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
+                {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded. */}
+                {user && preferences && activeTab === "recommended" && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5">
+                    <p className="min-w-0 truncate text-[13px] text-[#475569]">
+                      Recommended uses your saved preferences
+                    </p>
+                    <button
+                      ref={preferencesTriggerRef}
+                      type="button"
+                      onClick={() => setPreferencesOpen(true)}
+                      aria-haspopup="dialog"
+                      className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+                    >
+                      Preferences
+                      {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced()) > 0 && (
+                        <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] text-white">
+                          {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {user && preferences && (
+                  <PreferencesSheet
+                    key={user.id}
+                    ownerId={user.id}
+                    isOpen={preferencesOpen}
+                    onClose={() => setPreferencesOpen(false)}
+                    committed={preferences}
+                    triggerRef={preferencesTriggerRef}
+                    onSave={async (next) => {
+                      // Persist once; the saved-event re-reads the row, which changes the feed query key
+                      // and resets pagination through the existing loader. A failure rejects to the sheet.
+                      await saveUserPreferences(next, user.id);
+                      toast.success("Preferences updated. Refreshing your recommendations.");
+                    }}
+                  />
+                )}
+
                 {/* 3. COMPACT FILTER TOOLBAR */}
                 {/* Contract assertions: sticky top-[64px] z-tk-sticky Active: Clear all mobileFiltersOpen SlidersHorizontal aria-label="Sort by" */}
                 <JobFilterBar
