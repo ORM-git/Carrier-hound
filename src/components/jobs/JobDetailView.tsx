@@ -124,6 +124,75 @@ interface JobDetailViewProps {
   onSelectJob?: (job: LiveJob) => void;
   isExpired?: boolean;
   onLoadCompanyProfile?: () => Promise<void> | void;
+  /** Where the viewer's resume stands. Omitted: derived from `candidate` (confirmed / unconfirmed / none). */
+  resumeState?: ResumeState;
+}
+
+export type ResumeState = "loading" | "none" | "unconfirmed" | "confirmed";
+
+type ScoreTile = { label: string; value: number | null; overall?: boolean };
+
+/** Match Score: four tiles in one row, large percentage on top, label below; the overall tile is highlighted and
+ * carries the match label. Locked viewers see masked values only. */
+function MatchScoreTiles({ tiles, matchLabel, isUnlocked, testId, className = "" }: {
+  tiles: ScoreTile[]; matchLabel: string; isUnlocked: boolean; testId: string; className?: string;
+}) {
+  return (
+    <section data-testid={testId} aria-labelledby={`${testId}-heading`} className={`space-y-2.5 ${className}`}>
+      <h2 id={`${testId}-heading`} className="text-[16px] font-bold text-[#0F172A]">Match Score</h2>
+      <dl className="grid grid-cols-4 gap-1.5 sm:gap-2">
+        {tiles.map(({ label, value, overall }) => (
+          <div
+            key={label}
+            data-testid={overall ? "match-tile-overall" : "match-tile"}
+            className={`flex flex-col overflow-hidden rounded-xl border min-w-0 ${overall ? "border-[#93C5FD] bg-white shadow-sm" : "border-[#E2E8F0] bg-white"}`}
+          >
+            <dd className="flex-1 flex items-baseline justify-center gap-px px-1 pt-3 pb-2.5 leading-none text-[#0F172A]">
+              {isUnlocked && value !== null ? (
+                <>
+                  <span className={`${overall ? "font-black" : "font-semibold"} text-[22px] min-[360px]:text-[26px] sm:text-[30px] tabular-nums`}>{value}</span>
+                  <span className="text-[11px] sm:text-xs font-semibold text-[#475569]">%</span>
+                </>
+              ) : (
+                <span className="select-none text-[18px] sm:text-[22px] font-bold text-slate-400">{isUnlocked ? "—" : "••%"}</span>
+              )}
+            </dd>
+            <dt className={`flex items-center justify-center text-center px-1 py-1.5 min-h-[40px] text-[11px] sm:text-xs leading-tight break-words ${overall ? "bg-[#DBEAFE] text-[#1D4ED8] font-extrabold uppercase tracking-wide" : "bg-[#F1F5F9] text-[#334155] font-semibold"}`}>
+              {overall ? (isUnlocked ? matchLabel : "Pro Match") : label}
+            </dt>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/** Honest non-score states. Never shows a percentage. */
+function MatchScorePrompt({ state, testId, className = "" }: {
+  state: "loading" | "none" | "unconfirmed" | "unavailable"; testId: string; className?: string;
+}) {
+  if (state === "loading") {
+    return (
+      <div data-testid={testId} data-state="loading" role="status" aria-busy="true" className={`flex items-center gap-2 min-h-[44px] text-xs font-semibold text-[#64748B] ${className}`}>
+        <Sparkles className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+        <span>Checking your resume for a match…</span>
+      </div>
+    );
+  }
+  if (state === "unavailable") {
+    return (
+      <div data-testid={testId} data-state="unavailable" className={`flex items-center gap-2 min-h-[44px] text-xs font-semibold text-[#475569] ${className}`}>
+        <Sparkles className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+        <span>Match details aren&apos;t available for this job yet</span>
+      </div>
+    );
+  }
+  return (
+    <Link href="/resume" data-testid={testId} data-state={state} className={`flex items-center gap-2 min-h-[44px] text-xs font-bold text-[#1D4ED8] hover:underline ${className}`}>
+      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
+      <span>{state === "unconfirmed" ? "Confirm your resume to see your real match" : "Upload your resume to see your real match"}</span>
+    </Link>
+  );
 }
 
 export default function JobDetailView({
@@ -146,9 +215,11 @@ export default function JobDetailView({
   onSelectJob,
   isExpired = false,
   onLoadCompanyProfile,
+  resumeState: resumeStateProp,
 }: JobDetailViewProps) {
   const isUnlocked = isPro && !job.proUnlockError;
-  const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
+  const resumeState: ResumeState = resumeStateProp ?? (candidate?.confirmedAt ? "confirmed" : candidate ? "unconfirmed" : "none");
+  const hasConfirmedResume = resumeState === "confirmed" && Boolean(candidate && candidate.confirmedAt);
   const cookieNoticeHeight = useCookieNoticeHeight();
 
   const [activeTab, setActiveTab] = useState<"overview" | "company">("overview");
@@ -229,25 +300,20 @@ export default function JobDetailView({
   }, [hasConfirmedResume, candidate, job]);
 
   const matchScore = displayMatchScore(job, diagnostics);
+  // Real percentages need a confirmed resume AND usable diagnostics; anything else gets an honest state, never a number.
+  const scoreState: "loading" | "none" | "unconfirmed" | "unavailable" | "ready" =
+    resumeState === "loading" ? "loading"
+    : resumeState === "unconfirmed" ? "unconfirmed"
+    : !hasConfirmedResume ? "none"
+    : diagnostics && matchScore !== null ? "ready"
+    : "unavailable";
 
-  const expSubScore = diagnostics
-    ? Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.experienceScore / 15) * 100)))
-    : null;
-  const skillSubScore = diagnostics
-    ? Math.min(100, Math.max(0, Math.round((diagnostics.breakdown.skillScore / 50) * 100)))
-    : null;
-  const industrySubScore = diagnostics
-    ? Math.min(
-        100,
-        Math.max(
-          0,
-          Math.round(
-            (diagnostics.breakdown as any)?.industryScore ??
-              ((diagnostics.breakdown.titleScore / 25) * 100)
-          )
-        )
-      )
-    : null;
+  const subScore = (points: number, max: number) => Math.min(100, Math.max(0, Math.round((points / max) * 100)));
+  // Component maxima from computeFitDiagnostics: experience 15, skill 50, title 25. A real 0 stays 0.
+  const expSubScore = diagnostics ? subScore(diagnostics.breakdown.experienceScore, 15) : null;
+  const skillSubScore = diagnostics ? subScore(diagnostics.breakdown.skillScore, 50) : null;
+  // Role Match = the title-match dimension. There is no industry dimension in FitDiagnosticsResult.
+  const roleSubScore = diagnostics ? subScore(diagnostics.breakdown.titleScore, 25) : null;
 
   const matchLabel =
     matchScore !== null
@@ -379,6 +445,7 @@ export default function JobDetailView({
                   locked={!isUnlocked}
                   applyUrl={job.applyUrl}
                   logoUrl={job.logoUrl}
+                  domain={job.companyDomain}
                   className="w-6 h-6 rounded object-contain p-0.5 border border-[#E2E8F0] bg-white shrink-0"
                 />
                 <span className="text-xs sm:text-sm font-bold text-[#0F172A] truncate">
@@ -592,12 +659,13 @@ export default function JobDetailView({
       {/* (2) HEADER BODY CARD */}
       <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none">
         {/* Mobile action row: 64px rounded logo, Hide (block icon) circle, heart circle, Apply pill. Desktop keeps these in the sticky strip. */}
-        <div className="md:hidden flex items-center gap-2.5">
+        <div data-testid="overview-logo-row" className="md:hidden flex items-center gap-2.5">
           <CompanyLogo
             company={job.company}
             locked={!isUnlocked}
             applyUrl={job.applyUrl}
             logoUrl={job.logoUrl}
+            domain={job.companyDomain}
             className="w-16 h-16 rounded-2xl object-contain p-1.5 border border-[#E2E8F0] bg-white shrink-0"
           />
           <div className="flex-1" />
@@ -663,6 +731,7 @@ export default function JobDetailView({
                 locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
+                domain={job.companyDomain}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
               />
               <div className="min-w-0 flex-1">
@@ -832,8 +901,8 @@ export default function JobDetailView({
 
           {/* Right: Match card on the right with total % and sub-scores (Desktop) */}
           <div className="hidden lg:block w-[280px] shrink-0">
-            {hasConfirmedResume && matchScore !== null ? (
-              <div className="p-4 rounded-[14px] bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
+            {scoreState === "ready" && matchScore !== null ? (
+              <div data-testid="desktop-match-score" className="p-4 rounded-[14px] bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold text-[#64748B] uppercase tracking-wider">
                     Match breakdown
@@ -874,16 +943,17 @@ export default function JobDetailView({
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[#475569]">
-                    <span>Industry Exp.</span>
+                    <span>Role Match</span>
                     <span className="font-semibold text-[#0F172A]">
-                      {isUnlocked ? (industrySubScore !== null ? `${industrySubScore}%` : "—") : "••%"}
+                      {isUnlocked ? (roleSubScore !== null ? `${roleSubScore}%` : "—") : "••%"}
                     </span>
                   </div>
                 </div>
               </div>
-            ) : (
+            ) : scoreState === "none" ? (
               <Link
                 href="/resume"
+                data-testid="desktop-match-resume-prompt"
                 className="block p-4 rounded-[14px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] transition-colors text-left space-y-2 group/cta"
               >
                 <div className="flex items-center gap-2 text-xs font-bold text-[#1D4ED8]">
@@ -894,77 +964,33 @@ export default function JobDetailView({
                   Confirm your resume facts to unlock full match percentage and sub-score breakdown.
                 </p>
               </Link>
+            ) : (
+              <MatchScorePrompt state={scoreState === "ready" ? "unavailable" : scoreState} testId="desktop-match-state" className="p-4 rounded-[14px] bg-[#F8FAFC] border border-[#E2E8F0]" />
             )}
           </div>
         </div>
 
-        {/* Match score on Mobile: heading, then the overall card (taller, highlighted, big % with band label)
-            beside one card per component score. Cards without real data are dropped; masked for locked viewers. */}
-        {hasConfirmedResume && matchScore !== null && (
-          <div data-testid="mobile-match-score" className="md:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0] space-y-2.5">
-            <h2 className="text-[16px] font-bold text-[#0F172A]">Match Score</h2>
-            <div className="flex gap-2 items-stretch">
-              <div className="flex flex-col justify-between gap-2 w-[72px] shrink-0 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
-                <span className="text-2xl font-black text-[#0F172A] leading-none">
-                  {isUnlocked ? `${matchScore}%` : <span className="select-none text-slate-400">••%</span>}
-                </span>
-                <span className="text-[11px] font-extrabold uppercase tracking-wide text-[#1D4ED8] leading-tight">
-                  {isUnlocked ? matchLabel : "Pro Match"}
-                </span>
-              </div>
-              <dl className="flex-1 grid grid-cols-3 gap-1">
-                {([
-                  ["Experience", expSubScore],
-                  ["Skill", skillSubScore],
-                  ["Industry", industrySubScore],
-                ] as const)
-                  .filter(([, value]) => !isUnlocked || value !== null)
-                  .map(([label, value]) => (
-                    <div key={label} className="flex flex-col justify-between gap-1 rounded-xl bg-slate-50 border border-slate-200 px-1.5 py-2 min-w-0">
-                      <dt className="text-[11px] text-[#64748B] leading-tight tracking-tight break-words">{label}</dt>
-                      <dd className="text-lg font-bold text-[#0F172A] leading-none">
-                        {isUnlocked ? (value !== null ? `${value}%` : "—") : "••%"}
-                      </dd>
-                    </div>
-                  ))}
-              </dl>
-            </div>
-          </div>
-        )}
-        {/* Tablet (md..lg): the pre-restyle compact score line + one row of component scores, unchanged */}
-        {hasConfirmedResume && matchScore !== null && (
-          <div data-testid="tablet-match-score" className="hidden md:max-lg:block mt-4 sm:mt-3 pt-3 border-t border-[#E2E8F0] space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">Match Score</span>
-              <span className="flex items-baseline gap-1.5 min-w-0">
-                <span className="text-xl font-black text-[#0F172A] leading-none">{isUnlocked ? `${matchScore}%` : "\u2022\u2022%"}</span>
-                <span className="text-xs font-bold text-[#1D4ED8] truncate">{isUnlocked ? matchLabel : "Match"}</span>
-              </span>
-            </div>
-            <dl className="grid grid-cols-3 gap-2">
-              {([
-                ["Experience", expSubScore],
-                ["Skill", skillSubScore],
-                ["Industry", industrySubScore],
-              ] as const).map(([label, value]) => (
-                <div key={label} className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-0">
-                  <dt className="text-[11px] text-[#64748B] leading-tight truncate">{label}</dt>
-                  <dd className="text-sm font-bold text-[#0F172A]">{isUnlocked ? (value !== null ? `${value}%` : "\u2014") : "\u2022\u2022%"}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        )}
-        {/* Without a confirmed resume no score is shown (never invented); phones get the same prompt desktop has (item 20). */}
-        {!hasConfirmedResume && (
-          <Link
-            href="/resume"
-            data-testid="mobile-match-resume-prompt"
-            className="lg:hidden mt-4 sm:mt-3 flex items-center gap-2 min-h-[44px] pt-3 border-t border-[#E2E8F0] text-xs font-bold text-[#1D4ED8] hover:underline"
-          >
-            <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
-            <span>Upload your resume to see your real match</span>
-          </Link>
+        {/* Match score below desktop (phones + tablets): heading, four tiles in one row (overall highlighted with its
+            match label, then Experience Level, Skill and Role Match). Numbers only with real diagnostics. */}
+        {scoreState === "ready" ? (
+          <MatchScoreTiles
+            testId="mobile-match-score"
+            className="lg:hidden mt-4 sm:mt-3 pt-4 border-t border-[#E2E8F0]"
+            isUnlocked={isUnlocked}
+            matchLabel={matchLabel}
+            tiles={[
+              { label: "Overall", value: matchScore, overall: true },
+              { label: "Experience Level", value: expSubScore },
+              { label: "Skill", value: skillSubScore },
+              { label: "Role Match", value: roleSubScore },
+            ]}
+          />
+        ) : (
+          <MatchScorePrompt
+            state={scoreState}
+            testId="mobile-match-resume-prompt"
+            className="lg:hidden mt-4 sm:mt-3 pt-3 border-t border-[#E2E8F0]"
+          />
         )}
       </div>
 
@@ -1127,6 +1153,7 @@ export default function JobDetailView({
                 locked={!isUnlocked}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
+                domain={job.companyDomain}
                 className="w-12 h-12 rounded-xl shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
               />
               <div className="space-y-1 min-w-0 flex-1">
@@ -1212,6 +1239,7 @@ export default function JobDetailView({
                       locked={!isUnlocked}
                       applyUrl={simJob.applyUrl}
                       logoUrl={simJob.logoUrl}
+                      domain={simJob.companyDomain}
                       className="w-9 h-9 rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                     />
                     <div className="min-w-0 flex-1">

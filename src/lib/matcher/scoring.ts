@@ -709,7 +709,8 @@ export function fnv1aHex(text: string): string {
 
 // jobs-row columns the recommendation scorer reads. Paid inputs are only selected (and scored) on Pro paths.
 const SCORE_INPUT_COLUMNS = ["title", "location", "remote", "remote_scope", "remote_eligibility", "job_type", "category", "country_code", "posted_at"] as const;
-const PAID_SCORE_INPUT_COLUMNS = ["description", "skills", "salary_text", "salary_min", "salary_max", "currency"] as const;
+// salary_period: the salary filter annualises salary_min/max by it, so a period-only change can flip eligibility.
+const PAID_SCORE_INPUT_COLUMNS = ["description", "skills", "salary_text", "salary_min", "salary_max", "currency", "salary_period"] as const;
 
 /**
  * Authoritative revision of a job's score inputs, stamped by every jobs API route (list and detail) from the

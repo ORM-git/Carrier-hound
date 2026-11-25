@@ -14,7 +14,7 @@ describe("mobile field parity (item 20)", () => {
   });
 
   it("detail keeps salary original, skills, description, Company section and shows the rail (similar jobs, notes) below lg", () => {
-    for (const s of ["job.salary_original", 'id="company-section"', "Similar jobs", "tracker-notes-panel", 'data-testid="mobile-match-score"']) expect(detail).toContain(s);
+    for (const s of ["job.salary_original", 'id="company-section"', "Similar jobs", "tracker-notes-panel", 'testId="mobile-match-score"']) expect(detail).toContain(s);
     expect(detail).not.toContain("hidden lg:block lg:col-span-5");
   });
 });

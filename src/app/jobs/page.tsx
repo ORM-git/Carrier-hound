@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { getLiveJobs, getLiveJobById, LatestJobSelectionGate, LiveJob, isEarlyApplicant, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, keepSameJobLogoIdentity, LatestJobSelectionGate, LiveJob, isEarlyApplicant, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -24,7 +24,7 @@ import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
-import JobDetailView from "@/components/jobs/JobDetailView";
+import JobDetailView, { type ResumeState } from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
@@ -497,6 +497,8 @@ function JobsPageInner() {
   const [isPro, setIsPro] = useState(false);
   const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
+  // Where the viewer's resume stands, so the detail shows an honest state instead of a score (candidate stays null unless confirmed).
+  const [resumeState, setResumeState] = useState<ResumeState>("loading");
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [trackedApplications, setTrackedApplications] = useState<TrackedApplication[]>([]);
   const [resolvedJobsMap, setResolvedJobsMap] = useState<Record<string, LiveJob>>({});
@@ -894,6 +896,7 @@ function JobsPageInner() {
         setIsPro(Boolean(proRes?.isPro));
         setIsProDefinitive(Boolean(proRes?.isDefinitive));
         setCandidate(cp && cp.confirmedAt ? cp : null);
+        setResumeState(cp?.confirmedAt ? "confirmed" : cp ? "unconfirmed" : "none");
         setTrackedApplications(apps);
         const savedApps = apps.filter((a) => a.stage === "saved");
         setSavedJobIds(savedApps.map((a) => a.jobId || "").filter(Boolean));
@@ -904,6 +907,7 @@ function JobsPageInner() {
         if (u) setPreferences(prefs);
       } catch (err) {
         console.warn("Failed to load initial context on jobs page:", err);
+        if (!cancelled) setResumeState("none");
       }
     }
 
@@ -932,6 +936,7 @@ function JobsPageInner() {
         } else {
           setCandidate(null);
         }
+        setResumeState(cp?.confirmedAt ? "confirmed" : cp ? "unconfirmed" : "none");
       });
     };
 
@@ -1715,7 +1720,7 @@ function JobsPageInner() {
     try {
       const fullJob = await getLiveJobById(jobId, isPro);
       if (fullJob && jobSelectionGateRef.current!.isCurrent(selectionToken)) {
-        setSelectedJob(fullJob);
+        setSelectedJob((current) => keepSameJobLogoIdentity(fullJob, current));
         if (!fullJob.proUnlockError) {
           toast.success("Job details unlocked!");
         } else {
@@ -1734,7 +1739,7 @@ function JobsPageInner() {
     const jobId = selectedJob.id;
     try {
       const fullJob = await getLiveJobById(jobId, true);
-      if (fullJob && selectedJob?.id === jobId) setSelectedJob((current) => current?.id === jobId ? { ...current, ...fullJob } : current);
+      if (fullJob && selectedJob?.id === jobId) setSelectedJob((current) => current?.id === jobId ? keepSameJobLogoIdentity({ ...current, ...fullJob }, current) : current);
     } catch (error) {
       console.warn("Failed to load company profile", error);
     }
@@ -1764,7 +1769,7 @@ function JobsPageInner() {
           if (typeof job.matchScore === "number" && fullJob.scoreRevision && fullJob.scoreRevision === job.scoreRevision) {
             fullJob.matchScore = job.matchScore;
           }
-          setSelectedJob(fullJob);
+          setSelectedJob(keepSameJobLogoIdentity(fullJob, job));
         }
       } catch {}
     }
@@ -1852,7 +1857,7 @@ function JobsPageInner() {
     let cancelled = false;
     getLiveJobById(id, isPro).then((fresh) => {
       if (cancelled || !fresh) return;
-      setSelectedJob((current) => current?.id === id ? { ...current, ...fresh } : current);
+      setSelectedJob((current) => current?.id === id ? keepSameJobLogoIdentity({ ...current, ...fresh }, current) : current);
     }).catch((error) => console.warn("Failed to refresh selected job score:", error));
     return () => { cancelled = true; };
     // selectedJob identity, rather than the full object, avoids a refresh loop after the result is set.
@@ -2086,6 +2091,7 @@ function JobsPageInner() {
               <JobDetailView
                 job={detailJob ?? selectedJob}
                 candidate={candidate}
+                resumeState={resumeState}
                 user={user}
                 isPro={isPro}
                 isSaved={savedJobIds.includes(selectedJob.id)}

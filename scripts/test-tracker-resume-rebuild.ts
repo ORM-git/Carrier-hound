@@ -227,7 +227,7 @@ function runAudit() {
 
   // Empty State: centred icon, one line, upload button
   const hasEmptyState = resumeCode.includes('data-testid="resume-empty-state"') &&
-    resumeCode.includes("No resumes uploaded yet") &&
+    resumeCode.includes("Add your resume") &&
     resumeCode.includes('data-testid="empty-upload-resume-button"');
   if (hasEmptyState) {
     console.log("  [PASS] Resume Empty State: centred icon, one line message, upload button");

@@ -155,8 +155,11 @@ function run() {
     console.log("  [PASS] detail sections: white 16px-radius cards with 18px bold headings; description readable 15px/24px line height max-w-[720px]");
   }
 
-  // 2e. Match breakdown: only with confirmed resume, otherwise the upload CTA
-  const hasDetailResumeCondition = detailCode.includes("hasConfirmedResume && matchScore !== null ?");
+  // 2e. Match breakdown: only with a confirmed resume AND usable diagnostics, otherwise the upload CTA
+  const hasDetailResumeCondition =
+    detailCode.includes('scoreState === "ready" && matchScore !== null ?') &&
+    detailCode.includes('!hasConfirmedResume ? "none"') &&
+    detailCode.includes('diagnostics && matchScore !== null ? "ready"');
   const hasDetailUploadCta = detailCode.includes("Upload your resume to see your real match") && detailCode.includes('href="/resume"');
   if (!hasDetailResumeCondition || !hasDetailUploadCta) {
     failures.push('DETAIL MATCH FAIL: Match breakdown must only render score with confirmed resume, otherwise the upload CTA linking to /resume.');
