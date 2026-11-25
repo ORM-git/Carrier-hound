@@ -17,6 +17,7 @@
  * Includes negative control protocol (--negative-control) proving non-zero exit on invalid assertions / violations.
  */
 
+import { verifyDateGuard, testDateGuardContract } from "./lib/date-guard-contract";
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
@@ -97,11 +98,9 @@ async function run() {
   const routeViolations = findPostedAtDescViolations(routeContent);
   assert(routeViolations.length === 0, 'Every posted_at DESC order in route.ts specifies nullsFirst: false');
 
-  const hasRouteDateGuard =
-    routeContent.includes('dateParam') &&
-    routeContent.includes('.gte("posted_at", cutoff)') &&
-    routeContent.includes('ms > 0');
-  assert(hasRouteDateGuard, 'route.ts only applies .gte("posted_at") when dateParam is provided and ms > 0');
+  testDateGuardContract();
+  const hasRouteDateGuard = verifyDateGuard(routeContent, "dateParam");
+  assert(hasRouteDateGuard, 'route.ts only applies .gte("posted_at") when datePostedCutoff(dateParam) returns a valid window');
 
   // ---------------------------------------------------------------------------
   // 2. Static Validation: src/lib/jobs/service.ts
@@ -112,11 +111,8 @@ async function run() {
   const serviceViolations = findPostedAtDescViolations(serviceContent);
   assert(serviceViolations.length === 0, 'Every posted_at DESC order in service.ts specifies nullsFirst: false');
 
-  const hasServiceDateGuard =
-    serviceContent.includes('datePosted') &&
-    serviceContent.includes('.gte("posted_at", cutoff)') &&
-    serviceContent.includes('ms > 0');
-  assert(hasServiceDateGuard, 'service.ts only applies .gte("posted_at") when datePosted is provided and ms > 0');
+  const hasServiceDateGuard = verifyDateGuard(serviceContent, "effectiveDatePosted");
+  assert(hasServiceDateGuard, 'service.ts only applies .gte("posted_at") when datePostedCutoff(effectiveDatePosted) returns a valid window');
 
   // ---------------------------------------------------------------------------
   // 3. Static Validation: netlify/functions/jobs-search.ts
