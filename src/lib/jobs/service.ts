@@ -861,6 +861,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         return {
           jobs: [],
           totalCount: count ?? 0,
+          nextCursor: null,
+          hasNextPage: false,
         };
       }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
@@ -996,6 +998,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       return {
         jobs: filteredJobs,
         totalCount: count ?? 0,
+        nextCursor: null,
+        hasNextPage: (page * pageSize) < (count ?? 0),
       };
     }
   } catch (err) {
