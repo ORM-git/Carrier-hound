@@ -4,7 +4,7 @@ import { createLogger } from "@/lib/observability/logger";
 export function recommendationTiming(ray: string | null, now = () => performance.now()) {
   const requestId = crypto.randomUUID();
   const cfRay = ray && /^[a-f0-9]{16,32}-[A-Z]{3}$/.test(ray) ? ray : undefined;
-  const log = createLogger({ context: { route: "/api/jobs/recommended", requestId, ...(cfRay ? { cfRay } : {}) } });
+  const log = createLogger({ level: "info", context: { route: "/api/jobs/recommended", requestId, ...(cfRay ? { cfRay } : {}) } });
   const started = now();
   let stage = "setup";
   let stageStarted = started;

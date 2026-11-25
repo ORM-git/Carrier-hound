@@ -18,6 +18,20 @@ describe("recommendation timing privacy and checkpoints", () => {
     expect(records[0].cfRay).toBe("abcd1234abcd1234-BOM");
     spy.mockRestore();
   });
+  it("keeps the temporary diagnostic visible even with a restrictive global log level", () => {
+    const previous = process.env.LOG_LEVEL;
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      process.env.LOG_LEVEL = "silent";
+      const timing = recommendationTiming(null);
+      timing.finish(429);
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(spy.mock.calls[1][0]))).toMatchObject({ status: 429, stage: "setup" });
+    } finally {
+      if (previous === undefined) delete process.env.LOG_LEVEL; else process.env.LOG_LEVEL = previous;
+      spy.mockRestore();
+    }
+  });
   it("does not echo an untrusted correlation header and logging failures are harmless", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => { throw Error("sink unavailable"); });
     expect(() => { const t = recommendationTiming("personal-data@example.com"); t.begin("db"); t.finish(503); }).not.toThrow();
