@@ -17,6 +17,7 @@ import {
   extractTopKeywords,
 } from "@/lib/jobs/highVolumeEnrichment";
 import { applyExperienceLevelQuery, isExperienceLevelFilterActive } from "@/lib/jobs/experienceLevels";
+import { jobTypeOrClause, workModelOrClause } from "@/lib/jobs/jobFilters";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { withRouteSpan } from "@/lib/monitoring/tracing";
@@ -435,20 +436,8 @@ async function getHandler(req: Request) {
       }
     }
 
-    if (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") {
-      const jt = jobTypeParam.trim().toLowerCase();
-      if (jt.includes("full")) {
-        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
-      } else if (jt.includes("contract")) {
-        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
-      } else if (jt.includes("part")) {
-        query = query.ilike("job_type", "%part%");
-      } else if (jt.includes("intern")) {
-        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
-      } else {
-        query = query.ilike("job_type", "%" + sanitizeSearchQuery(jobTypeParam) + "%");
-      }
-    }
+    const jobTypeClause = jobTypeOrClause(jobTypeParam);
+    if (jobTypeClause) query = query.or(jobTypeClause);
 
     if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
       query = applyExperienceLevelQuery(query, levelParam);
@@ -480,18 +469,8 @@ async function getHandler(req: Request) {
       }
     }
 
-    if (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") {
-      const wmTokens = workModelParam.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
-      const orParts: string[] = [];
-      for (const wm of wmTokens) {
-        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
-        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
-        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
-      }
-      if (orParts.length > 0) {
-        query = query.or(orParts.join(","));
-      }
-    }
+    const workModelClause = workModelOrClause(workModelParam);
+    if (workModelClause) query = query.or(workModelClause);
 
     if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
       const dp = dateParam.trim().toLowerCase();
@@ -887,7 +866,7 @@ async function getHandler(req: Request) {
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
-          type: row.job_type === "internship" ? "Internship" : "Full-time",
+          type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
           description: row.description || "",
@@ -921,7 +900,7 @@ async function getHandler(req: Request) {
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : "Full-time",
+        type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
         directSource: Boolean(row.verified),
         applyUrl: "",
         description: "",

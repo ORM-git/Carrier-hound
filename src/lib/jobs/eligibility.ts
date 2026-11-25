@@ -60,6 +60,21 @@ const GENERIC_WORLDWIDE_TOKENS = new Set([
   "unrestricted",
 ]);
 
+// Static lookups derived only from COUNTRY_CODE_TO_NAME (never mutated), built once on first use. Not at module
+// load: countries.ts re-exports this module, so COUNTRY_CODE_TO_NAME is still uninitialized while we load.
+let countryTables:
+  | { nameToCode: Readonly<Record<string, string>>; matchers: (readonly [string, string, RegExp])[] }
+  | undefined;
+function getCountryTables() {
+  return (countryTables ??= {
+    // Inverted map: lowercase country name -> code
+    nameToCode: Object.fromEntries(Object.entries(COUNTRY_CODE_TO_NAME).map(([code, name]) => [name.toLowerCase(), code])),
+    matchers: Object.entries(COUNTRY_CODE_TO_NAME).map(
+      ([code, name]) => [code, name.toLowerCase(), new RegExp(`\\b${code}\\b`, "i")] as const
+    ),
+  });
+}
+
 /**
  * Normalizes user onboarding location preferences into unique ISO country codes and display names.
  * Ignores generic worldwide tags (which signify no geographic restriction).
@@ -71,12 +86,7 @@ export function normalizeUserCountries(locations: string[] | null | undefined): 
 
   const codeSet = new Set<string>();
   const nameSet = new Set<string>();
-
-  // Inverted map: lowercase country name -> code
-  const nameToCode: Record<string, string> = {};
-  for (const [code, name] of Object.entries(COUNTRY_CODE_TO_NAME)) {
-    nameToCode[name.toLowerCase()] = code;
-  }
+  const { nameToCode } = getCountryTables();
 
   for (const raw of locations) {
     if (!raw || typeof raw !== "string") continue;
@@ -146,7 +156,7 @@ function hasForeignCountryRestriction(location: string, allowedCodes: string[]):
   const loc = location.toLowerCase();
   const allowedSet = new Set(allowedCodes.map((c) => c.toUpperCase()));
 
-  for (const [code, name] of Object.entries(COUNTRY_CODE_TO_NAME)) {
+  for (const [code, name, codeRegex] of getCountryTables().matchers) {
     if (allowedSet.has(code)) continue;
 
     // Strict Indiana/India guard
@@ -160,12 +170,11 @@ function hasForeignCountryRestriction(location: string, allowedCodes: string[]):
       continue;
     }
 
-    if (loc.includes(name.toLowerCase())) {
+    if (loc.includes(name)) {
       return true;
     }
 
     // Two-letter word boundary check for prominent codes like US, UK, DE, FR
-    const codeRegex = new RegExp(`\\b${code}\\b`, "i");
     if (codeRegex.test(loc) && !loc.includes("remote")) {
       return true;
     }

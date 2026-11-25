@@ -14,6 +14,7 @@ import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries"
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 import { applyExperienceLevelQuery, parseExperienceLevels, EARLY_CAREER_OR_CLAUSE } from "@/lib/jobs/experienceLevels";
+import { jobTypeOrClause, workModelOrClause } from "@/lib/jobs/jobFilters";
 import { normalizeUserCountries as normalizeEligibleCountries } from "@/lib/jobs/eligibility";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
@@ -319,20 +320,8 @@ export async function GET(req: Request) {
     }
 
     // 5. Job type hard filter
-    if (jobTypeParam && jobTypeParam.trim() && jobTypeParam.toLowerCase() !== "all") {
-      const jt = jobTypeParam.trim().toLowerCase();
-      if (jt.includes("full")) {
-        query = query.or("job_type.ilike.%full%,job_type.eq.full-time,job_type.eq.full_time");
-      } else if (jt.includes("contract")) {
-        query = query.or("job_type.ilike.%contract%,job_type.eq.contractor");
-      } else if (jt.includes("part")) {
-        query = query.ilike("job_type", "%part%");
-      } else if (jt.includes("intern")) {
-        query = query.or("job_type.ilike.%intern%,job_type.eq.internship");
-      } else {
-        query = query.ilike("job_type", "%" + sanitizeSearchQuery(jobTypeParam) + "%");
-      }
-    }
+    const jobTypeClause = jobTypeOrClause(jobTypeParam);
+    if (jobTypeClause) query = query.or(jobTypeClause);
 
     // 6. Level hard filter
     if (levelParam && levelParam.trim() && levelParam.toLowerCase() !== "all") {
@@ -367,18 +356,8 @@ export async function GET(req: Request) {
     }
 
     // 8. Work model hard filter
-    if (workModelParam && workModelParam.trim() && workModelParam.toLowerCase() !== "all") {
-      const wmTokens = workModelParam.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
-      const orParts: string[] = [];
-      for (const wm of wmTokens) {
-        if (wm === "remote") orParts.push("remote.eq.true", "location.ilike.%remote%");
-        else if (wm === "hybrid") orParts.push("location.ilike.%hybrid%", "remote_scope.eq.hybrid");
-        else if (wm === "onsite") orParts.push("remote.eq.false", "location.ilike.%onsite%");
-      }
-      if (orParts.length > 0) {
-        query = query.or(orParts.join(","));
-      }
-    }
+    const workModelClause = workModelOrClause(workModelParam);
+    if (workModelClause) query = query.or(workModelClause);
 
     // 9. Date posted hard filter
     if (dateParam && dateParam.trim() && dateParam.toLowerCase() !== "all") {
