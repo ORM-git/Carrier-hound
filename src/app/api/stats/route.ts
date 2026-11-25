@@ -110,7 +110,10 @@ async function getHandler(req: Request) {
       }
     }
 
-    // 1. Jobs posted/created today (UTC midnight to next midnight, start inclusive, next midnight exclusive)
+    // 1. Jobs first seen today (UTC midnight to next midnight, start inclusive, next midnight exclusive).
+    // created_at is never written by ingestion, so a refresh does not re-count an older job. The count is
+    // of listing rows: identity is (source_id, source_job_id) + unique apply_url and dedupe_hash is advisory,
+    // so one role on two boards counts twice (see __tests__/jobIdentityForDailyCount.test.ts).
     const now = new Date();
     const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const nextMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));

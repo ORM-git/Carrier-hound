@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { GET } from "../route";
-import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { HIDDEN_SOURCE_TYPE, VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
 // In-memory mock database state
 const mockDb = {
@@ -8,6 +9,9 @@ const mockDb = {
   companies: [] as Array<Record<string, any>>,
   queryError: null as any,
   queryCountOverride: null as number | null,
+  // A count query that succeeds but returns count: null (no error object).
+  queryCountNull: false,
+  orFilters: [] as string[],
 };
 
 vi.mock("@supabase/supabase-js", () => {
@@ -34,10 +38,10 @@ vi.mock("@supabase/supabase-js", () => {
             return builder;
           },
           or: (filterStr: string) => {
-            if (filterStr === VISIBLE_SOURCE_FILTER) {
-              // Simulates source filter: drops unapproved sources e.g. jobspy
-              filters.push((r) => r.source !== "jobspy" && r.source_type !== "jobspy");
-            }
+            // The repo's PostgREST logic-tree evaluator (SQL three-valued NULL semantics), applied to
+            // whatever filter string the route sends: no hand-written stand-in for the source policy.
+            mockDb.orFilters.push(filterStr);
+            filters.push((r) => matchesPostgrestOr(filterStr, r));
             return builder;
           },
           eq: (col: string, val: any) => {
@@ -55,6 +59,10 @@ vi.mock("@supabase/supabase-js", () => {
           then: (resolve: (val: any) => void) => {
             if (mockDb.queryError) {
               resolve({ count: null, data: null, error: mockDb.queryError });
+              return;
+            }
+            if (mockDb.queryCountNull && isCountQuery) {
+              resolve({ count: null, data: null, error: null });
               return;
             }
             if (mockDb.queryCountOverride !== null && isCountQuery) {
@@ -91,6 +99,8 @@ describe("GET /api/stats query bounds and metric truth", () => {
     mockDb.companies = [];
     mockDb.queryError = null;
     mockDb.queryCountOverride = null;
+    mockDb.queryCountNull = false;
+    mockDb.orFilters = [];
   });
 
   afterEach(() => {
@@ -181,32 +191,38 @@ describe("GET /api/stats query bounds and metric truth", () => {
     expect(body.jobsToday).toBe(0);
   });
 
-  it("counts each canonical job once (no duplicate rows in query result)", async () => {
+  it("counts listing rows, not canonical roles: one role from two boards counts twice (metric qualification)", async () => {
+    // jobs_public is a plain projection of public.jobs (no DISTINCT). Row identity is enforced at
+    // ingestion: UNIQUE (source_id, source_job_id) and UNIQUE apply_url, with dedupe_hash advisory
+    // (#643), so the same role on two boards is two rows. See jobIdentityForDailyCount.test.ts.
     const now = new Date();
+    const base = { created_at: now.toISOString(), is_active: true, status: "active", dedupe_hash: "same-role-hash" };
     mockDb.jobsPublic = [
-      {
-        id: "canonical-job-1",
-        created_at: now.toISOString(),
-        is_active: true,
-        status: "active",
-        source: "greenhouse",
-      },
-      {
-        id: "canonical-job-2",
-        created_at: now.toISOString(),
-        is_active: true,
-        status: "active",
-        source: "lever",
-      },
+      { ...base, id: "board-a-row", source_type: "greenhouse", source_id: "board-a", source_job_id: "42" },
+      { ...base, id: "board-b-row", source_type: "lever", source_id: "board-b", source_job_id: "777" },
     ];
-
     const res = await GET(new Request("https://careermonke.com/api/stats"));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.jobsToday).toBe(2);
+    expect((await res.json()).jobsToday).toBe(2);
   });
 
-  it("excludes inactive, unapproved source or non-active status jobs", async () => {
+  it("source policy uses the real VISIBLE_SOURCE_FILTER: NULL source_type kept, source_type jobspy hidden, the 'source' column ignored", async () => {
+    const now = new Date().toISOString();
+    const row = (id: string, extra: Record<string, unknown>) => ({ id, created_at: now, is_active: true, status: "active", ...extra });
+    mockDb.jobsPublic = [
+      row("null-source-type", { source_type: null, source: null }),
+      row("missing-source-type", {}),
+      row("greenhouse", { source_type: "greenhouse", source: "greenhouse" }),
+      row("aggregator", { source_type: "aggregator", source: "adzuna" }),
+      row("jobspy-type", { source_type: HIDDEN_SOURCE_TYPE, source: "linkedin" }),
+      // The policy keys on source_type only: a 'source' value of jobspy alone is not hidden.
+      row("jobspy-source-name-only", { source_type: "ats", source: "jobspy" }),
+    ];
+    const res = await GET(new Request("https://careermonke.com/api/stats"));
+    expect(mockDb.orFilters).toContain(VISIBLE_SOURCE_FILTER);
+    expect((await res.json()).jobsToday).toBe(5);
+  });
+
+  it("excludes inactive, hidden-source (source_type jobspy) or non-active status jobs", async () => {
     const now = new Date();
     mockDb.jobsPublic = [
       {
@@ -228,7 +244,8 @@ describe("GET /api/stats query bounds and metric truth", () => {
         created_at: now.toISOString(),
         is_active: true,
         status: "active",
-        source: "jobspy", // Excluded by VISIBLE_SOURCE_FILTER
+        source: "linkedin",
+        source_type: HIDDEN_SOURCE_TYPE, // Excluded by VISIBLE_SOURCE_FILTER (keys on source_type)
       },
     ];
 
@@ -257,10 +274,19 @@ describe("GET /api/stats query bounds and metric truth", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("returns 503 when count result is null or negative", async () => {
+  it("returns 503 when the count is negative", async () => {
     mockDb.queryCountOverride = -1;
     const res = await GET(new Request("https://careermonke.com/api/stats"));
     expect(res.status).toBe(503);
+  });
+
+  it("returns 503 (never 0) when the count query succeeds without error but count is null", async () => {
+    mockDb.queryCountNull = true;
+    const res = await GET(new Request("https://careermonke.com/api/stats"));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.jobsToday).toBeUndefined();
+    expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
   it("anonymous callers receive strictly { jobsToday, updatedAt } with edge cache headers", async () => {

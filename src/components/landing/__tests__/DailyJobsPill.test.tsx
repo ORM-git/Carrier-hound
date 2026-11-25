@@ -9,6 +9,10 @@ vi.mock("next/font/google", () => ({
 
 import HomePage from "@/app/page";
 
+// The 5-minute refresh test advances fake time through the landing animation runtimes (~4s even on the
+// original hook), right at vitest's 5s default.
+vi.setConfig({ testTimeout: 30000 });
+
 // Helper to flush pending promises in React
 const flushPromises = async () => {
   await act(async () => {
