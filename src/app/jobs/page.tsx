@@ -316,6 +316,15 @@ function JobsPageInner() {
   const pendingJobIdRef = useRef<string | null>(null);
   const scrollPositionRef = useRef<number>(0);
   const [viewHiddenJobs, setViewHiddenJobs] = useState(false);
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsPhone(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  const effectiveViewHiddenJobs = viewHiddenJobs && !isPhone;
 
   // Search & Filter state
   const [search, setSearch] = useState("");
@@ -594,6 +603,7 @@ function JobsPageInner() {
     selectedExperience,
     remoteOnly,
     viewHiddenJobs,
+    effectiveViewHiddenJobs,
     sortBy,
     selectedWorkModel,
     selectedIndustry,
@@ -1197,7 +1207,7 @@ function JobsPageInner() {
     }
 
     let result = sourceJobs.filter((job) => {
-      if (viewHiddenJobs) {
+      if (effectiveViewHiddenJobs) {
         return hiddenJobIds.includes(job.id);
       }
       return !hiddenJobIds.includes(job.id);
@@ -1294,6 +1304,7 @@ function JobsPageInner() {
     resolvedJobsMap,
     hiddenJobIds,
     viewHiddenJobs,
+    effectiveViewHiddenJobs,
     selectedCountryCode,
     selectedLocation,
     selectedWorkModel,
@@ -1690,7 +1701,7 @@ function JobsPageInner() {
     (selectedSalaryMin ? 1 : 0) +
     (selectedSourceType ? 1 : 0) +
     (selectedCompany ? 1 : 0) +
-    (viewHiddenJobs ? 1 : 0);
+    (effectiveViewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
   const filterValues: JobFilterValues = useMemo(() => ({
@@ -1705,7 +1716,7 @@ function JobsPageInner() {
     salaryMin: selectedSalaryMin,
     sourceType: selectedSourceType,
     company: selectedCompany,
-    hidden: viewHiddenJobs,
+    hidden: effectiveViewHiddenJobs,
     sort: sortBy,
   }), [
     selectedCountryCode,
@@ -1721,6 +1732,7 @@ function JobsPageInner() {
     selectedSourceType,
     selectedCompany,
     viewHiddenJobs,
+    effectiveViewHiddenJobs,
     sortBy,
   ]);
 
@@ -1938,7 +1950,7 @@ function JobsPageInner() {
                 />
 
                 <AllFiltersDrawer
-                  isOpen={allFiltersDrawerOpen}
+                  isOpen={allFiltersDrawerOpen && !isPhone}
                   onClose={() => {
                     setAllFiltersDrawerOpen(false);
                     allFiltersTriggerRef.current?.focus();
@@ -1961,6 +1973,7 @@ function JobsPageInner() {
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
                   hiddenCount={hiddenJobIds.length}
+                  hideHiddenJobs={isPhone}
                   triggerRef={filtersTriggerRef}
                 />
               </div>
@@ -2037,7 +2050,7 @@ function JobsPageInner() {
                         )}
                       </div>
                       <h3 className="text-base font-bold text-[#0F172A]">
-                        {viewHiddenJobs
+                        {effectiveViewHiddenJobs
                           ? "No hidden positions"
                           : (activeTab === "saved" || activeTab === "liked")
                           ? savedCount === 0
@@ -2052,7 +2065,7 @@ function JobsPageInner() {
                           : "No positions currently found"}
                       </h3>
                       <p className="text-xs text-[#475569] max-w-sm mx-auto">
-                        {viewHiddenJobs
+                        {effectiveViewHiddenJobs
                           ? "Positions you hide from the feed will appear here so you can unhide them anytime."
                           : (activeTab === "saved" || activeTab === "liked")
                           ? savedCount === 0
