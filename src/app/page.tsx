@@ -13,6 +13,7 @@ import "@/styles/careermonke-landing-lower.css";
 import "@/styles/mobile-ticker.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 import { initCareerMonkeLandingLower } from "@/components/landing/careermonke-landing-lower-runtime";
+import { useDailyJobsCount } from "@/lib/api/stats";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin", "latin-ext"],
@@ -24,6 +25,7 @@ const jakarta = Plus_Jakarta_Sans({
 
 export default function HomePage() {
   const lowerRef = useRef<HTMLDivElement>(null);
+  const dailyCount = useDailyJobsCount();
   useEffect(() => {
     const stopTop = initCareerMonkeLanding();
     const stopLower = lowerRef.current ? initCareerMonkeLandingLower(lowerRef.current) : () => {};
@@ -60,10 +62,21 @@ export default function HomePage() {
               </nav>
 
               <div className="hero-inner">
-                <span className="pill daily-count-pending" aria-hidden="true">
-                  <span className="pill-dot"></span>
-                  <span>Daily jobs count pending verification</span>
-                </span>
+                {dailyCount && dailyCount > 0 ? (
+                  <span className="pill">
+                    <span className="pill-dot" aria-hidden="true"></span>
+                    <span>
+                      {dailyCount === 1
+                        ? "1 new job record added today"
+                        : `${dailyCount.toLocaleString()} new job records added today`}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="pill daily-count-pending" aria-hidden="true">
+                    <span className="pill-dot"></span>
+                    <span>Daily jobs count pending verification</span>
+                  </span>
+                )}
                 <p className="kicker">Skip LinkedIn competition</p>
                 <h1 aria-label="Start jobmaxxing with AI">
                   Start{" "}
