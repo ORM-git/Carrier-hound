@@ -4,15 +4,28 @@
  *
  * Semantics (shared by /api/jobs/recommended, /api/jobs/search and the client that sends them):
  * - Each dimension is AND-ed with every other active filter.
- * - excludedTitles: a job is hidden when its title contains ANY entry (case-insensitive).
- * - includedCompanies: OR inside the list; a job's company must equal one entry (case-insensitive).
- * - excludedCompanies: a job is hidden when its company equals ANY entry. A name in both lists is
- *   excluded (exclusion wins) and is dropped from the inclusion list before querying.
+ * - excludedTitles: a job is hidden when its title contains ANY entry (case-insensitive, literal).
+ * - includedCompanies: OR inside the list; a job's company must equal one entry (case-insensitive, literal).
+ * - excludedCompanies: a job is hidden when its company equals ANY entry. Include and exclude are both
+ *   applied (AND), so a name in both lists is excluded and the inclusion list still limits the feed:
+ *   include {Acme} + exclude {Acme} is an empty result, never "all employers".
+ * - All matching is literal: every user character (quote, comma, %, _, parentheses, backslash, ...)
+ *   means itself. Values travel as escaped case-insensitive regexes in plain PostgREST filters
+ *   (`imatch`), never inside an `or=(...)` logic tree, so no value can change the filter structure.
  * - datePosted: posted_at >= now - window. A job without a source posting date (posted_at NULL,
  *   see #761) never matches an active window: unknown is not "new".
- * The client sends these only for the personalized feed (Recommended tab / match sort), the same
- * scope where saved preferences already apply. Browsing filters stay separate.
+ * Policy gate: applying SAVED constraints to the feed is an owner decision (existing saved preferences
+ * only rank). Until NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS=true, the client sends none of them;
+ * they are stored and shown as "not applied". When enabled, they go only with the personalized feed
+ * (Recommended tab / match sort). Browsing filters stay separate.
  */
+
+/** Whether saved title/company/date constraints are applied to the feed (owner decision; default off). */
+export function savedFeedConstraintsEnforced(
+  env: Record<string, string | undefined> = { NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS: process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS }
+): boolean {
+  return env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS === "true";
+}
 
 export const DATE_POSTED_WINDOWS = ["24h", "3d", "7d", "30d"] as const;
 export type DatePostedWindow = (typeof DATE_POSTED_WINDOWS)[number];
@@ -95,19 +108,17 @@ export interface SavedFeedConstraints {
   datePosted: DatePostedWindow | null;
 }
 
-/** Normalized constraints with the include/exclude conflict settled (exclusion wins). */
+/** Normalized constraints. Conflicts are kept: the query applies include AND exclude (exclusion wins). */
 export function normalizeFeedConstraints(input: {
   excludedTitles?: unknown;
   includedCompanies?: unknown;
   excludedCompanies?: unknown;
   datePosted?: string | null;
 } | null | undefined): SavedFeedConstraints {
-  const excludedCompanies = normalizeTextList(input?.excludedCompanies);
-  const excluded = new Set(excludedCompanies.map((c) => c.toLowerCase()));
   return {
     excludedTitles: normalizeTextList(input?.excludedTitles),
-    includedCompanies: normalizeTextList(input?.includedCompanies).filter((c) => !excluded.has(c.toLowerCase())),
-    excludedCompanies,
+    includedCompanies: normalizeTextList(input?.includedCompanies),
+    excludedCompanies: normalizeTextList(input?.excludedCompanies),
     datePosted: parseDatePosted(input?.datePosted),
   };
 }
@@ -138,24 +149,23 @@ export function feedConstraintsFromParams(params: URLSearchParams): SavedFeedCon
   });
 }
 
-// shortcut: characters that could break a PostgREST filter or act as a multi-char wildcard become `_`
-// (a single-character wildcard), so "O'Reilly" still matches itself; upgrade to quoted values if a
-// collision ever matters.
-const likeSafe = (s: string) => s.replace(/[%_(),"'`;\\$*:]/g, "_");
+// Postgres ARE: a backslash before a non-alphanumeric character makes it literal. Only ASCII
+// punctuation/space is escaped (a backslash before a letter or digit would start an escape class);
+// other characters, including non-ASCII letters, are not regex syntax and match themselves.
+const literal = (s: string) => s.replace(/[\x20-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]/g, (c) => `\\${c}`);
+const anyOf = (values: string[]) => `(${values.map(literal).join("|")})`;
 
 interface FilterableQuery<Q> {
   not(column: string, operator: string, value: unknown): Q;
-  or(filters: string): Q;
+  filter(column: string, operator: string, value: unknown): Q;
 }
 
 /** Applies the list constraints to a jobs query (before ordering/pagination). Requires the `company` column. */
 export function applyFeedConstraints<Q extends FilterableQuery<Q>>(query: Q, c: SavedFeedConstraints): Q {
   let q = query;
-  for (const t of c.excludedTitles) q = q.not("title", "ilike", `%${likeSafe(t)}%`);
-  for (const name of c.excludedCompanies) q = q.not("company", "ilike", likeSafe(name));
-  if (c.includedCompanies.length) {
-    q = q.or(c.includedCompanies.map((name) => `company.ilike.${likeSafe(name)}`).join(","));
-  }
+  if (c.excludedTitles.length) q = q.not("title", "imatch", anyOf(c.excludedTitles));
+  if (c.includedCompanies.length) q = q.filter("company", "imatch", `^${anyOf(c.includedCompanies)}$`);
+  if (c.excludedCompanies.length) q = q.not("company", "imatch", `^${anyOf(c.excludedCompanies)}$`);
   return q;
 }
 

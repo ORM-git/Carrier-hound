@@ -8,7 +8,7 @@ import { ONBOARDING_CATEGORIES, JOB_TYPE_OPTIONS, LOCATION_OPTIONS, WORK_AUTH_OP
 import { SUPPORTED_COUNTRIES, getCountryName } from "@/lib/countries";
 import { CANONICAL_EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS } from "@/lib/jobs/experienceLevels";
 import { parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
-import { normalizeTextList, MAX_LIST_ITEMS, WORK_MODELS, type DatePostedWindow, type WorkModel } from "@/lib/preferences/feedConstraints";
+import { normalizeTextList, MAX_LIST_ITEMS, WORK_MODELS, savedFeedConstraintsEnforced, type DatePostedWindow, type WorkModel } from "@/lib/preferences/feedConstraints";
 import {
   activeCount,
   companyConflicts,
@@ -26,6 +26,8 @@ interface PreferencesSheetProps {
   onClose: () => void;
   /** The committed (last saved) preferences of the signed-in user. */
   committed: UserPreferences;
+  /** Account the committed values belong to. A change while open discards the draft and closes. */
+  ownerId: string;
   /** Persists once; must reject on failure. */
   onSave: (next: UserPreferences) => Promise<void>;
   triggerRef?: React.RefObject<HTMLElement | null>;
@@ -45,6 +47,11 @@ const SALARY_STEP: Record<string, number> = { USD: 5000, EUR: 5000, GBP: 5000, I
 const CURRENCIES = ["USD", "INR", "EUR", "GBP"];
 
 const PENDING_CONSTRAINT_STORAGE = "Waiting for a storage update on our side; this can't be saved yet.";
+const NOT_APPLIED = "Saved, but not applied to your feed yet: whether saved filters may hide jobs is still being decided.";
+
+function NotAppliedNote() {
+  return <p className="mt-1.5 rounded-lg bg-[#F8FAFC] px-2.5 py-1.5 text-[12px] text-[#64748B]">{NOT_APPLIED}</p>;
+}
 
 function formatMoney(amount: number, currency: string): string {
   try {
@@ -224,7 +231,7 @@ function PendingControl({ label, reason }: { label: string; reason: string }) {
   );
 }
 
-export default function PreferencesSheet({ isOpen, onClose, committed, onSave, triggerRef }: PreferencesSheetProps) {
+export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, onSave, triggerRef }: PreferencesSheetProps) {
   const [draft, setDraft] = useState<PreferencesDraft>(() => draftFromPreferences(committed));
   const [expanded, setExpanded] = useState<PreferenceGroup | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
@@ -240,11 +247,28 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
   const titleId = useId();
   const pendingRef = useRef(false);
 
+  // Editable: the constraint columns exist. Applied: also enabled by the owner (default off).
   const constraintsAvailable = committed.feedConstraintsAvailable !== false;
+  const constraintsApplied = constraintsAvailable && savedFeedConstraintsEnforced();
+  const notAppliedTag = constraintsApplied ? "" : " (saved, not applied)";
+
+  // The account this draft was opened for. Another account's values never reach this draft or a save.
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
+  const ownerChanged = isOpen && openedFor !== null && openedFor !== ownerId;
+  useEffect(() => {
+    if (!ownerChanged) return;
+    setDraft(draftFromPreferences(committed));
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerChanged]);
 
   // Each open hydrates from the last committed values; closing discards the draft.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setOpenedFor(null);
+      return;
+    }
+    setOpenedFor(ownerId);
     setDraft(draftFromPreferences(committed));
     setExpanded(null);
     setRolePickerOpen(false);
@@ -303,12 +327,12 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
 
   const validation = validateDraft(draft);
   const conflicts = companyConflicts(draft);
-  const draftCount = activeCount(draft, constraintsAvailable);
-  const counts = groupCounts(draft, constraintsAvailable);
+  const draftCount = activeCount(draft, constraintsApplied);
+  const counts = groupCounts(draft, constraintsApplied);
   const committedDraftJson = useMemo(() => JSON.stringify(draftFromPreferences(committed)), [committed]);
   const isDirty = JSON.stringify(draft) !== committedDraftJson;
 
-  if (!isOpen) return null;
+  if (!isOpen || ownerChanged) return null;
 
   const set = <K extends keyof PreferencesDraft>(key: K, value: PreferencesDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const toggleIn = <T extends string>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
@@ -547,7 +571,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
             <p role="alert" className="border-b border-rose-200 bg-rose-50 px-5 py-2.5 text-[13px] font-medium text-rose-700">{saveError}</p>
           )}
           {showErrors && !validation.ok && (
-            <p role="alert" className="border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-[13px] font-medium text-amber-800">Fix the highlighted fields before updating.</p>
+            <p role="alert" className="border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-[13px] font-medium text-amber-800">{validation.errors.companies || "Fix the highlighted fields before updating."}</p>
           )}
         </div>
 
@@ -570,12 +594,12 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
               "Basic",
               <>
                 <SummaryLine label="Function" items={draft.roles} />
-                <SummaryLine label="Excluding" items={constraintsAvailable ? draft.excludedTitles : []} />
+                <SummaryLine label={`Excluding${notAppliedTag}`} items={constraintsAvailable ? draft.excludedTitles : []} />
                 <SummaryLine label="Type" items={draft.employmentTypes.map((t) => JOB_TYPE_OPTIONS.find((o) => o.id === t)?.label || t)} />
                 <SummaryLine label="Work model" items={draft.workModels.map((m) => WORK_MODEL_LABELS[m])} />
                 <SummaryLine label="Location" items={[...(countryName ? [countryName] : []), ...draft.locations]} />
                 <SummaryLine label="Level" items={draft.experienceLevel ? [EXPERIENCE_LEVEL_LABELS[draft.experienceLevel as keyof typeof EXPERIENCE_LEVEL_LABELS] || draft.experienceLevel] : []} />
-                <SummaryLine label="Posted" items={constraintsAvailable && draft.datePosted ? [DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label] : []} />
+                <SummaryLine label={`Posted${notAppliedTag}`} items={constraintsAvailable && draft.datePosted ? [DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label] : []} />
               </>,
               <>
                 <div>
@@ -605,6 +629,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
                   disabled={!constraintsAvailable}
                   disabledReason={PENDING_CONSTRAINT_STORAGE}
                 />
+                {constraintsAvailable && !constraintsApplied && <NotAppliedNote />}
 
                 <fieldset>
                   <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Job type</legend>
@@ -636,9 +661,11 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
                     ))}
                   </div>
                   <p className="mt-1.5 text-[12px] text-[#64748B]">
-                    {constraintsAvailable
-                      ? "One choice ranks that setup higher; several (e.g. Hybrid + Remote) are saved as chosen and ranked as open to any."
-                      : "One choice for now: saving several needs a storage update on our side."}
+                    {!constraintsAvailable
+                      ? "One choice for now: saving several needs a storage update on our side."
+                      : draft.workModels.length > 1
+                      ? "Saved as chosen. Ranking reads one choice only, so several rank as open to any setup and this isn’t counted as active."
+                      : "One choice ranks that setup higher."}
                   </p>
                 </fieldset>
 
@@ -720,6 +747,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
                         ))}
                       </div>
                       <p className="mt-1.5 text-[12px] text-[#64748B]">Jobs whose source gives no posting date are left out while a window is set.</p>
+                      {!constraintsApplied && <NotAppliedNote />}
                     </>
                   ) : (
                     <p className="rounded-xl bg-[#F8FAFC] px-3 py-2 text-[12px] text-[#64748B]">{PENDING_CONSTRAINT_STORAGE}</p>
@@ -825,8 +853,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
               "company",
               "Company",
               <>
-                <SummaryLine label="Only" items={constraintsAvailable ? draft.includedCompanies : []} />
-                <SummaryLine label="Never" items={constraintsAvailable ? draft.excludedCompanies : []} />
+                <SummaryLine label={`Only${notAppliedTag}`} items={constraintsAvailable ? draft.includedCompanies : []} />
+                <SummaryLine label={`Never${notAppliedTag}`} items={constraintsAvailable ? draft.excludedCompanies : []} />
               </>,
               <>
                 <TagInput
@@ -847,9 +875,10 @@ export default function PreferencesSheet({ isOpen, onClose, committed, onSave, t
                   disabled={!constraintsAvailable}
                   disabledReason={PENDING_CONSTRAINT_STORAGE}
                 />
+                {constraintsAvailable && !constraintsApplied && <NotAppliedNote />}
                 {conflicts.length > 0 && (
                   <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-                    {conflicts.join(", ")} {conflicts.length === 1 ? "is" : "are"} in both lists. Never show wins, so {conflicts.length === 1 ? "it stays" : "they stay"} hidden.
+                    {conflicts.join(", ")} {conflicts.length === 1 ? "is" : "are"} in both lists. {validation.errors.companies}
                   </p>
                 )}
                 <PendingControl label="Company stage (Early, Growth, Late, Public)" reason="We don't have verified funding-stage data for employers." />

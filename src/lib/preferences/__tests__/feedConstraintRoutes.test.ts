@@ -1,6 +1,7 @@
 // Saved feed constraints through the REAL /api/jobs/recommended and /api/jobs/search handlers and the
 // client serializer (getLiveJobs). The fake supabase client evaluates every filter the handlers send
-// (eq/in/or/ilike/not/gte) against fixture rows, so a missing predicate changes the returned ids.
+// against fixture rows; pattern operators (ilike/imatch, plain or negated) are evaluated by REAL Postgres
+// (PGlite), so SQL wildcards and regex escapes behave as in production.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
@@ -10,20 +11,33 @@ vi.setConfig({ testTimeout: 30000 });
 const db = vi.hoisted(() => ({
   tables: {} as Record<string, any[]>,
   users: {} as Record<string, { id: string; user_metadata: Record<string, unknown> }>,
+  pg: null as any,
 }));
 
 vi.mock("@supabase/supabase-js", () => {
-  const like = (pat: string) =>
-    new RegExp("^" + pat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".") + "$", "is");
+  const SQL_OP: Record<string, string> = { ilike: "ILIKE", like: "LIKE", imatch: "~*", match: "~" };
+  // Real Postgres decides the pattern operators. PostgREST turns like-`*` into `%`.
+  const pgMatch = async (value: unknown, op: string, pattern: string) => {
+    if (value == null) return null; // SQL NULL: neither the condition nor its negation passes
+    const pat = op === "ilike" || op === "like" ? pattern.replace(/\*/g, "%") : pattern;
+    const r = await db.pg.query(`select ($1::text ${SQL_OP[op]} $2::text) as m`, [String(value), pat]);
+    return r.rows[0].m as boolean;
+  };
   function from(table: string) {
-    const preds: Array<(r: any) => boolean> = [];
+    const preds: Array<(r: any) => boolean | Promise<boolean>> = [];
     let range: [number, number] | null = null;
     let limit: number | null = null;
     let method = "select";
     const orders: Array<{ col: string; asc: boolean }> = [];
-    const run = () => {
+    const run = async () => {
       if (method !== "select") return { data: [], error: null, count: 0 };
-      let rows = (db.tables[table] || []).filter((r) => preds.every((p) => p(r)));
+      const keep: any[] = [];
+      for (const r of db.tables[table] || []) {
+        let ok = true;
+        for (const p of preds) if (!(await p(r))) { ok = false; break; }
+        if (ok) keep.push(r);
+      }
+      let rows = keep;
       for (const o of [...orders].reverse()) rows = [...rows].sort((a, b) => (a[o.col] === b[o.col] ? 0 : (a[o.col] > b[o.col] ? 1 : -1) * (o.asc ? 1 : -1)));
       const count = rows.length;
       if (range) rows = rows.slice(range[0], range[1] + 1);
@@ -33,17 +47,23 @@ vi.mock("@supabase/supabase-js", () => {
     const b: any = new Proxy({}, {
       get(_t, p) {
         if (p === "then") return (res: any, rej: any) => Promise.resolve().then(run).then(res, rej);
-        if (p === "maybeSingle" || p === "single") return async () => ({ data: run().data?.[0] ?? null, error: null });
+        if (p === "maybeSingle" || p === "single") return async () => ({ data: (await run()).data?.[0] ?? null, error: null });
         if (p === "select") return () => b;
         if (p === "insert" || p === "update" || p === "upsert" || p === "delete") return () => { method = String(p); return b; };
         if (p === "eq") return (c: string, v: unknown) => { preds.push((r) => r[c] === v); return b; };
         if (p === "in") return (c: string, vs: unknown[]) => { preds.push((r) => vs.includes(r[c])); return b; };
         if (p === "is") return (c: string, v: unknown) => { preds.push((r) => (r[c] ?? null) === v); return b; };
         if (p === "or") return (e: string) => { preds.push((r) => matchesPostgrestOr(e, r)); return b; };
-        if (p === "ilike") return (c: string, pat: string) => { preds.push((r) => like(pat).test(String(r[c] ?? ""))); return b; };
+        if (p === "ilike") return (c: string, pat: string) => { preds.push(async (r) => (await pgMatch(r[c], "ilike", pat)) === true); return b; };
+        if (p === "filter") return (c: string, op: string, v: any) => {
+          if (!(op in SQL_OP)) throw new Error(`fake: filter op ${op} not modelled`);
+          preds.push(async (r) => (await pgMatch(r[c], op, v)) === true);
+          return b;
+        };
         if (p === "not") return (c: string, op: string, v: any) => {
-          if (op === "ilike") preds.push((r) => r[c] != null && !like(v).test(String(r[c])));
+          if (op in SQL_OP) preds.push(async (r) => (await pgMatch(r[c], op, v)) === false);
           else if (op === "is") preds.push((r) => (r[c] ?? null) !== v);
+          else throw new Error(`fake: not.${op} not modelled`);
           return b;
         };
         if (p === "gte") return (c: string, v: any) => { preds.push((r) => r[c] != null && r[c] >= v); return b; };
@@ -98,6 +118,8 @@ let byTitle: Record<string, string>;
 let client: any;
 beforeAll(async () => {
   client = ((await import("@supabase/supabase-js")) as any).__client;
+  const { PGlite } = await import("@electric-sql/pglite");
+  db.pg = new PGlite();
 });
 beforeEach(() => {
   Object.assign(process.env, env, { SUPABASE_SERVICE_ROLE_KEY: "service-role-fake" });
@@ -110,6 +132,10 @@ beforeEach(() => {
     job("Platform Engineer", "Metabase", 5),
     job("Data Engineer", "Meta", 6),
     job("Unknown Date Engineer", "Acme", null), // source gave no posting date
+    job("Editor", "O'Reilly Media", 7),
+    job("Writer", "OZReilly Media", 8),
+    job("C++ Developer", "Under_score Co", 9),
+    job("CX Developer", "UnderXscore Co", 10),
   ];
   byTitle = Object.fromEntries(rows.map((r) => [r.id, r.title]));
   db.tables = { jobs: rows, jobs_public: rows, user_preferences: [] };
@@ -135,7 +161,10 @@ async function search(qs: string, token = "tok-pro") {
   return { status: res.status, body: await res.json() };
 }
 
-const ALL = ["Backend Engineer", "Data Engineer", "Frontend Engineer", "Platform Engineer", "Sales Engineer", "Software Intern", "Unknown Date Engineer"];
+const ALL = [
+  "Backend Engineer", "C++ Developer", "CX Developer", "Data Engineer", "Editor", "Frontend Engineer", "Platform Engineer", "Sales Engineer",
+  "Software Intern", "Unknown Date Engineer", "Writer",
+];
 
 describe.each([
   ["recommended", recommended],
@@ -147,7 +176,7 @@ describe.each([
 
   it("excluded titles: any listed word hides the job (OR inside, case-insensitive)", async () => {
     const { body } = await call("pageSize=50&excludeTitle=sales&excludeTitle=INTERN");
-    expect(titles(body)).toEqual(["Backend Engineer", "Data Engineer", "Frontend Engineer", "Platform Engineer", "Unknown Date Engineer"]);
+    expect(titles(body)).toEqual(ALL.filter((t) => !["Sales Engineer", "Software Intern"].includes(t)));
   });
 
   it("excluded companies match exactly: Meta does not hide Metabase", async () => {
@@ -156,9 +185,34 @@ describe.each([
     expect(titles(body)).toContain("Platform Engineer");
   });
 
-  it("included companies limit the feed; exclusion wins a conflict; AND with excluded titles", async () => {
+  it("partial conflict: exclusion wins, the remaining inclusion still limits; AND with excluded titles", async () => {
     const { body } = await call("pageSize=50&includeCompany=Acme&includeCompany=Globex&excludeCompany=globex&excludeTitle=sales");
     expect(titles(body)).toEqual(["Frontend Engineer", "Unknown Date Engineer"]);
+  });
+
+  it("sole conflict (include Acme, exclude Acme) is an honest empty result: no Globex/Meta, total 0, no next page", async () => {
+    const { status, body } = await call("pageSize=2&includeCompany=Acme&excludeCompany=ACME");
+    expect(status).toBe(200);
+    expect(body.jobs).toEqual([]);
+    expect(body.totalCount ?? 0).toBe(0);
+    expect(Boolean(body.hasNextPage)).toBe(false);
+  });
+
+  it("partial conflict paginates over the filtered set only", async () => {
+    // include Acme + Globex, exclude Acme -> Globex's two jobs only
+    const qs = "includeCompany=Acme&includeCompany=Globex&excludeCompany=acme";
+    const p1 = (await call(`pageSize=1&page=1&${qs}`)).body;
+    const p2 = (await call(`pageSize=1&page=2&${qs}`)).body;
+    expect([...titles(p1), ...titles(p2)].sort()).toEqual(["Backend Engineer", "Software Intern"]);
+    if (p1.totalCount) expect(p1.totalCount).toBe(2);
+    expect((await call(`pageSize=1&page=3&${qs}`)).body.jobs).toEqual([]);
+  });
+
+  it("punctuation is literal: O'Reilly is not OZReilly, Under_score is not UnderXscore, C++ is not CX", async () => {
+    expect(titles((await call("pageSize=50&excludeCompany=O'Reilly Media")).body)).toEqual(ALL.filter((t) => t !== "Editor"));
+    expect(titles((await call("pageSize=50&excludeCompany=under_score co")).body)).toEqual(ALL.filter((t) => t !== "C++ Developer"));
+    expect(titles((await call("pageSize=50&excludeTitle=c%2B%2B")).body)).toEqual(ALL.filter((t) => t !== "C++ Developer"));
+    expect(titles((await call("pageSize=50&includeCompany=O'Reilly Media")).body)).toEqual(["Editor"]);
   });
 
   it("3d window: 2-day-old job in, 4-day-old and undated jobs out", async () => {
@@ -173,9 +227,9 @@ describe.each([
   it("totals describe the filtered set, and page 2 continues it", async () => {
     const p1 = (await call("pageSize=2&excludeTitle=sales")).body;
     expect(p1.jobs).toHaveLength(2);
-    if (p1.totalCount != null && p1.totalCount > 0) expect(p1.totalCount).toBeLessThanOrEqual(6);
+    if (p1.totalCount != null && p1.totalCount > 0) expect(p1.totalCount).toBeLessThanOrEqual(ALL.length - 1);
     const all = titles((await call("pageSize=50&excludeTitle=sales")).body);
-    expect(all).toHaveLength(6);
+    expect(all).toHaveLength(ALL.length - 1);
   });
 
   it("company constraints never broaden silently without the service key", async () => {
@@ -192,7 +246,10 @@ describe.each([
   });
 });
 
-describe("client serializer (getLiveJobs) sends saved constraints only with the personalized feed", () => {
+describe("client serializer (getLiveJobs): saved constraints are policy-gated", () => {
+  afterEach(() => {
+    delete process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS;
+  });
   async function capture(opts: Record<string, unknown>) {
     const urls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (u: string) => {
@@ -209,17 +266,23 @@ describe("client serializer (getLiveJobs) sends saved constraints only with the 
     excludedTitles: ["Sales"], includedCompanies: ["Acme, Inc."], excludedCompanies: ["acme, inc.", "Globex"], datePosted: "7d",
   };
 
-  it("recommended path: repeated params, conflict settled, narrower date wins", async () => {
+  it("default (no owner decision): saved titles/companies/date are NOT sent; the browsing window still is", async () => {
     const u = await capture({ sortBy: "match", preferences: prefs, datePosted: "3d" });
-    expect(u.pathname).toBe("/api/jobs/recommended");
-    expect(u.searchParams.getAll("excludeTitle")).toEqual(["Sales"]);
+    expect(u.searchParams.getAll("excludeTitle")).toEqual([]);
     expect(u.searchParams.getAll("includeCompany")).toEqual([]);
-    expect(u.searchParams.getAll("excludeCompany")).toEqual(["acme, inc.", "Globex"]);
+    expect(u.searchParams.getAll("excludeCompany")).toEqual([]);
     expect(u.searchParams.get("datePosted")).toBe("3d");
+    const u2 = await capture({ sortBy: "match", preferences: prefs });
+    expect(u2.searchParams.get("datePosted")).toBeNull();
   });
 
-  it("saved window applies when there is no browsing window", async () => {
-    const u = await capture({ sortBy: "match", preferences: prefs });
+  it("enabled: repeated params, the full inclusion set kept (conflict settled server-side), narrower date wins", async () => {
+    process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS = "true";
+    const u = await capture({ sortBy: "match", preferences: prefs, datePosted: "30d" });
+    expect(u.pathname).toBe("/api/jobs/recommended");
+    expect(u.searchParams.getAll("excludeTitle")).toEqual(["Sales"]);
+    expect(u.searchParams.getAll("includeCompany")).toEqual(["Acme, Inc."]);
+    expect(u.searchParams.getAll("excludeCompany")).toEqual(["acme, inc.", "Globex"]);
     expect(u.searchParams.get("datePosted")).toBe("7d");
   });
 

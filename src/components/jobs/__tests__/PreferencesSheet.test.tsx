@@ -30,7 +30,7 @@ const committed = (over: Partial<UserPreferences> = {}): UserPreferences => ({
 function setup(over: Partial<UserPreferences> = {}, onSave = vi.fn(async () => {})) {
   const onClose = vi.fn();
   const prefs = committed(over);
-  const utils = render(<PreferencesSheet isOpen onClose={onClose} committed={prefs} onSave={onSave} />);
+  const utils = render(<PreferencesSheet isOpen ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
   return { ...utils, onClose, onSave, prefs };
 }
 const openGroup = (name: string) => fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
@@ -136,8 +136,30 @@ describe("PreferencesSheet", () => {
     expect(screen.getByRole("checkbox", { name: "I need visa sponsorship (e.g. H-1B)." })).toBeTruthy();
   });
 
-  it("shows an include/exclude conflict and that exclusion wins", () => {
+  it("a multi work-model choice is saved in full but not counted, and says why", async () => {
+    const { onSave } = setup();
+    expect(screen.getByLabelText("3 active preferences")).toBeTruthy();
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hybrid" }));
+    expect(screen.getByLabelText("2 active preferences")).toBeTruthy();
+    expect(screen.getByText(/isn.t counted as active/)).toBeTruthy();
+    await act(async () => update());
+    expect(lastSaved(onSave).workModels).toEqual(["hybrid", "remote"]);
+    expect(lastSaved(onSave).remotePreference).toBe("any");
+  });
+
+  it("saved title/company/date constraints are labelled not applied and never counted (owner decision pending)", () => {
     setup();
+    openGroup("Company");
+    const never = screen.getByLabelText("Never show these companies");
+    fireEvent.change(never, { target: { value: "Globex" } });
+    fireEvent.keyDown(never, { key: "Enter" });
+    expect(screen.getByLabelText("3 active preferences")).toBeTruthy();
+    expect(screen.getAllByText(/Saved, but not applied to your feed yet/).length).toBeGreaterThan(0);
+  });
+
+  it("an include/exclude conflict blocks Update with a clear message", () => {
+    const { onSave } = setup();
     openGroup("Company");
     const only = screen.getByLabelText("Only show these companies");
     fireEvent.change(only, { target: { value: "Acme" } });
@@ -145,7 +167,31 @@ describe("PreferencesSheet", () => {
     const never = screen.getByLabelText("Never show these companies");
     fireEvent.change(never, { target: { value: "acme" } });
     fireEvent.keyDown(never, { key: "Enter" });
-    expect(screen.getByRole("status").textContent).toMatch(/Acme is in both lists\. Never show wins/);
+    expect(screen.getByRole("status").textContent).toMatch(/Acme is in both lists/);
+    update();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/Remove Acme from one of the company lists/).length).toBeGreaterThan(0);
+  });
+
+  it("an account switch while the sheet is open discards the draft and never saves it for the new account", () => {
+    const onSave = vi.fn(async () => {});
+    const onClose = vi.fn();
+    const a = committed({ roles: ["Account A Role"] });
+    const b = committed({ roles: ["Account B Role"], countryCode: "US", country: "United States" });
+    const { rerender } = render(<PreferencesSheet isOpen ownerId="user-a" onClose={onClose} committed={a} onSave={onSave} />);
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Onsite" }));
+    rerender(<PreferencesSheet isOpen ownerId="user-b" onClose={onClose} committed={b} onSave={onSave} />);
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
+    rerender(<PreferencesSheet isOpen={false} ownerId="user-b" onClose={onClose} committed={b} onSave={onSave} />);
+    rerender(<PreferencesSheet isOpen ownerId="user-b" onClose={onClose} committed={b} onSave={onSave} />);
+    // reopened for B: B's committed values, none of A's draft
+    expect(screen.getByRole("dialog").textContent).toContain("Account B Role");
+    expect(screen.getByRole("dialog").textContent).not.toContain("Account A Role");
+    openGroup("Basic");
+    expect((screen.getByRole("checkbox", { name: "Onsite" }) as HTMLInputElement).checked).toBe(false);
   });
 
   it("unavailable controls are visible, labelled and never counted or saved", async () => {
@@ -172,7 +218,7 @@ describe("PreferencesSheet", () => {
     const onSave = vi.fn(async () => {});
     const onClose = vi.fn();
     const prefs = committed();
-    const { rerender } = render(<PreferencesSheet isOpen onClose={onClose} committed={prefs} onSave={onSave} />);
+    const { rerender } = render(<PreferencesSheet isOpen ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
     openGroup("Basic");
     fireEvent.click(screen.getByRole("checkbox", { name: "Onsite" }));
     fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
@@ -180,8 +226,8 @@ describe("PreferencesSheet", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
-    rerender(<PreferencesSheet isOpen={false} onClose={onClose} committed={prefs} onSave={onSave} />);
-    rerender(<PreferencesSheet isOpen onClose={onClose} committed={prefs} onSave={onSave} />);
+    rerender(<PreferencesSheet isOpen={false} ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
+    rerender(<PreferencesSheet isOpen ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
     expect(screen.getByLabelText("3 active preferences")).toBeTruthy();
   });
 

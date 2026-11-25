@@ -1,5 +1,5 @@
 import { createClient } from "../supabase/client";
-import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, stricterDatePosted } from "@/lib/preferences/feedConstraints";
+import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
@@ -413,10 +413,11 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     : [];
   const isRecommendedWithoutResume = isMatchSort && (!candidate || relevanceTerms.length === 0);
 
-  // Saved feed constraints travel only with the personalized feed's preferences (the caller passes
-  // preferences for the Recommended tab / match sort only). The saved date window AND the browsing
-  // one: the narrower wins. Company predicates need the server (jobs_public has no company column).
-  const feedConstraints = normalizeFeedConstraints(preferences);
+  // Applying SAVED constraints is an owner decision (savedFeedConstraintsEnforced, default off): until
+  // enabled nothing saved narrows the feed. When enabled they travel only with the personalized feed's
+  // preferences (Recommended tab / match sort); the saved date window AND the browsing one: the narrower
+  // wins. Company predicates need the server (jobs_public has no company column).
+  const feedConstraints = normalizeFeedConstraints(savedFeedConstraintsEnforced() ? preferences : null);
   const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
 
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));

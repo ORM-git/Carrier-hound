@@ -56,7 +56,7 @@ import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { withFeedScore } from "@/lib/jobs/recommendations";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader } from "@/lib/jobs/pagination";
-import { datePostedCutoff } from "@/lib/preferences/feedConstraints";
+import { datePostedCutoff, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -1949,9 +1949,9 @@ function JobsPageInner() {
                       className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
                     >
                       Preferences
-                      {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false) > 0 && (
+                      {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced()) > 0 && (
                         <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] text-white">
-                          {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false)}
+                          {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())}
                         </span>
                       )}
                     </button>
@@ -1959,6 +1959,8 @@ function JobsPageInner() {
                 )}
                 {user && preferences && (
                   <PreferencesSheet
+                    key={user.id}
+                    ownerId={user.id}
                     isOpen={preferencesOpen}
                     onClose={() => setPreferencesOpen(false)}
                     committed={preferences}

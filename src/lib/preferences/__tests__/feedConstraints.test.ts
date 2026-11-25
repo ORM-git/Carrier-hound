@@ -9,6 +9,7 @@ import {
   normalizeFeedConstraints,
   normalizeTextList,
   parseDatePosted,
+  savedFeedConstraintsEnforced,
   stricterDatePosted,
   workModelsFromLegacy,
 } from "../feedConstraints";
@@ -55,12 +56,17 @@ describe("lists, include/exclude and query predicates", () => {
     expect(normalizeTextList(["  Sales ", "sales", "Account  Exec", "", 3, null])).toEqual(["Sales", "Account Exec"]);
   });
 
-  it("exclusion wins an include/exclude conflict, deterministically", () => {
+  it("partial conflict: exclusion wins, the other inclusions still limit the feed", () => {
     const c = normalizeFeedConstraints({ includedCompanies: ["Acme", "Globex"], excludedCompanies: ["acme"] });
-    expect(c.includedCompanies).toEqual(["Globex"]);
+    expect(c.includedCompanies).toEqual(["Acme", "Globex"]); // the saved inclusion set is kept as-is
     expect(matchesFeedConstraints({ company: "Acme" }, c)).toBe(false);
     expect(matchesFeedConstraints({ company: "globex" }, c)).toBe(true);
     expect(matchesFeedConstraints({ company: "Initech" }, c)).toBe(false); // inclusion list limits
+  });
+
+  it("sole conflict never broadens: include Acme + exclude Acme admits nobody", () => {
+    const c = normalizeFeedConstraints({ includedCompanies: ["Acme"], excludedCompanies: ["ACME"] });
+    for (const company of ["Acme", "Globex", "Meta"]) expect(matchesFeedConstraints({ company }, c)).toBe(false);
   });
 
   it("OR inside a list, AND across dimensions", () => {
@@ -84,17 +90,18 @@ describe("lists, include/exclude and query predicates", () => {
     expect(feedConstraintsFromParams(new URLSearchParams(p.toString()))).toEqual({ ...c, datePosted: null });
   });
 
-  it("builds PostgREST predicates with no filter-breaking characters", () => {
+  it("builds one literal case-insensitive regex filter per dimension (no logic-tree quoting needed)", () => {
     const calls: Array<[string, ...unknown[]]> = [];
     const q: any = {
       not: (...a: unknown[]) => (calls.push(["not", ...a]), q),
+      filter: (...a: unknown[]) => (calls.push(["filter", ...a]), q),
       or: (...a: unknown[]) => (calls.push(["or", ...a]), q),
     };
     applyFeedConstraints(q, normalizeFeedConstraints({ excludedTitles: ["50% (remote)"], includedCompanies: ["O'Reilly", "Acme, Inc."], excludedCompanies: ["Globex"] }));
     expect(calls).toEqual([
-      ["not", "title", "ilike", "%50_ _remote_%"],
-      ["not", "company", "ilike", "Globex"],
-      ["or", "company.ilike.O_Reilly,company.ilike.Acme_ Inc."],
+      ["not", "title", "imatch", String.raw`(50\%\ \(remote\))`],
+      ["filter", "company", "imatch", String.raw`^(O\'Reilly|Acme\,\ Inc\.)$`],
+      ["not", "company", "imatch", "^(Globex)$"],
     ]);
   });
 });
@@ -166,12 +173,14 @@ describe("preferences sheet model", () => {
 
   it("counts committed dimensions once; groups and top count agree", () => {
     const d = draftFromPreferences(
-      committed({ roles: ["A", "B", "C"], workModels: ["hybrid", "remote"], excludedCompanies: ["X"], minSalary: 100000, salaryCurrency: "USD", workAuth: "I need visa sponsorship." })
+      committed({ roles: ["A", "B", "C"], workModels: ["remote"], excludedCompanies: ["X"], minSalary: 100000, salaryCurrency: "USD", workAuth: "I need visa sponsorship." })
     );
     const g = groupCounts(d, true);
-    // roles, work model, country = 3; salary = 1; excluded companies = 1; work auth is saved but not counted.
+    // roles, single work model, country = 3; salary = 1; excluded companies = 1; work auth is saved but not counted.
     expect(g).toEqual({ basic: 3, compensation: 1, interests: 0, company: 1 });
     expect(activeCount(d, true)).toBe(5);
+    // Saved constraints not applied to the feed never count.
+    expect(groupCounts(d, false).company).toBe(0);
     expect(summarize(["A", "B", "C"])).toEqual({ shown: ["A", "B"], more: 1 });
   });
 
@@ -184,11 +193,24 @@ describe("preferences sheet model", () => {
     expect(preferencesFromDraft(committed(), { ...d, minSalary: null }).minSalary).toBeUndefined();
   });
 
-  it("shows include/exclude conflicts", () => {
+  it("a multi work-model choice is saved but not counted (no ranking/query consumer yet)", () => {
+    const d = draftFromPreferences(committed({ workModels: ["hybrid", "remote"] }));
+    expect(d.workModels).toEqual(["hybrid", "remote"]); // full selection preserved
+    expect(groupCounts(d, true).basic).toBe(1); // country only
+    expect(preferencesFromDraft(committed(), d).remotePreference).toBe("any"); // never remote-only
+  });
+
+  it("an include/exclude conflict blocks Update with a clear message", () => {
     const d = { ...draftFromPreferences(committed()), includedCompanies: ["Acme"], excludedCompanies: ["ACME"] };
     expect(companyConflicts(d)).toEqual(["Acme"]);
-    // the overridden inclusion has no effect, so only the exclusion counts
-    expect(groupCounts(d, true).company).toBe(1);
+    const v = validateDraft(d);
+    expect(v.ok).toBe(false);
+    expect(v.errors.companies).toMatch(/Acme/);
+  });
+
+  it("saved title/company/date constraints are not applied unless the owner enables them", () => {
+    expect(savedFeedConstraintsEnforced({})).toBe(false);
+    expect(savedFeedConstraintsEnforced({ NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS: "true" })).toBe(true);
   });
 
   it("never starts from the legacy sample preferences", () => {

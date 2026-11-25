@@ -2,9 +2,11 @@
  * Preferences sheet model: the draft the sheet edits, how it maps to/from UserPreferences, and the
  * ONE counting rule behind the top count, per-group counts and summaries.
  *
- * Counting rule: one per dimension that (a) is available (has storage and a real consumer) and
- * (b) has a non-empty COMMITTED value. Unavailable/pending controls never count. Work
- * authorization is saved but has no job query consumer yet, so it is not counted either.
+ * Counting rule: one per dimension that (a) has storage AND a live consumer and (b) has a non-empty
+ * value. Never counted: unavailable/pending controls; work authorization (saved, no job query
+ * consumer); a multi-choice work model (saved in full, but ranking only reads a single choice, so
+ * 2+ choices rank as "any"); saved title/company/date constraints while their feed application is
+ * not enabled by the owner (`constraintsApplied` false).
  */
 import type { UserPreferences } from "@/lib/auth/types";
 import { getCountryName } from "@/lib/countries";
@@ -92,7 +94,7 @@ export function preferencesFromDraft(committed: UserPreferences, d: PreferencesD
 
 export interface ValidationResult {
   ok: boolean;
-  errors: Partial<Record<"minSalary" | "salaryCurrency", string>>;
+  errors: Partial<Record<"minSalary" | "salaryCurrency" | "companies", string>>;
 }
 
 export function validateDraft(d: PreferencesDraft): ValidationResult {
@@ -101,31 +103,35 @@ export function validateDraft(d: PreferencesDraft): ValidationResult {
     errors.minSalary = "Enter a positive annual amount, or clear it.";
   }
   if (d.minSalary && !d.salaryCurrency) errors.salaryCurrency = "Choose the currency for your minimum salary.";
+  const conflicts = companyConflicts(d);
+  if (conflicts.length) {
+    errors.companies = `Remove ${conflicts.join(", ")} from one of the company lists: a company can't be both shown only and never shown.`;
+  }
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
-/** Company names in both lists (exclusion wins when saved). */
+/** Company names in both lists (blocked by validation; if one reaches the query, exclusion wins). */
 export function companyConflicts(d: PreferencesDraft): string[] {
   const ex = new Set(d.excludedCompanies.map((c) => c.toLowerCase()));
   return d.includedCompanies.filter((c) => ex.has(c.toLowerCase()));
 }
 
-export function groupCounts(d: PreferencesDraft, constraintsAvailable: boolean): Record<PreferenceGroup, number> {
+/** `constraintsApplied`: constraint storage exists AND the owner enabled applying saved constraints. */
+export function groupCounts(d: PreferencesDraft, constraintsApplied: boolean): Record<PreferenceGroup, number> {
   const n = (v: unknown) => (Array.isArray(v) ? v.length > 0 : Boolean(v)) ? 1 : 0;
-  const c = constraintsAvailable;
+  const c = constraintsApplied;
   return {
     basic:
-      n(d.roles) + (c ? n(d.excludedTitles) : 0) + n(d.employmentTypes) + n(d.workModels) + n(d.countryCode) +
-      n(d.locations) + n(d.experienceLevel) + (c ? n(d.datePosted) : 0),
+      n(d.roles) + (c ? n(d.excludedTitles) : 0) + n(d.employmentTypes) + (d.workModels.length === 1 ? 1 : 0) +
+      n(d.countryCode) + n(d.locations) + n(d.experienceLevel) + (c ? n(d.datePosted) : 0),
     compensation: n(d.minSalary && d.salaryCurrency),
     interests: 0, // every Interests control is pending a job-side data source
-    // An included name that is also excluded has no effect (exclusion wins), so it does not count.
-    company: c ? n(d.includedCompanies.filter((x) => !companyConflicts(d).includes(x))) + n(d.excludedCompanies) : 0,
+    company: c ? n(d.includedCompanies) + n(d.excludedCompanies) : 0,
   };
 }
 
-export function activeCount(d: PreferencesDraft, constraintsAvailable: boolean): number {
-  const g = groupCounts(d, constraintsAvailable);
+export function activeCount(d: PreferencesDraft, constraintsApplied: boolean): number {
+  const g = groupCounts(d, constraintsApplied);
   return g.basic + g.compensation + g.interests + g.company;
 }
 
