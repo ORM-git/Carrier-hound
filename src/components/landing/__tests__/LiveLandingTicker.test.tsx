@@ -29,6 +29,17 @@ describe("live landing ticker", () => {
     expect(container.querySelector(".ls-logo")?.textContent).toBe("L");
     for (const url of ["javascript:alert(1)", "https://evil.test/company-logos/a.png", "https://fixture.supabase.co/other/a.png"]) expect(safeTickerLogo(url)).toBeNull();
   });
+  it("gives loaded transparent brand images a white backing at every viewport", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => rows("Intercom") })));
+    const { container } = render(<LiveLandingTicker />); await flush();
+    const image = screen.getAllByAltText("Intercom 0 logo")[0];
+    Object.defineProperty(image, "naturalWidth", { configurable: true, value: 5000 });
+    fireEvent.load(image);
+    expect((container.querySelector(".ls-logo") as HTMLElement).style.backgroundColor).toBe("rgb(255, 255, 255)");
+    fireEvent.error(image);
+    expect((container.querySelector(".ls-logo") as HTMLElement).style.backgroundColor).toBe("");
+    expect(container.querySelector(".ls-logo")?.textContent).toBe("I");
+  });
   it("skips hidden intervals and refreshes on visibility, cleaning up on unmount", async () => {
     const fetcher = vi.fn(async () => ({ ok: true, json: async () => rows("Visible") })); vi.stubGlobal("fetch", fetcher);
     const view = render(<LiveLandingTicker />); await flush(); expect(fetcher).toHaveBeenCalledTimes(1);
