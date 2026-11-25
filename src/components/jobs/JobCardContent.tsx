@@ -462,8 +462,6 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                         e.stopPropagation();
                                         handleSelectJob(job);
                                       }}
-                                      data-mobile-list-apply="true
-                                      data-mobile-list-apply="true"
                                       data-mobile-list-apply="true"
                                       className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition cursor-pointer"
                                     >
@@ -477,6 +475,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                         e.stopPropagation();
                                         handleLockedAction(e);
                                       }}
+                                      data-mobile-list-apply="true"
                                       className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition cursor-pointer"
                                     >
                                       <Lock className="w-3.5 h-3.5" />
