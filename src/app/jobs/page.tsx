@@ -23,9 +23,11 @@ import Footer from "@/components/Footer";
 import AppIconRail from "@/components/shell/AppIconRail";
 import { useSidebarMode } from "@/lib/sidebar";
 import AppTopBar, { TopBarTab } from "@/components/shell/AppTopBar";
+import "./mobile-reference.css";
 import JobDetailView, { type ResumeState } from "@/components/jobs/JobDetailView";
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import { formatJobType } from "@/lib/jobs/formatJobType";
+
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
@@ -1810,10 +1812,11 @@ function JobsPageInner() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
+    <div className={`cm-jobs-reference ${isListView ? "cm-mobile-list" : "cm-mobile-detail"} min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans`}>
       {/* <GuideHeader /> replaced by unified AppIconRail / AppTopBar shell before and after login (!user) */}
 
       {/* Left Icon Rail (fixed 72px wide narrow / 240px expanded on desktop, bottom tab bar on mobile) */}
+
       <AppIconRail />
 
       {/* Main Content Area (offset by 72px or 240px on desktop) */}
@@ -1829,10 +1832,11 @@ function JobsPageInner() {
           isPro={isPro}
           hidePlanPill
           // Mobile feed: Recommended / Saved / Applied only (External and search stay on sm+).
-          mobileTabs={isListView ? jobTabs.filter((tab) => tab.id !== "external") : undefined}
+          mobileTabs={isListView ? jobTabs : undefined}
         />
         <main
           id="main-content"
+
           data-testid="jobs-main-content"
           className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 pb-4 md:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
