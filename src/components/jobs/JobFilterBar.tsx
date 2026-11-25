@@ -191,12 +191,11 @@ export default function JobFilterBar({
   return (
     <div className="sticky top-[56px] z-tk-sticky py-1.5 sm:py-0 bg-[#F8FAFC]/95 lg:bg-slate-100/95 backdrop-blur-xs space-y-2">
       {/* =================================================================== */}
-      {/* 1. MOBILE FILTER ROW (< 768px)                                      */}
-      {/* =================================================================== */}
-      <div className="flex md:hidden items-center justify-between w-full gap-2 px-1">
+      <div data-testid="mobile-reference-filters" className="flex md:hidden items-center justify-between w-full gap-2 px-1">
         <button
           ref={mobileFiltersTriggerRef}
           type="button"
+
           data-tour="tour-filters"
           onClick={onOpenMobileFilters}
           aria-expanded={isMobileFiltersOpen}
