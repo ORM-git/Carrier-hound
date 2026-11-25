@@ -22,6 +22,7 @@ import JobsPage from "@/app/jobs/page";
 const NAME = "Qwyzzlenex Orbital";
 const DOMAIN = "qwyzzlenex-orbital.invalid";
 const LOGO = `https://cdn.${DOMAIN}/brand/logo.png`;
+const STORE = `https://store.${DOMAIN}/company-logos/c.png`;
 const APPLY = `https://careers.${DOMAIN}/jobs/123`;
 const PROTECTED = [/qwyzzlenex/i, /orbital/i, new RegExp(DOMAIN.replace(/\./g, "\\."), "i"), /unavatar/i];
 
@@ -84,6 +85,7 @@ afterEach(() => cleanup());
 describe("CompanyLogo locked silhouette (unit)", () => {
   const cases = [
     { label: "logo URL + domain", props: { logoUrl: LOGO, domain: DOMAIN, applyUrl: APPLY } },
+    { label: "company + job logo + domain", props: { companyLogoUrl: STORE, logoUrl: LOGO, domain: DOMAIN, applyUrl: APPLY } },
     { label: "no logo, domain only", props: { domain: DOMAIN, applyUrl: APPLY } },
     { label: "no logo, no domain", props: {} },
   ];
@@ -122,7 +124,7 @@ describe("CompanyLogo locked silhouette (unit)", () => {
 });
 
 const lockedJob = (i: number) =>
-  fixtureJob(i, { company: NAME, companyDomain: DOMAIN, logoUrl: LOGO, logo_url: LOGO, applyUrl: APPLY, title: `Fixture Locked Role ${i}` });
+  fixtureJob(i, { company: NAME, companyDomain: DOMAIN, companyLogoUrl: STORE, logoUrl: LOGO, logo_url: LOGO, applyUrl: APPLY, title: `Fixture Locked Role ${i}` });
 
 async function mountFeed() {
   window.history.replaceState(null, "", "/jobs");
@@ -181,12 +183,12 @@ describe("integrated jobs masking: guest and free (locked) vs Pro", () => {
     h.transport = async () => page([lockedJob(1)], false, 1);
     await mountFeed();
     expect(screen.queryAllByTestId("company-logo-locked")).toHaveLength(0);
-    const imgs = Array.from(document.querySelectorAll("img")).filter((i) => i.getAttribute("src") === LOGO);
+    const imgs = Array.from(document.querySelectorAll("img")).filter((i) => i.getAttribute("src") === STORE);
     expect(imgs.length).toBeGreaterThan(0);
     expect(imgs[0].getAttribute("alt")).toBe(`${NAME} logo`);
     expect(screen.getAllByText(NAME).length).toBeGreaterThan(0);
     // An image error falls back to a neutral letter tile (no broken image).
     await act(async () => imgs.forEach((i) => fireEvent.error(i)));
-    expect(Array.from(document.querySelectorAll("img")).filter((i) => i.getAttribute("src") === LOGO)).toHaveLength(0);
+    expect(Array.from(document.querySelectorAll("img")).filter((i) => i.getAttribute("src") === STORE)).toHaveLength(0);
   });
 });

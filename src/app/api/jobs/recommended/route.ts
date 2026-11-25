@@ -549,6 +549,7 @@ export async function GET(req: Request) {
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
           companyDomain: row.companies?.domain || null,
+          companyLogoUrl: row.companies?.logo_url || null,
           logoUrl: row.logo_url || row.companies?.logo_url || null,
           logo_url: row.logo_url || row.companies?.logo_url || null,
           matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt),

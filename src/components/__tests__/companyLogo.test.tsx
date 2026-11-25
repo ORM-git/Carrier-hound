@@ -2,7 +2,7 @@
 import React from "react";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
-import CompanyLogo from "../CompanyLogo";
+import CompanyLogo, { FAILED_LOGO_TTL_MS } from "../CompanyLogo";
 
 // jsdom never loads images and reports every image element as complete with naturalWidth 0. Model a real browser:
 // a freshly mounted image is still loading (complete = false) unless a test says otherwise.
@@ -142,5 +142,58 @@ describe("CompanyLogo", () => {
     expect(c2.querySelector("img")!.getAttribute("src")).toBe(
       "https://unavatar.io/notlinkedin.com?fallback=false"
     );
+  });
+
+  // Shapes from the 25 Nov 2026 owner evidence (ElevenLabs duplicates, Qonto). Controlled, not live.
+  it("ElevenLabs favicon duplicate: the stored company logo is tried before the CSP-blocked job favicon", () => {
+    const store = url();
+    const favicon = url();
+    const { container } = render(<CompanyLogo company="ElevenLabs" companyLogoUrl={store} logoUrl={favicon} domain={dom()} />);
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(store);
+  });
+
+  it("ElevenLabs null-logo duplicate and Qonto (no domain): company logo shown, never a letter tile first", () => {
+    const store = url();
+    const { container } = render(<CompanyLogo company="Qonto" companyLogoUrl={store} logoUrl={store} domain={null} />);
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(store);
+  });
+
+  it("blocked stored company logo falls back to the job logo, then the domain, then the tile", () => {
+    const store = url();
+    const jobLogo = url();
+    const d = dom();
+    const { container } = render(<CompanyLogo company="Acme" companyLogoUrl={store} logoUrl={jobLogo} domain={d} />);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(jobLogo);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(`https://unavatar.io/${d}?fallback=false`);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toBe("A");
+  });
+
+  it("all sources missing -> tile with no request", () => {
+    const { container } = render(<CompanyLogo company="Acme" companyLogoUrl={null} logoUrl={null} domain={null} />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toBe("A");
+  });
+
+  it("a failure is remembered across remounts, then retried once after the TTL (no page-lifetime trap)", () => {
+    const store = url();
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0);
+    const first = render(<CompanyLogo company="Acme" companyLogoUrl={store} />);
+    fireEvent.error(first.container.querySelector("img")!);
+    first.unmount();
+    now.mockReturnValue(t0 + FAILED_LOGO_TTL_MS - 1);
+    const early = render(<CompanyLogo company="Acme" companyLogoUrl={store} />);
+    expect(early.container.querySelector("img")).toBeNull();
+    early.unmount();
+    now.mockReturnValue(t0 + FAILED_LOGO_TTL_MS);
+    const later = render(<CompanyLogo company="Acme" companyLogoUrl={store} />);
+    expect(later.container.querySelector("img")!.getAttribute("src")).toBe(store);
+    // fails again -> cached again, no retry loop within the same mount
+    fireEvent.error(later.container.querySelector("img")!);
+    expect(later.container.querySelector("img")).toBeNull();
   });
 });
