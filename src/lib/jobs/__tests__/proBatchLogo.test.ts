@@ -87,29 +87,6 @@ beforeEach(() => {
     throw new Error(`unexpected fetch ${url}`);
   }) as any;
 });
-
-
-describe("For You resume pagination metadata", () => {
-  const page = (n: number) => getLiveJobs({
-    isPro: false, sortBy: "match", page: n, pageSize: 25,
-    candidate: { skills: ["kotlin", "android", "mobile"], titles: ["Mobile Engineer", "Android Engineer"] } as any,
-    preferences: { roles: ["Mobile Engineer", "Android Engineer"], categories: ["engineering"] } as any,
-  });
-  it("advertises every remaining page and stops only at the actual pool end", async () => {
-    db.jobs = Array.from({ length: 60 }, (_, i) => ({ ...QONTO_JOB, id: `fixture-${i}` }));
-    const first = await page(1), second = await page(2), last = await page(3);
-    expect([first.jobs.length, second.jobs.length, last.jobs.length]).toEqual([25, 25, 10]);
-    expect([first.totalCount, second.totalCount, last.totalCount]).toEqual([60, 60, 60]);
-    expect([first.hasNextPage, second.hasNextPage, last.hasNextPage]).toEqual([true, true, false]);
-    expect(new Set([...first.jobs, ...second.jobs, ...last.jobs].map(j => j.id)).size).toBe(60);
-  });
-  it("returns explicit exhausted metadata beyond the pool end", async () => {
-    const res = await page(2);
-    expect(res.jobs).toEqual([]);
-    expect(res.hasNextPage).toBe(false);
-    expect(res.nextCursor).toBeNull();
-  });
-});
 afterEach(() => { globalThis.fetch = realFetch; });
 
 const forYou = () => getLiveJobs({
@@ -155,5 +132,28 @@ describe("For You direct + Pro batch unlock keeps the employer logo metadata", (
     }
     proResponder = async () => new Response("{}", { status: 500 });
     for (const j of (await forYou()).jobs) expect(Object.values(logo(j)!)).toEqual([null, null, null]);
+  });
+});
+
+
+describe("For You resume pagination metadata", () => {
+  const page = (n: number) => getLiveJobs({
+    isPro: false, sortBy: "match", page: n, pageSize: 25,
+    candidate: { skills: ["kotlin", "android", "mobile"], titles: ["Mobile Engineer", "Android Engineer"] } as any,
+    preferences: { roles: ["Mobile Engineer", "Android Engineer"], categories: ["engineering"] } as any,
+  });
+  it("advertises every remaining page and stops only at the actual pool end", async () => {
+    db.jobs = Array.from({ length: 60 }, (_, i) => ({ ...QONTO_JOB, id: `fixture-${i}` }));
+    const first = await page(1), second = await page(2), last = await page(3);
+    expect([first.jobs.length, second.jobs.length, last.jobs.length]).toEqual([25, 25, 10]);
+    expect([first.totalCount, second.totalCount, last.totalCount]).toEqual([60, 60, 60]);
+    expect([first.hasNextPage, second.hasNextPage, last.hasNextPage]).toEqual([true, true, false]);
+    expect(new Set([...first.jobs, ...second.jobs, ...last.jobs].map(j => j.id)).size).toBe(60);
+  });
+  it("returns explicit exhausted metadata beyond the pool end", async () => {
+    const res = await page(2);
+    expect(res.jobs).toEqual([]);
+    expect(res.hasNextPage).toBe(false);
+    expect(res.nextCursor).toBeNull();
   });
 });
