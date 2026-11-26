@@ -73,6 +73,7 @@ describe("Actual phone Jobs filter contract", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.getByRole("dialog")).toHaveAccessibleName("Filter positions");
     expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(container.querySelector('[data-picker-trigger="countryCode"]'));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
   });
