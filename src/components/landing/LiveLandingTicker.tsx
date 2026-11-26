@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { parseTickerResponse, TickerItemParsed } from "@/lib/api/clientSchemas";
+import { parseImportedTickerResponse, ImportedTickerItemParsed } from "@/lib/api/clientSchemas";
 import { isOfficialLogoPath } from "@/lib/companies/officialLogoAssets";
 import { formatRelativeTime } from "@/components/LandingJobsTickerStrip";
 
@@ -17,7 +17,7 @@ export function safeTickerLogo(raw: string | null): string | null {
   } catch { return null; }
 }
 
-function Logo({ job }: { job: TickerItemParsed }) {
+function Logo({ job }: { job: ImportedTickerItemParsed }) {
   const src = safeTickerLogo(job.logo_url);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -35,7 +35,7 @@ function Logo({ job }: { job: TickerItemParsed }) {
 
 /** Live content only, within the owner's unchanged .ls strip layout. No invented fallback jobs. */
 export default function LiveLandingTicker() {
-  const [jobs, setJobs] = useState<TickerItemParsed[]>([]);
+  const [jobs, setJobs] = useState<ImportedTickerItemParsed[]>([]);
   const [, tick] = useState(0);
   useEffect(() => {
     let stopped = false;
@@ -47,10 +47,10 @@ export default function LiveLandingTicker() {
       controller = new AbortController();
       const timeout = window.setTimeout(() => controller?.abort(), 10000);
       try {
-        const response = await fetch("/api/ticker", { cache: "no-cache", signal: controller.signal });
+        const response = await fetch("/api/ticker?mode=imported", { cache: "no-cache", signal: controller.signal });
         if (!response.ok) throw new Error("Ticker unavailable");
-        const rows = parseTickerResponse(await response.json()).filter(job =>
-          job.company.trim() && job.title.trim() && Number.isFinite(Date.parse(job.posted_at)) && Date.parse(job.posted_at) <= Date.now() + 300000
+        const rows = parseImportedTickerResponse(await response.json()).filter(job =>
+          job.company.trim() && job.title.trim() && Number.isFinite(Date.parse(job.added_at)) && Date.parse(job.added_at) <= Date.now() + 300000
         ).slice(0, 20);
         if (!stopped) setJobs(rows.length >= 5 ? rows : []);
       } catch {
@@ -73,7 +73,7 @@ export default function LiveLandingTicker() {
     <div className="ls-set" key={String(duplicate)} aria-hidden={duplicate || undefined}>
       {jobs.map((job, index) => <a className="ls-card" href="/jobs" key={`${job.company}-${job.title}-${index}`} tabIndex={duplicate ? -1 : undefined}>
         <Logo job={job} />
-        <span className="ls-txt"><span className="ls-meta"><b>{job.company}</b> · {formatRelativeTime(job.posted_at)}</span><span className="ls-title">{job.title}</span></span>
+        <span className="ls-txt"><span className="ls-meta"><b>{job.company}</b> · Added {formatRelativeTime(job.added_at)}</span><span className="ls-title">{job.title}</span></span>
       </a>)}
     </div>
   )}</div>;
