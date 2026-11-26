@@ -75,7 +75,9 @@ async function main() {
   assert.ok(pageSrc.includes('href="/signup" className="btn-dark"'), "Top nav Sign up for free must link to /signup");
   assert.ok(pageSrc.includes('href="/login" className="btn-ghost"'), "Top nav Sign in must link to /login");
   assert.ok(pageSrc.includes('href="/radar"'), "Lower page must link to /radar");
-  assert.ok(pageSrc.includes('href="/jobs" className="btn-cta"'), "Top-fold View Jobs must link to /jobs");
+  assert.ok(pageSrc.includes('href={VIEW_JOBS_AUTH_HREF} className="btn-cta"'), "Top-fold View Jobs must use the auth-first href");
+  assert.ok(!pageSrc.includes('href="/jobs" className="btn-cta"'), "Top-fold View Jobs must not bypass auth with a bare /jobs link");
+  assert.match(fs.readFileSync(path.join(ROOT, "src/lib/landing/viewJobsHref.ts"), "utf8"), /export const VIEW_JOBS_AUTH_HREF = "\/signup\?next=%2Fjobs";/, "Auth-first View Jobs href must be exactly /signup?next=%2Fjobs");
   assert.ok(!pageSrc.includes('id="try-demo"'), "Old hero #try-demo button must not come back");
 
   assert.ok(pageSrc.includes("<LandingJobsPreview />"), "Home must adopt actual shared Jobs preview");
