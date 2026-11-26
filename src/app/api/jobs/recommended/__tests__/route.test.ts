@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import { getLiveJobs } from "@/lib/jobs/service";
 import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
@@ -118,6 +118,18 @@ vi.mock("@supabase/supabase-js", () => {
               } else {
                 predicates.push((r) => r[c] !== val);
               }
+              return b;
+            };
+          }
+          if (prop === "is") {
+            return (c: string, v: unknown) => {
+              predicates.push((r) => (v === null ? r[c] == null : r[c] === v));
+              return b;
+            };
+          }
+          if (prop === "lt") {
+            return (c: string, v: any) => {
+              predicates.push((r) => r[c] != null && r[c] < v);
               return b;
             };
           }
@@ -1525,5 +1537,172 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     const body = await res.json();
     expect(body.error).toBeTruthy();
     expect(body.jobs).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------- full-corpus snapshot PROTOTYPE (flag-gated)
+describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROTOTYPE=on)", () => {
+  let snapshotRoute: (r: Request) => Promise<Response>;
+  let store: { size(): number; deleteExpired(now: number): Promise<void> };
+  const BASE = "http://localhost/api/jobs/recommended";
+  const GUEST = "roles=Frontend%20Developer&experienceLevel=senior";
+  const call = async (url: string, token?: string) => {
+    const res = await snapshotRoute(req(url, token));
+    return { status: res.status, body: await res.json() };
+  };
+  /** Every page of one snapshot, following nextCursor. */
+  async function walk(query: string, token?: string, pageSize = 25) {
+    const pages: any[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 200; i++) {
+      const { status, body } = await call(`${BASE}/snapshot?${query}&pageSize=${pageSize}${cursor ? `&cursor=${cursor}` : ""}`, token);
+      expect(status).toBe(200);
+      pages.push(body);
+      if (!body.hasNextPage) return pages;
+      cursor = body.nextCursor;
+    }
+    throw new Error("no end");
+  }
+  const ids = (pages: any[]): string[] => pages.flatMap((p) => p.jobs.map((j: any) => j.id));
+  const row = (i: number, title: string, daysAgo: number, over: Record<string, unknown> = {}) => ({
+    id: `00000000-0000-4000-9000-${String(i).padStart(12, "0")}`, title, company: `Co ${i}`, company_id: `co_s${i}`,
+    location: "Remote (Worldwide)", category: "engineering", remote: true, is_remote: true, remote_scope: "worldwide",
+    country_code: "US", job_type: "full-time", verified: true, source_type: "direct", source: "direct",
+    posted_at: new Date(Date.now() - daysAgo * 864e5).toISOString(), created_at: new Date(Date.now() - daysAgo * 864e5).toISOString(),
+    first_seen_at: new Date(Date.now() - daysAgo * 864e5).toISOString(), salary_min: 90000, salary_max: 120000, currency: "USD",
+    salary_period: "year", salary_text: "$90k - $120k", apply_url: `https://careers.example.invalid/${i}`, description: "FIXTURE",
+    skills: ["React"], status: "active", is_active: true, logo_url: null, ...over,
+  });
+
+  beforeAll(async () => {
+    process.env.FEED_SNAPSHOT_PROTOTYPE = "on";
+    const mod = await import("@/app/api/jobs/recommended/snapshot/route");
+    snapshotRoute = mod.GET;
+    store = mod.prototypeMemoryStore;
+  });
+  afterAll(() => {
+    delete process.env.FEED_SNAPSHOT_PROTOTYPE;
+  });
+  beforeEach(async () => {
+    await store.deleteExpired(Number.MAX_SAFE_INTEGER);
+    for (const u of Object.values(state.users)) (u as any).last_sign_in_at = "2026-11-25T08:00:00Z";
+  });
+
+  it("flag off: 404, no database read", async () => {
+    process.env.FEED_SNAPSHOT_PROTOTYPE = "off";
+    try {
+      expect((await call(`${BASE}/snapshot?${GUEST}`)).status).toBe(404);
+      expect(state.queries).toEqual([]);
+    } finally {
+      process.env.FEED_SNAPSHOT_PROTOTYPE = "on";
+    }
+  });
+
+  it("parity: on a complete input (320 rows, inside the existing 1000 pool) the snapshot emits the existing route's exact order and count", async () => {
+    const snap = await walk(GUEST);
+    const existing: string[] = [];
+    for (let p = 1; p <= 20; p++) {
+      const body = await (await recommendedRoute(req(`${BASE}?${GUEST}&page=${p}&pageSize=25`))).json();
+      existing.push(...body.jobs.map((j: any) => j.id));
+      if (p * 25 >= body.totalCount) break;
+    }
+    expect(existing.length).toBeGreaterThan(100);
+    expect(ids(snap)).toEqual(existing);
+    expect(snap[0].totalCount).toBe(existing.length);
+    expect(new Set(ids(snap)).size).toBe(ids(snap).length);
+  });
+
+  it("whole corpus: a strong match at raw position N-1 of 1,601 rows outranks every weak row and leads page 1", async () => {
+    const weak = Array.from({ length: 1600 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.01));
+    const strong = row(9999, "Senior Frontend Developer", 25);
+    state.tables.jobs = [...weak, strong];
+    const first = (await call(`${BASE}/snapshot?${GUEST}`)).body;
+    expect(first.jobs[0].id).toBe(strong.id);
+    expect(first.totalCount).toBeGreaterThan(1000); // no pool cap: every eligible row is in the snapshot
+    expect(state.queries.filter((q) => q.table === "jobs" && q.rows === 1000).length).toBeGreaterThanOrEqual(1); // paged build reads
+    // The existing route's 1000-row pool never reads it.
+    const existing = await (await recommendedRoute(req(`${BASE}?${GUEST}&page=1&pageSize=25`))).json();
+    expect(existing.jobs.map((j: any) => j.id)).not.toContain(strong.id);
+  });
+
+  it("insert / delete / deactivate / update between page 1 and 2: zero duplicates, removed jobs omitted and consumed, page refilled, nothing resurrected", async () => {
+    const all = ids(await walk(GUEST)); // stored order of an untouched snapshot (same inputs, same order)
+    const p1 = (await call(`${BASE}/snapshot?${GUEST}`)).body;
+    const p1Ids: string[] = ids([p1]);
+    expect(p1Ids).toEqual(all.slice(0, 25));
+    const [del, deact, edited] = [all[25], all[26], all[27]];
+    state.tables.jobs = state.tables.jobs.filter((r: any) => r.id !== del);
+    state.tables.jobs.find((r: any) => r.id === deact).is_active = false;
+    state.tables.jobs.find((r: any) => r.id === edited).title = "Frontend Developer (edited)";
+    const fresh = row(777, "Senior Frontend Developer", 0, { first_seen_at: new Date(Date.now() + 1000).toISOString() });
+    state.tables.jobs.push(fresh);
+
+    const p2 = (await call(`${BASE}/snapshot?${GUEST}&cursor=${p1.nextCursor}`)).body;
+    const p2Ids: string[] = p2.jobs.map((j: any) => j.id);
+    expect(p2Ids.filter((id) => p1Ids.includes(id))).toEqual([]); // zero duplicates
+    expect(p2Ids).not.toContain(del);
+    expect(p2Ids).not.toContain(deact);
+    expect(p2Ids).not.toContain(fresh.id); // membership frozen at build
+    expect(p2Ids).toContain(edited); // still valid: kept at its frozen rank
+    expect(p2Ids).toEqual(all.slice(25, 52).filter((id) => id !== del && id !== deact)); // refilled with the next valid rows
+    expect(p2.stale).toBe(true); // a newer insert exists: flagged, pages stay consistent
+    const rest: string[] = [];
+    let cursor = p2.hasNextPage ? p2.nextCursor : null;
+    while (cursor) {
+      const b = (await call(`${BASE}/snapshot?${GUEST}&cursor=${cursor}`)).body;
+      rest.push(...b.jobs.map((j: any) => j.id));
+      cursor = b.hasNextPage ? b.nextCursor : null;
+    }
+    // Every still-valid stored ID exactly once; removed ones never return.
+    expect([...p1Ids, ...p2Ids, ...rest]).toEqual(all.filter((id) => id !== del && id !== deact));
+    // The next natural reset (no cursor) builds a new snapshot that includes the newly ingested job.
+    expect(ids(await walk(GUEST))).toContain(fresh.id);
+  });
+
+  it("invalidation: filter, viewer, session-epoch and tier changes reset the continuation (409)", async () => {
+    const tok = "tok-free-with-answers";
+    const p1 = (await call(`${BASE}/snapshot?pageSize=10`, tok)).body;
+    expect(p1.hasNextPage).toBe(true);
+    const next = (extra = "", t = tok) => call(`${BASE}/snapshot?pageSize=10${extra}&cursor=${p1.nextCursor}`, t);
+    expect((await next()).status).toBe(200);
+    expect((await next("&remoteOnly=true")).body.error).toBe("snapshot_reset"); // filter
+    expect((await next("", "tok-user-no-answers")).status).toBe(409); // another Free viewer (same tier)
+    (state.users[tok] as any).last_sign_in_at = "2026-11-26T10:00:00Z";
+    expect((await next()).status).toBe(409); // new sign-in
+    (state.users[tok] as any).last_sign_in_at = "2026-11-25T08:00:00Z";
+    expect((await next()).status).toBe(200); // token refresh alone keeps it
+    state.tables.subscriptions.push({ user_id: "u_free_answers", status: "active", plan_id: "monthly", current_period_end: new Date(Date.now() + 864e5).toISOString(), grace_period_end: null, created_at: new Date().toISOString() });
+    expect((await next()).status).toBe(409); // tier change Free -> Pro
+    expect((await call(`${BASE}/snapshot?pageSize=10&cursor=fs1.not-a-cursor.0`, tok)).status).toBe(409);
+  });
+
+  it("serve-time masking: a Free snapshot page never carries Pro fields, and Free hydration never selects them", async () => {
+    const free = (await call(`${BASE}/snapshot?pageSize=25`, "tok-free-with-answers")).body;
+    expect(free.isPro).toBe(false);
+    expect(free.jobs.length).toBeGreaterThan(0);
+    for (const j of free.jobs) {
+      expect([j.company, j.applyUrl, j.description, j.salary, j.logoUrl]).toEqual(["Verified Employer", "", "", "", null]);
+      expect(j.skills).toEqual([]);
+      expect(j.company_id).toBeUndefined();
+    }
+    for (const q of state.queries) expect(q.cols).not.toMatch(/apply_url|description|logo_url/);
+    const pro = (await call(`${BASE}/snapshot?pageSize=25`, "tok-pro-with-answers")).body;
+    expect(pro.isPro).toBe(true);
+    expect(pro.jobs[0].applyUrl).toMatch(/^https:/);
+  });
+
+  it("TTL: an expired snapshot resets its cursor and the next build deletes it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-26T00:00:00Z"));
+      const p1 = (await call(`${BASE}/snapshot?${GUEST}`)).body;
+      expect(store.size()).toBe(1);
+      vi.setSystemTime(new Date("2026-11-26T06:00:01Z"));
+      expect((await call(`${BASE}/snapshot?${GUEST}&cursor=${p1.nextCursor}`)).status).toBe(409);
+      await call(`${BASE}/snapshot?${GUEST}`);
+      expect(store.size()).toBe(1); // the expired one was cleaned up, only the new one is stored
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
