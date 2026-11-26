@@ -99,12 +99,24 @@ function SummaryLine({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-function FieldLabel({ id, children, help }: { id?: string; children: React.ReactNode; help?: string }) {
+function FieldLabel({ id, children, help, action }: { id?: string; children: React.ReactNode; help?: string; action?: React.ReactNode }) {
   return (
     <div className="mb-2">
-      <p id={id} className="text-[13px] font-bold text-[#0F172A]">{children}</p>
+      <div className="flex items-center justify-between">
+        <p id={id} className="text-[13px] font-bold text-[#0F172A]">{children}</p>
+        {action}
+      </div>
       {help && <p className="mt-0.5 text-[12px] leading-snug text-[#64748B]">{help}</p>}
     </div>
+  );
+}
+
+function LabelClear({ show, label, onClear }: { show: boolean; label: string; onClear: () => void }) {
+  if (!show) return null;
+  return (
+    <button type="button" aria-label={`Clear ${label}`} onClick={onClear} className="ml-2 min-h-[44px] shrink-0 px-1 text-[12px] font-semibold text-[#2563EB]">
+      Clear
+    </button>
   );
 }
 
@@ -149,9 +161,13 @@ function TagInput({
   suggestions = [],
   disabled,
   disabledReason,
+  onClear,
+  clearLabel,
 }: {
   label: string;
   help?: string;
+  onClear?: () => void;
+  clearLabel?: string;
   values: string[];
   onChange: (next: string[]) => void;
   placeholder: string;
@@ -172,7 +188,10 @@ function TagInput({
   const full = values.length >= MAX_LIST_ITEMS;
   return (
     <div>
-      <label htmlFor={inputId} className="block text-[13px] font-bold text-[#0F172A]">{label}</label>
+      <div className="flex items-center justify-between">
+        <label htmlFor={inputId} className="block text-[13px] font-bold text-[#0F172A]">{label}</label>
+        {onClear && <LabelClear show={values.length > 0 && !disabled} label={clearLabel || label} onClear={onClear} />}
+      </div>
       {help && <p className="mb-2 mt-0.5 text-[12px] leading-snug text-[#64748B]">{help}</p>}
       {disabled ? (
         <p className="rounded-xl bg-[#F8FAFC] px-3 py-2 text-[12px] text-[#64748B]">{disabledReason}</p>
@@ -806,6 +825,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 <div>
                   <FieldLabel
                     id="pref-salary-label"
+                    action={<LabelClear show={draft.minSalary != null} label="minimum salary" onClear={() => set("minSalary", null)} />}
                     help="Annual amount. Jobs listing a lower pay in the same currency rank lower; hourly and monthly pay is converted to a year, other currencies are never converted, and jobs without pay info stay in."
                   >
                     Minimum annual salary
@@ -904,6 +924,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   placeholder="Type a company name"
                   disabled={!constraintsAvailable}
                   disabledReason={PENDING_CONSTRAINT_STORAGE}
+                  onClear={() => set("includedCompanies", [])}
+                  clearLabel="only-show companies"
                 />
                 <TagInput
                   label="Never show these companies"
@@ -913,6 +935,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   placeholder="Type a company name"
                   disabled={!constraintsAvailable}
                   disabledReason={PENDING_CONSTRAINT_STORAGE}
+                  onClear={() => set("excludedCompanies", [])}
+                  clearLabel="never-show companies"
                 />
                 {constraintsAvailable && !constraintsApplied && <NotAppliedNote />}
                 {conflicts.length > 0 && (
