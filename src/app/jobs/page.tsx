@@ -30,6 +30,7 @@ import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
+import PhoneVideoFilters from "@/components/jobs/PhoneVideoFilters";
 import PreferencesSheet from "@/components/jobs/PreferencesSheet";
 import { activeCount as activePreferenceCount, draftFromPreferences } from "@/lib/preferences/model";
 import JobCardContent from "@/components/jobs/JobCardContent";
@@ -2154,8 +2155,18 @@ function JobsPageInner() {
                   triggerRef={allFiltersTriggerRef}
                 />
 
+                <PhoneVideoFilters
+                  isOpen={mobileFiltersOpen && isPhone}
+                  onClose={() => {
+                    setMobileFiltersOpen(false);
+                    filtersTriggerRef.current?.focus();
+                  }}
+                  filters={filterValues}
+                  onApply={handleApplyAllFilters}
+                  triggerRef={filtersTriggerRef}
+                />
                 <MobileFilterSheet
-                  isOpen={mobileFiltersOpen}
+                  isOpen={mobileFiltersOpen && !isPhone}
                   onClose={() => {
                     setMobileFiltersOpen(false);
                     filtersTriggerRef.current?.focus();
