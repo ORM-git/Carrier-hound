@@ -44,6 +44,7 @@ import {
   REQUEST_TIMEOUT_MS,
   USER_AGENT,
   ATS_HOST_KEYWORDS,
+  type FetchWithTimeoutOptions,
 } from "../src/lib/companies/logoResolver";
 
 export interface CompanyRow {
@@ -111,7 +112,7 @@ export interface BackfillCliArgs {
   manifestPath?: string;
 }
 
-export type FetcherFn = (url: string) => Promise<Response>;
+export type FetcherFn = (url: string, options?: FetchWithTimeoutOptions) => Promise<Response>;
 
 export interface PoliteFetcherOptions {
   fetchFn?: FetcherFn;
@@ -271,7 +272,7 @@ export function isSelfHostedLogoUrl(
  * concurrent workers, retries once on 5xx, and never retries 404 (or other non-5xx).
  */
 export function createPoliteFetcher(options: PoliteFetcherOptions = {}): FetcherFn {
-  const fetchFn = options.fetchFn ?? ((url: string) => libFetchWithTimeout(url));
+  const fetchFn = options.fetchFn ?? ((url: string, opts?: FetchWithTimeoutOptions) => libFetchWithTimeout(url, opts));
   const minHostIntervalMs = options.minHostIntervalMs ?? MIN_HOST_INTERVAL_MS;
   const maxRetries5xx = options.maxRetries5xx ?? 1;
   const now = options.now ?? (() => Date.now());
@@ -281,7 +282,7 @@ export function createPoliteFetcher(options: PoliteFetcherOptions = {}): Fetcher
   const hostTails = new Map<string, Promise<void>>();
   const hostLastDoneAt = new Map<string, number>();
 
-  async function runWithHostSlot(url: string): Promise<Response> {
+  async function runWithHostSlot(url: string, fetchOptions?: FetchWithTimeoutOptions): Promise<Response> {
     let host = "default";
     try {
       host = new URL(url).host.toLowerCase() || "default";
@@ -304,17 +305,17 @@ export function createPoliteFetcher(options: PoliteFetcherOptions = {}): Fetcher
           await sleep(waitMs);
         }
       }
-      return await fetchFn(url);
+      return await fetchFn(url, fetchOptions);
     } finally {
       hostLastDoneAt.set(host, now());
       release();
     }
   }
 
-  return async (url: string): Promise<Response> => {
+  return async (url: string, fetchOptions?: FetchWithTimeoutOptions): Promise<Response> => {
     let attempt = 0;
     while (true) {
-      const res = await runWithHostSlot(url);
+      const res = await runWithHostSlot(url, fetchOptions);
       if (res.status >= 500 && res.status < 600 && attempt < maxRetries5xx) {
         attempt++;
         try {

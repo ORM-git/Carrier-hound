@@ -209,6 +209,8 @@ export interface FetchWithTimeoutOptions {
   maxRedirects?: number;
   customLookup?: DnsLookupFn;
   customFetch?: (url: string, init?: RequestInit & { dispatcher?: Agent }) => Promise<Response>;
+  /** URL policy checked on the initial URL and every redirect hop BEFORE it is requested; true = refuse. */
+  isDeniedUrl?: (url: string) => boolean;
 }
 
 export const ATS_HOST_KEYWORDS = [
@@ -260,6 +262,8 @@ export const ATS_HOST_KEYWORDS = [
   "remote.co",
   "adzuna.com",
   "adzuna.co.uk",
+  // Adzuna India: ingested country "in" (scripts/scraper/fetch_aggregators_and_india.py); redirect_url is www.adzuna.in
+  "adzuna.in",
   "monster.com",
   "simplyhired.com",
   "dice.com",
@@ -283,13 +287,10 @@ export const ATS_HOST_KEYWORDS = [
   "successfactors.com",
   "ultipro.com",
   "recruiting.paylocity.com",
+  // Lever's client-logo S3 bucket (observed host in the 2026-11-26 dry run). Exact bucket host only:
+  // matching the bare "lever-client-logos." prefix would also block unrelated lookalike hosts.
+  "lever-client-logos.s3.us-west-2.amazonaws.com",
 ];
-
-/**
- * Hostname prefixes for ATS-owned asset buckets on shared cloud hosts (e.g. Lever's client logos on S3),
- * which cannot be matched by registrable-domain suffix without blocking the whole cloud provider.
- */
-const ATS_ASSET_HOST_PREFIXES = ["lever-client-logos."];
 
 const STRIPPED_SUBDOMAINS = [
   "www",
@@ -312,10 +313,7 @@ const STRIPPED_SUBDOMAINS = [
  */
 export function isAtsHost(host: string): boolean {
   const h = host.toLowerCase().trim().replace(/\.$/, "");
-  return (
-    ATS_HOST_KEYWORDS.some((k) => h === k || h.endsWith("." + k)) ||
-    ATS_ASSET_HOST_PREFIXES.some((p) => h.startsWith(p))
-  );
+  return ATS_HOST_KEYWORDS.some((k) => h === k || h.endsWith("." + k));
 }
 
 /**
@@ -627,6 +625,10 @@ export async function fetchWithTimeout(
         );
       }
 
+      if (options.isDeniedUrl?.(currentUrl)) {
+        throw new Error(`Blocked by URL policy: ${parsedUrl.hostname}`);
+      }
+
       const { resolvedIp, family } = await resolveAndValidateHost(
         parsedUrl.hostname,
         customLookup
@@ -759,14 +761,19 @@ export async function fetchWithTimeout(
  * - Valid raster format (no SVG)
  * - Dimensions >= minSize (default 32px)
  * - Aspect ratio 0.6 <= ratio <= 1.6
+ * - ATS/aggregator policy (isAtsImageUrl) on the initial URL, on every redirect hop before it is
+ *   requested (via the fetcher's isDeniedUrl option), and on the final response URL
  */
 export async function downloadAndValidateImage(
   url: string,
   minSize: number = 32,
-  fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout
+  fetcher: (targetUrl: string, options?: FetchWithTimeoutOptions) => Promise<Response> = fetchWithTimeout
 ): Promise<ValidatedImage | null> {
   try {
-    const imgRes = await fetcher(url);
+    if (isAtsImageUrl(url)) return null;
+    const imgRes = await fetcher(url, { isDeniedUrl: isAtsImageUrl });
+    // Defense in depth for fetchers that do not apply isDeniedUrl on their hops.
+    if (imgRes.url && isAtsImageUrl(imgRes.url)) return null;
     if (!imgRes.ok) return null;
 
     const arrayBuf = await imgRes.arrayBuffer();
