@@ -37,6 +37,46 @@ it("real phone Jobs URL hidden=true opens ordinary sheet without hidden controls
 phone=true;window.history.replaceState(null,"","/jobs?hidden=true");render(<JobsPage/>);await flush();
 fireEvent.click(screen.getByRole("button",{name:"Open filter settings"}));await flush();
 expect(screen.queryByLabelText("View Hidden Positions")).toBeNull();
-fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"Apply"}));await flush();
+fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"Update"}));await flush();
 expect(h.router.replace.mock.calls.at(-1)?.[0]).not.toContain("hidden=true");
+});
+
+it("real phone Update sends multi-facet browse options and resets pagination; discard sends nothing", async () => {
+  phone = true;
+  window.history.replaceState(null, "", "/jobs");
+  render(<JobsPage />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  let dialog = within(screen.getByRole("dialog"));
+  const before = h.calls.length;
+  fireEvent.click(dialog.getByRole("button", { name: /Basic Job Criteria/ }));
+  fireEvent.click(dialog.getByLabelText("Contract"));
+  fireEvent.click(dialog.getByLabelText("Remote"));
+  fireEvent.click(dialog.getByLabelText("Hybrid"));
+  fireEvent.click(dialog.getByLabelText("Entry Level"));
+  fireEvent.click(dialog.getByLabelText("Past week"));
+  await flush();
+  expect(h.calls).toHaveLength(before);
+  fireEvent.click(dialog.getByRole("button", { name: "Update" }));
+  await flush();
+  expect(h.calls.length).toBeGreaterThan(before);
+  expect(h.calls.at(-1)).toMatchObject({
+    jobType: "contract",
+    workModel: "remote, hybrid",
+    remoteOnly: false,
+    level: "entry",
+    datePosted: "7d",
+    page: 1,
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  dialog = within(screen.getByRole("dialog"));
+  fireEvent.click(dialog.getByRole("button", { name: /Basic Job Criteria/ }));
+  fireEvent.click(dialog.getByLabelText("Full-time"));
+  const beforeDiscard = h.calls.length;
+  fireEvent.click(dialog.getByLabelText("Close filter settings"));
+  await flush();
+  expect(h.calls.length).toBe(beforeDiscard);
 });
