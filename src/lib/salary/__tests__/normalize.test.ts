@@ -146,4 +146,74 @@ describe("normalizeSalary compatibility mode (opt-in parity with recommendations
     expect(disqualified(max, period, annual)).toBe(false);
     expect(disqualified(max, period, annual + 1)).toBe(true);
   });
+
+  // Legacy selection: rawMax = max ?? min BEFORE any validation; skip unless a positive number; no min>max check.
+  describe("legacy selection parity (zero, null, negative, nonfinite, max-vs-min, inverted bounds)", () => {
+    const run = (input: { min?: any; max?: any; period?: string }) => normalizeSalary(input, { compatibility: true });
+    const outcome = (min: any, max: any, period: string | undefined, minSalary: number) =>
+      scoreJobRecommendation(
+        { title: "Engineer", remote: true, salary_min: min, salary_max: max, salary_period: period, currency: "USD" } as any,
+        { minSalary, salaryCurrency: "USD" },
+      ).reasons.some((r) => r.startsWith("Salary mismatch"));
+    const helperDisq = (min: any, max: any, period: string | undefined, minSalary: number) => {
+      const r = run({ min, max, period });
+      const v = r.annualMax ?? r.annualMin;
+      return v !== null && v < minSalary;
+    };
+
+    it.each([
+      ["max 0, min valid", 100000, 0, "yearly", 120000],
+      ["max negative, min valid", 100000, -5, "yearly", 120000],
+      ["max NaN, min valid", 100000, NaN, "yearly", 120000],
+      ["both null", null, null, undefined, 1000],
+      ["min NaN, max null", NaN, null, undefined, 1000],
+      ["min negative, max null", -1, null, undefined, 1000],
+    ])("selected value not positive -> filter skipped (%s)", (_n, min, max, period, minSalary) => {
+      const r = run({ min, max, period });
+      expect(r.annualMin).toBeNull();
+      expect(r.annualMax).toBeNull();
+      expect(r.reason).toContain("skipped");
+      expect(helperDisq(min, max, period, minSalary)).toBe(false);
+      expect(outcome(min, max, period, minSalary)).toBe(false);
+    });
+
+    it("max is selected over min; min is selected only when max is null/undefined", () => {
+      expect(run({ min: 50000, max: 90000, period: "yearly" }).annualMax).toBe(90000);
+      expect(run({ min: 90000, max: null, period: "yearly" })).toMatchObject({ annualMin: 90000, annualMax: null });
+      expect(run({ min: 90000, period: "yearly" })).toMatchObject({ annualMin: 90000, annualMax: null });
+    });
+
+    it("inverted bounds are not rejected: the positive max is used", () => {
+      const r = run({ min: 150000, max: 100000, period: "yearly" });
+      expect(r.annualMax).toBe(100000);
+      expect(r.reason).toBeUndefined();
+    });
+
+    it.each([
+      [100000, 0, "yearly", [120000, 50000]],
+      [150000, 100000, "yearly", [120000, 100000, 100001]],
+      [90000, null, "yearly", [90000, 90001]],
+      [50000, 90000, "yearly", [90000, 90001]],
+      [-3, 20, "hourly", [41600, 41601]],
+      [80, 20, "per hour", [41600, 41601]],
+      [3000, null, "monthly", [36000, 36001]],
+    ])("real disqualifier agrees with compat (min %s, max %s, %s)", (min, max, period, thresholds) => {
+      for (const t of thresholds as number[]) expect(helperDisq(min, max, period as string, t)).toBe(outcome(min, max, period as string, t));
+    });
+
+    it("preserves legacy positive Infinity and overflow only in compatibility", () => {
+      for (const [min,max,period] of [[1,Infinity,"yearly"],[Infinity,null,"yearly"],[1,1e308,"hourly"]] as const) {
+        const r=run({min,max,period});
+        expect(r.annualMax ?? r.annualMin).toBe(Infinity);
+        expect(helperDisq(min,max,period,120000)).toBe(outcome(min,max,period,120000));
+        expect(helperDisq(min,max,period,Infinity)).toBe(outcome(min,max,period,Infinity));
+      }
+      expect(normalizeSalary({max:Infinity,period:"yearly"}).annualMax).toBeNull();
+    });
+
+    it("strict mode is unaffected by the compat selection rules", () => {
+      expect(normalizeSalary({ min: 100000, max: 0, period: "yearly" })).toMatchObject({ annualMin: 100000, annualMax: null });
+      expect(normalizeSalary({ min: 150000, max: 100000, period: "yearly" })).toMatchObject({ annualMin: null, annualMax: null, reason: "invalid range: min greater than max" });
+    });
+  });
 });
