@@ -939,3 +939,10 @@
   .landing-wrapper .founder p.bio{font-size:15px;line-height:1.6}
   .landing-wrapper .founder .socials{justify-content:flex-start}
 }
+
+/* Phone fold compaction: smaller gap between the fold CTA and the stats row. */
+@media (max-width: 640px) {
+  .landing-wrapper section.stats-row {
+    padding-top: 14px;
+  }
+}
