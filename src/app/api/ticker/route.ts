@@ -12,6 +12,7 @@ import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { officialLogoFor } from "@/lib/companies/officialLogoAssets";
 
 export const runtime = "edge";
 
@@ -351,6 +352,9 @@ async function getHandler(req: Request) {
       // Job-level assets must belong to this project, not another Supabase tenant.
       const jobLogo = sanitizeLogoUrl(row.logo_url, supabaseUrl);
       if (!resolvedLogo && jobLogo && new URL(jobLogo).host === new URL(supabaseUrl).host) resolvedLogo = jobLogo;
+
+      // Hosted logos win; otherwise a bundled official mark for an exactly matching company name.
+      if (!resolvedLogo) resolvedLogo = officialLogoFor(cleanCompany);
 
       tickerItems.push({
         company: cleanCompany,
