@@ -56,6 +56,12 @@ interface JobFilterBarProps {
   mobileFiltersTriggerRef: React.Ref<HTMLButtonElement>;
   allFiltersTriggerRef?: React.Ref<HTMLButtonElement>;
   hasConfirmedResume: boolean;
+  /**
+   * Onboarding/saved values shown as pre-selected on these controls only. They are NOT in `filters`: they are
+   * not sent as hard filters, not counted, and not listed as active filter pills. Saved values rank the
+   * Recommended feed; selecting here and confirming makes it an explicit strict filter.
+   */
+  savedDisplay?: Partial<Pick<JobFilterValues, "countryCode" | "jobType" | "workModel">>;
 }
 
 // Format multi-select label with (+N) extra count
@@ -80,6 +86,7 @@ export default function JobFilterBar({
   mobileFiltersTriggerRef,
   allFiltersTriggerRef,
   hasConfirmedResume,
+  savedDisplay,
 }: JobFilterBarProps) {
   // Popover state
   const [activePopover, setActivePopover] = useState<string | null>(null);
@@ -92,7 +99,7 @@ export default function JobFilterBar({
     if (activePopover === id) {
       setActivePopover(null);
     } else {
-      setDraftFilters({ ...filters });
+      setDraftFilters({ ...shown });
       setActivePopover(id);
     }
   };
@@ -188,10 +195,18 @@ export default function JobFilterBar({
     r.toLowerCase().includes(roleSearchQuery.toLowerCase().trim())
   );
 
+  // Controls show an explicit (manual/URL) value first, else the saved preference. An explicit location text also
+  // wins over the saved country (otherwise opening/Confirm would submit both and make the saved country strict).
+  const savedKeys = (["countryCode", "jobType", "workModel"] as const).filter((k) => !filters[k] && savedDisplay?.[k] && !(k === "countryCode" && filters.location));
+  const shown: JobFilterValues = { ...filters };
+  for (const k of savedKeys) shown[k] = savedDisplay![k] as string;
+  const isSaved = (k: "countryCode" | "jobType" | "workModel") => savedKeys.includes(k);
+  const savedTitle = "From your saved preferences. It ranks your results; confirm it to filter strictly.";
+
   // Formatted labels for chips
   const levelInfo = formatMultiLabel(filters.level, "Level");
-  const jobTypeInfo = formatMultiLabel(filters.jobType, "Job type");
-  const workModelInfo = formatMultiLabel(filters.workModel, "Work model");
+  const jobTypeInfo = formatMultiLabel(shown.jobType, "Job type");
+  const workModelInfo = formatMultiLabel(shown.workModel, "Work model");
 
   return (
     <div className="sticky top-[56px] z-tk-sticky py-1.5 sm:py-0 bg-[#F8FAFC]/95 lg:bg-slate-100/95 backdrop-blur-xs space-y-2">
@@ -280,14 +295,16 @@ export default function JobFilterBar({
                 type="button"
                 onClick={() => handleOpenPopover("location")}
                 aria-expanded={activePopover === "location"}
-                aria-label={`Location filter: ${filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || "All")}`}
+                aria-label={`Location filter: ${shown.countryCode ? `Country: ${shown.countryCode}` : (filters.location || "All")}`}
+                data-saved-preference={isSaved("countryCode") ? "true" : undefined}
+                title={isSaved("countryCode") ? savedTitle : undefined}
                 className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                  filters.location || filters.countryCode
-                    ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                  filters.location || shown.countryCode
+                    ? `bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold ${isSaved("countryCode") ? "border-dashed" : ""}`
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
-                <span className="whitespace-nowrap">{filters.countryCode ? `Country: ${filters.countryCode}` : (filters.location || (<><span className="chip-location-label-long">Location / Country</span><span className="chip-location-label-short">Location</span></>))}</span>
+                <span className="whitespace-nowrap">{shown.countryCode ? `Country: ${shown.countryCode}` : (filters.location || (<><span className="chip-location-label-long">Location / Country</span><span className="chip-location-label-short">Location</span></>))}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
               </button>
 
@@ -360,7 +377,7 @@ export default function JobFilterBar({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })}
+                      onClick={() => handleConfirm({ countryCode: draftFilters.countryCode || "", location: draftFilters.location })}
                       className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
                     >
                       Confirm
@@ -561,16 +578,18 @@ export default function JobFilterBar({
             </div>
 
             {/* 4. JOB TYPE CHIP & POPOVER (Multi-select) */}
-            <div className={`relative chip-jobtype ${filters.jobType ? "chip-active" : ""}`}>
+            <div className={`relative chip-jobtype ${shown.jobType ? "chip-active" : ""}`}>
               <button
                 ref={(el) => { triggerRefs.current["jobType"] = el; }}
                 type="button"
                 onClick={() => handleOpenPopover("jobType")}
                 aria-expanded={activePopover === "jobType"}
-                aria-label={`Job type filter: ${filters.jobType || "All"}`}
+                aria-label={`Job type filter: ${shown.jobType || "All"}`}
+                data-saved-preference={isSaved("jobType") ? "true" : undefined}
+                title={isSaved("jobType") ? savedTitle : undefined}
                 className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                  filters.jobType
-                    ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                  shown.jobType
+                    ? `bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold ${isSaved("jobType") ? "border-dashed" : ""}`
                     : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
                 }`}
               >
@@ -709,16 +728,18 @@ export default function JobFilterBar({
         {/* ROW 2: Work Model, Date Posted, Years of Experience, Min Salary, Source, Company, Hidden Jobs, All Filters */}
         <div className="flex flex-wrap items-center gap-1.5 lg:gap-2">
           {/* WORK MODEL CHIP & POPOVER (Multi-select) */}
-          <div className={`relative chip-workmodel ${filters.workModel ? "chip-active" : ""}`}>
+          <div className={`relative chip-workmodel ${shown.workModel ? "chip-active" : ""}`}>
             <button
               ref={(el) => { triggerRefs.current["workModel"] = el; }}
               type="button"
               onClick={() => handleOpenPopover("workModel")}
               aria-expanded={activePopover === "workModel"}
-              aria-label={`Work model filter: ${filters.workModel || "All"}`}
+              aria-label={`Work model filter: ${shown.workModel || "All"}`}
+                data-saved-preference={isSaved("workModel") ? "true" : undefined}
+                title={isSaved("workModel") ? savedTitle : undefined}
               className={`h-8 px-2 lg:px-2.5 rounded-lg border text-[13px] font-medium transition inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD] ${
-                filters.workModel
-                  ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold"
+                shown.workModel
+                  ? `bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8] font-semibold ${isSaved("workModel") ? "border-dashed" : ""}`
                   : "bg-white border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC]"
               }`}
             >

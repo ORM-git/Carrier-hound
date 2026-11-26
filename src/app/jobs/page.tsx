@@ -28,6 +28,7 @@ import JobDetailView, { type ResumeState } from "@/components/jobs/JobDetailView
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
+import SavedPrioritiesNote from "@/components/jobs/SavedPrioritiesNote";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import PhoneVideoFilters from "@/components/jobs/PhoneVideoFilters";
@@ -59,6 +60,7 @@ import { withFeedScore } from "@/lib/jobs/recommendations";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader, FEED_PAGE_SIZE, isStalledCursor, PREFETCH_PAGES, refillTarget, type PageLoadOutcome } from "@/lib/jobs/pagination";
 import { datePostedCutoff, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
+import { savedControlDisplay, savedPrioritiesSummary, SAVED_CONTROL_KEYS, type SavedControlKey } from "@/lib/preferences/savedControlDisplay";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -363,6 +365,8 @@ function JobsPageInner() {
   const [sortBy, setSortBy] = useState<"match" | "newest">("match");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  // Saved-preference values the user has cleared or replaced on the controls this visit.
+  const [dismissedSaved, setDismissedSaved] = useState<SavedControlKey[]>([]);
   const preferencesTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [_openDropdown, setOpenDropdown] = useState<string | null>(null);
 
@@ -1535,6 +1539,7 @@ function JobsPageInner() {
   }, [selectedJob, trackedApplications]);
 
   const handleResetFilters = () => {
+    dismissSaved(SAVED_CONTROL_KEYS);
     setSearch("");
     setSelectedCategory("");
     setSelectedCountryCode("");
@@ -1881,6 +1886,23 @@ function JobsPageInner() {
     ? activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())
     : 0;
 
+  // Onboarding choices shown as pre-selected on the existing controls: display only (never sent as filters, not
+  // counted, no pills). A control with its own value (URL or manual) or one cleared by the user shows that instead.
+  const dismissSaved = (keys: SavedControlKey[]) => {
+    if (keys.length) setDismissedSaved((prev) => Array.from(new Set([...prev, ...keys])));
+  };
+  const savedSummary = useMemo(
+    () => (user && preferences && activeTab === "recommended" ? savedPrioritiesSummary(savedControlDisplay(preferences)) : ""),
+    [user, preferences, activeTab]
+  );
+  const savedDisplay = useMemo(() => {
+    if (!user || !preferences || activeTab !== "recommended") return undefined;
+    const all = savedControlDisplay(preferences);
+    const out: Partial<Record<SavedControlKey, string>> = {};
+    for (const k of SAVED_CONTROL_KEYS) if (all[k] && !dismissedSaved.includes(k)) out[k] = all[k];
+    return out;
+  }, [user, preferences, activeTab, dismissedSaved]);
+
   const filterValues: JobFilterValues = useMemo(() => ({
     countryCode: selectedCountryCode,
     location: selectedLocation,
@@ -1920,6 +1942,7 @@ function JobsPageInner() {
   ]);
 
   const handleFilterChange = (patch: Partial<JobFilterValues>) => {
+    dismissSaved(SAVED_CONTROL_KEYS.filter((k) => patch[k] !== undefined));
     if (patch.countryCode !== undefined) setSelectedCountryCode(patch.countryCode);
     if (patch.location !== undefined) setSelectedLocation(patch.location);
     if (patch.category !== undefined) setSelectedCategory(patch.category);
@@ -1940,6 +1963,7 @@ function JobsPageInner() {
   };
 
   const handleApplyAllFilters = (updated: JobFilterValues) => {
+    dismissSaved(SAVED_CONTROL_KEYS);
     setSelectedCountryCode(updated.countryCode || "");
     setSelectedLocation(updated.location);
     setSelectedCategory(updated.category);
@@ -2122,6 +2146,9 @@ function JobsPageInner() {
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
                 {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded.
                     Desktop row only: on phones the Filters button opens this same saved-preferences sheet. */}
+                {user && preferences && activeTab === "recommended" && !isPhone && savedSummary && (
+                  <SavedPrioritiesNote where="bar" summary={savedSummary} onEdit={() => setPreferencesOpen(true)} />
+                )}
                 {user && preferences && activeTab === "recommended" && !isPhone && (
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5">
                     <p className="min-w-0 truncate text-[13px] text-[#475569]">
@@ -2175,6 +2202,7 @@ function JobsPageInner() {
                   mobileFiltersTriggerRef={filtersTriggerRef}
                   allFiltersTriggerRef={allFiltersTriggerRef}
                   hasConfirmedResume={hasConfirmedResume}
+                  savedDisplay={savedDisplay}
                 />
 
                 <AllFiltersDrawer
@@ -2188,6 +2216,11 @@ function JobsPageInner() {
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
                   triggerRef={allFiltersTriggerRef}
+                  savedPriorities={
+                    savedSummary
+                      ? { summary: savedSummary, onEdit: () => { setAllFiltersDrawerOpen(false); setPreferencesOpen(true); } }
+                      : undefined
+                  }
                 />
 
                 <PhoneVideoFilters
