@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react';
+import {readFileSync} from 'fs';
 import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
 import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
-const h=vi.hoisted(()=>({profile:null as any,push:vi.fn(),replace:vi.fn(),pro:true,extract:vi.fn(),parse:vi.fn(),save:vi.fn()}));
+const h=vi.hoisted(()=>({profile:null as any,push:vi.fn(),replace:vi.fn(),pro:true,user:{id:'u'} as any,extract:vi.fn(),parse:vi.fn(),save:vi.fn()}));
 vi.mock('next/navigation',()=>{const router={push:h.push,replace:h.replace};return {useRouter:()=>router};});
 vi.mock('next/link',()=>({default:({href,children,prefetch,...p}:any)=><a href={href} {...p}>{children}</a>}));
 vi.mock('@/components/billing/ProUpgradeScreen',()=>({default:({subtitle}:any)=><p>{subtitle}</p>}));
 vi.mock('@/components/shell/LoggedInAppShell',()=>({default:({children}:any)=><div>{children}</div>}));
 vi.mock('@/lib/ai/groq',()=>({getGroqApiKey:()=>null,extractResumeFactsWithGroq:vi.fn()}));
-vi.mock('@/lib/auth/session',()=>({getAuthUser:async()=>({id:'u'})}));
+vi.mock('@/lib/auth/session',()=>({getAuthUser:async()=>h.user}));
 vi.mock('@/lib/billing/subscription',()=>({getProAccessStatus:async()=>({isPro:h.pro,isDefinitive:true})}));
 vi.mock('@/lib/resume/storage',()=>({getCandidateProfile:async()=>h.profile,deleteCandidateProfile:vi.fn(),saveCandidateProfileLocally:vi.fn(),saveCandidateProfileToSupabase:h.save}));
 vi.mock('@/lib/resume/parser',async()=>({...await vi.importActual<any>('@/lib/resume/parser'),extractTextFromFile:h.extract,parseResumeText:h.parse}));
@@ -16,7 +17,7 @@ import ResumePage from '@/app/resume/page';
 import Upload from '../ResumeUploadAndConfirm';
 import Manual from '@/app/resume/manual/page';
 const empty={name:'',email:'',phone:'',headline:'',skills:[],experience:[],education:[],certifications:[],updatedAt:'2026-11-25'};
-beforeEach(()=>{h.profile=null;h.pro=true;h.push.mockReset();h.replace.mockReset();h.extract.mockReset();h.parse.mockReset();h.save.mockReset();HTMLElement.prototype.scrollIntoView=vi.fn();});
+beforeEach(()=>{h.profile=null;h.pro=true;h.user={id:'u'};h.push.mockReset();h.replace.mockReset();h.extract.mockReset();h.parse.mockReset();h.save.mockReset();HTMLElement.prototype.scrollIntoView=vi.fn();});
 afterEach(cleanup);
 describe('direct resume flow',()=>{
  it('offers exactly upload and manual; first upload click opens native input without a dialog',async()=>{render(<ResumePage/>);const btn=await screen.findByRole('button',{name:'Upload resume'});const input=screen.getByLabelText('Choose resume file') as HTMLInputElement;const click=vi.spyOn(input,'click');fireEvent.click(btn);expect(click).toHaveBeenCalledTimes(1);expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByText(/Sample Resume/)).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Fill manually'}));expect(h.push).toHaveBeenCalledWith('/resume/manual');});
@@ -24,7 +25,10 @@ describe('direct resume flow',()=>{
  it('validates selected files before parsing or saving',async()=>{render(<Upload selectedFile={new File(['x'],'bad.exe',{type:'application/octet-stream'})} reviewOnly isPro/>);expect(await screen.findByRole('alert')).toBeTruthy();expect(h.extract).not.toHaveBeenCalled();expect(h.save).not.toHaveBeenCalled();});
  it('parses once then shows confirmation inline, never saves automatically',async()=>{h.extract.mockResolvedValue('Resume text with enough content for a real extraction to proceed successfully');h.parse.mockReturnValue({profile:{...empty,name:'Real Test'}});render(<Upload selectedFile={new File(['resume'],'resume.txt',{type:'text/plain'})} reviewOnly isPro/>);expect(await screen.findByText('Review resume details')).toBeTruthy();expect(h.extract).toHaveBeenCalledTimes(1);expect(h.save).not.toHaveBeenCalled();expect(screen.queryByText('Upload Your Resume')).toBeNull();});
  it('manual page opens all detail sections without sample or upload screen; added fields start blank',async()=>{render(<Manual/>);await screen.findByRole('button',{name:'Confirm & save'});expect(screen.getAllByRole('heading',{name:'Resume details'})).toHaveLength(1);expect(screen.queryByText('Review resume details')).toBeNull();expect(screen.queryByText('Upload Your Resume')).toBeNull();fireEvent.click(screen.getByRole('button',{name:/Add Position/}));expect(screen.getByPlaceholderText('Company Name').getAttribute('value')).toBe('');expect(screen.queryByDisplayValue('Software Engineer')).toBeNull();expect(h.save).not.toHaveBeenCalled();});
- it('manual access stays gated for non-Pro users',async()=>{h.pro=false;render(<Manual/>);expect(await screen.findByText('Upgrade to add your resume.')).toBeTruthy();expect(screen.queryByText('Review resume details')).toBeNull();});
+ it('Free signed-in user gets the Resume page upload and manual entry, no upgrade wall',async()=>{h.pro=false;render(<ResumePage/>);expect(await screen.findByRole('button',{name:'Upload resume'})).toBeTruthy();expect(screen.queryByText(/Upgrade to Pro/)).toBeNull();expect(h.replace).not.toHaveBeenCalled();});
+ it('Free signed-in user gets manual resume entry, no upgrade wall',async()=>{h.pro=false;render(<Manual/>);await waitFor(()=>expect(screen.queryByText('Checking access...')).toBeNull());expect(screen.queryByText('Upgrade to add your resume.')).toBeNull();expect(h.replace).not.toHaveBeenCalled();});
+ it('signed-out visitors are sent to login from both pages',async()=>{h.user=null;render(<ResumePage/>);await waitFor(()=>expect(h.replace).toHaveBeenCalledWith('/login?returnTo=/resume'));cleanup();h.replace.mockReset();render(<Manual/>);await waitFor(()=>expect(h.replace).toHaveBeenCalledWith('/login?returnTo=/resume/manual'));});
+ it('the Free path never passes Pro to the upload flow (AI extras stay Pro)',()=>{const m=readFileSync('src/app/resume/manual/page.tsx','utf8');expect(m).toContain('isPro={access.isPro}');expect(m).not.toMatch(/ResumeUploadAndConfirm manualEntry isPro /);});
  it('requires explicit confirmation to save a parsed profile',async()=>{h.extract.mockResolvedValue('Resume with enough characters to pass the existing minimum extraction length');h.parse.mockReturnValue({profile:{...empty,name:'Verified Test'}});render(<Upload selectedFile={new File(['resume'],'resume.txt',{type:'text/plain'})} reviewOnly isPro/>);await screen.findByText('Review resume details');expect(h.save).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Confirm & save'}));await waitFor(()=>expect(h.save).toHaveBeenCalledTimes(1));expect(h.save.mock.calls[0][0].name).toBe('Verified Test');expect(h.save.mock.calls[0][0].confirmedAt).toBeTruthy();});
  it('parse failure does not present an old confirmed profile as new extracted facts',async()=>{h.profile={...empty,name:'Old profile',confirmedAt:'2026-11-24'};h.extract.mockRejectedValue(new Error('Unreadable file'));render(<Upload selectedFile={new File(['x'],'resume.txt',{type:'text/plain'})} reviewOnly isPro/>);expect(await screen.findByRole('alert')).toHaveProperty('textContent','Unreadable file');expect(screen.queryByText('Review resume details')).toBeNull();expect(h.save).not.toHaveBeenCalled();});
 
