@@ -901,7 +901,69 @@ export function computeRecommendedRankingScore(
   preferences?: RecommendedRankingPreferences | null,
   now: number = Date.now()
 ): number {
-  let fitScore = 50;
+  const f = computeRankingFactors(job, candidate, preferences, now);
+  const weighted =
+    clamp0to100(f.fitScore.value) * RECOMMENDED_RANKING_WEIGHTS.fitScore +
+    f.locationRemoteFit.value * RECOMMENDED_RANKING_WEIGHTS.locationRemoteFit +
+    f.recency.value * RECOMMENDED_RANKING_WEIGHTS.recency +
+    f.salaryListed.value * RECOMMENDED_RANKING_WEIGHTS.salaryListed;
+
+  return Math.round(clamp0to100(weighted));
+}
+
+/**
+ * How one ranking factor got its value. Only "used-real-data" counts as coverage.
+ * - used-real-data: the value rests on observed, usable inputs (a mismatch between two valid countries included).
+ * - used-neutral-fallback: the neutral 50, because the input is absent (no resume, no date, no stated preference).
+ * - used-unusable-input: the value came from a branch whose inputs are missing or invalid (e.g. the location 30
+ *   for a job with no or unrecognised country). It still counts in the score; it is not observed job data.
+ * - binary-absent: salary's real 0.
+ */
+export type RankingFactorStatus = "used-real-data" | "used-neutral-fallback" | "used-unusable-input" | "binary-absent";
+
+const REGION_NAMES = new Intl.DisplayNames(["en"], { type: "region" });
+/** A two-letter code the platform's region list recognises (Intl echoes unknown codes back). */
+function isKnownCountryCode(code: string): boolean {
+  if (!/^[A-Z]{2}$/.test(code)) return false;
+  const name = REGION_NAMES.of(code);
+  return Boolean(name) && name !== code && name !== "Unknown Region";
+}
+
+/** Report-only: follows computeLocationRemoteFit's branches and says whether the inputs behind the value are usable. */
+function locationEvidenceStatus(
+  job: RecommendedRankingJobInput,
+  preferences: RecommendedRankingPreferences | null | undefined
+): RankingFactorStatus {
+  if (isWorldwideRemoteEligible(job)) return "used-real-data";
+  const preferredCountry = (preferences?.preferredCountryCode || "").toUpperCase();
+  const jobCountry = (job.country || "").toUpperCase();
+  if (preferredCountry && jobCountry && preferredCountry === jobCountry) {
+    return isKnownCountryCode(jobCountry) ? "used-real-data" : "used-unusable-input";
+  }
+  const wantsRemote = preferences?.remotePreference === "remote" || preferences?.remotePreference === "any";
+  if (wantsRemote && job.remote) return "used-real-data";
+  if (!preferredCountry) return "used-neutral-fallback";
+  // The 30 branch: a real signal only when both sides are valid, known countries.
+  // Both sides are validated the same way, as-is: computeLocationRemoteFit never trims, so a padded code
+  // (" US") is not a code to the score either. Reporting only; the 30 above is unchanged.
+  return isKnownCountryCode(preferredCountry) && isKnownCountryCode(jobCountry) ? "used-real-data" : "used-unusable-input";
+}
+
+export interface RankingFactorReport {
+  value: number;
+  status: RankingFactorStatus;
+}
+
+type RankingFactorName = keyof typeof RECOMMENDED_RANKING_WEIGHTS;
+
+/** Single source of every factor value, shared by the score and the coverage report so they cannot drift. */
+function computeRankingFactors(
+  job: RecommendedRankingJobInput,
+  candidate: CandidateProfile | null,
+  preferences: RecommendedRankingPreferences | null | undefined,
+  now: number
+): Record<RankingFactorName, RankingFactorReport> {
+  let fitScore: RankingFactorReport = { value: 50, status: "used-neutral-fallback" };
   if (candidate && candidate.confirmedAt) {
     try {
       const diagnostics = computeFitDiagnostics(candidate, {
@@ -915,24 +977,79 @@ export function computeRecommendedRankingScore(
         salary_text: job.salary || undefined,
       });
       if (typeof diagnostics?.score === "number" && !Number.isNaN(diagnostics.score)) {
-        fitScore = diagnostics.score;
+        fitScore = { value: diagnostics.score, status: "used-real-data" };
       }
     } catch {
       // Keep the neutral fallback; ranking must never throw.
     }
   }
 
-  const locationRemoteFit = computeLocationRemoteFit(job, preferences);
-  const recency = computeRecencyScore(job.postedAt, now);
-  const salaryListed = job.salary && job.salary.trim() ? 100 : 0;
+  const location = computeLocationRemoteFit(job, preferences);
+  const postedMs = job.postedAt ? new Date(job.postedAt).getTime() : NaN;
+  const salaryPresent = Boolean(job.salary && job.salary.trim());
 
-  const weighted =
-    clamp0to100(fitScore) * RECOMMENDED_RANKING_WEIGHTS.fitScore +
-    locationRemoteFit * RECOMMENDED_RANKING_WEIGHTS.locationRemoteFit +
-    recency * RECOMMENDED_RANKING_WEIGHTS.recency +
-    salaryListed * RECOMMENDED_RANKING_WEIGHTS.salaryListed;
+  return {
+    fitScore,
+    // Status comes from the evidence behind the value, never from the value itself (a 30 can be a missing-input default).
+    locationRemoteFit: { value: location, status: locationEvidenceStatus(job, preferences) },
+    recency: {
+      value: computeRecencyScore(job.postedAt, now),
+      status: Number.isFinite(postedMs) ? "used-real-data" : "used-neutral-fallback",
+    },
+    // Binary feature: absence is a real 0, never a neutral fallback.
+    salaryListed: salaryPresent ? { value: 100, status: "used-real-data" } : { value: 0, status: "binary-absent" },
+  };
+}
 
-  return Math.round(clamp0to100(weighted));
+/**
+ * Bands for inputConfidence, as minimum coverageRatio. They describe DATA COMPLETENESS only,
+ * not a calibrated probability of a good recommendation. Thresholds sit on reachable weight sums:
+ * medium = at least the resume-fit weight (0.45); high = fit + location + salary (0.8).
+ */
+export const RANKING_INPUT_CONFIDENCE_BANDS = {
+  high: 0.8,
+  medium: 0.45,
+  low: 0,
+} as const;
+
+export type RankingInputConfidence = keyof typeof RANKING_INPUT_CONFIDENCE_BANDS;
+
+export interface RankingInputCoverageReport {
+  factors: Record<RankingFactorName, RankingFactorReport>;
+  /** Weight share of factors that used real data (salary counted by its 0/100 state), 0-1, 4 dp. */
+  coverageRatio: number;
+  inputConfidence: RankingInputConfidence;
+}
+
+/**
+ * Opt-in INPUT COVERAGE report for computeRecommendedRankingScore (same inputs, same factor values).
+ * It measures only how much of the formula had real data. It says nothing about recommendation
+ * accuracy; accuracy is only measurable through the judged evaluation harness (docs/ranking-eval.md).
+ * Not wired into any payload, feed, cache or UI.
+ */
+export function computeRankingInputCoverage(
+  job: RecommendedRankingJobInput,
+  candidate: CandidateProfile | null,
+  preferences?: RecommendedRankingPreferences | null,
+  now: number = Date.now()
+): RankingInputCoverageReport {
+  const factors = computeRankingFactors(job, candidate, preferences, now);
+  let covered = 0;
+  let total = 0;
+  for (const name of Object.keys(RECOMMENDED_RANKING_WEIGHTS) as RankingFactorName[]) {
+    const weight = RECOMMENDED_RANKING_WEIGHTS[name];
+    total += weight;
+    if (factors[name].status === "used-real-data") covered += weight;
+  }
+  // Rounded so reachable weight sums (e.g. 0.45 + 0.2 + 0.15) land exactly on band thresholds.
+  const coverageRatio = Math.round((covered / total) * 10000) / 10000;
+  const inputConfidence: RankingInputConfidence =
+    coverageRatio >= RANKING_INPUT_CONFIDENCE_BANDS.high
+      ? "high"
+      : coverageRatio >= RANKING_INPUT_CONFIDENCE_BANDS.medium
+        ? "medium"
+        : "low";
+  return { factors, coverageRatio, inputConfidence };
 }
 
 /** The explicit sort controls ranking, including on the For You tab. */
