@@ -14,7 +14,7 @@ describe("mobile detail density", () => {
       expect(facts).toContain(fact);
     }
     expect(detail).toContain("const detailWorkModel = workModelDetailLabel(job)");
-    expect(detail).toContain("!isUnlocked || !isDuplicateWorkModelLocation(job.location, detailWorkModel)");
+    expect(detail).toContain("!canSeeLocation || !isDuplicateWorkModelLocation(job.location, detailWorkModel)");
     // salary is never masked on mobile: free viewers see it, "Not disclosed" when empty
     expect(facts).not.toContain("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
     expect(detail).toContain('data-testid="mobile-job-salary"');
