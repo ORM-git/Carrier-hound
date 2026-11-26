@@ -3,7 +3,7 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LiveLandingTicker, { safeTickerLogo, TICKER_REFRESH_MS } from "../LiveLandingTicker";
-const rows = (company: string) => Array.from({ length: 5 }, (_, i) => ({ company: `${company} ${i}`, title: `Role ${i}`, posted_at: "2026-11-24T08:00:00Z", logo_url: i === 0 ? "https://fixture.supabase.co/storage/v1/object/public/company-logos/logo.png" : null }));
+const rows = (company: string) => Array.from({ length: 5 }, (_, i) => ({ company: `${company} ${i}`, title: `Role ${i}`, posted_at: "2020-11-24T08:00:00Z", added_at: "2026-11-24T08:00:00Z", logo_url: i === 0 ? "https://fixture.supabase.co/storage/v1/object/public/company-logos/logo.png" : null }));
 const flush = async () => { await act(async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); }); };
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-24T10:00:00Z")); Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" }); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -11,7 +11,7 @@ describe("live landing ticker", () => {
   it("fetches validated current rows, preserves strip classes and hides duplicate links from tab order", async () => {
     const fetcher = vi.fn(async (...args: [string, unknown?]) => { void args; return { ok: true, json: async () => rows("Today") }; }); vi.stubGlobal("fetch", fetcher);
     const { container } = render(<LiveLandingTicker />); await flush();
-    expect(fetcher.mock.calls[0][0]).toBe("/api/ticker");
+    expect(fetcher.mock.calls[0][0]).toBe("/api/ticker?mode=imported");
     expect(container.querySelectorAll(".ls-set")).toHaveLength(2);
     expect(container.querySelectorAll('.ls-set[aria-hidden="true"] a[tabindex="-1"]')).toHaveLength(5);
     expect(container.textContent).toContain("Today 0"); expect(container.textContent).not.toContain("Lumen Labs");
@@ -53,7 +53,19 @@ describe("live landing ticker", () => {
   it("hides malformed/future/short responses and aborts pending reads on unmount", async () => {
     let signal: AbortSignal | undefined; vi.stubGlobal("fetch", vi.fn((_url, opts) => { signal = opts.signal; return new Promise(() => {}); }));
     const view = render(<LiveLandingTicker />); expect(view.container.textContent).toBe(""); view.unmount(); expect(signal?.aborted).toBe(true);
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => rows("Bad").map(r => ({ ...r, posted_at: "2999-01-01" })) })));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => rows("Bad").map(r => ({ ...r, added_at: "2999-01-01" })) })));
     const second = render(<LiveLandingTicker />); await flush(); expect(second.container.textContent).toBe("");
   });
+  it("shows added age, accepts null employer dates and never falls back to posting age", async () => {
+    const source = rows("Imported").map(r=>({...r,posted_at:null}));
+    vi.stubGlobal("fetch", vi.fn(async()=>({ok:true,json:async()=>source})));
+    const first=render(<LiveLandingTicker/>); await flush();
+    expect(first.container.textContent).toContain("Added 2 hours ago");
+    first.unmount();
+    for(const bad of [undefined,null,"bad","2999-01-01"]) {
+      vi.stubGlobal("fetch",vi.fn(async()=>({ok:true,json:async()=>source.map(r=>({...r,added_at:bad}))})));
+      const view=render(<LiveLandingTicker/>); await flush(); expect(view.container.textContent).toBe(""); view.unmount();
+    }
+  });
+
 });
