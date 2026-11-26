@@ -322,3 +322,16 @@
 @media (prefers-reduced-motion: reduce) {
   .cm-top .landing-actual-preview svg * { transition:none !important; animation:none !important; }
 }
+
+/* Compact phone fold: size the hero to its content instead of filling 100vh, and tighten
+   the rhythm so the first screen reaches the stats row. Phones only; desktop unchanged. */
+@media (max-width: 640px) {
+  .cm-top .fold { min-height: 0; }
+  .cm-top .hero { flex: none; }
+  .cm-top .nav { height: 48px; }
+  .cm-top .hero-inner { flex: none; justify-content: flex-start; padding: 16px 0 20px; }
+  .cm-top .kicker { margin-top: 8px; }
+  .cm-top h1 { margin-top: 6px; }
+  .cm-top .subhead { margin-top: 10px; }
+  .cm-top .cta { margin-top: -40px; padding: 0 16px 8px; }
+}
