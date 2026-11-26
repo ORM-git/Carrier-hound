@@ -944,7 +944,9 @@ function locationEvidenceStatus(
   if (wantsRemote && job.remote) return "used-real-data";
   if (!preferredCountry) return "used-neutral-fallback";
   // The 30 branch: a real signal only when both sides are valid, known countries.
-  return isKnownCountryCode(preferredCountry) && isKnownCountryCode(jobCountry.trim()) ? "used-real-data" : "used-unusable-input";
+  // Both sides are validated the same way, as-is: computeLocationRemoteFit never trims, so a padded code
+  // (" US") is not a code to the score either. Reporting only; the 30 above is unchanged.
+  return isKnownCountryCode(preferredCountry) && isKnownCountryCode(jobCountry) ? "used-real-data" : "used-unusable-input";
 }
 
 export interface RankingFactorReport {
