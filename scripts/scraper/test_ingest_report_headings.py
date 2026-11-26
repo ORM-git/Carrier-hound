@@ -87,6 +87,31 @@ class FailureHeadingTests(unittest.TestCase):
         text = render(NOOP, "0")
         self.assertIn("Not a successful run.", text)
 
+    def test_noop_deferred_with_exit_zero_is_not_ok_in_summary_heading_annotation_and_aggregate(self):
+        summary = ingest_report.cohort_summary(NOOP, "0", "workday")
+        self.assertEqual(summary["status"], "deferred_noop")
+        self.assertEqual(summary["exit_code"], "0")
+        text = ingest_report.render_cohort(summary)
+        self.assertIn("DEFERRED_NOOP (exit 0)", text)
+        self.assertNotIn(": OK (", text)
+        self.assertTrue(any("Ingestion no-op [workday]" in a for a in ingest_report.annotations(summary)))
+        overall, table = ingest_report.aggregate([summary], ["workday"])
+        self.assertNotEqual(overall, "ok")
+        self.assertIn("| workday | deferred_noop |", table)
+        overall, _ = ingest_report.aggregate(
+            [summary, ingest_report.cohort_summary(None, "0", "non-workday")], ["workday", "non-workday"])
+        self.assertEqual(overall, "failed")
+
+    def test_exit_codes_and_clean_success_keep_their_status(self):
+        clean = workday_report("", failed=[], persisted={"inserted": 12, "updated": 28, "unchanged": 0})
+        clean["guard_block_reason"] = None
+        self.assertEqual(ingest_report.cohort_summary(clean, "0", "workday")["status"], "ok")
+        self.assertEqual(ingest_report.cohort_summary(NOOP, "3", "workday")["status"], "deferred_noop")
+        self.assertEqual(ingest_report.cohort_summary(ISOLATED, "1", "workday")["status"], "failed")
+        self.assertEqual(ingest_report.cohort_summary(NOOP, "1", "workday")["status"], "failed")
+        self.assertEqual(ingest_report.cohort_summary(None, "0", "workday")["status"], "no_report")
+        self.assertEqual(ingest_report.cohort_summary(None, "", "workday")["status"], "no_report")
+
     def test_clean_run_has_no_failure_or_noop_heading(self):
         clean = workday_report("", failed=[], persisted={"inserted": 5, "updated": 1, "unchanged": 0})
         clean["guard_block_reason"] = None
