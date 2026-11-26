@@ -1721,6 +1721,37 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     }
   });
 
+  it("membership walks: pageSize 25 and 100 return exactly the same complete IDs, order and uniqueness (315 inside the reuse window, 316 after)", async () => {
+    const base = ids(await walk(GUEST, undefined, 100)); // untouched snapshot, before any mutation
+    expect(base).toHaveLength(317);
+    const [del, deact] = [base[25], base[26]]; // the same positions the insert/delete test removes
+    state.tables.jobs = state.tables.jobs.filter((r: any) => r.id !== del);
+    state.tables.jobs.find((r: any) => r.id === deact).is_active = false;
+    const fresh = row(777, "Senior Frontend Developer", 0, { first_seen_at: new Date(Date.now() + 1000).toISOString() });
+    state.tables.jobs.push(fresh);
+    const both = async (n: number, hasFresh: boolean) => {
+      const w25 = ids(await walk(GUEST)); // default page size 25
+      const w100 = ids(await walk(GUEST, undefined, 100));
+      expect(w100).toEqual(w25); // complete list, same order
+      expect(w25).toHaveLength(n);
+      expect(new Set(w25).size).toBe(n);
+      expect(new Set(w100).size).toBe(n);
+      expect(w25.includes(fresh.id)).toBe(hasFresh);
+      expect(w25).not.toContain(del);
+      expect(w25).not.toContain(deact);
+      return w25;
+    };
+    // Inside the reuse window: same frozen epoch, removed rows dropped at serve time, the insert not yet frozen.
+    expect(await both(315, false)).toEqual(base.filter((id) => id !== del && id !== deact));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + (FROZEN_REUSE_SECONDS + 1) * 1000));
+      await both(316, true); // new epoch: the ingested job is in, nothing removed comes back
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("invalidation: filter, viewer, session-epoch and tier changes reset the continuation (409)", async () => {
     const tok = "tok-free-with-answers";
     const p1 = (await call(`${BASE}/snapshot?pageSize=10`, tok)).body;
