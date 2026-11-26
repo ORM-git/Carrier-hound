@@ -146,3 +146,79 @@ describe("computeRankingInputCoverage", () => {
     }
   });
 });
+
+describe("location evidence vs location value (repair)", () => {
+  const loc = (j: RecommendedRankingJobInput, p: RecommendedRankingPreferences | null) => computeRankingInputCoverage(j, null, p, NOW).factors.locationRemoteFit;
+  const bare = (overrides: Partial<RecommendedRankingJobInput> = {}): RecommendedRankingJobInput => ({ id: "j-bare", title: "Backend Engineer", ...overrides });
+
+  it("regression: a job with only id/title and preferred IN is not real location coverage", () => {
+    const r = computeRankingInputCoverage(bare(), null, { preferredCountryCode: "IN" }, NOW);
+    expect(r.factors.locationRemoteFit).toEqual({ value: 30, status: "used-unusable-input" });
+    expect(r.coverageRatio).toBe(0);
+    expect(r.inputConfidence).toBe("low");
+  });
+
+  it("regression: invalid job country text is not real location coverage", () => {
+    for (const country of ["India", "XX", "zz", "", "   ", "IND"]) {
+      expect(loc(bare({ country }), { preferredCountryCode: "IN" }), JSON.stringify(country)).toEqual({ value: 30, status: "used-unusable-input" });
+    }
+  });
+
+  it("an invalid preferred country cannot turn a mismatch into real data", () => {
+    expect(loc(bare({ country: "US" }), { preferredCountryCode: "India" })).toEqual({ value: 30, status: "used-unusable-input" });
+    expect(loc(bare({ country: "XX" }), { preferredCountryCode: "XX" })).toEqual({ value: 100, status: "used-unusable-input" });
+  });
+
+  it("a valid match and a valid known-country mismatch both count as real data", () => {
+    expect(loc(bare({ country: "IN" }), { preferredCountryCode: "IN" })).toEqual({ value: 100, status: "used-real-data" });
+    expect(loc(bare({ country: "in" }), { preferredCountryCode: "IN" })).toEqual({ value: 100, status: "used-real-data" });
+    expect(loc(bare({ country: "US" }), { preferredCountryCode: "IN" })).toEqual({ value: 30, status: "used-real-data" });
+  });
+
+  it("no stated preference stays the neutral 50 fallback", () => {
+    expect(loc(bare(), null)).toEqual({ value: 50, status: "used-neutral-fallback" });
+    expect(loc(bare({ country: "US" }), { remotePreference: "onsite" })).toEqual({ value: 50, status: "used-neutral-fallback" });
+  });
+
+  it("partial remote fields: only observed remote data counts", () => {
+    // remote flag alone, no scope/eligibility: treated as worldwide by the value, and the flag is observed
+    expect(loc(bare({ remote: true }), { preferredCountryCode: "IN" })).toEqual({ value: 100, status: "used-real-data" });
+    // explicit worldwide eligibility without a remote flag is observed too
+    expect(loc(bare({ remoteEligibility: "worldwide" }), { preferredCountryCode: "IN" })).toEqual({ value: 100, status: "used-real-data" });
+    // remote but country-restricted with no country: a candidate who wants remote gets the observed 70
+    const restricted = bare({ remote: true, remoteScope: "remote", remoteEligibility: "country_restricted" });
+    expect(loc(restricted, { preferredCountryCode: "IN", remotePreference: "remote" })).toEqual({ value: 70, status: "used-real-data" });
+    // ... but for an onsite candidate the 30 comes from the missing country, not from observed data
+    expect(loc(restricted, { preferredCountryCode: "IN", remotePreference: "onsite" })).toEqual({ value: 30, status: "used-unusable-input" });
+    // a remote scope without the remote flag, and no country: nothing usable about location
+    expect(loc(bare({ remoteScope: "remote" }), { preferredCountryCode: "IN", remotePreference: "remote" })).toEqual({ value: 30, status: "used-unusable-input" });
+  });
+
+  describe("coverage-band boundaries with unusable location", () => {
+    const cases: Array<[string, RecommendedRankingJobInput, number, string]> = [
+      ["valid mismatch keeps exactly high", job({ postedAt: null, country: "US" }), RANKING_INPUT_CONFIDENCE_BANDS.high, "high"],
+      ["missing job country drops to medium", job({ postedAt: null, country: null }), 0.6, "medium"],
+      ["invalid job country drops to medium", job({ postedAt: null, country: "India" }), 0.6, "medium"],
+      ["missing country and no salary is exactly medium", job({ postedAt: null, country: undefined, salary: null }), RANKING_INPUT_CONFIDENCE_BANDS.medium, "medium"],
+    ];
+    for (const [label, j, ratio, band] of cases) {
+      it(label, () => {
+        const r = computeRankingInputCoverage(j, candidate, prefs, NOW);
+        expect(r.coverageRatio).toBe(ratio);
+        expect(r.inputConfidence).toBe(band);
+      });
+    }
+    it("unusable location without a resume is just below medium", () => {
+      const r = computeRankingInputCoverage(job({ country: null, salary: null }), null, prefs, NOW); // recency 0.2 only
+      expect([r.coverageRatio, r.inputConfidence]).toEqual([0.2, "low"]);
+    });
+  });
+
+  it("the numeric score is unchanged: the 30 still counts in the score, only the report status changes", () => {
+    const j = bare();
+    const r = computeRankingInputCoverage(j, null, { preferredCountryCode: "IN" }, NOW);
+    // fit 50*0.45 + location 30*0.2 + recency 50*0.2 + salary 0 = 22.5 + 6 + 10 = 38.5 -> 39
+    expect(computeRecommendedRankingScore(j, null, { preferredCountryCode: "IN" }, NOW)).toBe(39);
+    expect(r.factors.locationRemoteFit.value).toBe(30);
+  });
+});

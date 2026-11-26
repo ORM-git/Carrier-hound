@@ -911,8 +911,41 @@ export function computeRecommendedRankingScore(
   return Math.round(clamp0to100(weighted));
 }
 
-/** How one ranking factor got its value: real input, the neutral 50 fallback, or salary's binary 0. */
-export type RankingFactorStatus = "used-real-data" | "used-neutral-fallback" | "binary-absent";
+/**
+ * How one ranking factor got its value. Only "used-real-data" counts as coverage.
+ * - used-real-data: the value rests on observed, usable inputs (a mismatch between two valid countries included).
+ * - used-neutral-fallback: the neutral 50, because the input is absent (no resume, no date, no stated preference).
+ * - used-unusable-input: the value came from a branch whose inputs are missing or invalid (e.g. the location 30
+ *   for a job with no or unrecognised country). It still counts in the score; it is not observed job data.
+ * - binary-absent: salary's real 0.
+ */
+export type RankingFactorStatus = "used-real-data" | "used-neutral-fallback" | "used-unusable-input" | "binary-absent";
+
+const REGION_NAMES = new Intl.DisplayNames(["en"], { type: "region" });
+/** A two-letter code the platform's region list recognises (Intl echoes unknown codes back). */
+function isKnownCountryCode(code: string): boolean {
+  if (!/^[A-Z]{2}$/.test(code)) return false;
+  const name = REGION_NAMES.of(code);
+  return Boolean(name) && name !== code && name !== "Unknown Region";
+}
+
+/** Report-only: follows computeLocationRemoteFit's branches and says whether the inputs behind the value are usable. */
+function locationEvidenceStatus(
+  job: RecommendedRankingJobInput,
+  preferences: RecommendedRankingPreferences | null | undefined
+): RankingFactorStatus {
+  if (isWorldwideRemoteEligible(job)) return "used-real-data";
+  const preferredCountry = (preferences?.preferredCountryCode || "").toUpperCase();
+  const jobCountry = (job.country || "").toUpperCase();
+  if (preferredCountry && jobCountry && preferredCountry === jobCountry) {
+    return isKnownCountryCode(jobCountry) ? "used-real-data" : "used-unusable-input";
+  }
+  const wantsRemote = preferences?.remotePreference === "remote" || preferences?.remotePreference === "any";
+  if (wantsRemote && job.remote) return "used-real-data";
+  if (!preferredCountry) return "used-neutral-fallback";
+  // The 30 branch: a real signal only when both sides are valid, known countries.
+  return isKnownCountryCode(preferredCountry) && isKnownCountryCode(jobCountry.trim()) ? "used-real-data" : "used-unusable-input";
+}
 
 export interface RankingFactorReport {
   value: number;
@@ -955,8 +988,8 @@ function computeRankingFactors(
 
   return {
     fitScore,
-    // Only the no-stated-preference branch of computeLocationRemoteFit returns 50 (others: 100/70/30).
-    locationRemoteFit: { value: location, status: location === 50 ? "used-neutral-fallback" : "used-real-data" },
+    // Status comes from the evidence behind the value, never from the value itself (a 30 can be a missing-input default).
+    locationRemoteFit: { value: location, status: locationEvidenceStatus(job, preferences) },
     recency: {
       value: computeRecencyScore(job.postedAt, now),
       status: Number.isFinite(postedMs) ? "used-real-data" : "used-neutral-fallback",
