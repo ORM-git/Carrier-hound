@@ -449,6 +449,7 @@ export default function JobDetailView({
                 <CompanyLogo
                   company={job.company}
                   locked={!isUnlocked}
+                  maskSeed={job.id}
                   applyUrl={job.applyUrl}
                   logoUrl={job.logoUrl}
                   companyLogoUrl={job.companyLogoUrl}
@@ -672,6 +673,7 @@ export default function JobDetailView({
           <CompanyLogo
             company={job.company}
             locked={!isUnlocked}
+            maskSeed={job.id}
             applyUrl={job.applyUrl}
             logoUrl={job.logoUrl}
             companyLogoUrl={job.companyLogoUrl}
@@ -739,6 +741,7 @@ export default function JobDetailView({
               <CompanyLogo
                 company={job.company}
                 locked={!isUnlocked}
+                maskSeed={job.id}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
                 companyLogoUrl={job.companyLogoUrl}
@@ -1161,6 +1164,7 @@ export default function JobDetailView({
               <CompanyLogo
                 company={job.company}
                 locked={!isUnlocked}
+                maskSeed={job.id}
                 applyUrl={job.applyUrl}
                 logoUrl={job.logoUrl}
                 companyLogoUrl={job.companyLogoUrl}
@@ -1248,6 +1252,7 @@ export default function JobDetailView({
                     <CompanyLogo
                       company={simJob.company}
                       locked={!isUnlocked}
+                      maskSeed={simJob.id}
                       applyUrl={simJob.applyUrl}
                       logoUrl={simJob.logoUrl}
                       domain={simJob.companyDomain}
