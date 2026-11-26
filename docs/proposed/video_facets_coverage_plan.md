@@ -17,6 +17,14 @@ working before that.
 | Radius | none (proposed `jobs.latitude/longitude`) | none | BLOCKED | Geocoding source for posting locations |
 | Seniority track | none (`jobs.seniority` is a level, not a track) | n/a | BLOCKED | A product definition of the track |
 
+## Status of the proposed columns
+
+`video_facets_columns.NOT_APPLIED.sql` is a **review draft, not apply-ready**. It still needs a named data source per
+column, a product decision on names, types and values, schema review, and a catalog check that no column already exists
+with another type. Only then can the owner apply it. `video_facets_coverage.READONLY.sql` is the part meant to be run
+now: it is read-only, every count uses the feed's scope (active, visible sources, no `jobspy`), and it stops with a
+named error if a column it reads is missing or has another type.
+
 ## Existing exclusion flags (no change)
 
 `excludeTitle`, `includeCompany` and `excludeCompany` are applied as hard filters by the server whenever they are

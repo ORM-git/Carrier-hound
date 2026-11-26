@@ -1,4 +1,6 @@
--- PROPOSED, NOT APPLIED. Owner-run only; nothing in the app or CI executes this file.
+-- PROPOSED, NOT APPLIED, and NOT APPLY-READY. A review draft only: nothing in the app or CI executes this file.
+-- Before it could be applied it still needs: a named data source per column, a product decision on names/types/values,
+-- schema review, the read-only catalog check that none of these names already exist with another type, and an owner run.
 -- Columns for the reference-video facets that have NO column anywhere in the repo schema. Adding a column populates
 -- nothing: every facet below stays BLOCKED until a named source fills it and video_facets_coverage.READONLY.sql shows
 -- the coverage the owner accepts. Names and types are a proposal for review; no source has been chosen.
