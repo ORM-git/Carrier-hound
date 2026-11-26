@@ -1164,19 +1164,19 @@ export {
 export type { CompanyCategory, RoleCategory } from '../../src/lib/jobs/highVolumeEnrichment';
 
 /**
- * Normalizes any date into a valid ISO string. Falls back to current time.
+ * Normalizes a supplied source date. Missing or invalid dates stay null, never ingestion time.
  */
-export function normalizeDate(input: string | number | Date | null | undefined): string {
-  if (!input) return new Date().toISOString();
+export function normalizeDate(input: string | number | Date | null | undefined): string | null {
+  if (input == null || (typeof input === 'string' && !input.trim())) return null;
   try {
     const parsed = new Date(input);
     if (!isNaN(parsed.getTime())) {
       return parsed.toISOString();
     }
   } catch {
-    // fallback
+    // Invalid source dates are unknown, not the time this adapter ran.
   }
-  return new Date().toISOString();
+  return null;
 }
 
 /**
