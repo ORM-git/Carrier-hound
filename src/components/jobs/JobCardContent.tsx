@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId } from "react";
+import React from "react";
 import Link from "next/link";
 import { ArrowRight, Briefcase, Clock, DollarSign, EyeOff, Heart, Laptop, Lock, MapPin, Sparkles, TrendingUp } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
@@ -16,6 +16,8 @@ export interface JobCardContentProps {
   job: LiveJob;
   index: number;
   isPro: boolean;
+  /** Signed-in users (Free or Pro) see the job location; guests keep the lock. Defaults to isPro. */
+  locationVisible?: boolean;
   isSaved: boolean;
   matchScore: number | null;
   cardZeroSkills: boolean;
@@ -34,10 +36,24 @@ export interface JobCardContentProps {
   handleLockedAction: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
+/**
+ * When CareerMonke first saw this job (its arrival), or null. Only firstSeenAt counts: never postedAt, date or
+ * created_at, which mix employer posting time with fallbacks. Unparseable or future (beyond 5 min clock skew) is null.
+ */
+export function cmArrivalAt(job: { firstSeenAt?: unknown } | null | undefined, now: number = Date.now()): string | null {
+  const raw = job?.firstSeenAt;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t) || t > now + 5 * 60_000) return null;
+  return new Date(t).toISOString();
+}
+
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
-export default function JobCardContent({ job, index, isPro, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription }: JobCardContentProps) {
+export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription }: JobCardContentProps) {
   const mode = workModelLabel(job);
-  const showLocation = !isPro || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
+  const canSeeLocation = locationVisible ?? isPro;
+  const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
+  const arrivalAt = cmArrivalAt(job);
   return <>
                             {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
                             <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[196px] w-full">
@@ -49,6 +65,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                   <CompanyLogo
                                     company={job.company}
                                     locked={!isPro}
+                                    maskSeed={job.id}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
@@ -72,7 +89,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                         {isRecent ? (
                                           <span
                                             data-testid="job-card-early-tag"
-                                            className="h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center"
+                                            className="h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#93C5FD] shadow-[0_0_0_1px_rgba(37,99,235,0.18),0_1px_9px_rgba(37,99,235,0.42)] inline-flex items-center"
                                           >
                                             Early applicant
                                           </span>
@@ -118,10 +135,10 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                   {/* Row 1, Col 1: Location */}
                                   {showLocation && <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate" title={isPro ? (locInfo.primary || "Location unlisted") : undefined}>
-                                      {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
+                                    <span className="truncate" title={canSeeLocation ? (locInfo.primary || "Location unlisted") : undefined}>
+                                      {canSeeLocation ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                                     </span>
-                                    {isPro && locInfo.extraCount > 0 && (
+                                    {canSeeLocation && locInfo.extraCount > 0 && (
                                       <span
                                         className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help leading-none"
                                         title={locInfo.all.join(", ")}
@@ -253,25 +270,14 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                               {matchScore !== null ? (
                                 <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
                                   <div className="flex flex-col items-center w-full pt-1">
-                                    {/* Mobile keeps the #726 capsule; md+ restores the circular ring. */}
-                                    <span className="md:hidden">
-                                      <CircularMatchRing
-                                        score={matchScore}
-                                        size={70}
-                                        strokeWidth={2.25}
-                                        light
-                                        isPro={isPro}
-                                      />
-                                    </span>
-                                    <span className="hidden md:block">
-                                      <CircularMatchRing
-                                        score={matchScore}
-                                        size={70}
-                                        strokeWidth={4.5}
-                                        shape="circle"
-                                        isPro={isPro}
-                                      />
-                                    </span>
+                                    {/* Same white capsule with a CM-blue perimeter on every breakpoint (reference). */}
+                                    <CircularMatchRing
+                                      score={matchScore}
+                                      size={70}
+                                      strokeWidth={3}
+                                      light
+                                      isPro={isPro}
+                                    />
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
                                       {scoreDescription ? "PREVIEW SCORE" : cardZeroSkills
                                         ? "EXPERIENCE MATCH"
@@ -325,6 +331,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                   <CompanyLogo
                                     company={job.company}
                                     locked={!isPro}
+                                    maskSeed={job.id}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
@@ -355,7 +362,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                       title={scoreDescription || `Fit Match: ${matchScore}%`}
                                       aria-label={scoreDescription || `Fit Match: ${matchScore}%`}
                                     >
-                                      <CircularMatchRing score={matchScore} size={56} strokeWidth={1.75} light />
+                                      <CircularMatchRing score={matchScore} size={56} strokeWidth={2.4} light />
                                     </div>
                                   ) : (
                                     <Link
@@ -383,8 +390,8 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                 {showLocation && <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <MapPin className="w-3 h-3 text-[#475569]" />
-                                  {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
-                                  {isPro && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
+                                  {canSeeLocation ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
+                                  {canSeeLocation && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
                                 </span>}
                                 {formattedJobType && (
                                   <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
@@ -404,7 +411,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                   </span>
                                 )}
                                 {isRecent && (
-                                  <span data-mobile-early="true" className="h-6 px-2.5 py-0.5 rounded-md text-[12px] font-semibold bg-[#EFF6FF] text-[#1E40AF] inline-flex items-center">
+                                  <span data-mobile-early="true" className="h-6 px-2.5 py-0.5 rounded-md text-[12px] font-semibold bg-[#EFF6FF] text-[#1E40AF] shadow-[0_0_0_1px_rgba(37,99,235,0.18),0_1px_9px_rgba(37,99,235,0.42)] inline-flex items-center">
                                     Early applicant
                                   </span>
                                 )}
@@ -425,10 +432,9 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
 
                               {/* Footer divider, posted time on left, existing actions on right with 44px targets */}
                               <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0] mt-1">
-                                <span className="text-xs text-[#475569] truncate">
-                                  {footerText || (job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added")}
-                                  {/* Source provenance, as in the desktop card panel */}
-                                  {!footerText && <span> · {job.directSource ? "Direct feed" : "Active feed"}</span>}
+                                {/* CM arrival age (first_seen_at) only: nothing when unknown, never the employer posting time */}
+                                <span data-testid="cm-arrival-age" className="text-xs text-[#475569] truncate">
+                                  {footerText || (arrivalAt ? formatRelativeTime(arrivalAt) : null)}
                                 </span>
 
                                 {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}
@@ -504,9 +510,10 @@ function CircularMatchRing({
   /** Desktop ring (pre-#726): full circle; the mobile reference stays a capsule. */
   shape?: "capsule" | "circle";
 }) {
-  const gradientId = `match-blue-${useId().replace(/:/g, "")}`;
   const displayScore = Math.min(100, Math.max(0, score));
   const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
+
+  const capsuleTextClass = size >= 65 ? "text-[21px] font-extrabold" : "text-[17px] font-extrabold";
 
   if (shape === "circle") {
     const radius = (size - strokeWidth) / 2;
@@ -549,13 +556,14 @@ function CircularMatchRing({
   }
 
   // Reference is a capsule: straight top/bottom, semicircular ends, not an ellipse.
+  // The arc starts where the bottom edge meets the right end, runs clockwise (left along the bottom, up the
+  // left end, right along the top) and the unfilled remainder is the pale track on the lower right.
   const height = Math.round(size * (58 / 104));
   const radius = (height - strokeWidth) / 2;
   const inset = strokeWidth / 2;
   const left = height / 2;
   const right = size - left;
-  // Start just before the top-left tangent, matching the reference arc origin.
-  const outline = `M ${left - radius * 0.3} ${inset + radius * (1 - Math.sqrt(0.91))} A ${radius} ${radius} 0 0 1 ${left} ${inset} H ${right} A ${radius} ${radius} 0 0 1 ${right} ${height - inset} H ${left} A ${radius} ${radius} 0 0 1 ${left - radius * 0.3} ${inset + radius * (1 - Math.sqrt(0.91))} Z`;
+  const outline = `M ${right} ${height - inset} H ${left} A ${radius} ${radius} 0 0 1 ${left} ${inset} H ${right} A ${radius} ${radius} 0 0 1 ${right} ${height - inset}`;
   const offset = 100 - displayScore;
 
   return (
@@ -564,22 +572,16 @@ function CircularMatchRing({
       style={{ width: size, height }}
     >
       <svg aria-hidden="true" className="w-full h-full" viewBox={`0 0 ${size} ${height}`}>
-        <defs>
-          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#EFF6FF" />
-            <stop offset="50%" stopColor="#60A5FA" />
-            <stop offset="100%" stopColor="#2563EB" />
-          </linearGradient>
-        </defs>
         <path
           d={outline}
-          stroke={light ? "#F4F4F5" : "#1E293B"}
+          stroke={light ? "#E2E8F0" : "#1E293B"}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
+        {displayScore > 0 && (
         <path
           d={outline}
-          stroke={`url(#${gradientId})`}
+          stroke={light ? "#2563EB" : "#2DD4BF"}
           strokeWidth={strokeWidth}
           pathLength={100}
           strokeDasharray={100}
@@ -588,10 +590,11 @@ function CircularMatchRing({
           fill="transparent"
           className="transition-all duration-300 ease-out"
         />
+        )}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`${textClass} ${light ? "text-[#0F172A]" : "text-white"} leading-none tracking-tight`}>
-          {displayScore}<span className="text-[0.6em] font-semibold ml-px">%</span>
+        <span className={`${capsuleTextClass} ${light ? "text-[#0B1220]" : "text-white"} leading-none tracking-tight`}>
+          {displayScore}<span className="text-[0.62em] font-bold ml-px">%</span>
         </span>
       </div>
     </div>

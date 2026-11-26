@@ -4,11 +4,21 @@ import { useSheetPresence } from "./hooks/useSheetPresence";
 import "./sheet-motion.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronDown, ChevronLeft, ChevronRight, Search, Check, Lock } from "lucide-react";
+import { X, ChevronDown, Plus, Search, Check, Lock } from "lucide-react";
 import type { UserPreferences } from "@/lib/auth/types";
 import { ONBOARDING_CATEGORIES, JOB_TYPE_OPTIONS, LOCATION_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 import { SUPPORTED_COUNTRIES, getCountryName } from "@/lib/countries";
-import { CANONICAL_EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS } from "@/lib/jobs/experienceLevels";
+import {
+  CANONICAL_EXPERIENCE_LEVELS,
+  EXPERIENCE_LEVEL_LABELS,
+  formatExperienceLevels,
+  isExperienceLevelFilterActive,
+  parseExperienceLevels,
+  type CanonicalExperienceLevel,
+} from "@/lib/jobs/experienceLevels";
+import { MAX_SKILLS, normalizeSkillList, skillKey } from "@/lib/jobs/skillKey";
+import YearsRangeControl, { describeRange } from "./YearsRangeControl";
+import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
 import { normalizeTextList, MAX_LIST_ITEMS, WORK_MODELS, savedFeedConstraintsEnforced, type DatePostedWindow, type WorkModel } from "@/lib/preferences/feedConstraints";
 import {
@@ -33,6 +43,10 @@ interface PreferencesSheetProps {
   /** Persists once; must reject on failure. */
   onSave: (next: UserPreferences) => Promise<void>;
   triggerRef?: React.RefObject<HTMLElement | null>;
+  /** What the server can apply now (GET /api/jobs/capabilities). Fetched when omitted; a failure means false. */
+  capabilities?: { excludedSkillsFilter?: boolean; preferredSkillsRanking?: boolean };
+  /** This account's plan, from the page's Pro check. "unknown" until that check is definitive. Preferred-skill ordering needs Pro. */
+  accountPlan?: "pro" | "free" | "unknown";
 }
 
 const WORK_MODEL_LABELS: Record<WorkModel, string> = { onsite: "Onsite", hybrid: "Hybrid", remote: "Remote" };
@@ -69,7 +83,7 @@ function formatMoney(amount: number, currency: string): string {
 
 function Pill({ children, onRemove, removeLabel }: { children: React.ReactNode; onRemove?: () => void; removeLabel?: string }) {
   return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-[12px] font-medium text-[#1E3A8A]">
+    <span className="inline-flex max-w-full items-center gap-1 rounded-lg border border-transparent bg-[#DBEAFE] px-2.5 py-1 text-[13px] font-medium text-[#0F172A]">
       <span className="truncate" title={typeof children === "string" ? children : undefined}>{children}</span>
       {onRemove && (
         <button
@@ -99,28 +113,61 @@ function SummaryLine({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-function FieldLabel({ id, children, help }: { id?: string; children: React.ReactNode; help?: string }) {
+function FieldLabel({ id, children, help, action }: { id?: string; children: React.ReactNode; help?: string; action?: React.ReactNode }) {
   return (
     <div className="mb-2">
-      <p id={id} className="text-[13px] font-bold text-[#0F172A]">{children}</p>
+      <div className="flex items-center justify-between">
+        <p id={id} className="text-[13px] font-bold text-[#0F172A]">{children}</p>
+        {action}
+      </div>
       {help && <p className="mt-0.5 text-[12px] leading-snug text-[#64748B]">{help}</p>}
     </div>
   );
 }
 
+function LabelClear({ show, label, onClear }: { show: boolean; label: string; onClear: () => void }) {
+  if (!show) return null;
+  return (
+    <button type="button" aria-label={`Clear ${label}`} onClick={onClear} className="ml-2 min-h-[44px] shrink-0 px-1 text-[12px] font-semibold text-[#2563EB]">
+      Clear
+    </button>
+  );
+}
+
+function FieldClear({ show, label, onClear }: { show: boolean; label: string; onClear: () => void }) {
+  if (!show) return <div className="clear-both" />;
+  return (
+    <>
+      <button type="button" aria-label={`Clear ${label}`} onClick={onClear} className="float-right -my-3 min-h-[44px] px-1 text-[12px] font-semibold text-[#2563EB]">
+        Clear
+      </button>
+      <div className="clear-both" />
+    </>
+  );
+}
+
+// Collapsed-card descriptors, one line with an ellipsis (reference wording).
+const GROUP_SUBTEXT: Record<string, string> = {
+  basic: "Job Function / Job Type / Work Model...",
+  compensation: "Annual Salary / H1B Sponsorship",
+  interests: "Industry / Skill / Role(IC/Manager)...",
+  company: "Company Search / Exclude Staffing Agency...",
+};
+const CHIP_STRIP_LIMIT = 6; // reference: first six selections, then "+N"
+
 function CheckOption({ checked, onChange, children, disabled }: { checked: boolean; onChange: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
     <label
       className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-xl border px-3 text-[13px] transition focus-within:ring-2 focus-within:ring-[#2563EB] ${
-        checked ? "border-[#2563EB] bg-[#EFF6FF] font-semibold text-[#1E3A8A]" : "border-[#E2E8F0] bg-white text-[#334155] hover:border-[#94A3B8]"
+        checked ? "border-transparent bg-[#F1F5F9] font-medium text-[#0F172A]" : "border-transparent bg-[#F1F5F9] text-[#334155] hover:bg-[#E8EDF5]"
       } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
     >
       <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} disabled={disabled} />
       <span
         aria-hidden="true"
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${checked ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#94A3B8] bg-white"}`}
+        className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border ${checked ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#CBD5E1] bg-white"}`}
       >
-        {checked && <Check className="h-3 w-3" />}
+        {checked && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
       </span>
       <span className="min-w-0 break-words">{children}</span>
     </label>
@@ -137,9 +184,21 @@ function TagInput({
   suggestions = [],
   disabled,
   disabledReason,
+  onClear,
+  clearLabel,
+  normalize = normalizeTextList,
+  keyOf = (v: string) => v.toLowerCase(),
+  maxItems = MAX_LIST_ITEMS,
 }: {
   label: string;
+  /** Cleans and de-duplicates the whole list. Default: the generic text list rule. */
+  normalize?: (values: string[]) => string[];
+  /** Identity of an entry for duplicate and suggestion checks. Must agree with `normalize`. */
+  keyOf?: (value: string) => string;
+  maxItems?: number;
   help?: string;
+  onClear?: () => void;
+  clearLabel?: string;
   values: string[];
   onChange: (next: string[]) => void;
   placeholder: string;
@@ -151,16 +210,19 @@ function TagInput({
   const inputId = useId();
   const listId = useId();
   const q = text.trim().toLowerCase();
-  const matches = q ? suggestions.filter((s) => s.toLowerCase().includes(q) && !values.some((v) => v.toLowerCase() === s.toLowerCase())).slice(0, 6) : [];
+  const matches = q ? suggestions.filter((s) => s.toLowerCase().includes(q) && !values.some((v) => keyOf(v) === keyOf(s))).slice(0, 6) : [];
   const add = (value: string) => {
-    const next = normalizeTextList([...values, value]);
+    const next = normalize([...values, value]);
     if (next.length !== values.length) onChange(next);
     setText("");
   };
-  const full = values.length >= MAX_LIST_ITEMS;
+  const full = values.length >= maxItems;
   return (
     <div>
-      <label htmlFor={inputId} className="block text-[13px] font-bold text-[#0F172A]">{label}</label>
+      <div className="flex items-center justify-between">
+        <label htmlFor={inputId} className="block text-[13px] font-bold text-[#0F172A]">{label}</label>
+        {onClear && <LabelClear show={values.length > 0 && !disabled} label={clearLabel || label} onClear={onClear} />}
+      </div>
       {help && <p className="mb-2 mt-0.5 text-[12px] leading-snug text-[#64748B]">{help}</p>}
       {disabled ? (
         <p className="rounded-xl bg-[#F8FAFC] px-3 py-2 text-[12px] text-[#64748B]">{disabledReason}</p>
@@ -177,10 +239,10 @@ function TagInput({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  if (text.trim()) add(matches[0] && matches[0].toLowerCase() === q ? matches[0] : text);
+                  if (text.trim()) add(matches[0] && keyOf(matches[0]) === keyOf(text) ? matches[0] : text);
                 }
               }}
-              placeholder={full ? `Limit of ${MAX_LIST_ITEMS} reached` : placeholder}
+              placeholder={full ? `Limit of ${maxItems} reached` : placeholder}
               aria-describedby={listId}
               className="h-11 w-full rounded-xl border border-[#CBD5E1] bg-white pl-9 pr-3 text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
             />
@@ -233,16 +295,48 @@ function PendingControl({ label, reason }: { label: string; reason: string }) {
   );
 }
 
-export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, onSave, triggerRef }: PreferencesSheetProps) {
+export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, onSave, triggerRef, capabilities, accountPlan = "unknown" }: PreferencesSheetProps) {
   const { present, exiting } = useSheetPresence(isOpen);
   const [draft, setDraft] = useState<PreferencesDraft>(() => draftFromPreferences(committed));
   const [expanded, setExpanded] = useState<PreferenceGroup | null>(null);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [chipsExpanded, setChipsExpanded] = useState(false);
   const [roleQuery, setRoleQuery] = useState("");
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
+  const [fetchedCaps, setFetchedCaps] = useState<{ excludedSkillsFilter: boolean; preferredSkillsRanking: boolean }>({ excludedSkillsFilter: false, preferredSkillsRanking: false });
+  useEffect(() => {
+    // Readiness is never carried over: closed, a new open, a prop override, a failed or stale answer all mean false.
+    const none = { excludedSkillsFilter: false, preferredSkillsRanking: false };
+    setFetchedCaps(none);
+    if (!isOpen || capabilities || typeof fetch !== "function") return;
+    let cancelled = false;
+    fetch("/api/jobs/capabilities", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled) return;
+        setFetchedCaps(j ? { excludedSkillsFilter: j.excludedSkillsFilter === true, preferredSkillsRanking: j.preferredSkillsRanking === true } : none);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedCaps(none);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, capabilities]);
+  const excludedSkillsApplied = (capabilities ? capabilities.excludedSkillsFilter === true : fetchedCaps.excludedSkillsFilter);
+  const preferredRankingReady = capabilities ? capabilities.preferredSkillsRanking === true : fetchedCaps.preferredSkillsRanking;
+  // Global readiness is not an account entitlement: ordering applies only when the server is ready AND the account is Pro.
+  const preferredSkillsApplied = preferredRankingReady && accountPlan === "pro";
+  const preferredHelp = !preferredRankingReady
+    ? "Saved, but not used to rank your feed yet."
+    : accountPlan === "pro"
+      ? "Used to order your recommended jobs. Search sorting is not ranked by skills."
+      : accountPlan === "free"
+        ? "Saved. Preferred skills reorder recommendations for Pro accounts only."
+        : "Saved. Your plan is still loading, so ordering isn't confirmed yet.";
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   // Banner growth must not leave the helper line partly scrolled under it.
   useEffect(() => {
@@ -270,6 +364,10 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
   const constraintsAvailable = committed.feedConstraintsAvailable !== false;
   const constraintsApplied = constraintsAvailable && savedFeedConstraintsEnforced();
   const notAppliedTag = constraintsApplied ? "" : " (saved, not applied)";
+  // Advanced columns (years, skills) exist. Never assumed: only an explicit true enables those controls.
+  const advancedAvailable = committed.advancedPreferencesAvailable === true;
+  const yearsRange = { min: draft.requiredYearsMin ?? null, max: draft.requiredYearsMax ?? null };
+  const yearsActive = advancedAvailable && isRequiredYearsRangeActive(yearsRange);
 
   // The account this draft was opened for. Another account's values never reach this draft or a save.
   const [openedFor, setOpenedFor] = useState<string | null>(null);
@@ -341,8 +439,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
   const validation = validateDraft(draft);
   const conflicts = companyConflicts(draft);
-  const draftCount = activeCount(draft, constraintsApplied);
-  const counts = groupCounts(draft, constraintsApplied);
+  const draftCount = activeCount(draft, constraintsApplied, advancedAvailable);
+  const counts = groupCounts(draft, constraintsApplied, advancedAvailable);
   const committedDraftJson = useMemo(() => JSON.stringify(draftFromPreferences(committed)), [committed]);
   const isDirty = JSON.stringify(draft) !== committedDraftJson;
 
@@ -386,9 +484,18 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
       minSalary: null,
       includedCompanies: [],
       excludedCompanies: [],
+      requiredYearsMin: null,
+      requiredYearsMax: null,
+      preferredSkills: [],
+      excludedSkills: [],
       // Country and work authorization are profile facts: kept on reset.
     }));
 
+  const selectedLevels = parseExperienceLevels(draft.experienceLevel);
+  const toggleLevel = (lvl: CanonicalExperienceLevel) => {
+    const next = selectedLevels.includes(lvl) ? selectedLevels.filter((l) => l !== lvl) : [...selectedLevels, lvl];
+    set("experienceLevel", formatExperienceLevels(CANONICAL_EXPERIENCE_LEVELS.filter((l) => next.includes(l))));
+  };
   const isUS = draft.countryCode === "US";
   const workAuthIds = parseWorkAuth(draft.workAuth) ?? [];
   const currency = draft.salaryCurrency || "";
@@ -399,11 +506,25 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
   const committedCountry = (committed.countryCode || "").toUpperCase();
   const legacyLocations = committed.locations || [];
 
+  type PrefChip = { kind: "function" | "excluded" | "type" | "work-model" | "level" | "years" | "skill" | "posted" | "location"; text: string };
+  const activeChips: PrefChip[] = [
+    ...draft.roles.map((text) => ({ kind: "function" as const, text })),
+    ...(constraintsAvailable ? draft.excludedTitles.map((t) => ({ kind: "excluded" as const, text: `Not: ${t}${notAppliedTag}` })) : []),
+    ...draft.employmentTypes.map((t) => ({ kind: "type" as const, text: JOB_TYPE_OPTIONS.find((o) => o.id === t)?.label || t })),
+    ...draft.workModels.map((m) => ({ kind: "work-model" as const, text: WORK_MODEL_LABELS[m] })),
+    ...(isExperienceLevelFilterActive(draft.experienceLevel) ? selectedLevels.map((l) => ({ kind: "level" as const, text: EXPERIENCE_LEVEL_LABELS[l] })) : []),
+    ...(advancedAvailable ? draft.preferredSkills.map((t) => ({ kind: "skill" as const, text: `Skill: ${t}${preferredSkillsApplied ? "" : " (saved, not applied)"}` })) : []),
+    ...(advancedAvailable ? draft.excludedSkills.map((t) => ({ kind: "skill" as const, text: `Not skill: ${t}${excludedSkillsApplied ? "" : " (saved, not applied)"}` })) : []),
+    ...(yearsActive ? [{ kind: "years" as const, text: `Years: ${describeRange(yearsRange)}${notAppliedTag}` }] : []),
+    ...(constraintsAvailable && draft.datePosted ? [{ kind: "posted" as const, text: `${DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label}${notAppliedTag}` }] : []),
+    ...normalizeTextList([countryName, ...draft.locations]).map((text) => ({ kind: "location" as const, text })),
+  ];
+
   const group = (id: PreferenceGroup, title: string, summary: React.ReactNode, body: React.ReactNode) => {
     const open = expanded === id;
     const count = counts[id];
     return (
-      <section className="border-b border-[#E2E8F0] last:border-b-0">
+      <section className="mx-4 my-3 overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
         <h3>
           <button
             type="button"
@@ -417,9 +538,9 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 {title}
                 {count > 0 && <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] font-bold text-white">{count}</span>}
               </span>
-              {!open && <span className="mt-1 block space-y-0.5">{summary}</span>}
+              {!open && <span className="mt-1 block truncate text-[12px] text-[#64748B]" data-testid={`pref-group-sub-${id}`}>{GROUP_SUBTEXT[id]}</span>}
             </span>
-            <ChevronDown className={`h-5 w-5 shrink-0 text-[#64748B] transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9]"><ChevronDown className={`h-4 w-4 text-[#0F172A] transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" /></span>
           </button>
         </h3>
         {open && (
@@ -433,20 +554,27 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
   const roleList = (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-[#E2E8F0] px-3 py-2">
+      <div className="flex items-center justify-between gap-2 px-5 pb-1 pt-2">
+        <h3 className="text-[20px] font-bold text-[#0F172A]">Job Function</h3>
         <button
           type="button"
           onClick={() => {
             setRolePickerOpen(false);
-
           }}
-          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-[14px] font-semibold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+          aria-label="Back"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
         >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Back
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
-        <h3 className="text-[15px] font-bold text-[#0F172A]">Job function</h3>
       </div>
-      <div className="border-b border-[#E2E8F0] px-5 py-3">
+      <div className="px-5 pb-3 pt-1">
+        {draft.roles.length > 0 && (
+          <div className="mb-3 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto" aria-label="Selected job functions">
+            {draft.roles.map((r) => (
+              <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
+            ))}
+          </div>
+        )}
         <label htmlFor="pref-role-search" className="sr-only">Search job functions</label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" aria-hidden="true" />
@@ -464,18 +592,11 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
               }
             }}
             placeholder="Search roles, e.g. Data Engineer"
-            className="h-11 w-full rounded-xl border border-[#CBD5E1] bg-white pl-9 pr-3 text-[14px] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
+            className="h-11 w-full rounded-xl border border-transparent bg-[#F1F5F9] pl-9 pr-3 text-[14px] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
           />
         </div>
-        {draft.roles.length > 0 && (
-          <div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto" aria-label="Selected job functions">
-            {draft.roles.map((r) => (
-              <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
-            ))}
-          </div>
-        )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#EEF2F9] px-4 py-3">
         {ONBOARDING_CATEGORIES.map((cat) => {
           const subgroups = cat.subgroups
             .map((sg) => ({ ...sg, roles: roleQ ? sg.roles.filter((r) => r.toLowerCase().includes(roleQ)) : sg.roles }))
@@ -484,7 +605,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
           const open = Boolean(roleQ) || openCategory === cat.id;
           const selectedHere = cat.subgroups.reduce((n, sg) => n + sg.roles.filter((r) => draft.roles.includes(r)).length, 0);
           return (
-            <div key={cat.id} className="border-b border-[#F1F5F9] last:border-b-0">
+            <div key={cat.id} className="mb-2 rounded-2xl bg-white px-4">
               <button
                 type="button"
                 aria-expanded={open}
@@ -495,18 +616,19 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   {cat.name}
                   {selectedHere > 0 && <span className="ml-2 rounded-full bg-[#DBEAFE] px-1.5 text-[11px] font-bold text-[#1E40AF]">{selectedHere}</span>}
                 </span>
-                <ChevronRight className={`h-4 w-4 text-[#94A3B8] transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+                <ChevronDown className={`h-4 w-4 text-[#0F172A] transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
               {open && (
                 <div className="space-y-3 pb-3">
                   {subgroups.map((sg) => (
                     <fieldset key={sg.name}>
-                      <legend className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">{sg.name}</legend>
-                      <div className="grid grid-cols-1 gap-1.5">
+                      <legend className="mb-2 text-[14px] font-bold text-[#0F172A]">{sg.name}</legend>
+                      <div className="flex flex-wrap gap-2">
                         {sg.roles.map((r) => (
-                          <CheckOption key={r} checked={draft.roles.includes(r)} onChange={() => set("roles", toggleIn(draft.roles, r))}>
+                          <label key={r} className={`inline-flex min-h-[36px] cursor-pointer items-center rounded-lg px-3 text-[13px] focus-within:ring-2 focus-within:ring-[#2563EB] ${draft.roles.includes(r) ? "bg-[#DBEAFE] font-medium text-[#1E3A8A]" : "bg-[#F1F5F9] text-[#334155]"}`}>
+                            <input type="checkbox" className="sr-only" checked={draft.roles.includes(r)} onChange={() => set("roles", toggleIn(draft.roles, r))} />
                             {r}
-                          </CheckOption>
+                          </label>
                         ))}
                       </div>
                     </fieldset>
@@ -548,22 +670,22 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto mb-1 mt-3 h-1.5 w-12 shrink-0 rounded-full bg-slate-300 sm:hidden" aria-hidden="true" />
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#E2E8F0] px-5 py-2.5">
+        <div className={`shrink-0 items-center justify-between gap-2 border-b border-[#E2E8F0] px-5 py-2.5 max-[359px]:px-3 ${rolePickerOpen ? "hidden" : "flex"}`}>
           <div className="flex min-w-0 items-center gap-2">
-            <h2 id={titleId} className="text-[17px] font-bold text-[#0F172A]">Preferences</h2>
+            <h2 id={titleId} className="min-w-0 truncate text-[17px] font-bold text-[#0F172A] max-[359px]:text-[16px]">Preferences</h2>
             {draftCount > 0 && (
-              <span className="rounded-full bg-[#2563EB] px-2 py-0.5 text-[11px] font-bold text-white" aria-label={`${draftCount} active preference${draftCount === 1 ? "" : "s"}`}>
+              <span className="shrink-0 rounded-full bg-[#2563EB] px-2 py-0.5 text-[11px] font-bold text-white" aria-label={`${draftCount} active preference${draftCount === 1 ? "" : "s"}`}>
                 {draftCount}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={handleUpdate}
               disabled={pending}
               aria-busy={pending}
-              className="flex h-11 min-w-[88px] items-center justify-center rounded-full bg-[#2563EB] px-5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#1D4ED8] disabled:cursor-wait disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+              className="flex h-11 min-w-[88px] shrink-0 items-center justify-center rounded-full bg-[#2563EB] px-5 text-[13px] max-[359px]:min-w-[72px] max-[359px]:px-4 font-bold text-white shadow-sm transition hover:bg-[#1D4ED8] disabled:cursor-wait disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
             >
               {pending ? "Saving…" : "Update"}
             </button>
@@ -573,7 +695,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
               onClick={close}
               disabled={pending}
               aria-label="Close preferences without saving"
-              className="flex h-11 w-11 items-center justify-center rounded-full text-[#475569] hover:bg-slate-100 hover:text-[#0F172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-[#475569] max-[359px]:h-10 max-[359px]:w-10 hover:bg-slate-100 hover:text-[#0F172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -592,45 +714,53 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
         {rolePickerOpen ? (
           roleList
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-testid="preferences-scroll-body" ref={scrollBodyRef} style={{ overflowAnchor: "none" }}>
-            <div className="flex items-center justify-between px-5 pt-3 text-[12px] text-[#64748B]">
-              <span>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#EEF2F9]" data-testid="preferences-scroll-body" ref={scrollBodyRef} style={{ overflowAnchor: "none" }}>
+            <div className="flex items-center justify-end px-5 pt-1 text-[12px] text-[#64748B]">
+              <span className="sr-only">
                 Update saves these to your account and refreshes Recommended.
                 {isDirty && " Unsaved changes."}
               </span>
-              <button type="button" onClick={resetAll} className="ml-3 min-h-[44px] shrink-0 px-1 font-semibold text-[#475569] underline-offset-2 hover:underline">
+              <button type="button" onClick={resetAll} className="ml-3 min-h-[32px] shrink-0 px-1 font-semibold text-[#475569] underline-offset-2 hover:underline">
                 Clear all
               </button>
             </div>
+            {activeChips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 px-5 pt-1 pb-1" data-testid="preferences-chips" aria-label="Selected preferences" role="list">
+                {(chipsExpanded ? activeChips : activeChips.slice(0, CHIP_STRIP_LIMIT)).map((c, i) => (
+                  <span key={`${c.kind}-${c.text}-${i}`} data-chip={c.kind} role="listitem" className="max-w-full truncate rounded-md bg-[#E2E8F0] px-[5px] py-[3px] text-[11px] font-medium leading-[15px] text-[#0F172A]">{c.text}</span>
+                ))}
+                {activeChips.length > CHIP_STRIP_LIMIT && (
+                  <button type="button" aria-expanded={chipsExpanded} onClick={() => setChipsExpanded((v) => !v)} className="relative rounded-md bg-white px-[5px] py-[3px] text-[11px] font-medium leading-[15px] text-[#0F172A] before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]">
+                    {chipsExpanded ? "Less" : `+${activeChips.length - CHIP_STRIP_LIMIT}`}
+                  </button>
+                )}
+              </div>
+            )}
 
             {group(
               "basic",
-              "Basic",
-              <>
-                <SummaryLine label="Function" items={draft.roles} />
-                <SummaryLine label={`Excluding${notAppliedTag}`} items={constraintsAvailable ? draft.excludedTitles : []} />
-                <SummaryLine label="Type" items={draft.employmentTypes.map((t) => JOB_TYPE_OPTIONS.find((o) => o.id === t)?.label || t)} />
-                <SummaryLine label="Work model" items={draft.workModels.map((m) => WORK_MODEL_LABELS[m])} />
-                <SummaryLine label="Location" items={[...(countryName ? [countryName] : []), ...draft.locations]} />
-                <SummaryLine label="Level" items={draft.experienceLevel ? [EXPERIENCE_LEVEL_LABELS[draft.experienceLevel as keyof typeof EXPERIENCE_LEVEL_LABELS] || draft.experienceLevel] : []} />
-                <SummaryLine label={`Posted${notAppliedTag}`} items={constraintsAvailable && draft.datePosted ? [DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label] : []} />
-              </>,
+              "Basic Job Criteria",
+              <span className="block text-[12px] text-[#64748B]">Function / Type / Work model / Location / Level / Posted</span>,
               <>
                 <div>
                   <FieldLabel help="Ranks matching roles higher. Pick from the list or add your own title.">Job function</FieldLabel>
+                  {draft.roles.length > 0 && (
+                    <div data-testid="job-function-chips" className="mb-2 flex flex-wrap gap-1.5">
+                      {draft.roles.map((r) => (
+                        <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
+                      ))}
+                    </div>
+                  )}
                   <button
                     ref={roleTriggerRef}
                     type="button"
-                    onClick={() => {
-                      setRolePickerOpen(true);
-
-                    }}
-                    className="flex min-h-[44px] w-full items-center justify-between rounded-xl border border-[#CBD5E1] px-3 text-left text-[14px] text-[#0F172A] hover:border-[#94A3B8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+                    onClick={() => setRolePickerOpen(true)}
+                    aria-label={draft.roles.length ? "Add job function" : "Choose job functions"}
+                    aria-haspopup="dialog"
+                    className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-[#CBD5E1] bg-white px-3 text-[14px] font-medium text-[#0F172A] hover:border-[#94A3B8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
                   >
-                    <span className="truncate">
-                      {draft.roles.length ? `${summarize(draft.roles).shown.join(", ")}${summarize(draft.roles).more ? ` +${summarize(draft.roles).more}` : ""}` : "Choose job functions"}
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-[#94A3B8]" aria-hidden="true" />
+                    <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {draft.roles.length ? "Add" : "Choose job functions"}
                   </button>
                 </div>
 
@@ -646,7 +776,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 {constraintsAvailable && !constraintsApplied && <NotAppliedNote />}
 
                 <fieldset>
-                  <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Job type</legend>
+                  <legend className="float-left mb-[13px] text-[13px] font-bold text-[#0F172A]">Job type</legend>
+                    <FieldClear show={draft.employmentTypes.length > 0} label="job type" onClear={() => set("employmentTypes", [])} />
                   <div className="grid grid-cols-2 gap-2">
                     {JOB_TYPE_OPTIONS.map((o) => (
                       <CheckOption key={o.id} checked={draft.employmentTypes.includes(o.id)} onChange={() => set("employmentTypes", toggleIn(draft.employmentTypes, o.id))}>
@@ -657,7 +788,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 </fieldset>
 
                 <fieldset>
-                  <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Work model</legend>
+                  <legend className="float-left mb-[13px] text-[13px] font-bold text-[#0F172A]">Work model</legend>
+                    <FieldClear show={draft.workModels.length > 0} label="work model" onClear={() => set("workModels", [])} />
                   <div className="grid grid-cols-3 gap-2">
                     {WORK_MODELS.map((m) => (
                       <CheckOption
@@ -678,7 +810,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                     {!constraintsAvailable
                       ? "One choice for now: saving several needs a storage update on our side."
                       : draft.workModels.length > 1
-                      ? "Saved as chosen. Ranking reads one choice only, so several rank as open to any setup and this isn’t counted as active."
+                      ? "Saved as chosen. Ranking reads one choice only, so several rank as open to any setup."
                       : "One choice ranks that setup higher."}
                   </p>
                 </fieldset>
@@ -711,7 +843,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   placeholder="Search or type a city"
                   suggestions={Array.from(new Set([...(draft.countryCode === "IN" || !draft.countryCode ? LOCATION_OPTIONS : []), ...legacyLocations]))}
                 />
-                <PendingControl label="Search radius" reason="Jobs don't have map coordinates yet, so distance can't be measured." />
+                <PendingControl label="Search radius" reason="This control isn't enabled yet." />
 
                 <fieldset>
                   <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Experience level</legend>
@@ -719,40 +851,57 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                     {CANONICAL_EXPERIENCE_LEVELS.map((lvl) => (
                       <label
                         key={lvl}
-                        className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-xl border px-3 text-[13px] focus-within:ring-2 focus-within:ring-[#2563EB] ${
-                          draft.experienceLevel === lvl ? "border-[#2563EB] bg-[#EFF6FF] font-semibold text-[#1E3A8A]" : "border-[#E2E8F0] text-[#334155]"
+                        className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-[#F1F5F9] px-3 text-[13px] focus-within:ring-2 focus-within:ring-[#2563EB] ${
+                          selectedLevels.includes(lvl) ? "font-medium text-[#0F172A]" : "text-[#334155]"
                         }`}
                       >
                         <input
-                          type="radio"
-                          name="pref-level"
+                          type="checkbox"
                           className="h-4 w-4 accent-[#2563EB]"
-                          checked={draft.experienceLevel === lvl}
-                          onChange={() => set("experienceLevel", lvl)}
+                          checked={selectedLevels.includes(lvl)}
+                          onChange={() => toggleLevel(lvl)}
                         />
                         {EXPERIENCE_LEVEL_LABELS[lvl]}
                       </label>
                     ))}
                   </div>
-                  {draft.experienceLevel && (
+                  {selectedLevels.length > 0 && (
                     <button type="button" onClick={() => set("experienceLevel", "")} className="mt-1.5 min-h-[44px] text-[12px] font-semibold text-[#2563EB]">
                       Clear level
                     </button>
                   )}
-                  <p className="mt-1 text-[12px] text-[#64748B]">One level for now; it ranks jobs using title words like “Senior”.</p>
+                  <p className="mt-1 text-[12px] text-[#64748B]">{constraintsApplied
+                      ? "Pick any levels. Your feed shows jobs matching any selected level, using title words like “Senior”. A level you pick while browsing overrides this."
+                      : "Pick any levels. Jobs matching any selected level rank higher, using title words like “Senior”. Saved levels rank jobs only for now."}</p>
                 </fieldset>
-                <PendingControl label="Years of experience (min / max)" reason="Jobs don't carry stated years yet, so a years range can't be matched." />
+                {advancedAvailable ? (
+                  <div>
+                    <YearsRangeControl
+                      value={yearsRange}
+                      onChange={(r) => setDraft((d) => ({ ...d, requiredYearsMin: r ? r.min : null, requiredYearsMax: r ? r.max : null }))}
+                      action={<LabelClear show={yearsActive} label="years of experience" onClear={() => setDraft((d) => ({ ...d, requiredYearsMin: null, requiredYearsMax: null }))} />}
+                    />
+                    <p className="mt-1 text-[12px] text-[#64748B]">
+                      {constraintsApplied
+                        ? "Shows jobs whose stated years overlap this range. Jobs that state no years stay in."
+                        : "Saved, but not applied to your feed yet. Jobs that state no years stay in once it is."}
+                    </p>
+                  </div>
+                ) : (
+                  <PendingControl label="Years of experience (min / max)" reason="This control isn't enabled yet." />
+                )}
 
                 <fieldset>
-                  <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Date posted</legend>
+                  <legend className="float-left mb-[13px] text-[13px] font-bold text-[#0F172A]">Date posted</legend>
+                    <FieldClear show={constraintsAvailable && draft.datePosted !== null} label="date posted" onClear={() => set("datePosted", null)} />
                   {constraintsAvailable ? (
                     <>
                       <div className="grid grid-cols-2 gap-2">
                         {DATE_OPTIONS.map((o) => (
                           <label
                             key={o.id ?? "any"}
-                            className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-xl border px-3 text-[13px] focus-within:ring-2 focus-within:ring-[#2563EB] ${
-                              draft.datePosted === o.id ? "border-[#2563EB] bg-[#EFF6FF] font-semibold text-[#1E3A8A]" : "border-[#E2E8F0] text-[#334155]"
+                            className={`flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-[#F1F5F9] px-3 text-[13px] focus-within:ring-2 focus-within:ring-[#2563EB] ${
+                              draft.datePosted === o.id ? "font-medium text-[#0F172A]" : "text-[#334155]"
                             }`}
                           >
                             <input type="radio" name="pref-date" className="h-4 w-4 accent-[#2563EB]" checked={draft.datePosted === o.id} onChange={() => set("datePosted", o.id)} />
@@ -772,7 +921,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
             {group(
               "compensation",
-              "Compensation",
+              "Compensation & Sponsorship",
               <>
                 <SummaryLine label="Minimum" items={draft.minSalary && currency ? [`${formatMoney(draft.minSalary, currency)} / year`] : []} />
                 <SummaryLine label="Work authorization" items={workAuthIds.map((id) => WORK_AUTH_OPTIONS.find((o) => o.id === id)!.label)} />
@@ -781,6 +930,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 <div>
                   <FieldLabel
                     id="pref-salary-label"
+                    action={<LabelClear show={draft.minSalary != null} label="minimum salary" onClear={() => set("minSalary", null)} />}
                     help="Annual amount. Jobs listing a lower pay in the same currency rank lower; hourly and monthly pay is converted to a year, other currencies are never converted, and jobs without pay info stay in."
                   >
                     Minimum annual salary
@@ -854,18 +1004,58 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
             {group(
               "interests",
-              "Interests",
-              <p className="text-[12px] text-[#64748B]">Not available yet</p>,
+              "Areas of Interests",
+              advancedAvailable && (draft.preferredSkills.length > 0 || draft.excludedSkills.length > 0) ? (
+                <>
+                  <SummaryLine label={`Preferred skills${preferredSkillsApplied ? "" : " (saved, not applied)"}`} items={draft.preferredSkills} />
+                  <SummaryLine label={`Excluded skills${excludedSkillsApplied ? "" : " (saved, not applied)"}`} items={draft.excludedSkills} />
+                </>
+              ) : (
+                <p className="text-[12px] text-[#64748B]">{advancedAvailable ? "No skills set" : "Not available yet"}</p>
+              ),
               <>
                 <PendingControl label="Industries to include / exclude" reason="Jobs and companies don't have a verified industry classification yet." />
-                <PendingControl label="Skills" reason="Skill preferences aren't used for ranking yet. Your resume skills are unchanged." />
+                {advancedAvailable ? (
+                  <>
+                    <TagInput
+                      label="Preferred skills"
+                      help={`Skills you want more of. ${preferredHelp}`}
+                      values={draft.preferredSkills}
+                      onChange={(v) => set("preferredSkills", v)}
+                      placeholder="Type a skill"
+                      onClear={() => set("preferredSkills", [])}
+                      clearLabel="preferred skills"
+                      normalize={normalizeSkillList}
+                      keyOf={skillKey}
+                      maxItems={MAX_SKILLS}
+                    />
+                    <TagInput
+                      label="Excluded skills"
+                      help={`Hides jobs that list one of these skills.${excludedSkillsApplied ? "" : " Saved, but not applied to your feed yet."} Jobs with no skill data stay in.`}
+                      values={draft.excludedSkills}
+                      onChange={(v) => set("excludedSkills", v)}
+                      placeholder="Type a skill"
+                      onClear={() => set("excludedSkills", [])}
+                      clearLabel="excluded skills"
+                      normalize={normalizeSkillList}
+                      keyOf={skillKey}
+                      maxItems={MAX_SKILLS}
+                    />
+                    <p className="text-[12px] text-[#64748B]">Matches skills exactly as a job lists them. A to Z ignore case. Other letters must match exactly. Your resume skills are unchanged.</p>
+                    {showErrors && validation.errors.skills && (
+                      <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{validation.errors.skills}</p>
+                    )}
+                  </>
+                ) : (
+                  <PendingControl label="Skills" reason="This control isn't enabled yet. Your resume skills are unchanged." />
+                )}
                 <PendingControl label="Individual contributor or manager" reason="Jobs aren't classified as people-manager roles yet; seniority alone can't tell." />
               </>
             )}
 
             {group(
               "company",
-              "Company",
+              "Company Insights",
               <>
                 <SummaryLine label={`Only${notAppliedTag}`} items={constraintsAvailable ? draft.includedCompanies : []} />
                 <SummaryLine label={`Never${notAppliedTag}`} items={constraintsAvailable ? draft.excludedCompanies : []} />
@@ -879,6 +1069,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   placeholder="Type a company name"
                   disabled={!constraintsAvailable}
                   disabledReason={PENDING_CONSTRAINT_STORAGE}
+                  onClear={() => set("includedCompanies", [])}
+                  clearLabel="only-show companies"
                 />
                 <TagInput
                   label="Never show these companies"
@@ -888,6 +1080,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   placeholder="Type a company name"
                   disabled={!constraintsAvailable}
                   disabledReason={PENDING_CONSTRAINT_STORAGE}
+                  onClear={() => set("excludedCompanies", [])}
+                  clearLabel="never-show companies"
                 />
                 {constraintsAvailable && !constraintsApplied && <NotAppliedNote />}
                 {conflicts.length > 0 && (

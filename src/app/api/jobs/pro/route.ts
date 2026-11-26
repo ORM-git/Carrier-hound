@@ -23,6 +23,18 @@ const baseLog = createLogger({ context: { route: "/api/jobs/pro" } });
 
 export const runtime = "edge";
 
+/** Cloudflare bindings (the only place server flags live there), same as the feed routes. Undefined outside Cloudflare. */
+async function getCfEnv(): Promise<Record<string, any> | undefined> {
+  try {
+    // Loaded lazily: the package only works inside the Cloudflare runtime, and importing it must never break the route.
+    const { getRequestContext } = await import("@cloudflare/next-on-pages");
+    const ctx = getRequestContext();
+    return ctx?.env ? (ctx.env as Record<string, any>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function getSupabaseAdmin() {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -184,7 +196,7 @@ export async function GET(req: Request) {
     const countryCodeParam = searchParams.get("country_code") || searchParams.get("country");
 
     const supabaseAdmin = getSupabaseAdmin();
-    const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, authCheck.user.id);
+    const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, authCheck.user.id, await getCfEnv());
     // One reference instant per response: every score and revision below is computed at it.
     const scoredAt = Date.now();
 
@@ -342,7 +354,7 @@ export async function POST(req: Request) {
     }
 
     const supabaseAdmin = getSupabaseAdmin();
-    const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, authCheck.user.id);
+    const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, authCheck.user.id, await getCfEnv());
     // One reference instant per response: every score and revision below is computed at it.
     const scoredAt = Date.now();
 

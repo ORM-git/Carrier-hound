@@ -37,7 +37,8 @@ export function evalPostgrestNode(node: string, row: Record<string, any>): Tri {
   const [col, ...rest] = node.split(".");
   const negate = rest[0] === "not";
   const [op, ...valParts] = negate ? rest.slice(1) : rest;
-  const value = valParts.join(".");
+  let value = valParts.join(".");
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1); // quoted value
   const v = row[col];
   let r: Tri;
   if (op === "is") r = value === "null" ? v === null || v === undefined : String(v) === value;

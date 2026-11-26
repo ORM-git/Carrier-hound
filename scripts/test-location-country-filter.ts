@@ -129,7 +129,7 @@ async function run() {
   if (isNegativeControl) {
     // Under negative control execution, deliberately mutate barCode in memory to drop countryCode
     barCode = barCode.replace(
-      "handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })",
+      "handleConfirm({ countryCode: draftFilters.countryCode || \"\", location: draftFilters.location })",
       "handleConfirm({ location: draftFilters.location })"
     );
   }
@@ -387,7 +387,7 @@ async function run() {
 
     // Real Negative Control 1: Mutate Confirm handler in memory to drop countryCode
     const corruptedBarSource = barCode.replace(
-      "handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })",
+      "handleConfirm({ countryCode: draftFilters.countryCode || \"\", location: draftFilters.location })",
       "handleConfirm({ location: draftFilters.location })"
     );
     const caughtConfirmRegression = validateJobFilterBarConfirmHandler(corruptedBarSource);
