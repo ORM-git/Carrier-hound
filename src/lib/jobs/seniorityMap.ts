@@ -45,8 +45,17 @@ const MIN_ONLY = [
   new RegExp(String.raw`\b(?:at\s+least|minimum(?:\s+of)?|min\.?)\s+${N}\s*\+?\s*${YEARS}`, "gi"),
   new RegExp(String.raw`\b${N}\s*${YEARS}`, "gi"), // plain "2 years": a minimum only with an experience cue
 ];
-// A minus sign attached to the amount ("-2 years"): rejected as invalid, never stripped to a positive.
-const NEGATIVE_AMOUNT = new RegExp(String.raw`(?<![\w.])[-−]${N}\s*\+?\s*${YEARS}`, "gi");
+// A minus sign attached to the amount ("-2 years", "-2-4 years", "-2 to 4 years"): rejected as invalid,
+// never stripped to a positive. Runs before every other extractor so none can consume the unsigned suffix.
+const NEGATIVE_AMOUNT = new RegExp(
+  String.raw`(?<![\w.])[-−]${N}(?:\s*(?:-|–|—|to)\s*${N})?\s*\+?\s*(?:or\s+more\s+)?${YEARS}`,
+  "gi",
+);
+// Any upper qualifier directly before a range or minimum-style match: never a minimum.
+const UPPER_PREFIX =
+  /\b(?:up\s+to|at\s+most|maximum(?:\s+of)?|max\.?|no\s+more\s+than|not\s+more\s+than|less\s+than|fewer\s+than|under|below)\s*$/i;
+// A sign attached just before a match start (defence in depth for every extractor).
+const SIGN_BEFORE = /(?:^|[^\w.])[-−]$/;
 // Inclusive upper bounds: a max only, never a minimum. A trailing "+" ("up to 3+") is contradictory.
 const UPPER_INCLUSIVE = new RegExp(
   String.raw`\b(?:up\s+to|at\s+most|maximum(?:\s+of)?|max\.?|no\s+more\s+than|not\s+more\s+than)\s+${N}\s*(\+)?\s*${YEARS}`,
@@ -59,7 +68,8 @@ const UPPER_NEGATION_WORDS = /\b(?:no|not)\s+more\s+than\b/gi;
 const MAX_YEARS = 40;
 
 // A proposition: sentence/bullet, or the side of a contrastive conjunction. Commas do not split.
-const CLAUSE_SPLIT = /(?:[.!?](?!\d)|[;\n•])+|\b(?:but|however|whereas)\b/i;
+// The dot of an abbreviated qualifier ("Max. 3 years", "Min. 3 years") does not end the proposition.
+const CLAUSE_SPLIT = /(?:(?<!\b(?:max|min))[.!?](?!\d)|[;\n•])+|\b(?:but|however|whereas)\b/i;
 // Positive work-experience cue that must sit in the same proposition as the years mention.
 const EXPERIENCE_CUE = /\bexperien(?:ce|ced)\b|\bexp\b|\bhands[- ]on\b/i;
 const NEGATION = /\b(?:no|not|without|never|none)\b|n't\b/i;
@@ -114,11 +124,15 @@ export function extractYearsEvidence(text?: string | null): { bounds: YearsBound
       for (const m of Array.from(rest.matchAll(re))) fn(m);
       rest = rest.replace(re, (x) => " ".repeat(x.length));
     };
-    pass(RANGE, (m) => record(m, Number(m[1]), Number(m[2])));
+    // Blanking keeps offsets, so clause.slice(0, m.index) is the original text before a match.
+    const before = (m: RegExpMatchArray) => clause.slice(0, m.index ?? 0);
+    const guard = (m: RegExpMatchArray): Forced =>
+      SIGN_BEFORE.test(before(m)) ? "invalid" : UPPER_PREFIX.test(before(m)) ? "ambiguous" : undefined;
     pass(NEGATIVE_AMOUNT, (m) => record(m, null, null, "invalid"));
+    pass(RANGE, (m) => record(m, Number(m[1]), Number(m[2]), guard(m)));
     pass(UPPER_INCLUSIVE, (m) => record(m, null, Number(m[1]), m[2] ? "ambiguous" : undefined));
     pass(UPPER_STRICT, (m) => record(m, null, null, "ambiguous"));
-    for (const re of MIN_ONLY) pass(re, (m) => record(m, Number(m[1]), null));
+    for (const re of MIN_ONLY) pass(re, (m) => record(m, Number(m[1]), null, guard(m)));
   }
 
   const blocked = evidence.some((e) => e.status === "negated" || e.status === "ambiguous" || e.status === "invalid");

@@ -318,3 +318,61 @@ describe("upper-bound phrases and negative amounts", () => {
       .toMatchObject({ level: "unknown", source: "source_field", years_min: null, years_max: 3 });
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// #787 repair 3: dotted "Max." survives sentence splitting; signs are checked before every extractor.
+// Invariant: an upper qualifier never yields a minimum, a negative start never yields a positive bound.
+// Unknown (null) is acceptable; an invented minimum or a dropped sign is not.
+// ---------------------------------------------------------------------------------------------
+describe("dotted qualifiers and negative ranges", () => {
+  it("'Max. 3 years of experience' is a max, never min 3", () => {
+    expect(parseYearsOfExperience("Max. 3 years of experience")).toEqual({ years_min: null, years_max: 3 });
+    expect(parseYearsOfExperience("Requirements: max. 3 years of experience.")).toEqual({ years_min: null, years_max: 3 });
+  });
+
+  it("'Min. 3 years of experience' keeps its qualifier too", () => {
+    expect(parseYearsOfExperience("Min. 3 years of experience")).toEqual({ years_min: 3, years_max: null });
+  });
+
+  it.each(["-2-4 years of experience", "-2 to 4 years of experience", "−2–4 years of experience"])(
+    "negative range start is invalid, never 2..4: %s",
+    (text) => {
+      expect(parseYearsOfExperience(text)).toBeNull();
+      expect(extractYearsEvidence(text).evidence.map((e) => e.status)).toEqual(["invalid"]);
+    },
+  );
+
+  const UPPER = ["max", "Max", "max.", "Max.", "MAX.", "maximum", "Maximum of", "at most", "At most", "up to", "Up to", "no more than", "less than", "under"];
+  const FORMS = ["3 years", "3 yrs", "3+ years", "2-4 years", "2 to 4 years", "2–4 years", "3 or more years"];
+  const upperCases = UPPER.flatMap((q) => FORMS.flatMap((f) => [`${q} ${f} of experience`, `Requirements: ${q} ${f} of experience.`]));
+
+  it.each(upperCases)("invariant, upper qualifier never yields a minimum: %s", (text) => {
+    const b = parseYearsOfExperience(text);
+    expect(b?.years_min ?? null).toBeNull();
+    if (b) {
+      expect(b.years_max).toBe(3); // only an inclusive scalar max may survive
+      expect(/^(?:Requirements: )?(?:max\.?|maximum(?: of)?|at most|up to|no more than) 3 (?:years|yrs) of/i.test(text)).toBe(true);
+    }
+    expect(mapJobSeniority({ description: text }).years_min).toBeNull();
+  });
+
+  const NEG = ["-2 years", "-2 yrs", "-2+ years", "-2-4 years", "-2 to 4 years", "-2–4 years", "−2 years", "−2-4 years", "-2 or more years"];
+  const PREFIX = ["", "at least ", "minimum of ", "min. ", "max. ", "up to ", "Experience: "];
+  const negCases = PREFIX.flatMap((p) => NEG.map((n) => `${p}${n} of experience`));
+
+  it.each(negCases)("invariant, negative start is never a positive bound: %s", (text) => {
+    const ev = extractYearsEvidence(text);
+    expect(ev.bounds).toBeNull();
+    expect(ev.evidence.some((e) => e.status === "invalid")).toBe(true);
+    expect(ev.evidence.some((e) => e.status === "requirement")).toBe(false);
+  });
+
+  it.each([
+    ["2-4 years of experience", { years_min: 2, years_max: 4 }],
+    ["3 - 5 years of experience", { years_min: 3, years_max: 5 }],
+    ["2 years experience", { years_min: 2, years_max: null }],
+    ["At least 3 years of experience. Strong Go skills.", { years_min: 3, years_max: null }],
+  ])("unsigned forms unchanged: %s", (text, expected) => {
+    expect(parseYearsOfExperience(text)).toEqual(expected);
+  });
+});
