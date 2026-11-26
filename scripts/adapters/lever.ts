@@ -205,7 +205,7 @@ export class LeverAdapter implements SourceAdapter {
           }
         }
 
-        const postedAt = j.createdAt ? new Date(j.createdAt).toISOString() : normalizeDate(null);
+        const postedAt = normalizeDate(j.createdAt);
         const category =
           source.category ||
           detectCategory(title, [j.categories?.team || '', j.categories?.department || '']);
