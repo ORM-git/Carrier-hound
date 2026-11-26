@@ -1,4 +1,6 @@
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
+import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
+import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams, hasFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
@@ -351,8 +353,30 @@ async function getHandler(req: Request) {
       );
     }
 
+    const requiredYears = requiredYearsFromParams(searchParams);
+    if (isRequiredYearsRangeActive(requiredYears) && !hasServiceKey) {
+      return NextResponse.json(
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
+        { status: 503 }
+      );
+    }
+
+    const excludedParse = parseExcludedSkillParams(searchParams);
+    if (!excludedParse.ok) {
+      return NextResponse.json({ ok: false, error: "Invalid excluded skills" }, { status: 400 });
+    }
+    const excludedSkillKeys = excludedParse.keys;
+    if (excludedSkillKeys.length && (!hasServiceKey || !excludedSkillsRpcReady(getRuntimeEnv("CM_EXCLUDED_SKILLS_RPC", cfEnv)))) {
+      return NextResponse.json(
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
+        { status: 503 }
+      );
+    }
+
     const hasActiveFilter = Boolean(
       hasFeedConstraints(feedConstraints) ||
+      isRequiredYearsRangeActive(requiredYears) ||
+      excludedSkillKeys.length > 0 ||
       (category && category !== "all") ||
       remoteOnly ||
       (countryCodeParam && countryCodeParam.trim() && countryCodeParam.toLowerCase() !== "all") ||
@@ -386,9 +410,10 @@ async function getHandler(req: Request) {
       activeFrom?: number,
       activeLimit?: number
     ) => {
-      let query = supabaseAdmin
-        .from(targetTable)
-        .select(selectColumns, countMode ? { count: countMode } : undefined).or(VISIBLE_SOURCE_FILTER)
+      let query = (excludedSkillKeys.length
+        ? (supabaseAdmin as any).rpc(EXCLUDED_SKILLS_RPC, { p_excluded: excludedSkillKeys }, countMode ? { count: countMode } : undefined)
+        : supabaseAdmin.from(targetTable))
+        .select(selectColumns, countMode && !excludedSkillKeys.length ? { count: countMode } : undefined).or(VISIBLE_SOURCE_FILTER)
         .eq("is_active", true)
         .eq("status", "active");
 
@@ -492,6 +517,7 @@ async function getHandler(req: Request) {
     if (postedCutoff) query = query.gte("posted_at", postedCutoff);
 
     query = applyFeedConstraints(query, feedConstraints);
+    query = applyRequiredYears(query, requiredYears);
 
     // Company filter (server-side)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {

@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .required_years import REQUIRED_YEARS_SOURCE_DESCRIPTION, extract_required_years
 from .fetchers import (
     fetch_amazon_jobs,
     fetch_ashby,
@@ -162,6 +163,43 @@ def load_company_seeds(path: str | Path = DEFAULT_SEEDS_PATH) -> dict[str, Any]:
         return json.load(fh)
 
 
+YEARS_COLUMNS_ENV = "CM_REQUIRED_YEARS_COLUMNS"
+YEARS_FIELDS = ("min_experience_years", "max_experience_years", "experience_years_source")
+YEARS_SELECT = ",min_experience_years,max_experience_years,experience_years_source"
+
+
+def years_columns_enabled() -> bool:
+    """Owner switch, off by default: the jobs years columns are written only after the owner has applied
+    migration 20261126b and set CM_REQUIRED_YEARS_COLUMNS=1. Until then nothing about years is selected,
+    sent or compared, so ingestion behaves exactly as before."""
+    return os.environ.get(YEARS_COLUMNS_ENV, "").strip() == "1"
+
+
+def apply_required_years(jobs: list[dict[str, Any]]) -> None:
+    """Fill min/max_experience_years from the description when it states one unambiguous requirement.
+    A job with no extractable bound gets no years keys at all (never an explicit null), so nothing existing is erased."""
+    for job in jobs:
+        bounds = extract_required_years(job.get("description"))
+        if bounds is None:
+            continue
+        lo, hi = bounds
+        job["min_experience_years"] = lo
+        job["max_experience_years"] = hi
+        job["experience_years_source"] = REQUIRED_YEARS_SOURCE_DESCRIPTION
+
+
+def keep_existing_years(job: dict[str, Any], existing: dict[str, Any]) -> None:
+    """Never replace a bound with nothing, and never replace a bound another source verified (any source other
+    than 'description') with one parsed from text."""
+    has_existing = existing.get("min_experience_years") is not None or existing.get("max_experience_years") is not None
+    if not has_existing:
+        return
+    verified = (existing.get("experience_years_source") or "description") != "description"
+    if verified or (job.get("min_experience_years") is None and job.get("max_experience_years") is None):
+        for f in YEARS_FIELDS:
+            job[f] = existing.get(f)
+
+
 def compute_content_fingerprint(row: dict[str, Any]) -> str:
     """Fingerprint of all mutable job fields used for set-diff comparison."""
     skills = sorted(str(s).strip().lower() for s in (row.get("skills") or []) if str(s).strip())
@@ -198,6 +236,7 @@ def compute_content_fingerprint(row: dict[str, Any]) -> str:
         str(row.get("source_url") or "").strip(),
         str(int(row.get("source_priority") or 2)),
         ",".join(kws),
+        "|".join(str(row.get(f) if row.get(f) is not None else "") for f in YEARS_FIELDS),
         ",".join(skills),
     ]
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
@@ -276,6 +315,8 @@ def partition_set_diff(
         job["_existing_id"] = ex_id
         if not job.get("posted_at") and existing.get("posted_at"):
             job["posted_at"] = existing["posted_at"]
+        if years_columns_enabled():
+            keep_existing_years(job, existing)
         ex_priority = int(existing.get("source_priority") or 2)
         in_priority = int(job.get("source_priority") or 2)
 
@@ -647,6 +688,8 @@ class SupabaseSetDiffWriter:
         # Shared CHECK-constraint validator: invalid rows are reported individually, valid rows continue.
         jobs, stats["salary_sanitized"] = sanitize_salaries(jobs)
         jobs, stats["rejected"] = prevalidate_jobs(jobs)
+        if years_columns_enabled():
+            apply_required_years(jobs)
 
         db_columns = {
             "company", "company_id", "title", "location", "country", "country_code",
@@ -657,6 +700,8 @@ class SupabaseSetDiffWriter:
             "source_priority", "dedupe_hash", "verified", "canonical_domain", "posted_at",
             "last_seen_at", "is_active", "status",
         }
+        if years_columns_enabled():
+            db_columns.update(YEARS_FIELDS)
 
         # Complete every identity lookup before the first job write. A later batch lookup
         # failure must not leave an earlier batch partially committed by this invocation.
@@ -670,7 +715,7 @@ class SupabaseSetDiffWriter:
             quoted_sids = ",".join(f'"{sid}"' for sid in sids)
             q_url = (
                 f"{self.base_url}/jobs"
-                f"?select=id,company,company_id,title,posted_at,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain"
+                f"?select=id,company,company_id,title,posted_at,location,country,country_code,currency,remote,is_remote,remote_scope,remote_eligibility,job_type,category,role_category,status,description,logo_url,apply_url,salary_text,salary_min,salary_max,salary_period,is_active,verified,source,source_id,source_type,source_job_id,source_url,source_priority,dedupe_hash,top_keywords,skills,canonical_domain{YEARS_SELECT if years_columns_enabled() else ''}"
                 f"&or=(source_job_id.in.({quoted_sids}))"
             )
             try:

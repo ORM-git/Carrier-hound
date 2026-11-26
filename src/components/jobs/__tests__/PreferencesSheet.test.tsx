@@ -57,11 +57,185 @@ describe("PreferencesSheet", () => {
     expect(saved.employmentTypes).toEqual([]);
     expect(saved.roles).toContain("Frontend Developer");
   });
+  it("experience level is a six-way multi-select; all six saves as no filter, Clear empties it", async () => {
+    const { onSave } = setup({ experienceLevel: "senior" });
+    openGroup("Basic");
+    const boxes = () => screen.getAllByRole("checkbox").filter((b) => ["Intern / New Grad", "Entry Level", "Mid Level", "Senior Level", "Staff / Principal / Lead", "Director / Executive"].includes((b.closest("label")?.textContent || "").trim()));
+    expect(boxes()).toHaveLength(6);
+    expect((screen.getByRole("checkbox", { name: "Senior Level" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Director / Executive" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Entry Level" }));
+    await act(async () => update());
+    expect(lastSaved(onSave).experienceLevel).toBe("entry,senior,director");
+    for (const n of ["Intern / New Grad", "Mid Level", "Staff / Principal / Lead"]) fireEvent.click(screen.getByRole("checkbox", { name: n }));
+    await act(async () => update());
+    expect(lastSaved(onSave).experienceLevel).toBe("intern,entry,mid,senior,lead,director");
+    fireEvent.click(screen.getByRole("button", { name: "Clear level" }));
+    expect(boxes().every((b) => !(b as HTMLInputElement).checked)).toBe(true);
+    await act(async () => update());
+    expect(lastSaved(onSave).experienceLevel).toBeUndefined();
+  });
+  it("years range is only enabled when advanced storage exists, saves max unbounded as null, and Clear all resets it", async () => {
+    const off = setup();
+    openGroup("Basic");
+    expect(screen.queryByLabelText("Maximum years of experience")).toBeNull();
+    expect(screen.getAllByText("This control isn't enabled yet.").length).toBeGreaterThan(0);
+    cleanup();
+    const keep = setup({ advancedPreferencesAvailable: true, requiredYearsMin: 2.5, requiredYearsMax: 15 } as any);
+    openGroup("Basic");
+    expect(screen.getByTestId("years-summary").textContent).toBe("2.5 to 15 years");
+    await act(async () => update());
+    expect([lastSaved(keep.onSave).requiredYearsMin, lastSaved(keep.onSave).requiredYearsMax]).toEqual([2.5, 15]);
+    cleanup();
+    const { onSave } = setup({ advancedPreferencesAvailable: true, requiredYearsMin: 2, requiredYearsMax: 4 } as any);
+    openGroup("Basic");
+    expect(screen.getByTestId("years-summary").textContent).toBe("2 to 4 years");
+    fireEvent.change(screen.getByLabelText("Maximum years of experience"), { target: { value: "11" } });
+    expect(screen.getByTestId("years-summary").textContent).toBe("2+ years");
+    await act(async () => update());
+    expect([lastSaved(onSave).requiredYearsMin, lastSaved(onSave).requiredYearsMax]).toEqual([2, null]);
+    fireEvent.click(screen.getByRole("button", { name: "Clear years of experience" }));
+    expect(screen.getByTestId("years-summary").textContent).toBe("Any");
+    expect(screen.queryByRole("button", { name: "Clear years of experience" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Maximum years of experience"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(screen.getByTestId("years-summary").textContent).toBe("Any");
+    void off;
+  });
+  it("skills inputs need advanced storage, are tagged not-applied until the server says so, and Clear works", async () => {
+    setup();
+    openGroup("Interests");
+    expect(screen.queryByLabelText("Excluded skills")).toBeNull();
+    cleanup();
+    const { onSave } = setup({ advancedPreferencesAvailable: true } as any);
+    openGroup("Interests");
+    for (const [label, v] of [["Excluded skills", "PHP"], ["Preferred skills", "React"]]) {
+      const box = screen.getByLabelText(label);
+      fireEvent.change(box, { target: { value: v } });
+      fireEvent.keyDown(box, { key: "Enter" });
+    }
+    expect(screen.getByText(/Saved, but not applied to your feed yet\. Jobs with no skill data stay in\./)).toBeTruthy();
+    expect(screen.getByText(/Saved, but not used to rank your feed yet/)).toBeTruthy();
+    await act(async () => update());
+    expect(lastSaved(onSave).excludedSkills).toEqual(["PHP"]);
+    expect(lastSaved(onSave).preferredSkills).toEqual(["React"]);
+    fireEvent.click(screen.getByRole("button", { name: "Clear excluded skills" }));
+    expect(screen.queryByRole("button", { name: "Clear excluded skills" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Clear preferred skills" })).toBeTruthy();
+  });
+  it("excluded skills lose the not-applied note when the server advertises the filter; a skill in both lists blocks Update", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<PreferencesSheet isOpen ownerId="user-a" onClose={vi.fn()} committed={committed({ advancedPreferencesAvailable: true, preferredSkills: ["Go"], excludedSkills: ["go"] } as any)} onSave={onSave} capabilities={{ excludedSkillsFilter: true, preferredSkillsRanking: false }} />);
+    openGroup("Interests");
+    expect(screen.queryByText(/Saved, but not applied to your feed yet\. Jobs with no skill data/)).toBeNull();
+    expect(screen.getByText(/Hides jobs that list one of these skills\. Jobs with no skill data stay in\./)).toBeTruthy();
+    update();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("alert").some((a) => /can't be both preferred and excluded/.test(a.textContent || ""))).toBe(true);
+  });
+  describe("capabilities fetch", () => {
+    const skillsOn = { advancedPreferencesAvailable: true } as any;
+    const applied = () => !screen.queryByText(/Saved, but not applied to your feed yet\. Jobs with no skill data/);
+    const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    afterEach(() => vi.unstubAllGlobals());
+    it("a failed or non-ok fetch leaves excluded skills not applied", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+      render(<PreferencesSheet isOpen ownerId="user-a" onClose={vi.fn()} committed={committed(skillsOn)} onSave={vi.fn(async () => {})} />);
+      await flush();
+      openGroup("Interests");
+      expect(applied()).toBe(false);
+      cleanup();
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({ excludedSkillsFilter: true }) })));
+      render(<PreferencesSheet isOpen ownerId="user-a" onClose={vi.fn()} committed={committed(skillsOn)} onSave={vi.fn(async () => {})} />);
+      await flush();
+      openGroup("Interests");
+      expect(applied()).toBe(false);
+    });
+    it("a ready answer applies only the advertised capability, and reopening does not reuse it", async () => {
+      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ excludedSkillsFilter: true, preferredSkillsRanking: false }) }));
+      vi.stubGlobal("fetch", fetchMock);
+      const props = { ownerId: "user-a", onClose: vi.fn(), committed: committed(skillsOn), onSave: vi.fn(async () => {}) };
+      const { rerender } = render(<PreferencesSheet isOpen {...props} />);
+      await flush();
+      openGroup("Interests");
+      expect(applied()).toBe(true);
+      expect(screen.getByText(/Saved, but not used to rank your feed yet/)).toBeTruthy();
+      rerender(<PreferencesSheet isOpen={false} {...props} />);
+      fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ excludedSkillsFilter: false, preferredSkillsRanking: false }) }));
+      rerender(<PreferencesSheet isOpen {...props} />);
+      await flush();
+      openGroup("Interests");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(applied()).toBe(false);
+    });
+    it("a response that arrives after unmount does not throw or set state", async () => {
+      let resolve: (v: any) => void = () => {};
+      vi.stubGlobal("fetch", vi.fn(() => new Promise((r) => { resolve = r; })));
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { unmount } = render(<PreferencesSheet isOpen ownerId="user-a" onClose={vi.fn()} committed={committed(skillsOn)} onSave={vi.fn(async () => {})} />);
+      unmount();
+      await act(async () => { resolve({ ok: true, json: async () => ({ excludedSkillsFilter: true }) }); await new Promise((r) => setTimeout(r, 0)); });
+      expect(err).not.toHaveBeenCalled();
+      err.mockRestore();
+    });
+  });
+  it("skills inputs use the ASCII-only skill key: A-Z dedupe, a and umlaut stay distinct, NBSP variants stay distinct", async () => {
+    const { onSave } = setup({ advancedPreferencesAvailable: true } as any);
+    openGroup("Interests");
+    const box = screen.getByLabelText("Preferred skills");
+    for (const v of ["React", " react ", "Ä", "ä", "C\u00a0sharp", "C sharp"]) {
+      fireEvent.change(box, { target: { value: v } });
+      fireEvent.keyDown(box, { key: "Enter" });
+    }
+    await act(async () => update());
+    expect(lastSaved(onSave).preferredSkills).toEqual(["React", "Ä", "ä", "C\u00a0sharp", "C sharp"]);
+  });
+  it("capabilities: true, then reopen with a rejected or late answer, then a prop switch, never keeps ready", async () => {
+    const skillsOn = { advancedPreferencesAvailable: true } as any;
+    const ready = () => !screen.queryByText(/Saved, but not applied to your feed yet\. Jobs with no skill data/);
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(() => (++calls === 1 ? Promise.resolve({ ok: true, json: async () => ({ excludedSkillsFilter: true, preferredSkillsRanking: false }) }) : Promise.reject(new Error("x")))));
+    const props = { ownerId: "user-a", onClose: vi.fn(), committed: committed(skillsOn), onSave: vi.fn(async () => {}) };
+    const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    const { rerender } = render(<PreferencesSheet isOpen {...props} />);
+    await flush();
+    openGroup("Interests");
+    expect(ready()).toBe(true);
+    rerender(<PreferencesSheet isOpen={false} {...props} />);
+    rerender(<PreferencesSheet isOpen {...props} />);
+    await flush();
+    openGroup("Interests");
+    expect(ready()).toBe(false);
+    rerender(<PreferencesSheet isOpen {...props} capabilities={{ excludedSkillsFilter: true }} />);
+    await flush();
+    expect(ready()).toBe(true);
+    rerender(<PreferencesSheet isOpen {...props} capabilities={{ excludedSkillsFilter: false }} />);
+    expect(ready()).toBe(false);
+    vi.unstubAllGlobals();
+  });
+  it("preferred skills copy follows global readiness AND the account plan", () => {
+    const base = { ownerId: "user-a", onClose: vi.fn(), committed: committed({ advancedPreferencesAvailable: true, preferredSkills: ["React"] } as any), onSave: vi.fn(async () => {}) };
+    const on = { excludedSkillsFilter: true, preferredSkillsRanking: true };
+    const cases: Array<[any, any, RegExp, boolean]> = [
+      [{ preferredSkillsRanking: false }, "pro", /Saved, but not used to rank your feed yet/, false],
+      [on, "pro", /Used to order your recommended jobs\. Search sorting is not ranked by skills\./, true],
+      [on, "free", /Preferred skills reorder recommendations for Pro accounts only/, false],
+      [on, "unknown", /Your plan is still loading/, false],
+      [on, undefined, /Your plan is still loading/, false],
+    ];
+    for (const [caps, plan, re, applied] of cases) {
+      const { unmount } = render(<PreferencesSheet isOpen {...base} capabilities={caps} accountPlan={plan} />);
+      openGroup("Interests");
+      expect(screen.getByText(re)).toBeTruthy();
+      expect(!!screen.queryAllByText(/Skill: React \(saved, not applied\)/).length || !!screen.queryByText(/Preferred skills \(saved, not applied\)/)).toBe(!applied);
+      unmount();
+    }
+  });
   it("is a labelled dialog with a top count, compact summaries and +N overflow", () => {
     setup();
     const dialog = screen.getByRole("dialog", { name: "Preferences" });
-    // roles, work model, country
-    expect(within(dialog).getByLabelText("3 active preferences")).toBeTruthy();
+    // 3 roles + 1 work model + country: every selected value, same as the chips
+    expect(within(dialog).getByLabelText("5 active preferences")).toBeTruthy();
     expect(chipTexts("function")).toEqual(["Frontend Developer", "Backend Engineer", "My Custom Role"]);
     expect(chipTexts("work-model")).toEqual(["Remote"]);
     expect(chipTexts("location")).toEqual(["India"]);
@@ -70,13 +244,13 @@ describe("PreferencesSheet", () => {
   it("nested job-function picker: search, select, back keeps the draft, remove chip", () => {
     const { onSave } = setup();
     openGroup("Basic");
-    fireEvent.click(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Data Engineer" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByLabelText("Search job functions")).toBeNull();
-    expect(screen.getByRole("button", { name: /\+2/ })).toBeTruthy(); // 4 roles: 2 shown +2
-    fireEvent.click(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    expect(screen.getByTestId("job-function-chips").querySelectorAll("button").length).toBe(4); // all 4 roles as chips, none collapsed
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.click(screen.getByRole("button", { name: "Remove Backend Engineer" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     update();
@@ -85,10 +259,37 @@ describe("PreferencesSheet", () => {
     expect(saved.categories).toEqual(["engineering", "data"]); // custom role adds no invented category
   });
 
+  it("job-function picker shows roles as compact chips (checkbox kept for a11y), selected chips above search", () => {
+    setup({ roles: ["Data Engineer"] });
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
+    fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
+    const cb = screen.getByRole("checkbox", { name: "Data Engineer" });
+    expect(cb.className).toContain("sr-only");
+    expect(cb.closest("label")?.className).toContain("bg-[#DBEAFE]");
+    const sel = screen.getByLabelText("Selected job functions");
+    const search = screen.getByLabelText("Search job functions");
+    expect(sel.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("picker has one Job Function header; Back returns to the sheet with the draft and Update intact", () => {
+    const { onSave } = setup({ roles: [] });
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
+    expect(screen.getByRole("heading", { name: "Job Function" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Preferences", hidden: true }).parentElement?.parentElement?.className).toContain("hidden");
+    fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Data Engineer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByLabelText("Search job functions")).toBeNull();
+    update();
+    expect(lastSaved(onSave).roles).toEqual(["Data Engineer"]);
+  });
+
   it("custom role from search, excluded titles de-duplicated, multi work model and job types", async () => {
     const { onSave } = setup();
     openGroup("Basic");
-    fireEvent.click(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "Prompt Whisperer" } });
     fireEvent.click(screen.getByRole("button", { name: /Add “Prompt Whisperer” as a custom role/ }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -156,13 +357,13 @@ describe("PreferencesSheet", () => {
     expect(screen.getByRole("checkbox", { name: "I need visa sponsorship (e.g. H-1B)." })).toBeTruthy();
   });
 
-  it("a multi work-model choice is saved in full but not counted, and says why", async () => {
+  it("a multi work-model choice is saved in full and each choice counts, with the ranking note", async () => {
     const { onSave } = setup();
-    expect(screen.getByLabelText("3 active preferences")).toBeTruthy();
+    expect(screen.getByLabelText("5 active preferences")).toBeTruthy();
     openGroup("Basic");
     fireEvent.click(screen.getByRole("checkbox", { name: "Hybrid" }));
-    expect(screen.getByLabelText("2 active preferences")).toBeTruthy();
-    expect(screen.getByText(/isn.t counted as active/)).toBeTruthy();
+    expect(screen.getByLabelText("6 active preferences")).toBeTruthy();
+    expect(screen.getByText(/several rank as open to any setup/)).toBeTruthy();
     await act(async () => update());
     expect(lastSaved(onSave).workModels).toEqual(["hybrid", "remote"]);
     expect(lastSaved(onSave).remotePreference).toBe("any");
@@ -174,7 +375,7 @@ describe("PreferencesSheet", () => {
     const never = screen.getByLabelText("Never show these companies");
     fireEvent.change(never, { target: { value: "Globex" } });
     fireEvent.keyDown(never, { key: "Enter" });
-    expect(screen.getByLabelText("3 active preferences")).toBeTruthy();
+    expect(screen.getByLabelText("5 active preferences")).toBeTruthy();
     expect(screen.getAllByText(/Saved, but not applied to your feed yet/).length).toBeGreaterThan(0);
   });
 
@@ -248,7 +449,7 @@ describe("PreferencesSheet", () => {
     expect(onSave).not.toHaveBeenCalled();
     rerender(<PreferencesSheet isOpen={false} ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
     rerender(<PreferencesSheet isOpen ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
-    expect(screen.getByLabelText("3 active preferences")).toBeTruthy();
+    expect(screen.getByLabelText("5 active preferences")).toBeTruthy();
   });
 
   it("one save while pending (no double submit); close is blocked until it settles", async () => {
@@ -289,13 +490,13 @@ describe("Preferences focus lifecycle", () => {
   it("focuses committed picker nodes synchronously and never schedules stale focus", () => {
     setup();
     openGroup("Basic");
-    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search job functions" }));
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.click(document.activeElement!);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
   });
 });
 
@@ -303,6 +504,25 @@ describe("Preferences focus lifecycle", () => {
 const chipTexts = (kind: string) =>
   Array.from(screen.getByRole("dialog", { name: "Preferences" }).querySelectorAll(`[data-testid="preferences-chips"] [data-chip="${kind}"]`)).map((c) => c.textContent || "");
 const locationLine = () => "Location: " + chipTexts("location").join(", ");
+
+describe("PreferencesSheet Clear on salary and company lists", () => {
+  it("clears minimum salary only, and each company list separately, then Update saves it", () => {
+    const { onSave } = setup({ minSalary: 90000, salaryCurrency: "USD", includedCompanies: ["Acme"], excludedCompanies: ["Globex"] });
+    openGroup("Compensation");
+    fireEvent.click(screen.getByRole("button", { name: "Clear minimum salary" }));
+    expect(screen.queryByRole("button", { name: "Clear minimum salary" })).toBeNull();
+    openGroup("Company");
+    fireEvent.click(screen.getByRole("button", { name: "Clear never-show companies" }));
+    expect(screen.queryByRole("button", { name: "Clear never-show companies" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Clear only-show companies" })).toBeTruthy();
+    update();
+    const saved = lastSaved(onSave);
+    expect(saved.minSalary).toBeUndefined(); // serializer omits a cleared minimum, as the existing salary test asserts
+    expect(saved.excludedCompanies).toEqual([]);
+    expect(saved.includedCompanies).toEqual(["Acme"]);
+    expect(saved.salaryCurrency).toBe("USD");
+  });
+});
 
 describe("PreferencesSheet chips are truthful about saved-but-not-applied constraints", () => {
   const over = { excludedTitles: ["Intern"], datePosted: "7d" as const };
@@ -320,11 +540,20 @@ describe("PreferencesSheet chips are truthful about saved-but-not-applied constr
     expect(chipTexts("posted")).toEqual(["Past week"]);
     vi.unstubAllEnvs();
   });
-  it("constraints unavailable: no excluded or posted chips, and the chip row is keyboard focusable", () => {
+  it("constraints unavailable: no excluded or posted chips, and the chip row wraps instead of scrolling", () => {
     setup({ ...over, feedConstraintsAvailable: false });
     expect(chipTexts("excluded")).toEqual([]);
     expect(chipTexts("posted")).toEqual([]);
-    expect(screen.getByTestId("preferences-chips").getAttribute("tabindex")).toBe("0");
+    expect(screen.getByTestId("preferences-chips").className).toContain("flex-wrap");
+    expect(screen.getByTestId("preferences-chips").className).not.toContain("overflow-x-auto");
+  });
+  it("shows the first six selections then +N, and the +N button reveals the rest", () => {
+    setup({ roles: ["A1","A2","A3","A4","A5","A6","A7","A8"], workModels: [], remotePreference: "any", countryCode: "", country: "" });
+    expect(screen.getByTestId("preferences-chips").querySelectorAll("[role=listitem]").length).toBe(6);
+    fireEvent.click(screen.getByRole("button", { name: "+2" }));
+    expect(screen.getByTestId("preferences-chips").querySelectorAll("[role=listitem]").length).toBe(8);
+    fireEvent.click(screen.getByRole("button", { name: "Less" }));
+    expect(screen.getByTestId("preferences-chips").querySelectorAll("[role=listitem]").length).toBe(6);
   });
 });
 
@@ -353,4 +582,48 @@ describe("PreferencesSheet Location summary de-duplication (display only)", () =
     expect(saved.locations).toEqual(["United States", "Austin, TX"]);
     expect(saved.countryCode).toBe("US");
   });
+});
+
+describe("Job function selected chips", () => {
+  it("shows every selected role as a removable chip plus Add, no collapsed summary", () => {
+    const { onSave } = setup({ roles: ["Growth Marketer", "Performance Marketer", "Copywriter"] });
+    openGroup("Basic");
+    const chips = screen.getByTestId("job-function-chips");
+    for (const r of ["Growth Marketer", "Performance Marketer", "Copywriter"]) expect(chips.textContent).toContain(r);
+    expect(screen.queryByText(/\+\d+$/, { selector: "span.truncate" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Performance Marketer" }));
+    expect(screen.getByTestId("job-function-chips").textContent).not.toContain("Performance Marketer");
+    update();
+    expect(lastSaved(onSave).roles).toEqual(["Growth Marketer", "Copywriter"]);
+  });
+  it("Add opens the existing picker and a picked role joins the chips", () => {
+    setup({ roles: ["Copywriter"] });
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: "Add job function" }));
+    fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Data Engineer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByTestId("job-function-chips").textContent).toContain("Data Engineer");
+    expect(screen.getByTestId("job-function-chips").textContent).toContain("Copywriter");
+  });
+  it("with no roles the control still reads Choose job functions", () => {
+    setup({ roles: [] });
+    openGroup("Basic");
+    expect(screen.queryByTestId("job-function-chips")).toBeNull();
+    expect(screen.getByRole("button", { name: "Choose job functions" })).toBeTruthy();
+  });
+  it("counter counts every selected value like the chip strip (8 roles = 8, group badge agrees)", () => {
+    setup({ roles: ["A1","A2","A3","A4","A5","A6","A7","A8"], workModels: [], remotePreference: "any", countryCode: "", country: "" });
+    expect(screen.getByLabelText("8 active preferences")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Basic/ }).textContent).toMatch(/8/);
+  });
+  it("multi-level selected chips and the Basic/top counters agree; all six count zero", () => {
+    const first=setup({roles:[],employmentTypes:[],workModels:[],remotePreference:"any",countryCode:"",country:"",experienceLevel:"entry,senior"});
+    expect(screen.getByLabelText("2 active preferences")).toBeTruthy();
+    expect(screen.getByRole("button",{name:/^Basic/}).textContent).toMatch(/2/);
+    first.unmount();
+    setup({roles:[],employmentTypes:[],workModels:[],remotePreference:"any",countryCode:"",country:"",experienceLevel:"intern,entry,mid,senior,lead,director"});
+    expect(screen.queryByLabelText(/active preferences/)).toBeNull();
+  });
+
 });
