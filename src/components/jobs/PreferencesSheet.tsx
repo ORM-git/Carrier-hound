@@ -4,7 +4,7 @@ import { useSheetPresence } from "./hooks/useSheetPresence";
 import "./sheet-motion.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, Check, Lock } from "lucide-react";
+import { X, ChevronDown, Plus, Search, Check, Lock } from "lucide-react";
 import type { UserPreferences } from "@/lib/auth/types";
 import { ONBOARDING_CATEGORIES, JOB_TYPE_OPTIONS, LOCATION_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 import { SUPPORTED_COUNTRIES, getCountryName } from "@/lib/countries";
@@ -547,20 +547,27 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
   const roleList = (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-[#E2E8F0] px-3 py-2">
+      <div className="flex items-center justify-between gap-2 px-5 pb-1 pt-2">
+        <h3 className="text-[20px] font-bold text-[#0F172A]">Job Function</h3>
         <button
           type="button"
           onClick={() => {
             setRolePickerOpen(false);
-
           }}
-          className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-[14px] font-semibold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+          aria-label="Back"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F1F5F9] text-[#0F172A] hover:bg-[#E2E8F0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
         >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Back
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
-        <h3 className="text-[15px] font-bold text-[#0F172A]">Job function</h3>
       </div>
-      <div className="border-b border-[#E2E8F0] px-5 py-3">
+      <div className="px-5 pb-3 pt-1">
+        {draft.roles.length > 0 && (
+          <div className="mb-3 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto" aria-label="Selected job functions">
+            {draft.roles.map((r) => (
+              <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
+            ))}
+          </div>
+        )}
         <label htmlFor="pref-role-search" className="sr-only">Search job functions</label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" aria-hidden="true" />
@@ -578,18 +585,11 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
               }
             }}
             placeholder="Search roles, e.g. Data Engineer"
-            className="h-11 w-full rounded-xl border border-[#CBD5E1] bg-white pl-9 pr-3 text-[14px] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
+            className="h-11 w-full rounded-xl border border-transparent bg-[#F1F5F9] pl-9 pr-3 text-[14px] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#BFDBFE]"
           />
         </div>
-        {draft.roles.length > 0 && (
-          <div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto" aria-label="Selected job functions">
-            {draft.roles.map((r) => (
-              <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
-            ))}
-          </div>
-        )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#EEF2F9] px-4 py-3">
         {ONBOARDING_CATEGORIES.map((cat) => {
           const subgroups = cat.subgroups
             .map((sg) => ({ ...sg, roles: roleQ ? sg.roles.filter((r) => r.toLowerCase().includes(roleQ)) : sg.roles }))
@@ -598,7 +598,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
           const open = Boolean(roleQ) || openCategory === cat.id;
           const selectedHere = cat.subgroups.reduce((n, sg) => n + sg.roles.filter((r) => draft.roles.includes(r)).length, 0);
           return (
-            <div key={cat.id} className="border-b border-[#F1F5F9] last:border-b-0">
+            <div key={cat.id} className="mb-2 rounded-2xl bg-white px-4">
               <button
                 type="button"
                 aria-expanded={open}
@@ -609,18 +609,19 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                   {cat.name}
                   {selectedHere > 0 && <span className="ml-2 rounded-full bg-[#DBEAFE] px-1.5 text-[11px] font-bold text-[#1E40AF]">{selectedHere}</span>}
                 </span>
-                <ChevronRight className={`h-4 w-4 text-[#94A3B8] transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+                <ChevronDown className={`h-4 w-4 text-[#0F172A] transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
               {open && (
                 <div className="space-y-3 pb-3">
                   {subgroups.map((sg) => (
                     <fieldset key={sg.name}>
-                      <legend className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">{sg.name}</legend>
-                      <div className="grid grid-cols-1 gap-1.5">
+                      <legend className="mb-2 text-[14px] font-bold text-[#0F172A]">{sg.name}</legend>
+                      <div className="flex flex-wrap gap-2">
                         {sg.roles.map((r) => (
-                          <CheckOption key={r} checked={draft.roles.includes(r)} onChange={() => set("roles", toggleIn(draft.roles, r))}>
+                          <label key={r} className={`inline-flex min-h-[36px] cursor-pointer items-center rounded-lg px-3 text-[13px] focus-within:ring-2 focus-within:ring-[#2563EB] ${draft.roles.includes(r) ? "bg-[#DBEAFE] font-medium text-[#1E3A8A]" : "bg-[#F1F5F9] text-[#334155]"}`}>
+                            <input type="checkbox" className="sr-only" checked={draft.roles.includes(r)} onChange={() => set("roles", toggleIn(draft.roles, r))} />
                             {r}
-                          </CheckOption>
+                          </label>
                         ))}
                       </div>
                     </fieldset>
@@ -662,7 +663,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto mb-1 mt-3 h-1.5 w-12 shrink-0 rounded-full bg-slate-300 sm:hidden" aria-hidden="true" />
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#E2E8F0] px-5 py-2.5">
+        <div className={`shrink-0 items-center justify-between gap-2 border-b border-[#E2E8F0] px-5 py-2.5 ${rolePickerOpen ? "hidden" : "flex"}`}>
           <div className="flex min-w-0 items-center gap-2">
             <h2 id={titleId} className="text-[17px] font-bold text-[#0F172A]">Preferences</h2>
             {draftCount > 0 && (
