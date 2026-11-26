@@ -27,6 +27,7 @@ import {
   EARLY_CAREER_OR_CLAUSE,
 } from "./experienceLevels";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { appendBrowseFilterParams, hasBrowseFilters, mergeBrowseConstraints, type BrowseFilters } from "@/lib/jobs/browseFilters";
 
 export interface LiveJob {
   id: string;
@@ -126,6 +127,8 @@ export interface GetJobsOptions {
   cursor?: string | null;
   eligibility?: "on" | "off" | string;
   currency?: string;
+  /** Transient Jobs-page filters (browse only, never saved). Any active one routes to the server. */
+  browse?: BrowseFilters | null;
 }
 
 export interface GetJobsResult {
@@ -136,6 +139,10 @@ export interface GetJobsResult {
   isDegraded?: boolean;
   error?: string | null;
   appliedEligibility?: { countries: string[]; filteredOut: number } | null;
+  /** Server validation body when error === "invalid_filter": { error, field, reason }. */
+  filterError?: { error: string; field: string; reason: string } | null;
+  /** Rates used by an annual-salary browse filter (null when none applied). */
+  salaryFx?: { source: string; fetchedAt: string | null; rates: Record<string, number>; baseCurrency: string | null } | null;
 }
 
 /**
@@ -360,6 +367,9 @@ import { createLogger } from "@/lib/observability/logger";
 const log = createLogger({ context: { module: "jobs/service" } });
 export { capJobsPerCompany };
 
+/** A 400 from the server: the browse selection is invalid. Not retryable; never a broadened feed. */
+const INVALID_FILTER_RESULT: GetJobsResult = { jobs: [], totalCount: 0, nextCursor: null, hasNextPage: false, error: "invalid_filter" };
+
 const DEGRADED_JOBS_RESULT: GetJobsResult = {
   jobs: [],
   totalCount: 0,
@@ -421,7 +431,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
 
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
-  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
+  const browse = options.browse;
+  const requestConstraints = mergeBrowseConstraints(feedConstraints, browse);
+  const hasServerFilter = Boolean(hasBrowseFilters(browse) || hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
   const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
@@ -465,7 +477,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (workModel && workModel !== "all") recParams.set("workModel", workModel);
         if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
         if (effectiveDatePosted) recParams.set("datePosted", effectiveDatePosted);
-        appendFeedConstraintParams(recParams, feedConstraints);
+        appendFeedConstraintParams(recParams, requestConstraints);
+        appendBrowseFilterParams(recParams, browse);
         if (experience && experience !== "all" && experience.toLowerCase() !== "all experience") recParams.set("experience", experience);
         if (salaryMin) recParams.set("salaryMin", String(salaryMin));
         if (sourceType && sourceType !== "all") recParams.set("sourceType", sourceType);
@@ -475,6 +488,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         // A failed request is a retryable error, never a silently unpersonalized or empty feed.
         const recRes = await fetch(`${baseUrl}/api/jobs/recommended?${recParams.toString()}`, { headers, signal: options.signal }).catch(() => null);
         if (!recRes) return DEGRADED_JOBS_RESULT;
+        if (recRes.status === 400) return { ...INVALID_FILTER_RESULT, filterError: await recRes.json().catch(() => null) };
         if (recRes.status === 403) {
           return {
             jobs: [],
@@ -506,6 +520,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           nextCursor: null,
           hasNextPage: (page * pageSize) < count,
           isDegraded: false,
+          salaryFx: json.salaryFx ?? null,
         };
       }
 
@@ -524,7 +539,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (effectiveDatePosted) params.set("datePosted", effectiveDatePosted);
-      appendFeedConstraintParams(params, feedConstraints);
+      appendFeedConstraintParams(params, requestConstraints);
+      appendBrowseFilterParams(params, browse);
       if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
       if (experience && experience !== "all" && experience !== "All Experience") params.set("experience", experience);
       if (salaryMin) params.set("salaryMin", String(salaryMin));
@@ -536,6 +552,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (options.currency) params.set("currency", options.currency);
 
       const res = await fetch(`${baseUrl}/api/jobs/search?${params.toString()}`, { headers, signal: options.signal });
+      if (res.status === 400) return { ...INVALID_FILTER_RESULT, filterError: await res.json().catch(() => null) };
       if (res.status === 403) {
         return {
           jobs: [],
@@ -565,6 +582,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           hasNextPage: Boolean(json.hasNextPage),
           isDegraded: Boolean(json.degraded),
           appliedEligibility: json.appliedEligibility || null,
+          salaryFx: json.salaryFx ?? null,
           ...(json.degraded ? { error: "degraded" } : {}),
         };
       } else {
@@ -577,7 +595,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
 
   // The direct jobs_public query cannot express saved title/company constraints: a retryable error,
   // never a silently broadened personalized feed.
-  if (feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints)) {
+  if (hasBrowseFilters(browse) || feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints)) {
     return DEGRADED_JOBS_RESULT;
   }
 

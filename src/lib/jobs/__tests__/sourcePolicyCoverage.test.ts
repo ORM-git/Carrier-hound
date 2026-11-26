@@ -13,7 +13,8 @@ const SITES: Record<string, number> = {
   "src/app/api/jobs/search/route.ts": 2,
   "src/app/api/jobs/pro/route.ts": 4,
   "src/app/api/jobs/top10/route.ts": 3,
-  "src/app/api/jobs/recommended/route.ts": 2,
+  "src/app/api/jobs/recommended/route.ts": 1, // Pro hydrate; the candidate read moved into recommendedRequest.ts (#798)
+  "src/lib/jobs/recommendedRequest.ts": 1, // baseCandidateQuery: shared by the recommended and snapshot routes
   "src/app/api/jobs/suggest/route.ts": 1,
   "src/app/api/stats/route.ts": 1,
   "src/app/api/radar/route.ts": 2,
@@ -26,7 +27,7 @@ const SITES: Record<string, number> = {
   "netlify/functions/stats.ts": 1,
   "netlify/functions/ticker.ts": 1,
 };
-const READ = /\.from\(\s*(?:["'`]jobs(?:_public)?["'`]|targetTable)\s*\)/g;
+const READ = /\.from\(\s*(?:["'`]jobs(?:_public)?["'`]|(?:r\.)?targetTable)\s*\)/g;
 
 describe("every app read of jobs applies the source policy", () => {
   for (const [file, expected] of Object.entries(SITES)) {
@@ -42,6 +43,18 @@ describe("every app read of jobs applies the source policy", () => {
       }
     });
   }
+});
+
+// The snapshot serve-time salary recheck reads live jobs through an RPC (jobs_salary_rows). That RPC does not apply
+// the source policy itself, so its only call site must feed it to baseCandidateQuery, which does.
+describe("snapshot salary RPC read applies the source policy", () => {
+  it("jobs_salary_rows is called once and only reaches the route through baseCandidateQuery", () => {
+    const lib = readFileSync(path.join(ROOT, "src/lib/jobs/feedSnapshot.ts"), "utf8");
+    expect(lib.match(/\.rpc\(\s*["'`]jobs_salary_rows["'`]/g) ?? []).toHaveLength(1);
+    const route = readFileSync(path.join(ROOT, "src/app/api/jobs/recommended/snapshot/route.ts"), "utf8");
+    expect(route.match(/liveSalaryRows\(/g) ?? []).toHaveLength(1);
+    expect(route).toMatch(/const source = held \? liveSalaryRows\([^;]*;\s*\n\s*const q = applyRecommendedFilters\(baseCandidateQuery\(r, cols, source\)/);
+  });
 });
 
 // The retained-today count is deliberately raw (no source/active/status filter). Pin that exemption to the one

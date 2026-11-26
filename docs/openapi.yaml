@@ -264,6 +264,23 @@ paths:
       responses:
         "200": { description: Recommended jobs result }
         "503": { description: Service unavailable }
+  /api/jobs/recommended/snapshot:
+    get:
+      tags: [jobs]
+      summary: Ranked snapshot feed (prototype; 404 unless FEED_SNAPSHOT_PROTOTYPE=on)
+      description: >-
+        Without a cursor, builds a ranked snapshot of the full eligible corpus and serves page 1; with
+        cursor=fs1.<id>.<position>, serves the next page of that snapshot for the same viewer, session, tier and
+        filters only. Bearer is optional: guests get masked Free cards, a valid token adds Pro fields and saved
+        preferences. Every response sends Cache-Control "private, no-store".
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        "200": { description: Snapshot page }
+        "400": { description: Invalid browse filter (incl. client fxRates or jobFunction) }
+        "404": { description: Prototype flag off }
+        "409": { description: Snapshot reset (cursor of another viewer, session, tier or filter set, or expired) }
+        "429": { description: Rate limited }
+        "503": { description: Snapshot unavailable, busy, too large, or database unavailable }
   /api/jobs/search:
     get:
       tags: [jobs]
