@@ -70,13 +70,13 @@ describe("PreferencesSheet", () => {
   it("nested job-function picker: search, select, back keeps the draft, remove chip", () => {
     const { onSave } = setup();
     openGroup("Basic");
-    fireEvent.click(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Data Engineer" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByLabelText("Search job functions")).toBeNull();
-    expect(screen.getByRole("button", { name: /\+2/ })).toBeTruthy(); // 4 roles: 2 shown +2
-    fireEvent.click(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    expect(screen.getByTestId("job-function-chips").querySelectorAll("button").length).toBe(4); // all 4 roles as chips, none collapsed
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.click(screen.getByRole("button", { name: "Remove Backend Engineer" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     update();
@@ -88,7 +88,7 @@ describe("PreferencesSheet", () => {
   it("custom role from search, excluded titles de-duplicated, multi work model and job types", async () => {
     const { onSave } = setup();
     openGroup("Basic");
-    fireEvent.click(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "Prompt Whisperer" } });
     fireEvent.click(screen.getByRole("button", { name: /Add “Prompt Whisperer” as a custom role/ }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -289,13 +289,13 @@ describe("Preferences focus lifecycle", () => {
   it("focuses committed picker nodes synchronously and never schedules stale focus", () => {
     setup();
     openGroup("Basic");
-    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Frontend Developer, Backend Engineer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search job functions" }));
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
     fireEvent.click(document.activeElement!);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
   });
 });
 
@@ -352,5 +352,35 @@ describe("PreferencesSheet Location summary de-duplication (display only)", () =
     const saved = lastSaved(onSave);
     expect(saved.locations).toEqual(["United States", "Austin, TX"]);
     expect(saved.countryCode).toBe("US");
+  });
+});
+
+describe("Job function selected chips", () => {
+  it("shows every selected role as a removable chip plus Add, no collapsed summary", () => {
+    const { onSave } = setup({ roles: ["Growth Marketer", "Performance Marketer", "Copywriter"] });
+    openGroup("Basic");
+    const chips = screen.getByTestId("job-function-chips");
+    for (const r of ["Growth Marketer", "Performance Marketer", "Copywriter"]) expect(chips.textContent).toContain(r);
+    expect(screen.queryByText(/\+\d+$/, { selector: "span.truncate" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Performance Marketer" }));
+    expect(screen.getByTestId("job-function-chips").textContent).not.toContain("Performance Marketer");
+    update();
+    expect(lastSaved(onSave).roles).toEqual(["Growth Marketer", "Copywriter"]);
+  });
+  it("Add opens the existing picker and a picked role joins the chips", () => {
+    setup({ roles: ["Copywriter"] });
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: "Add job function" }));
+    fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Data Engineer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByTestId("job-function-chips").textContent).toContain("Data Engineer");
+    expect(screen.getByTestId("job-function-chips").textContent).toContain("Copywriter");
+  });
+  it("with no roles the control still reads Choose job functions", () => {
+    setup({ roles: [] });
+    openGroup("Basic");
+    expect(screen.queryByTestId("job-function-chips")).toBeNull();
+    expect(screen.getByRole("button", { name: "Choose job functions" })).toBeTruthy();
   });
 });
