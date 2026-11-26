@@ -720,10 +720,10 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
             {activeChips.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 px-5 pt-1 pb-1" data-testid="preferences-chips" aria-label="Selected preferences" role="list">
                 {(chipsExpanded ? activeChips : activeChips.slice(0, CHIP_STRIP_LIMIT)).map((c, i) => (
-                  <span key={`${c.kind}-${c.text}-${i}`} data-chip={c.kind} role="listitem" className="max-w-full truncate rounded-lg bg-[#E2E8F0] px-2.5 py-1 text-[13px] font-medium text-[#0F172A]">{c.text}</span>
+                  <span key={`${c.kind}-${c.text}-${i}`} data-chip={c.kind} role="listitem" className="max-w-full truncate rounded-md bg-[#E2E8F0] px-[5px] py-[3px] text-[11px] font-medium leading-[15px] text-[#0F172A]">{c.text}</span>
                 ))}
                 {activeChips.length > CHIP_STRIP_LIMIT && (
-                  <button type="button" aria-expanded={chipsExpanded} onClick={() => setChipsExpanded((v) => !v)} className="min-h-[32px] rounded-lg bg-white px-2.5 py-1 text-[13px] font-semibold text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]">
+                  <button type="button" aria-expanded={chipsExpanded} onClick={() => setChipsExpanded((v) => !v)} className="relative rounded-md bg-white px-[5px] py-[3px] text-[11px] font-medium leading-[15px] text-[#0F172A] before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]">
                     {chipsExpanded ? "Less" : `+${activeChips.length - CHIP_STRIP_LIMIT}`}
                   </button>
                 )}
