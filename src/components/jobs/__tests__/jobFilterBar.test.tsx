@@ -218,4 +218,32 @@ describe("JobFilterBar - saved (onboarding) display", () => {
     mk({});
     expect(screen.getByLabelText(/job type filter/i).getAttribute("data-saved-preference")).toBeNull();
   });
+  it("explicit location wins over the saved country: shown, unmarked, and Confirm submits only the location", () => {
+    const onChange = vi.fn();
+    mk({ location: "Boston" }, { countryCode: "IN" }, onChange);
+    const btn = screen.getByLabelText(/location filter/i);
+    expect(btn.getAttribute("aria-label")).toContain("Boston");
+    expect(btn.getAttribute("aria-label")).not.toContain("IN");
+    expect(btn.getAttribute("data-saved-preference")).toBeNull();
+    fireEvent.click(btn);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const patch = onChange.mock.calls[0][0];
+    expect(patch.location).toBe("Boston");
+    expect(patch.countryCode || "").toBe("");
+  });
+
+  it("saved country still shows when there is no explicit location or country", () => {
+    mk({}, { countryCode: "IN" });
+    const btn = screen.getByLabelText(/location filter/i);
+    expect(btn.getAttribute("aria-label")).toContain("IN");
+    expect(btn.getAttribute("data-saved-preference")).toBe("true");
+  });
+  it("independent (QA 867): explicit location must override saved country through confirm", () => {
+    const onChange = vi.fn();
+    mk({ location: "Boston" }, { countryCode: "IN" }, onChange);
+    fireEvent.click(screen.getByLabelText(/location filter/i));
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(onChange.mock.calls[0][0]).toMatchObject({ countryCode: "", location: "Boston" });
+  });
 });
