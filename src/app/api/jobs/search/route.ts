@@ -10,6 +10,7 @@ import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
+import { applyBrowseFilters, browseFiltersActive, isBrowseFilterError, parseBrowseFilters, resolveBrowseFxRates, salaryFxReport } from "@/lib/jobs/browseFilters";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@/lib/jobs/eligibility";
 import {
@@ -350,7 +351,21 @@ async function getHandler(req: Request) {
       );
     }
 
+    // Transient browse filters: invalid input is a 400, never silently dropped; they need jobs (role_category, salary).
+    const browse = parseBrowseFilters(searchParams);
+    if (isBrowseFilterError(browse)) return NextResponse.json(browse, { status: 400 });
+    if (browseFiltersActive(browse) && !hasServiceKey) {
+      return NextResponse.json(
+        { degraded: true, jobs: [], totalCount: 0, hasNextPage: false, hasMore: false, nextCursor: null },
+        { status: 503 }
+      );
+    }
+    // One rate table per response; a salary-filtered continuation evaluates on page 1's pinned rates.
+    const fxRates = resolveBrowseFxRates(browse, Boolean(cursorParam) || page > 1);
+    if (isBrowseFilterError(fxRates)) return NextResponse.json(fxRates, { status: 400 });
+
     const hasActiveFilter = Boolean(
+      browseFiltersActive(browse) ||
       hasFeedConstraints(feedConstraints) ||
       (category && category !== "all") ||
       remoteOnly ||
@@ -491,6 +506,7 @@ async function getHandler(req: Request) {
     if (postedCutoff) query = query.gte("posted_at", postedCutoff);
 
     query = applyFeedConstraints(query, feedConstraints);
+    query = applyBrowseFilters(query, browse, fxRates);
 
     // Company filter (server-side)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
@@ -928,6 +944,7 @@ async function getHandler(req: Request) {
       pageSize,
       isPro: Boolean(isPro && hasServiceKey),
       appliedEligibility,
+      salaryFx: salaryFxReport(browse, fxRates),
     });
   } catch (err: any) {
     try {

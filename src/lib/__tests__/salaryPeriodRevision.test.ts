@@ -104,7 +104,9 @@ describe("salary_period is a paid score input", () => {
 
   it("list and detail give the same revision for the same row", () => {
     // Every Pro select feeding scoreInputRevision(..., true, NOW) returns salary_period (explicitly or via "*")
-    const recommended = readFileSync("src/app/api/jobs/recommended/route.ts", "utf8");
+    // Since #798 the recommended candidate select lives in the shared builder (selectCols), used by the route.
+    const recommended = readFileSync("src/lib/jobs/recommendedRequest.ts", "utf8");
+    expect(readFileSync("src/app/api/jobs/recommended/route.ts", "utf8")).toMatch(/baseCandidateQuery\(r, selectCols\)/);
     const pro = readFileSync("src/app/api/jobs/pro/route.ts", "utf8");
     const search = readFileSync("src/app/api/jobs/search/route.ts", "utf8");
     expect(recommended).toMatch(/"id, title, company, company_id,[^"]*salary_max, salary_period,/);

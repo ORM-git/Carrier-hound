@@ -21,37 +21,58 @@ export function splitTopLevel(expr: string): string[] {
   return out;
 }
 
-const ilike = (v: string, pat: string) =>
-  new RegExp(
-    "^" + pat.split("%").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s\\S]*") + "$",
-    "i"
-  ).test(v);
+type Compiled = (row: Record<string, any>) => Tri;
+// Expressions repeat on every row of every query; compiling each node once removes the per-row string splitting
+// and RegExp construction. Evaluation logic is unchanged (pinned by postgrestLogicTree.test.ts against the old evaluator).
+const compiled = new Map<string, Compiled>();
 
-export function evalPostgrestNode(node: string, row: Record<string, any>): Tri {
+function compileNode(node: string): Compiled {
   const m = node.match(/^(and|or)\(([\s\S]*)\)$/);
   if (m) {
-    const vals = splitTopLevel(m[2]).map((n) => evalPostgrestNode(n, row));
-    if (m[1] === "and") return vals.includes(false) ? false : vals.includes(null) ? null : true;
-    return vals.includes(true) ? true : vals.includes(null) ? null : false;
+    const kids = splitTopLevel(m[2]).map(compile);
+    if (m[1] === "and") {
+      return (row) => { const vals = kids.map((k) => k(row)); return vals.includes(false) ? false : vals.includes(null) ? null : true; };
+    }
+    return (row) => { const vals = kids.map((k) => k(row)); return vals.includes(true) ? true : vals.includes(null) ? null : false; };
   }
   const [col, ...rest] = node.split(".");
   const negate = rest[0] === "not";
   const [op, ...valParts] = negate ? rest.slice(1) : rest;
   const value = valParts.join(".");
-  const v = row[col];
-  let r: Tri;
-  if (op === "is") r = value === "null" ? v === null || v === undefined : String(v) === value;
-  else if (v === null || v === undefined) r = null;
-  else if (op === "ilike") r = ilike(String(v), value);
-  else if (op === "imatch") r = new RegExp(value.replace(/\\y/g, "\\b"), "i").test(String(v));
-  else if (op === "eq") r = String(v) === value;
-  else if (op === "neq") r = String(v) !== value;
-  else if (op === "gt" || op === "gte" || op === "lt" || op === "lte") {
-    const a = typeof v === "number" ? v : String(v);
-    const b = typeof v === "number" ? Number(value) : value;
-    r = op === "gt" ? a > b : op === "gte" ? a >= b : op === "lt" ? a < b : a <= b;
-  } else r = false; // unsupported operator: never matches (same as the previous naive fakes)
-  return negate && r !== null ? !r : r;
+  const ilikeRe = op === "ilike"
+    ? new RegExp("^" + value.split("%").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s\\S]*") + "$", "i")
+    : null;
+  const imatchRe = op === "imatch" ? new RegExp(value.replace(/\\y/g, "\\b"), "i") : null;
+  return (row) => {
+    const v = row[col];
+    let r: Tri;
+    if (op === "is") r = value === "null" ? v === null || v === undefined : String(v) === value;
+    else if (v === null || v === undefined) r = null;
+    else if (op === "ilike") r = ilikeRe!.test(String(v));
+    else if (op === "imatch") r = imatchRe!.test(String(v));
+    else if (op === "eq") r = String(v) === value;
+    else if (op === "neq") r = String(v) !== value;
+    else if (op === "gt" || op === "gte" || op === "lt" || op === "lte") {
+      const a = typeof v === "number" ? v : String(v);
+      const b = typeof v === "number" ? Number(value) : value;
+      r = op === "gt" ? a > b : op === "gte" ? a >= b : op === "lt" ? a < b : a <= b;
+    } else r = false; // unsupported operator: never matches (same as the previous naive fakes)
+    return negate && r !== null ? !r : r;
+  };
+}
+
+function compile(node: string): Compiled {
+  let c = compiled.get(node);
+  if (!c) {
+    if (compiled.size > 5000) compiled.clear(); // shortcut: crude bound for a test helper; fine while suites reuse few expressions
+    c = compileNode(node);
+    compiled.set(node, c);
+  }
+  return c;
+}
+
+export function evalPostgrestNode(node: string, row: Record<string, any>): Tri {
+  return compile(node)(row);
 }
 
 /** True when a row passes a `.or(expr)` filter (rows evaluating NULL are excluded, as in SQL). */

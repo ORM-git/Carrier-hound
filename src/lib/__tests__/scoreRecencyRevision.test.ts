@@ -169,7 +169,6 @@ describe("cached and feed scores across a boundary", () => {
 
 describe("routes stamp score and revision from one reference instant", () => {
   const files = [
-    "src/app/api/jobs/recommended/route.ts",
     "src/app/api/jobs/search/route.ts",
     "src/app/api/jobs/pro/route.ts",
     "src/lib/jobs/service.ts",
@@ -181,5 +180,20 @@ describe("routes stamp score and revision from one reference instant", () => {
     // Each call passes the response's one instant as its last argument
     for (const l of calls) expect(l.trim(), l.trim()).toMatch(/,\s*scoredAt\)[,;]?$/);
     expect(lines.filter((l) => /const scoredAt = Date\.now\(\);/.test(l)).length).toBeGreaterThan(0);
+  });
+  // Since #798 the recommended route ranks with its one instant and hands that SAME instant to the shared builder,
+  // which stamps score and revision with it and never reads the clock itself.
+  it("src/app/api/jobs/recommended/route.ts + src/lib/jobs/recommendedRequest.ts (delegated stamping)", () => {
+    const route = readFileSync("src/app/api/jobs/recommended/route.ts", "utf8").split(/\r?\n/);
+    const builder = readFileSync("src/lib/jobs/recommendedRequest.ts", "utf8");
+    const callsOf = (ls: string[]) => ls.filter((l) => /\b(scoreInputRevision|sharedDisplayScore|rankJobsByRecommendation)\(/.test(l) && !/^\s*(import|\/\/|\*)/.test(l));
+    expect(route.filter((l) => /const scoredAt = Date\.now\(\);/.test(l))).toHaveLength(1);
+    for (const l of callsOf(route)) expect(l.trim(), l.trim()).toMatch(/,\s*scoredAt\)[,;]?$/);
+    expect(route.join("\n")).toMatch(/formatRecommendedJobs\([^;]*\bscoredAt \}\)/);
+    const fmt = builder.slice(builder.indexOf("export async function formatRecommendedJobs("));
+    const fmtCalls = callsOf(fmt.split(/\r?\n/));
+    expect(fmtCalls.filter((l) => l.includes("scoreInputRevision("))).toHaveLength(2);
+    for (const l of fmtCalls) expect(l.trim(), l.trim()).toMatch(/,\s*scoredAt\)[,;]?$/);
+    expect(fmt).not.toMatch(/Date\.now\(\)/);
   });
 });

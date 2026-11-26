@@ -1,4 +1,5 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
+import { applyBrowseFilters, browseFiltersActive, isBrowseFilterError, parseBrowseFilters, resolveBrowseFxRates, salaryFxReport } from "@/lib/jobs/browseFilters";
 import { NextResponse } from "next/server";
 import { getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
 import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
@@ -99,6 +100,17 @@ export async function GET(req: Request) {
     }
     let query = filtered;
 
+    // 9c. Transient browse filters (#796): invalid input is a 400; they need the jobs table (role_category, salary).
+    const browse = parseBrowseFilters(searchParams);
+    if (isBrowseFilterError(browse)) return respond(browse, { status: 400 });
+    if (browseFiltersActive(browse) && !hasServiceKey) {
+      return respond({ error: "Browse filters unavailable", jobs: [], totalCount: 0 }, { status: 503 });
+    }
+    // One rate table per response; a salary-filtered continuation evaluates on page 1's pinned rates.
+    const fxRates = resolveBrowseFxRates(browse, page > 1);
+    if (isBrowseFilterError(fxRates)) return respond(fxRates, { status: 400 });
+    query = applyBrowseFilters(query, browse, fxRates);
+
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -189,6 +201,7 @@ export async function GET(req: Request) {
       isPro,
       page,
       pageSize,
+      salaryFx: salaryFxReport(browse, fxRates),
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });

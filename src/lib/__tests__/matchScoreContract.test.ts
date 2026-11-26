@@ -176,8 +176,15 @@ describe("a changed input updates feed card, detail header and Match Insights to
     expect(page).not.toMatch(/job\.matchScore = (matchScore|score);/);
     expect(detail).toContain("const matchScore = displayMatchScore(job, diagnostics);");
     expect(panel).toContain("const matchScore = displayMatchScore(job, diagnostics);");
-    for (const route of ["recommended", "search", "pro"]) {
+    for (const route of ["search", "pro"]) {
       expect(readFileSync(`src/app/api/jobs/${route}/route.ts`, "utf8")).toContain("scoreRevision: scoreInputRevision(");
     }
+    // The recommended route (and its snapshot variant) format cards in the shared builder since #798: both must
+    // delegate to formatRecommendedJobs, and that builder must stamp the revision on the Pro and the Free card.
+    for (const route of ["src/app/api/jobs/recommended/route.ts", "src/app/api/jobs/recommended/snapshot/route.ts"]) {
+      expect(readFileSync(route, "utf8"), route).toContain("await formatRecommendedJobs(");
+    }
+    const builder = readFileSync("src/lib/jobs/recommendedRequest.ts", "utf8");
+    expect(builder.match(/scoreRevision: scoreInputRevision\(/g) ?? []).toHaveLength(2);
   });
 });
