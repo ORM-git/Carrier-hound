@@ -219,6 +219,8 @@ export default function JobDetailView({
   resumeState: resumeStateProp,
 }: JobDetailViewProps) {
   const isUnlocked = isPro && !job.proUnlockError;
+  // Location is visible to every signed-in user (Free or Pro); only guests see the lock.
+  const canSeeLocation = isUnlocked || Boolean(user);
   const resumeState: ResumeState = resumeStateProp ?? (candidate?.confirmedAt ? "confirmed" : candidate ? "unconfirmed" : "none");
   const hasConfirmedResume = resumeState === "confirmed" && Boolean(candidate && candidate.confirmedAt);
   const cookieNoticeHeight = useCookieNoticeHeight();
@@ -340,7 +342,7 @@ export default function JobDetailView({
   const benefitsList = sections.benefits;
 
   const detailWorkModel = workModelDetailLabel(job);
-  const showLocation = !isUnlocked || !isDuplicateWorkModelLocation(job.location, detailWorkModel);
+  const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(job.location, detailWorkModel);
   const jobLevel = inferJobLevel(job.title);
   const expMatch = job.description?.match(/(\d+\+?\s*(?:-\s*\d+\+?)?\s*years?(?:\s*of)?\s*(?:experience|exp)?)/i);
   const expText = (job as any).experience || (expMatch ? expMatch[0] : null);
@@ -790,7 +792,7 @@ export default function JobDetailView({
             <ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden flex flex-col gap-2.5">
               {showLocation && <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                 <MapPin className="w-4 h-4 text-[#64748B] shrink-0" />
-                <span className="truncate">{isUnlocked ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}</span>
+                <span className="truncate">{canSeeLocation ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}</span>
               </li>}
               {job.type && (
                 <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
@@ -856,7 +858,7 @@ export default function JobDetailView({
                 {showLocation && <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
                   <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
                   <span className="truncate">
-                    {isUnlocked ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
+                    {canSeeLocation ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                   </span>
                 </div>}
 
@@ -1175,7 +1177,7 @@ export default function JobDetailView({
                   <div className="text-xs text-[#475569] flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-[#64748B]" aria-hidden="true" />
                     {/* This is the job's location, not the company's headquarters (that is the sourced HQ fact below). */}
-                    <span><span className="text-[#64748B]">Job location: </span>{isUnlocked ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
+                    <span><span className="text-[#64748B]">Job location: </span>{canSeeLocation ? job.location : <span className="text-[#64748B]">Location locked</span>}</span>
                   </div>
                 )}
               </div>

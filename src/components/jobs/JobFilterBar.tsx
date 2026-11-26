@@ -35,6 +35,11 @@ export interface JobFilterValues {
   company?: string;
   industry?: string; // GAP: unindexed in DB; omitted from active search predicates
   experience?: string; // GAP: unindexed in DB; omitted from active search predicates
+  // Repeatable list filters (excludeTitle / includeCompany / excludeCompany). Sent only when the owner
+  // flag NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS is on (see feedConstraints.ts).
+  excludedTitles?: string[];
+  includedCompanies?: string[];
+  excludedCompanies?: string[];
   hidden: boolean;
   sort: "match" | "newest";
 }
@@ -1215,7 +1220,8 @@ export default function JobFilterBar({
       {/* =================================================================== */}
       {activeCount > 0 && (
         // Real touch targets stay inside each chip, including when rows wrap.
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#E2E8F0] text-xs">
+        // Desktop only: on mobile the Filters count badge is the summary (the strip is removed there).
+        <div data-testid="active-filters-strip" className="hidden md:flex flex-wrap items-center gap-2 pt-1 border-t border-[#E2E8F0] text-xs">
           <span className="font-bold text-[#64748B]">Active:</span>
 
           {filters.countryCode && (

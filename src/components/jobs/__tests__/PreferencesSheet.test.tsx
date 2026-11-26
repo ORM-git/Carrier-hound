@@ -278,3 +278,34 @@ describe("Preferences focus lifecycle", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: /Frontend Developer, Backend Engineer/ }));
   });
 });
+
+// The collapsed Basic summary's "Location:" line (country first, then saved locations), display only.
+const locationLine = () =>
+  Array.from(screen.getByRole("dialog", { name: "Preferences" }).querySelectorAll("p")).find((p) => p.textContent?.startsWith("Location:"))?.textContent ?? null;
+
+describe("PreferencesSheet Location summary de-duplication (display only)", () => {
+  it("country plus an identical location shows once", () => {
+    setup({ countryCode: "US", country: "United States", locations: ["United States"] });
+    expect(locationLine()).toBe("Location: United States");
+  });
+  it("casing and spacing variants show once, keeping the first spelling", () => {
+    setup({ countryCode: "US", country: "United States", locations: ["  united   states ", "UNITED STATES"] });
+    expect(locationLine()).toBe("Location: United States");
+  });
+  it("country plus a city shows both, in order", () => {
+    setup({ countryCode: "US", country: "United States", locations: ["Austin, TX"] });
+    expect(locationLine()).toBe("Location: United States, Austin, TX");
+  });
+  it("locations without a country still show (empty entries dropped, duplicates once)", () => {
+    setup({ countryCode: "", country: "", locations: ["Berlin", " ", "berlin", "Munich"] });
+    expect(locationLine()).toBe("Location: Berlin, Munich");
+  });
+  it("Update sends the original location data unchanged", async () => {
+    const { onSave } = setup({ countryCode: "US", country: "United States", locations: ["United States", "Austin, TX"] });
+    expect(locationLine()).toBe("Location: United States, Austin, TX");
+    await act(async () => update());
+    const saved = lastSaved(onSave);
+    expect(saved.locations).toEqual(["United States", "Austin, TX"]);
+    expect(saved.countryCode).toBe("US");
+  });
+});
