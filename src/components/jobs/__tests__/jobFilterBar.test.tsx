@@ -178,3 +178,44 @@ describe("JobFilterBar - Chip Labels and Unclipped Popovers", () => {
     expect(screen.getByText(/top matched/i)).toBeInTheDocument();
   });
 });
+
+describe("JobFilterBar - saved (onboarding) display", () => {
+  const f: JobFilterValues = { location: "", category: "", level: "", jobType: "", workModel: "", datePosted: "all", hidden: false, sort: "match" };
+  const mk = (filters: Partial<JobFilterValues>, savedDisplay?: Record<string, string>, onChange = vi.fn()) =>
+    render(
+      <JobFilterBar
+        filters={{ ...f, ...filters }}
+        savedDisplay={savedDisplay}
+        onChange={onChange}
+        onClearAll={vi.fn()}
+        activeCount={0}
+        hiddenCount={0}
+        onOpenAllFilters={vi.fn()}
+        onOpenMobileFilters={vi.fn()}
+        isMobileFiltersOpen={false}
+        mobileFiltersTriggerRef={{ current: null }}
+        hasConfirmedResume={false}
+      />
+    );
+  afterEach(() => cleanup());
+
+  it("shows saved choices as selected and marked, without an active pill", () => {
+    mk({}, { jobType: "full-time,contract", workModel: "remote", countryCode: "IN" });
+    const jt = screen.getByLabelText(/job type filter/i);
+    expect(jt.getAttribute("data-saved-preference")).toBe("true");
+    expect(jt.textContent).toMatch(/Full-time/i);
+    expect(jt.textContent).toMatch(/\(\+1\)/);
+    expect(screen.queryByText(/Clear all/i)).toBeNull();
+  });
+  it("lets an explicit filter win over the saved value", () => {
+    mk({ jobType: "internship" }, { jobType: "full-time" });
+    const jt = screen.getByLabelText(/job type filter/i);
+    expect(jt.getAttribute("data-saved-preference")).toBeNull();
+    expect(jt.textContent).toMatch(/Internship/i);
+    expect(jt.textContent).not.toMatch(/Full-time/i);
+  });
+  it("is unmarked with no saved display", () => {
+    mk({});
+    expect(screen.getByLabelText(/job type filter/i).getAttribute("data-saved-preference")).toBeNull();
+  });
+});
