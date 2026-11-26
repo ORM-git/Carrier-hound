@@ -102,4 +102,6 @@ export interface IngestionRunSummary {
     markedExpired: number;
     permanentlyDeleted: number;
   };
+  /** Company-logo contract: companies handed to the repair loop this run and current coverage counts. */
+  logos?: { companiesSeen: number; enqueued: number | null; status: string; affectedIds: string[]; coverage: Record<string, number> | null };
 }
