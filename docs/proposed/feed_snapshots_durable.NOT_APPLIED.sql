@@ -31,14 +31,17 @@ alter table public.feed_snapshots add column if not exists salary_filter jsonb;
 -- this script FAIL, never silently accept it. One row can never hold more IDs than the freeze cap (100000 =
 -- SNAPSHOT_MAX_ROWS, placeholder, must match freeze_feed_corpus p_max_rows). Added NOT VALID: scans nothing; validate separately.
 do $guard$
-declare t1 text; t2 text; t3 text; t4 text; def text; ctype text; expected text;
+declare t1 text; t2 text; t3 text; t4 text; t5 text; def text; ctype text; expected text;
 begin
   select format_type(a.atttypid, a.atttypmod) into t1 from pg_catalog.pg_attribute a where a.attrelid = 'public.feed_snapshots'::regclass and a.attname = 'epoch_id' and not a.attisdropped;
   select format_type(a.atttypid, a.atttypmod) into t2 from pg_catalog.pg_attribute a where a.attrelid = 'public.feed_snapshots'::regclass and a.attname = 'frozen_at' and not a.attisdropped;
   select format_type(a.atttypid, a.atttypmod) into t3 from pg_catalog.pg_attribute a where a.attrelid = 'public.feed_snapshots'::regclass and a.attname = 'job_ids' and not a.attisdropped;
   select format_type(a.atttypid, a.atttypmod) into t4 from pg_catalog.pg_attribute a where a.attrelid = 'public.feed_snapshots'::regclass and a.attname = 'id' and not a.attisdropped;
-  if t1 is distinct from 'uuid' or t2 is distinct from 'timestamp with time zone' or t3 is distinct from 'uuid[]' or t4 is distinct from 'uuid' then
-    raise exception 'feed_snapshots column types differ from the canonical schema (id %, job_ids %, epoch_id %, frozen_at %)', t4, t3, t1, t2 using errcode = '42804';
+  -- salary_filter: `add column if not exists` above keeps a pre-existing column of ANY type, so its type is checked here.
+  select format_type(a.atttypid, a.atttypmod) into t5 from pg_catalog.pg_attribute a where a.attrelid = 'public.feed_snapshots'::regclass and a.attname = 'salary_filter' and not a.attisdropped;
+  if t1 is distinct from 'uuid' or t2 is distinct from 'timestamp with time zone' or t3 is distinct from 'uuid[]' or t4 is distinct from 'uuid'
+     or t5 is distinct from 'jsonb' then
+    raise exception 'feed_snapshots column types differ from the canonical schema (id %, job_ids %, epoch_id %, frozen_at %, salary_filter %)', t4, t3, t1, t2, t5 using errcode = '42804';
   end if;
   -- Exact comparison: build the canonical constraint on a scratch temp table and compare the catalog's own rendering
   -- (so formatting differences cannot matter, but any extra OR/AND/NOT, other bound or non-check constraint does).
