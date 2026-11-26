@@ -4,8 +4,8 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { savedFeedConstraintsEnforcedFor } from "@/lib/preferences/feedConstraints";
 import { computeAdvancedCapabilities } from "@/lib/preferences/advancedFilters";
 
+// Edge routes are never prerendered, so no `dynamic` export (it is rejected by the static-export CI build).
 export const runtime = "edge";
-export const dynamic = "force-dynamic";
 
 // What the server can apply to the feed right now. Booleans only: no env values, no account data.
 export async function GET() {
