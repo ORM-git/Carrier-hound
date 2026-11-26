@@ -99,7 +99,7 @@ const TEXT_ALIASES = Object.entries(GENUINE_SKILL_ALIASES)
   });
 
 // "do/does need" is affirmative; only an explicit "not"/"n't"/"no" negates.
-const NEGATION = /\b(?:not (?:required|necessary|needed|a requirement|mandatory|essential)|no (?:\w+ ){0,3}(?:required|needed|necessary)|(?:do|does|did) not need|(?:don|doesn|didn)['’]t need|no need|without|(?:isn|aren)['’]t (?:required|needed|necessary))\b/i;
+const NEGATION = /\b(?:not (?:required|necessary|needed|a requirement|mandatory|essential)|no (?:\w+ ){0,3}(?:required|needed|necessary)|(?:do|does|did) not need|(?:don|doesn|didn)['’]t need|no need|(?:isn|aren)['’]t (?:required|needed|necessary))\b/i;
 const PREFERRED_CUE = /\b(?:preferred|nice[- ]to[- ]have|a plus|bonus|ideally|desirable|desired|is an advantage|advantageous)\b/i;
 const REQUIRED_CUE = /\b(?:required|requirement|mandatory|must|essential|need|needed)\b/i; // not "needs": usually a noun ("business needs")
 // Where one proposition ends and the next may begin inside a clause. Segments are only split apart when each
@@ -108,6 +108,8 @@ const SEGMENT_BREAK = /\s*,\s*(?:but|while|whereas|and|&)?\s*|\s+(?:but|while|wh
 // "optional" says the skill is not required but not that it is wanted: it overrides the section default and lands
 // in `unspecified`, never `required` or `preferred`.
 const OPTIONAL_CUE = /\boptional\b/i;
+// "no degree required" / "no visa sponsorship needed" negate a non-skill noun, never the skill before them.
+const NO_NOUN_NEGATION = /^\s*(?:(?:but|and|though|although|while|whereas)\s+)?no\s+(?:\w+\s+){1,3}(?:required|needed|necessary)\b/i;
 
 type Cue = "required" | "preferred" | "negated" | "optional";
 const CUES = [["negated", NEGATION], ["optional", OPTIONAL_CUE], ["preferred", PREFERRED_CUE], ["required", REQUIRED_CUE]] as const;
@@ -149,20 +151,23 @@ interface Proposition {
  * two different cues, gets null.
  */
 function propositions(clause: string, sectionDefault: Cue): Proposition[] {
-  type Seg = { start: number; end: number; own: { cue: Cue | null; prefix: boolean } | null };
+  type Seg = { start: number; end: number; own: { cue: Cue | null; prefix: boolean } | null; contrast?: boolean };
   const raw: Seg[] = [];
   let start = 0;
+  let contrast = false; // the break before the next segment was "but" / "while" / "whereas"
   for (const m of Array.from(clause.matchAll(SEGMENT_BREAK))) {
-    if (m.index! > start) raw.push({ start, end: m.index!, own: null });
+    if (m.index! > start) raw.push({ start, end: m.index!, own: null, contrast });
     start = m.index! + m[0].length;
+    contrast = /\b(?:but|while|whereas)\b/i.test(m[0]);
   }
-  if (start < clause.length) raw.push({ start, end: clause.length, own: null });
+  if (start < clause.length) raw.push({ start, end: clause.length, own: null, contrast });
   const segs: Seg[] = [];
   for (const s of raw) {
     const text = clause.slice(s.start, s.end);
     const c = cueOf(text);
     const firstSkill = findSkills(text)[0];
     const prev = segs[segs.length - 1];
+    if (c && !firstSkill && NO_NOUN_NEGATION.test(text)) continue; // no skill in it, so it adds and cancels nothing
     if (c && !firstSkill && prev && bareQualifier(text) && findSkills(clause.slice(prev.start, prev.end)).length) {
       prev.end = s.end; // the qualifier joins the proposition it describes, so evidence covers both
       const contradicted = prev.own !== null && prev.own.cue === null;
@@ -180,7 +185,7 @@ function propositions(clause: string, sectionDefault: Cue): Proposition[] {
     const right = segs.slice(i + 1).find((x) => x.own);
     const from = new Set<Cue | null>();
     if (left?.own?.prefix) from.add(left.own.cue);
-    if (right?.own && !right.own.prefix) from.add(right.own.cue);
+    if (right?.own && !right.own.prefix && !right.contrast) from.add(right.own.cue); // a postfix cue does not reach back across "but"
     if (from.size === 1) return Array.from(from)[0];
     if (from.size > 1 || left) return null; // two cues compete, or a trailing item after cued propositions
     return sectionDefault; // leading items before a prefix cue keep the section default
@@ -195,6 +200,47 @@ function propositions(clause: string, sectionDefault: Cue): Proposition[] {
     }
   }
   return out;
+}
+const WITHOUT_BREAK = /\s*,\s*|\s+(?:but|while|whereas)\s+/i;
+const OBJECT_FILLER = /\b(?:and|or|any|prior|previous|experience|knowledge|of|in|with|skills?|expertise|background|familiarity|the|needed|required|necessary)\b|[&\/,.()-]/gi;
+/**
+ * "without X" is handled apart from the cue words, because it negates only the skills in its own object phrase.
+ * - A non-skill object ("without supervision") negates nothing and the text after it is processed as usual.
+ * - A skill object made only of skills, "and" / "or" lists and filler words ("without prior Go experience",
+ *   "without Java and Python experience") negates every skill in it.
+ * - Anything else ("without supervision using Go", skills after a comma that follows a skill object) cannot be
+ *   scoped safely: those skills go to `unspecified` and the text to `ambiguous`; none becomes negated or required.
+ * Skills before "without" are never touched. Returns the clause without the handled text.
+ */
+function splitWithout(clause: string): {
+  rest: string;
+  negated: { skill: string; raw: string }[];
+  uncertain: { skill: string; raw: string; text: string }[];
+} {
+  const parts = clause.split(/\bwithout\b/i);
+  const negated: { skill: string; raw: string }[] = [];
+  const uncertain: { skill: string; raw: string; text: string }[] = [];
+  let rest = parts[0];
+  for (const tail of parts.slice(1)) {
+    const brk = WITHOUT_BREAK.exec(tail);
+    const object = brk ? tail.slice(0, brk.index) : tail;
+    const after = brk ? tail.slice(brk.index + brk[0].length) : "";
+    const mentions = findSkills(object);
+    if (!mentions.length) {
+      rest += brk ? ", " + after : ""; // a non-skill object: carry on with what follows
+      continue;
+    }
+    const leftover = mentions.reduce((t, m) => t.replace(m.raw, " "), object).replace(OBJECT_FILLER, " ").trim();
+    const afterMentions = findSkills(after);
+    if (!leftover && !afterMentions.length) negated.push(...mentions);
+    else if (!leftover) {
+      negated.push(...mentions); // the object itself is clean; what follows the comma cannot be scoped
+      afterMentions.forEach((m) => uncertain.push({ ...m, text: after.trim() }));
+    } else {
+      [...mentions, ...afterMentions].forEach((m) => uncertain.push({ ...m, text: tail.trim() }));
+    }
+  }
+  return { rest, negated, uncertain };
 }
 const OR_CUE = /\bor\b|\beither\b|\bone of\b|\bany of\b/i;
 const AND_CUE = /\band\b|&|\bas well as\b/i;
@@ -231,7 +277,13 @@ export function extractSkillRequirements(input: SkillRequirementsInput): SkillRe
   for (const [bullets, provenance] of lists) {
     for (const bullet of bullets) {
       const sectionDefault: Cue = provenance === "preferred_section" ? "preferred" : "required";
-      for (const clause of clauses(bullet)) {
+      for (const rawClause of clauses(bullet)) {
+        const { rest: clause, negated: withoutSkills, uncertain } = splitWithout(rawClause);
+        withoutSkills.forEach((m) => add("negated", m.skill, { raw: m.raw, sourceText: bullet, provenance }));
+        uncertain.forEach((m) => {
+          add("unspecified", m.skill, { raw: m.raw, sourceText: bullet, provenance });
+          if (!ambiguous.some((a) => a.raw === m.text && a.sourceText === bullet)) ambiguous.push({ raw: m.text, sourceText: bullet, provenance });
+        });
         for (const { text: prop, cue } of propositions(clause, sectionDefault)) {
           const mentions = findSkills(prop);
           if (!mentions.length) continue;
@@ -291,3 +343,4 @@ export function extractSkillRequirements(input: SkillRequirementsInput): SkillRe
     unrecognizedStructured,
   };
 }
+
