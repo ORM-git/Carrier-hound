@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
-import { Building2 } from "lucide-react";
 
 export interface CompanyLogoProps {
   company: string;
@@ -16,6 +15,26 @@ export interface CompanyLogoProps {
   /** Locked (free/guest) job: render a neutral silhouette built only from constants, so no company
    * name, initial, logo URL or alt text reaches the DOM or the network. */
   locked?: boolean;
+  /** Locked tiles only: an opaque job id that picks one of the fixed masked gradients so a feed is not one flat
+   * colour. Never pass company-derived text. Without it the tile uses the first gradient. */
+  maskSeed?: string | number | null;
+}
+
+// Masked-company tile palette. Constants only: the pick depends on the opaque job id, never on the hidden employer.
+export const MASKED_TILE_GRADIENTS = [
+  "from-blue-600 to-indigo-700",
+  "from-violet-500 to-fuchsia-500",
+  "from-teal-500 to-cyan-600",
+  "from-indigo-500 to-purple-600",
+  "from-sky-500 to-blue-700",
+  "from-emerald-500 to-teal-600",
+];
+
+export function maskedTileIndex(seed: string | number | null | undefined): number {
+  const text = seed === null || seed === undefined ? "" : String(seed);
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return h % MASKED_TILE_GRADIENTS.length;
 }
 
 const ATS_HOSTS = [
@@ -87,6 +106,7 @@ export default function CompanyLogo({
   domain: companyDomain,
   className = "w-10 h-10",
   locked = false,
+  maskSeed = null,
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
@@ -136,10 +156,8 @@ export default function CompanyLogo({
       <div
         data-testid="company-logo-locked"
         aria-hidden="true"
-        className={`rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0 select-none border border-slate-200 ${className}`}
-      >
-        <Building2 className="w-1/2 h-1/2 blur-[1.5px]" />
-      </div>
+        className={`rounded-xl bg-gradient-to-br ${MASKED_TILE_GRADIENTS[maskedTileIndex(maskSeed)]} shrink-0 select-none ${className}`}
+      />
     );
   }
 

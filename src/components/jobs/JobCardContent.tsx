@@ -65,6 +65,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                   <CompanyLogo
                                     company={job.company}
                                     locked={!isPro}
+                                    maskSeed={job.id}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
@@ -330,6 +331,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                   <CompanyLogo
                                     company={job.company}
                                     locked={!isPro}
+                                    maskSeed={job.id}
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
