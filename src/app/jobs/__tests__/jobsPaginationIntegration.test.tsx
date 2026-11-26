@@ -207,7 +207,7 @@ describe("three-page warm-up and bounded look-ahead", () => {
       await reach(k);
       // The reader is on page k and at least two full pages are already rendered below it.
       expect(uniqueTitles().length).toBeGreaterThanOrEqual((k + 2) * 25);
-      expect(loadMoreButton()).toBeNull();
+      expect(loadMoreButton()).not.toBeNull(); // Idle continuation now always exposes its manual fallback.
     }
     // Strictly sequential, no page requested twice.
     expect(pagesRequested()).toEqual(range(1, pagesRequested().length));
@@ -253,7 +253,7 @@ describe("three-page warm-up and bounded look-ahead", () => {
       [3, "c2"],
     ]);
     expect(uniqueTitles()).toEqual(names(range(1, 30)));
-    expect(loadMoreButton()).toBeNull();
+    expect(loadMoreButton()).not.toBeNull(); // Idle continuation now always exposes its manual fallback.
   });
 
   it.each([
@@ -290,7 +290,7 @@ describe("three-page warm-up and bounded look-ahead", () => {
     expect(pagesRequested()).toEqual([1, 2, 3]);
     expect(screen.queryByTestId("jobs-load-more-sentinel")).toBeNull();
     expect(loadMoreButton()).toBeNull();
-    expect(screen.getByTestId("jobs-list-end").textContent).toContain("end of this list");
+    expect(screen.getByTestId("jobs-list-end").textContent).toContain("end of this recommended list for your current search and filters");
     await act(async () => io.enter());
     await flush();
     expect(pagesRequested()).toEqual([1, 2, 3]);
@@ -329,7 +329,7 @@ describe("three-page warm-up and bounded look-ahead", () => {
       [3, "c2"],
     ]);
     expect(uniqueTitles()).toEqual(names(range(1, 75)));
-    expect(loadMoreButton()).toBeNull();
+    expect(loadMoreButton()).not.toBeNull(); // Idle continuation now always exposes its manual fallback.
     expect(document.body.textContent).not.toMatch(/\d+ jobs? remaining/i);
   });
 
@@ -533,5 +533,34 @@ describe("reset and isolation", () => {
     expect(pagesRequested()).toEqual([1, 2, 3]);
     await reach(2);
     expect(pagesRequested()).toEqual(range(1, 6));
+  });
+});
+
+describe("visible first-page end and idle continuation recovery", () => {
+  it("shows a scoped end even when the first page is the entire eligible list", async () => {
+    h.transport = async () => ({ jobs: jobs(range(1,25)), totalCount:25, hasNextPage:false, nextCursor:null });
+    await mount();
+    expect(uniqueTitles()).toHaveLength(25);
+    expect(screen.getByTestId("jobs-list-end").textContent).toContain("this recommended list for your current search and filters");
+    expect(screen.queryByTestId("jobs-load-more-sentinel")).toBeNull();
+    expect(loadMoreButton()).toBeNull();
+    expect(pagesRequested().every(p => p===1)).toBe(true);
+  });
+  it("offers manual continuation while idle without expanding warm-up or duplicating a running chain", async () => {
+    const p4=deferred<GetJobsResult>();
+    const stats=trackConcurrency(async ({page:p}) => p===4 ? p4.promise : page(jobs(range((p-1)*25+1,p*25)), true));
+    await mount();
+    expect(pagesRequested()).toEqual([1,2,3]);
+    const more=screen.getByRole("button",{name:"Load More Verified Positions"});
+    fireEvent.click(more);
+    await flush();
+    expect(pagesRequested()).toEqual([1,2,3,4]);
+    expect(screen.queryByRole("button",{name:"Load More Verified Positions"})).toBeNull();
+    expect(screen.getByText("Loading Positions...")).toBeTruthy();
+    await act(async()=>p4.resolve(page(jobs(range(76,100)),false)));
+    await idle();
+    expect(stats.max).toBe(1);
+    expect(uniqueTitles()).toHaveLength(100);
+    expect(screen.getByTestId("jobs-list-end")).toBeTruthy();
   });
 });
