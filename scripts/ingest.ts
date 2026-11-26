@@ -13,6 +13,7 @@ import {
   SourceStats,
 } from './types';
 import {
+  normalizeDate,
   detectCategory,
   detectCompanyCategory,
   detectRoleCategory,
@@ -501,11 +502,16 @@ export async function updateExistingJobs(
     const chunk = toUpdate.slice(i, i + chunkSize);
     await Promise.all(
       chunk.map(async ({ id, item, original }) => {
+        // An unknown source date must not erase a previously known posting date.
+        const updateItem = { ...item };
+        const sourcePostedAt = normalizeDate(item.posted_at);
+        if (sourcePostedAt === null) delete updateItem.posted_at;
+        else updateItem.posted_at = sourcePostedAt;
         const doUpdate = () =>
           supabase
             .from('jobs')
             .update({
-              ...item,
+              ...updateItem,
               last_seen_at: new Date().toISOString(),
               is_active: true,
               status: 'active',
@@ -775,7 +781,7 @@ async function main() {
                 salary_max: j.salary_max,
                 currency: j.currency || 'USD',
                 category: j.category || detectCategory(j.title),
-                posted_at: j.posted_at || new Date().toISOString(),
+                posted_at: normalizeDate(j.posted_at),
                 last_seen_at: new Date().toISOString(),
                 is_active: true,
                 status: 'active',
@@ -823,14 +829,18 @@ async function main() {
             // partial canonical index cannot be an ON CONFLICT target, so the identity lookup below is the write key.
             let upsertedRows: Array<{ id: string; source_job_id: string }> | null = null;
             let upsertErr: any = null;
-            if (!hasSourceIdColumn) {
+            // A legacy conflict upsert cannot express "keep OLD date when incoming date is unknown".
+            // Route such batches through identity lookup + separate insert/update so inserts send explicit null
+            // while updates omit the date. Fully dated legacy batches retain their existing bulk path.
+            const useLegacyUpsert = !hasSourceIdColumn && jobsPayload.every(item => item.posted_at !== null);
+            if (useLegacyUpsert) {
               ({ data: upsertedRows, error: upsertErr } = await supabase
                 .from('jobs')
                 .upsert(jobsPayload, { onConflict: 'source,source_job_id' })
                 .select('id, source_job_id'));
             }
 
-            if (!hasSourceIdColumn && !upsertErr) {
+            if (useLegacyUpsert && !upsertErr) {
               stats.inserted += jobsPayload.length;
 
               // If job_descriptions table exists, insert/upsert descriptions

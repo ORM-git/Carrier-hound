@@ -61,7 +61,7 @@ export interface NormalizedJob {
   is_remote?: boolean;
   source_priority?: 1 | 2;
   country?: string;
-  posted_at?: string; // ISO string
+  posted_at?: string | null; // Source-supplied ISO string; null when missing/invalid
   expires_at?: string | null; // ISO string
   discovered_at?: string; // ISO string
   last_seen_at?: string; // ISO string

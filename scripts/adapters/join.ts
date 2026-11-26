@@ -2,6 +2,7 @@ import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
 import {
+  normalizeDate,
   cleanText,
   cleanAndTruncateDescription,
   detectRemote,
@@ -80,7 +81,7 @@ export class JoinAdapter implements SourceAdapter {
           apply_url: applyUrl,
           source_url: `https://join.com/companies/${slug}`,
           category: detectCategory(title),
-          posted_at: j.publishedAt || j.createdAt || nowIso,
+          posted_at: normalizeDate(j.publishedAt || j.createdAt),
           discovered_at: nowIso,
           last_seen_at: nowIso,
           verified: true,
