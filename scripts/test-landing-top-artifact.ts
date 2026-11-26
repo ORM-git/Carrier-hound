@@ -130,14 +130,14 @@ async function main() {
   assert.ok(wrapperMatch, "page.tsx must render the .cm-top fold and the .landing-wrapper lower page as siblings");
   const cleanMarkup = wrapperMatch[1]
     .replace("<LandingJobsPreview />", '<section class="landing-actual-preview"><article data-testid="landing-job-card"></article><div class="peek" aria-hidden="true"><article data-testid="landing-job-card"></article></div></section>')
-    .replace(/className=\{`cm-top \$\{jakarta\.variable\}`\}/, 'class="cm-top"')
+    .replace('className="cm-top cm-jakarta-font"', 'class="cm-top cm-jakarta-font"')
     .replace(/\sref=\{lowerRef\}/, "")
     .replace(/className=/g, "class=")
     .replace(/tabIndex=\{(-?\d+)\}/g, 'tabindex="$1"')
     .replace(/style=\{\{[^}]*\}\}/g, "")
     .replace(/\{" "\}/g, " ")
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
-  assert.ok(cleanMarkup.includes('<div class="cm-top">'), "Top fold must be wrapped in .cm-top");
+  assert.ok(cleanMarkup.includes('<div class="cm-top cm-jakarta-font">'), "Top fold must be wrapped in .cm-top");
   assert.ok(cleanMarkup.includes('<div class="landing-wrapper">'), "Lower page must be wrapped in .landing-wrapper");
 
   const dom = new JSDOM(`<!DOCTYPE html><html><body>${cleanMarkup}</body></html>`, {
