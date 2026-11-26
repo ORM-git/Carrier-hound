@@ -1,5 +1,7 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
+import { applyBrowseFilters, browseFiltersActive, isBrowseFilterError, parseBrowseFilters, salaryFxReport } from "@/lib/jobs/browseFilters";
+import { getFxRates } from "@/lib/salary/fx";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
@@ -373,6 +375,15 @@ export async function GET(req: Request) {
     }
     query = applyFeedConstraints(query, feedConstraints);
 
+    // 9c. Transient browse filters: invalid input is a 400; they need the jobs table (role_category, salary).
+    const browse = parseBrowseFilters(searchParams);
+    if (isBrowseFilterError(browse)) return respond(browse, { status: 400 });
+    if (browseFiltersActive(browse) && !hasServiceKey) {
+      return respond({ error: "Browse filters unavailable", jobs: [], totalCount: 0 }, { status: 503 });
+    }
+    const fxRates = getFxRates(); // one rate table per response: the predicate and salaryFx report agree
+    query = applyBrowseFilters(query, browse, fxRates);
+
     // 10. Company hard filter (server-side, jobs table only)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {
       if (hasServiceKey) {
@@ -590,6 +601,7 @@ export async function GET(req: Request) {
       isPro,
       page,
       pageSize,
+      salaryFx: salaryFxReport(browse, fxRates),
     });
   } catch (err: any) {
     baseLog.error("Unhandled error in /api/jobs/recommended", { error: err?.message || err });

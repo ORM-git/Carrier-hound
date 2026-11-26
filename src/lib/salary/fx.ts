@@ -84,6 +84,13 @@ export function getFxRates(): Record<string, number> {
   return { ...cachedRates };
 }
 
+/** Which rates getFxRates() is serving: the refreshed upstream table, or the static fallback (may be stale). */
+export function fxRatesSource(): { source: "upstream_open_er_api" | "static_fallback"; fetchedAt: string | null } {
+  return lastFetchedTimestamp > 0
+    ? { source: "upstream_open_er_api", fetchedAt: new Date(lastFetchedTimestamp).toISOString() }
+    : { source: "static_fallback", fetchedAt: null };
+}
+
 /**
  * Converts an amount from one currency to another using cached or static rates.
  * Returns null if either currency is unsupported or conversion is impossible.
