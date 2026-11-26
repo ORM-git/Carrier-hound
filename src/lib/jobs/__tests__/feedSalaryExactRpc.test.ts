@@ -61,7 +61,7 @@ describe("feed_frozen_salary_rows / jobs_salary_rows (exact salary join over the
       ["7666.67", "EUR", "monthly"], ["7666.66", "EUR", "monthly"], ["100000", "USD", "yearly"], ["99999.99999999999999", "USD", "yearly"],
       [null, "USD", "yearly"], ["NaN", "USD", "yearly"], ["500000", "USD", "weekly"],
     ];
-    for (const [i, [v, c, p]] of vals.entries()) await pg.query("insert into public.feed_corpus_frozen values ($1,'x',$2,$3,$4,$5)", [uuid(i + 1), c, p, v, E1]);
+    for (let i = 0; i < vals.length; i++) await pg.query("insert into public.feed_corpus_frozen values ($1,'x',$2,$3,$4,$5)", [uuid(i + 1), vals[i][1], vals[i][2], vals[i][0], E1]);
     await pg.query("insert into public.feed_corpus_frozen values ($1,'x','USD','yearly',1000000,$2)", [uuid(99), E2]);
     const got = (await pg.query("select id from public.feed_frozen_salary_rows($1, $2::jsonb) order by id", [E1, JSON.stringify(TH)])).rows.map((r: any) => r.id);
     const want = vals.flatMap(([v, c, p], i) => (v && v !== "NaN" && TH.some((t) => t.currency === c && t.period === p && passesJs(v, t)) ? [uuid(i + 1)] : []));

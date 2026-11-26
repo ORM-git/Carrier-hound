@@ -158,11 +158,32 @@ describe("feed snapshot prototype", () => {
     const admin = { rpc: async (n: string, a: any) => (calls.push([n, a]), { error: null }) };
     await supabaseSnapshotStore(admin).put({ ...snap(3), corpusMark: "2026-11-26T00:00:00Z", epochId: uuid(5), frozenAt: "2026-11-26T00:00:00Z", builtAt: 0, expiresAt: 21600000 });
     expect(calls[0][0]).toBe("put_feed_snapshot");
-    expect(Object.keys(calls[0][1]).sort()).toEqual(["p_built_at", "p_corpus_mark", "p_epoch_id", "p_expires_at", "p_frozen_at", "p_id", "p_identity", "p_job_ids", "p_max_snapshots", "p_max_total_ids"]);
+    expect(Object.keys(calls[0][1]).sort()).toEqual(["p_built_at", "p_corpus_mark", "p_epoch_id", "p_expires_at", "p_frozen_at", "p_id", "p_identity", "p_job_ids", "p_max_snapshots", "p_max_total_ids", "p_salary_filter"]);
     const full = { rpc: async () => ({ error: { code: "53400", message: "snapshot_store_full" } }) };
     await expect(supabaseSnapshotStore(full).put({ ...snap(1), builtAt: 0, expiresAt: 1 })).rejects.toBeInstanceOf(SnapshotBusyError);
     const other = { rpc: async () => ({ error: { code: "XX000", message: "boom" } }) };
     await expect(supabaseSnapshotStore(other).put({ ...snap(1), builtAt: 0, expiresAt: 1 })).rejects.not.toBeInstanceOf(SnapshotBusyError);
+  });
+
+  it("readAllCandidates refuses a batch below 1 before any read (an outer LIMIT 0 would skip the salary RPC's validation)", async () => {
+    for (const bad of [0, -1, 1.5, NaN]) {
+      let calls = 0;
+      await expect(readAllCandidates(() => { calls++; return fakeQuery([]); }, bad)).rejects.toBeInstanceOf(SnapshotUnavailableError);
+      expect(calls).toBe(0);
+    }
+  });
+
+  it("durable store persists the HELD salary filter and reads it back (FX + exact thresholds survive a store round trip)", async () => {
+    const salary = { minAnnualSalary: 100000, currency: "USD", rates: { USD: 1 }, fxSource: "static_fallback", fxFetchedAt: null, thresholds: [{ currency: "USD", period: "yearly", num: "100000", den: "1" }] };
+    const calls: any[] = [];
+    await supabaseSnapshotStore({ rpc: async (_n: string, a: any) => (calls.push(a), { error: null }) }).put({ ...snap(1), salary, builtAt: 0, expiresAt: 1 });
+    expect(calls[0].p_salary_filter).toEqual(salary);
+    const row = { id: uuid(1), identity: "i", job_ids: [uuid(2)], corpus_mark: null, epoch_id: null, frozen_at: null, salary_filter: salary, built_at: "2026-11-26T00:00:00Z", expires_at: "2026-11-26T06:00:00Z" };
+    const admin = { from: () => ({ select: (cols: string) => { expect(cols).toContain("salary_filter"); return { eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }; } }) };
+    expect((await supabaseSnapshotStore(admin).get(uuid(1)))!.salary).toEqual(salary);
+    const sql = fs.readFileSync(path.join(process.cwd(), "docs/proposed/feed_snapshots_durable.NOT_APPLIED.sql"), "utf8");
+    expect(sql).toMatch(/add column if not exists salary_filter jsonb/);
+    expect(sql).toMatch(/p_salary_filter jsonb/);
   });
 
   it("memory store bounds the NUMBER of entries too (empty snapshots), evicting oldest", async () => {

@@ -10,6 +10,7 @@
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { rankJobsByRecommendation, type OnboardingAnswers } from "@/lib/jobs/recommendations";
 import { UUID_REGEX } from "@/lib/pagination/cursor";
+import type { SalaryRational } from "@/lib/jobs/browseFilters";
 
 export const SNAPSHOT_TTL_MS = 6 * 3600_000;
 const READ_BATCH = 1000; // PostgREST max rows per request
@@ -32,6 +33,22 @@ export interface FeedSnapshot {
   /** Ranking/scoring time and the pinned date cutoff (rankedAt). */
   builtAt: number;
   expiresAt: number;
+  /** Annual-salary filter HELD by this snapshot: the FX table and exact thresholds of the build are the ones every page uses. */
+  salary?: HeldSalaryFilter | null;
+}
+
+/**
+ * The salary filter a snapshot was built with. Thresholds are the #796 exact rationals computed ONCE at build from
+ * `rates`; a continuation never recomputes them and never accepts client rates. A new cursorless request is the only
+ * way to new rates (explicit reset).
+ */
+export interface HeldSalaryFilter {
+  minAnnualSalary: number;
+  currency: string;
+  rates: Record<string, number>;
+  fxSource: string;
+  fxFetchedAt: string | null;
+  thresholds: SalaryRational[];
 }
 
 export interface SnapshotStore {
@@ -125,22 +142,40 @@ export function frozenCandidateQuery(admin: any, epoch: string, cols: string) {
 }
 
 /**
+ * Builder base over the frozen rows of one epoch that meet the exact salary thresholds: ONE call to
+ * feed_frozen_salary_rows (docs/proposed/feed_salary_exact_rpc.NOT_APPLIED.sql), which validates the payload once and
+ * joins the typed thresholds in the statement that reads the rows. Every other filter chains on it unchanged.
+ */
+export function frozenSalaryQuery(admin: any, epoch: string, cols: string, thresholds: SalaryRational[]) {
+  return admin.rpc("feed_frozen_salary_rows", { p_epoch: epoch, p_thresholds: thresholds }).select(cols);
+}
+
+/** Serve-time source: the live rows among `ids` that still meet the snapshot's HELD thresholds (jobs_salary_rows). */
+export function liveSalaryRows(admin: any, ids: string[], cols: string, thresholds: SalaryRational[]) {
+  return admin.rpc("jobs_salary_rows", { p_ids: ids, p_thresholds: thresholds }).select(cols);
+}
+
+/**
  * Every candidate row of the query, by the immutable key `id` (id desc, `id < last`), de-duplicated by id. Over a frozen
  * epoch the relation cannot change, so the keyset is exact. `makeQuery` returns a fresh builder.
+ * `batch` must be >= 1: an outer LIMIT 0 never runs a plpgsql set-returning body, so the salary RPC would skip its
+ * payload validation (pinned by feedSalaryExactRpc.test.ts). Refused before any read.
  */
-export async function readAllCandidates(makeQuery: () => any): Promise<any[]> {
+export async function readAllCandidates(makeQuery: () => any, batch: number = READ_BATCH): Promise<any[]> {
+  if (!Number.isInteger(batch) || batch < 1) throw new SnapshotUnavailableError("candidate batch must be a positive integer");
   const byId = new Map<string, any>();
   let afterId: string | null = null;
   for (;;) {
     let q = makeQuery();
     if (afterId) q = q.lt("id", afterId);
-    const { data, error } = await q.order("id", { ascending: false }).limit(READ_BATCH);
+    const { data, error } = await q.order("id", { ascending: false }).limit(batch);
+    // Any read error, including 22023 (payload) and 22003 (numeric overflow) from the salary RPC, fails closed.
     if (error) throw new SnapshotUnavailableError(error.message || "candidate read failed");
-    const batch: any[] = data || [];
-    for (const row of batch) if (!byId.has(row.id)) byId.set(row.id, row);
+    const rows: any[] = data || [];
+    for (const row of rows) if (!byId.has(row.id)) byId.set(row.id, row);
     if (byId.size > SNAPSHOT_MAX_ROWS) throw new SnapshotTooLargeError(byId.size);
-    if (batch.length < READ_BATCH) return Array.from(byId.values());
-    const last = batch[batch.length - 1];
+    if (rows.length < batch) return Array.from(byId.values());
+    const last = rows[rows.length - 1];
     if (!UUID_REGEX.test(String(last.id))) throw new SnapshotUnavailableError("candidate id is not a UUID");
     afterId = last.id;
   }
@@ -255,10 +290,10 @@ export const DURABLE_MAX_TOTAL_IDS = 20_000_000;
 export function supabaseSnapshotStore(admin: any): SnapshotStore {
   return {
     async get(id) {
-      const { data, error } = await admin.from("feed_snapshots").select("id, identity, job_ids, corpus_mark, epoch_id, frozen_at, built_at, expires_at").eq("id", id).maybeSingle();
+      const { data, error } = await admin.from("feed_snapshots").select("id, identity, job_ids, corpus_mark, epoch_id, frozen_at, salary_filter, built_at, expires_at").eq("id", id).maybeSingle();
       if (error) throw new Error(error.message);
       return data
-        ? { id: data.id, identity: data.identity, jobIds: data.job_ids || [], corpusMark: data.corpus_mark, epochId: data.epoch_id ?? undefined, frozenAt: data.frozen_at ?? undefined, builtAt: Date.parse(data.built_at), expiresAt: Date.parse(data.expires_at) }
+        ? { id: data.id, identity: data.identity, jobIds: data.job_ids || [], corpusMark: data.corpus_mark, epochId: data.epoch_id ?? undefined, frozenAt: data.frozen_at ?? undefined, salary: data.salary_filter ?? null, builtAt: Date.parse(data.built_at), expiresAt: Date.parse(data.expires_at) }
         : null;
     },
     async put(s) {
@@ -267,7 +302,7 @@ export function supabaseSnapshotStore(admin: any): SnapshotStore {
       // One service-only RPC cleans expired rows and enforces the row-count and total-ID admission bound in one
       // transaction (docs/proposed/feed_snapshots_durable.NOT_APPLIED.sql). 53400 = store full: retryable busy, never an eviction.
       const { error } = await admin.rpc("put_feed_snapshot", {
-        p_id: s.id, p_identity: s.identity, p_job_ids: s.jobIds, p_corpus_mark: s.corpusMark, p_epoch_id: s.epochId ?? null, p_frozen_at: s.frozenAt ?? null,
+        p_id: s.id, p_identity: s.identity, p_job_ids: s.jobIds, p_corpus_mark: s.corpusMark, p_epoch_id: s.epochId ?? null, p_frozen_at: s.frozenAt ?? null, p_salary_filter: s.salary ?? null,
         p_built_at: new Date(s.builtAt).toISOString(), p_expires_at: new Date(s.expiresAt).toISOString(),
         p_max_snapshots: DURABLE_MAX_SNAPSHOTS, p_max_total_ids: DURABLE_MAX_TOTAL_IDS,
       });

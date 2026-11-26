@@ -24,6 +24,9 @@ revoke all on table public.feed_snapshots from public, anon, authenticated;
 -- epochs are purged on their own schedule and a snapshot only needs the ID list it already stored.
 alter table public.feed_snapshots add column if not exists epoch_id  uuid;
 alter table public.feed_snapshots add column if not exists frozen_at timestamptz;
+-- Salary filter HELD by the snapshot (integration with #796): min, currency, FX table, provenance and the exact
+-- rational thresholds computed once at build. Continuations reuse it; no job content is stored.
+alter table public.feed_snapshots add column if not exists salary_filter jsonb;
 -- (2) Re-runnable guard. A pre-existing column of the wrong type or a pre-existing bound with another definition makes
 -- this script FAIL, never silently accept it. One row can never hold more IDs than the freeze cap (100000 =
 -- SNAPSHOT_MAX_ROWS, placeholder, must match freeze_feed_corpus p_max_rows). Added NOT VALID: scans nothing; validate separately.
@@ -60,7 +63,7 @@ grant select, delete on public.feed_snapshots to service_role;
 -- cursor would silently break). Caps are parameters, UNMEASURED placeholders chosen by the owner after measuring
 -- feed_snapshots size on a preview; this file invents no capacity.
 create or replace function public.put_feed_snapshot(
-  p_id uuid, p_identity text, p_job_ids uuid[], p_corpus_mark timestamptz, p_epoch_id uuid, p_frozen_at timestamptz,
+  p_id uuid, p_identity text, p_job_ids uuid[], p_corpus_mark timestamptz, p_epoch_id uuid, p_frozen_at timestamptz, p_salary_filter jsonb,
   p_built_at timestamptz, p_expires_at timestamptz, p_max_snapshots int, p_max_total_ids int)
 returns void language plpgsql security definer set search_path = '' as $$
 declare n bigint; ids bigint;
@@ -76,8 +79,8 @@ begin
   if n >= p_max_snapshots or ids + pg_catalog.cardinality(p_job_ids) > p_max_total_ids then
     raise exception 'snapshot_store_full' using errcode = '53400';
   end if;
-  insert into public.feed_snapshots (id, identity, job_ids, corpus_mark, epoch_id, frozen_at, built_at, expires_at)
-    values (p_id, p_identity, p_job_ids, p_corpus_mark, p_epoch_id, p_frozen_at, p_built_at, p_expires_at);
+  insert into public.feed_snapshots (id, identity, job_ids, corpus_mark, epoch_id, frozen_at, salary_filter, built_at, expires_at)
+    values (p_id, p_identity, p_job_ids, p_corpus_mark, p_epoch_id, p_frozen_at, p_salary_filter, p_built_at, p_expires_at);
 end $$;
-revoke all on function public.put_feed_snapshot(uuid, text, uuid[], timestamptz, uuid, timestamptz, timestamptz, timestamptz, int, int) from public, anon, authenticated;
-grant execute on function public.put_feed_snapshot(uuid, text, uuid[], timestamptz, uuid, timestamptz, timestamptz, timestamptz, int, int) to service_role;
+revoke all on function public.put_feed_snapshot(uuid, text, uuid[], timestamptz, uuid, timestamptz, jsonb, timestamptz, timestamptz, int, int) from public, anon, authenticated;
+grant execute on function public.put_feed_snapshot(uuid, text, uuid[], timestamptz, uuid, timestamptz, jsonb, timestamptz, timestamptz, int, int) to service_role;
