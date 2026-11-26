@@ -311,4 +311,72 @@ describe("local cues: optional wording, combined qualifiers and '&' joins", () =
     const r = req("Proficiency in SQL and Python is required, while Tableau is nice to have");
     expect([skills(r.required), r.ambiguous]).toEqual([["sql", "python"], []]);
   });
+
+  describe("negation scoping (no non-skill negation leaking onto a skill)", () => {
+    it("does not negate the previous skill for 'no <noun> required/needed' segments", () => {
+      const a = req("Python experience, no degree required");
+      expect([skills(a.required), a.negated, a.ambiguous]).toEqual([["python"], [], []]);
+      const b = req("Python, no visa sponsorship needed");
+      expect([skills(b.required), b.negated]).toEqual([["python"], []]);
+    });
+
+    it("binds 'without' to its own object: non-skill objects negate nothing, skill objects negate only themselves", () => {
+      for (const bullet of ["Java required without supervision", "Java required without prior supervision", "Java required without any supervision"]) {
+        const r = req(bullet);
+        expect([bullet, skills(r.required), r.negated]).toEqual([bullet, ["java"], []]);
+      }
+      const a = req("Experience without prior Go");
+      expect([a.required, skills(a.negated)]).toEqual([[], ["golang"]]);
+      const b = req("Willing to learn without Python experience");
+      expect([b.required, skills(b.negated)]).toEqual([[], ["python"]]);
+      const c = req("Experience with Python without prior Go experience");
+      expect([skills(c.required), skills(c.negated)]).toEqual([["python"], ["golang"]]);
+      const d = req("Python, without any Java experience needed");
+      expect([skills(d.required), skills(d.negated)]).toEqual([["python"], ["java"]]);
+    });
+
+    it("negates every skill of a coordinated 'without' object, never leaving one required", () => {
+      for (const [bullet, expected] of [
+        ["Without Java and Python experience", ["java", "python"]],
+        ["Willing to learn without Python and Java experience", ["python", "java"]],
+        ["Without Java or Python experience", ["java", "python"]],
+      ] as const) {
+        const r = req(bullet);
+        expect([bullet, r.required, skills(r.negated), r.unspecified]).toEqual([bullet, [], expected, []]);
+      }
+    });
+
+    it("marks an unscopable 'without' object unspecified and ambiguous, never negated or required", () => {
+      const a = req("Python without supervision using Go");
+      expect([skills(a.required), a.negated, skills(a.unspecified), a.ambiguous.length]).toEqual([["python"], [], ["golang"], 1]);
+      const b = req("Python without Go, Docker required");
+      expect([skills(b.required), skills(b.negated), skills(b.unspecified), b.ambiguous.length]).toEqual([["python"], ["golang"], ["docker"], 1]);
+    });
+
+    it("lets a non-skill 'without' object end at the comma so later cues still apply", () => {
+      const r = req("Java required without supervision, Python preferred");
+      expect([skills(r.required), skills(r.preferred), r.negated, r.unspecified]).toEqual([["java"], ["python"], [], []]);
+    });
+
+    it("keeps a skill before a contrasting negated clause at the section default", () => {
+      const r = req("Java, but Python not needed");
+      expect([skills(r.required), skills(r.negated)]).toEqual([["java"], ["python"]]);
+    });
+
+    it("still negates a genuine 'no <skill> experience needed' and coordinated skills", () => {
+      const a = req("No Python experience needed");
+      expect([a.required, skills(a.negated)]).toEqual([[], ["python"]]);
+      const b = req("Java and Python are not required");
+      expect([b.required, skills(b.negated)]).toEqual([[], ["java", "python"]]);
+    });
+
+    it("keeps required, preferred and alternatives behaviour", () => {
+      const a = req("Java and Python required");
+      expect(skills(a.required)).toEqual(["java", "python"]);
+      const b = req("Python is required and AWS is a plus");
+      expect([skills(b.required), skills(b.preferred)]).toEqual([["python"], ["aws"]]);
+      const c = req("Java or Python preferred, Docker required");
+      expect([skills(c.required), c.alternatives.map((x) => [x.bucket, x.options])]).toEqual([[ "docker"], [["preferred", ["java", "python"]]]]);
+    });
+  });
 });
