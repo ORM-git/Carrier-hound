@@ -1,4 +1,6 @@
 import { createClient } from "../supabase/client";
+import { normalizeSkillList } from "../jobs/skillKey";
+import { normalizeRequiredYearsRange } from "../jobs/requiredYears";
 import { UserPreferences, emptyUserPreferences } from "./types";
 import { COUNTRY_MIGRATION, isMissingCountryColumnError } from "./countryColumns";
 import {
@@ -157,6 +159,7 @@ export async function getUserPreferences(userId?: string, clientOverride?: any):
           updatedAt: data.updated_at || new Date().toISOString(),
         };
         Object.assign(prefs, await readFeedConstraintColumns(supabase, userId, prefs.remotePreference));
+        Object.assign(prefs, await readAdvancedColumns(supabase, userId));
         if (typeof window !== "undefined") {
           localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
         }
@@ -235,6 +238,55 @@ async function readFeedConstraintColumns(supabase: any, userId: string, remotePr
   }
 }
 
+const ADVANCED_COLUMNS = "required_years_min, required_years_max, preferred_skills, excluded_skills";
+export const ADVANCED_PREFERENCES_MIGRATION = "20261126b_advanced_preferences_slice1.sql";
+
+function isMissingAdvancedColumnError(error: any): boolean {
+  const message = String(error?.message || "");
+  return (error?.code === "42703" || error?.code === "PGRST204") &&
+    /required_years_min|required_years_max|preferred_skills|excluded_skills/.test(message);
+}
+
+/**
+ * Separate read, like the feed constraints: an unmigrated schema degrades to "advanced preferences
+ * unavailable" and never blanks any other preference. NULL columns read as never saved.
+ */
+async function readAdvancedColumns(supabase: any, userId: string): Promise<Partial<UserPreferences>> {
+  try {
+    const { data: row, error } = await supabase.from("user_preferences").select(ADVANCED_COLUMNS).eq("user_id", userId).maybeSingle();
+    if (error) {
+      if (isMissingAdvancedColumnError(error)) {
+        log.warn("user_preferences advanced columns missing", { migration: ADVANCED_PREFERENCES_MIGRATION });
+      }
+      return { advancedPreferencesAvailable: false };
+    }
+    const range = normalizeRequiredYearsRange({ min: row?.required_years_min, max: row?.required_years_max });
+    return {
+      requiredYearsMin: range.min,
+      requiredYearsMax: range.max,
+      preferredSkills: normalizeSkillList(row?.preferred_skills),
+      excludedSkills: normalizeSkillList(row?.excluded_skills),
+      advancedPreferencesAvailable: true,
+    };
+  } catch {
+    return { advancedPreferencesAvailable: false };
+  }
+}
+
+/** Columns for the advanced fields the caller set (undefined leaves the saved value alone). */
+function advancedColumns(p: UserPreferences): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (p.advancedPreferencesAvailable === false) return out;
+  if (p.requiredYearsMin !== undefined || p.requiredYearsMax !== undefined) {
+    const r = normalizeRequiredYearsRange({ min: p.requiredYearsMin, max: p.requiredYearsMax });
+    out.required_years_min = r.min;
+    out.required_years_max = r.max;
+  }
+  if (p.preferredSkills !== undefined) out.preferred_skills = normalizeSkillList(p.preferredSkills);
+  if (p.excludedSkills !== undefined) out.excluded_skills = normalizeSkillList(p.excludedSkills);
+  return out;
+}
+
 /** Columns for the constraint fields the caller set (undefined leaves the saved value alone). */
 function feedConstraintColumns(p: UserPreferences): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -295,6 +347,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
       deleted_at: null,
       updated_at: updatedPrefs.updatedAt,
       ...feedConstraintColumns(updatedPrefs),
+        ...advancedColumns(updatedPrefs),
       ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
       ...(updatedPrefs.countryCode !== undefined
         ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
@@ -317,6 +370,7 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
         eligibility_filter: updatedPrefs.eligibilityFilter ?? true,
         updated_at: updatedPrefs.updatedAt,
         ...feedConstraintColumns(updatedPrefs),
+        ...advancedColumns(updatedPrefs),
         ...(updatedPrefs.country !== undefined ? { country: updatedPrefs.country || null } : {}),
         ...(updatedPrefs.countryCode !== undefined
           ? { country_code: updatedPrefs.countryCode ? updatedPrefs.countryCode.toUpperCase() : null }
@@ -325,6 +379,10 @@ export async function saveUserPreferences(prefs: UserPreferences, userId?: strin
     }
 
     if (upsertError) {
+      if (isMissingAdvancedColumnError(upsertError)) {
+        log.error("user_preferences advanced columns missing; refusing to save without them", { migration: ADVANCED_PREFERENCES_MIGRATION });
+        throw new Error("Failed to save preferences: this preference storage is not available yet. Please try again later.");
+      }
       if (isMissingFeedConstraintColumnError(upsertError)) {
         log.error("user_preferences feed constraint columns missing; refusing to save without them", {
           migration: FEED_CONSTRAINTS_MIGRATION,

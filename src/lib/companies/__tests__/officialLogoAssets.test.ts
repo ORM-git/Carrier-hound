@@ -14,6 +14,20 @@ describe("official ticker logo assets", () => {
   it("matches exact normalized names only", () => {
     expect(officialLogoFor("Reddit")).toBe("/company-logos-static/reddit.png");
     expect(officialLogoFor("  Cloudflare, Inc. ")).toBe("/company-logos-static/cloudflare.png");
+    expect(officialLogoFor("Microsoft")).toBe("/company-logos-static/microsoft.png");
+    expect(officialLogoFor("Microsoft Corporation")).toBe("/company-logos-static/microsoft.png");
+    expect(officialLogoFor("Bosch Group")).toBe("/company-logos-static/bosch.png");
+    expect(officialLogoFor("Wise")).toBe("/company-logos-static/wise.png");
+    expect(officialLogoFor("Truelogic")).toBe("/company-logos-static/truelogic.png");
+    expect(officialLogoFor("Monzo")).toBe("/company-logos-static/monzo.png");
+    expect(officialLogoFor("VTEX")).toBe("/company-logos-static/vtex.png");
+    expect(officialLogoFor("Ataccama")).toBe("/company-logos-static/ataccama.png");
+    expect(officialLogoFor("SumUp")).toBe("/company-logos-static/sumup.png");
+    expect(officialLogoFor("Tide")).toBe("/company-logos-static/tide.png");
+    expect(officialLogoFor("Canonical")).toBe("/company-logos-static/canonical.png");
+    expect(officialLogoFor("Truelogic Labs")).toBeNull();
+    expect(officialLogoFor("Monzo Bank Ltd")).toBeNull();
+    expect(officialLogoFor("Canonical UK Ltd")).toBeNull();
     expect(officialLogoFor("Reddit Analytics Co")).toBeNull();
     expect(officialLogoFor("Wolt Labs")).toBeNull();
     expect(officialLogoFor("Warp")).toBeNull();

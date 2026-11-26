@@ -9,14 +9,28 @@ const BASE = "/company-logos-static/";
 
 export const OFFICIAL_LOGO_FILES: Readonly<Record<string, string>> = {
   asana: "asana.png",
+  ataccama: "ataccama.png",
+  "bosch group": "bosch.png",
+  canonical: "canonical.png",
+  catawiki: "catawiki.png",
   cloudflare: "cloudflare.png",
+  datadog: "datadog.png",
   hellofresh: "hellofresh.png",
+  microsoft: "microsoft.png",
   mongodb: "mongodb.png",
+  monzo: "monzo.png",
   netlify: "netlify.png",
   netskope: "netskope.png",
   okta: "okta.png",
   pagerduty: "pagerduty.png",
+  pingidentity: "pingidentity.png",
   reddit: "reddit.png",
+  sumup: "sumup.png",
+  thehutgroup: "thehutgroup.png",
+  tide: "tide.png",
+  truelogic: "truelogic.png",
+  vtex: "vtex.png",
+  wise: "wise.png",
   wolt: "wolt.png",
 };
 

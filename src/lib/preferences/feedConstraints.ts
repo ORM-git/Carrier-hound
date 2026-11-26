@@ -27,6 +27,16 @@ export function savedFeedConstraintsEnforced(
   return env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS === "true";
 }
 
+/**
+ * Owner gate as the SERVER sees it: a Cloudflare binding wins over process.env (same precedence as getRuntimeEnv).
+ * The feed routes, the loaders and the capability endpoint all use this one reading.
+ */
+export function savedFeedConstraintsEnforcedFor(cfEnv?: Record<string, any> | null): boolean {
+  const key = "NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS";
+  const bound = cfEnv && typeof cfEnv[key] === "string" && cfEnv[key].trim() ? cfEnv[key].trim() : undefined;
+  return savedFeedConstraintsEnforced({ [key]: bound ?? (typeof process !== "undefined" ? process.env[key] : undefined) });
+}
+
 export const DATE_POSTED_WINDOWS = ["24h", "3d", "7d", "30d"] as const;
 export type DatePostedWindow = (typeof DATE_POSTED_WINDOWS)[number];
 

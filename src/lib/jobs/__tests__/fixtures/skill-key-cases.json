@@ -1,0 +1,17 @@
+[
+ {"input": "React", "key": "react"},
+ {"input": "  React  ", "key": "react"},
+ {"input": "REACT JS", "key": "react js"},
+ {"input": "React\t\n  Native", "key": "react native"},
+ {"input": "C++", "key": "c++"},
+ {"input": "C#", "key": "c#"},
+ {"input": ".NET", "key": ".net"},
+ {"input": "Node.js", "key": "node.js"},
+ {"input": "Réact", "key": "réact"},
+ {"input": "RÉACT", "key": "rÉact"},
+ {"input": "React\u00a0Native", "key": "react\u00a0native"},
+ {"input": "İstanbul", "key": "İstanbul"},
+ {"input": "SQL\u2003Server", "key": "sql\u2003server"},
+ {"input": "", "key": ""},
+ {"input": "   ", "key": ""}
+]

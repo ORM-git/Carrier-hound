@@ -178,3 +178,72 @@ describe("JobFilterBar - Chip Labels and Unclipped Popovers", () => {
     expect(screen.getByText(/top matched/i)).toBeInTheDocument();
   });
 });
+
+describe("JobFilterBar - saved (onboarding) display", () => {
+  const f: JobFilterValues = { location: "", category: "", level: "", jobType: "", workModel: "", datePosted: "all", hidden: false, sort: "match" };
+  const mk = (filters: Partial<JobFilterValues>, savedDisplay?: Record<string, string>, onChange = vi.fn()) =>
+    render(
+      <JobFilterBar
+        filters={{ ...f, ...filters }}
+        savedDisplay={savedDisplay}
+        onChange={onChange}
+        onClearAll={vi.fn()}
+        activeCount={0}
+        hiddenCount={0}
+        onOpenAllFilters={vi.fn()}
+        onOpenMobileFilters={vi.fn()}
+        isMobileFiltersOpen={false}
+        mobileFiltersTriggerRef={{ current: null }}
+        hasConfirmedResume={false}
+      />
+    );
+  afterEach(() => cleanup());
+
+  it("shows saved choices as selected and marked, without an active pill", () => {
+    mk({}, { jobType: "full-time,contract", workModel: "remote", countryCode: "IN" });
+    const jt = screen.getByLabelText(/job type filter/i);
+    expect(jt.getAttribute("data-saved-preference")).toBe("true");
+    expect(jt.textContent).toMatch(/Full-time/i);
+    expect(jt.textContent).toMatch(/\(\+1\)/);
+    expect(screen.queryByText(/Clear all/i)).toBeNull();
+  });
+  it("lets an explicit filter win over the saved value", () => {
+    mk({ jobType: "internship" }, { jobType: "full-time" });
+    const jt = screen.getByLabelText(/job type filter/i);
+    expect(jt.getAttribute("data-saved-preference")).toBeNull();
+    expect(jt.textContent).toMatch(/Internship/i);
+    expect(jt.textContent).not.toMatch(/Full-time/i);
+  });
+  it("is unmarked with no saved display", () => {
+    mk({});
+    expect(screen.getByLabelText(/job type filter/i).getAttribute("data-saved-preference")).toBeNull();
+  });
+  it("explicit location wins over the saved country: shown, unmarked, and Confirm submits only the location", () => {
+    const onChange = vi.fn();
+    mk({ location: "Boston" }, { countryCode: "IN" }, onChange);
+    const btn = screen.getByLabelText(/location filter/i);
+    expect(btn.getAttribute("aria-label")).toContain("Boston");
+    expect(btn.getAttribute("aria-label")).not.toContain("IN");
+    expect(btn.getAttribute("data-saved-preference")).toBeNull();
+    fireEvent.click(btn);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const patch = onChange.mock.calls[0][0];
+    expect(patch.location).toBe("Boston");
+    expect(patch.countryCode || "").toBe("");
+  });
+
+  it("saved country still shows when there is no explicit location or country", () => {
+    mk({}, { countryCode: "IN" });
+    const btn = screen.getByLabelText(/location filter/i);
+    expect(btn.getAttribute("aria-label")).toContain("IN");
+    expect(btn.getAttribute("data-saved-preference")).toBe("true");
+  });
+  it("independent (QA 867): explicit location must override saved country through confirm", () => {
+    const onChange = vi.fn();
+    mk({ location: "Boston" }, { countryCode: "IN" }, onChange);
+    fireEvent.click(screen.getByLabelText(/location filter/i));
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(onChange.mock.calls[0][0]).toMatchObject({ countryCode: "", location: "Boston" });
+  });
+});

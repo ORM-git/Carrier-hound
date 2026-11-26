@@ -1,4 +1,7 @@
 import { createClient } from "../supabase/client";
+import { appendExcludedSkillParams, appendRequiredYearsParams } from "@/lib/preferences/advancedFilters";
+import { normalizeSkillList } from "./skillKey";
+import { isRequiredYearsRangeActive, normalizeRequiredYearsRange } from "./requiredYears";
 import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted, type SavedFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
@@ -22,6 +25,7 @@ import {
 } from "./recommendations";
 import {
   applyExperienceLevelQuery,
+  resolveEffectiveLevel,
   formatExperienceLevels,
   parseExperienceLevels,
   EARLY_CAREER_OR_CLAUSE,
@@ -458,10 +462,22 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const feedConstraints = savedFeedConstraintsEnforced()
     ? mergeFeedConstraints(preferences, { excludedTitles, includedCompanies, excludedCompanies })
     : normalizeFeedConstraints(null);
+  // Saved level: same owner gate and personalized-feed scope as the other saved constraints. An explicit
+  // browse level overrides it (no intersection). Unknown job titles follow the existing level predicate.
+  const effectiveLevelRaw = resolveEffectiveLevel(level, preferences?.experienceLevel, { enforced: savedFeedConstraintsEnforced(), personalized: isMatchSort });
+  const effectiveLevel = Array.isArray(effectiveLevelRaw) ? effectiveLevelRaw.join(",") : effectiveLevelRaw;
+  // Saved required-years range: same owner gate and personalized-feed scope; storage must exist.
+  const requiredYears = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
+    ? normalizeRequiredYearsRange({ min: preferences?.requiredYearsMin, max: preferences?.requiredYearsMax })
+    : normalizeRequiredYearsRange(null);
+  // Saved excluded skills: same gate and scope (Free and Pro alike); decided by the server before paging.
+  const excludedSkills = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
+    ? normalizeSkillList(preferences?.excludedSkills)
+    : [];
   const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
 
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
-  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
+  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || isRequiredYearsRangeActive(requiredYears) || excludedSkills.length > 0 || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
   const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
@@ -497,8 +513,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (category && category !== "all") recParams.set("category", category);
         if (remoteOnly) recParams.set("remoteOnly", "true");
         if (location && location !== "all") recParams.set("location", location);
-        if (level && level !== "all") {
-          const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+        if (effectiveLevel && effectiveLevel !== "all") {
+          const normLevel = formatExperienceLevels(parseExperienceLevels(effectiveLevel));
           if (normLevel) recParams.set("level", normLevel);
         }
         if (jobType && jobType !== "all") recParams.set("jobType", jobType);
@@ -506,6 +522,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
         if (effectiveDatePosted) recParams.set("datePosted", effectiveDatePosted);
         appendFeedConstraintParams(recParams, feedConstraints);
+        appendRequiredYearsParams(recParams, requiredYears);
+        appendExcludedSkillParams(recParams, excludedSkills);
         if (experience && experience !== "all" && experience.toLowerCase() !== "all experience") recParams.set("experience", experience);
         if (salaryMin) recParams.set("salaryMin", String(salaryMin));
         if (sourceType && sourceType !== "all") recParams.set("sourceType", sourceType);
@@ -557,14 +575,16 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (category && category !== "all") params.set("category", category);
       if (remoteOnly) params.set("remoteOnly", "true");
       if (location && location !== "all") params.set("location", location);
-      if (level && level !== "all") {
-        const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+      if (effectiveLevel && effectiveLevel !== "all") {
+        const normLevel = formatExperienceLevels(parseExperienceLevels(effectiveLevel));
         if (normLevel) params.set("level", normLevel);
       }
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (effectiveDatePosted) params.set("datePosted", effectiveDatePosted);
       appendFeedConstraintParams(params, feedConstraints);
+      appendRequiredYearsParams(params, requiredYears);
+      appendExcludedSkillParams(params, excludedSkills);
       if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
       if (experience && experience !== "all" && experience !== "All Experience") params.set("experience", experience);
       if (salaryMin) params.set("salaryMin", String(salaryMin));
@@ -615,9 +635,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
   }
 
-  // The direct jobs_public query cannot express saved title/company constraints: a retryable error,
-  // never a silently broadened personalized feed.
-  if (feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints)) {
+  // The direct jobs_public query cannot express saved title/company constraints or a required-years range
+  // (the view may lack the columns): a retryable error, never a silently broadened personalized feed.
+  if (feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints) || isRequiredYearsRangeActive(requiredYears) || excludedSkills.length > 0) {
     return DEGRADED_JOBS_RESULT;
   }
 
@@ -695,8 +715,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     const jobTypeClause = jobTypeOrClause(jobType);
     if (jobTypeClause) query = query.or(jobTypeClause);
 
-    if (level && level.trim() && level.toLowerCase() !== "all") {
-      query = applyExperienceLevelQuery(query, level);
+    if (effectiveLevel && effectiveLevel.trim() && effectiveLevel.toLowerCase() !== "all") {
+      query = applyExperienceLevelQuery(query, effectiveLevel);
     }
 
     if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
@@ -797,8 +817,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         }
         if (jobTypeClause) catQuery = catQuery.or(jobTypeClause);
         if (workModelClause) catQuery = catQuery.or(workModelClause);
-        if (level && level.trim() && level.toLowerCase() !== "all") {
-          catQuery = applyExperienceLevelQuery(catQuery, level);
+        if (effectiveLevel && effectiveLevel.trim() && effectiveLevel.toLowerCase() !== "all") {
+          catQuery = applyExperienceLevelQuery(catQuery, effectiveLevel);
         }
 
         if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
