@@ -1,7 +1,10 @@
 /* Screenshot-grounded mobile Jobs presentation. Desktop and shared landing markup keep their own styles. */
 @media (max-width: 639px) {
   .cm-jobs-reference { background: #f5f5f7; color: #111; }
-  .cm-jobs-reference.cm-mobile-list [data-testid="app-mobile-brand"] { display: none; }
+  /* The shared brand row (wordmark left, profile icon right) sits above the bar; match the page tint, no divider.
+     It is hidden in the mobile job detail, where the bar itself is hidden. */
+  .cm-jobs-reference.cm-mobile-list [data-testid="app-mobile-brand-row"] { background: #f5f5f7; border: 0; }
+  .cm-jobs-reference.cm-mobile-detail [data-testid="app-mobile-brand-row"] { display: none; }
   .cm-jobs-reference.cm-mobile-list [data-testid="app-top-bar"] { background: #f5f5f7; border: 0; }
   .cm-jobs-reference [data-testid="mobile-feed-tabs"] button { font-size: 14px; font-weight: 700; color: #111; gap: 1px; padding: 0 2px; }
   .cm-jobs-reference [data-testid="mobile-feed-tabs"] button::after { background: #111; height: 2px; border-radius: 0; }
