@@ -11,7 +11,7 @@ import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { jobDescriptionText } from "@/lib/jobs/descriptionText";
 import { getSiteUrl } from "@/lib/siteUrl";
 import CompanyLogo from "@/components/CompanyLogo";
-import { workModelLabel } from "@/lib/jobs/workModel";
+import { workModelDetailLabel, isDuplicateWorkModelLocation } from "@/lib/jobs/workModel";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
 import { useCookieNoticeHeight } from "@/components/CookieNotice";
 import type { CompanyFactKey } from "@/lib/company-profile/types";
@@ -339,6 +339,8 @@ export default function JobDetailView({
   const responsibilitiesList = sections.responsibilities;
   const benefitsList = sections.benefits;
 
+  const detailWorkModel = workModelDetailLabel(job);
+  const showLocation = !isUnlocked || !isDuplicateWorkModelLocation(job.location, detailWorkModel);
   const jobLevel = inferJobLevel(job.title);
   const expMatch = job.description?.match(/(\d+\+?\s*(?:-\s*\d+\+?)?\s*years?(?:\s*of)?\s*(?:experience|exp)?)/i);
   const expText = (job as any).experience || (expMatch ? expMatch[0] : null);
@@ -786,10 +788,10 @@ export default function JobDetailView({
             {/* Mobile fact list: one icon row per fact (location, job type, work model, level, salary). Salary is
                 always listed and visible to every viewer ("Not disclosed" when empty). Desktop chips/grid unchanged. */}
             <ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden flex flex-col gap-2.5">
-              <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
+              {showLocation && <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                 <MapPin className="w-4 h-4 text-[#64748B] shrink-0" />
-                <span className="truncate">{isUnlocked ? (job.location || "Remote") : <span className="text-[#64748B]">Location locked</span>}</span>
-              </li>
+                <span className="truncate">{isUnlocked ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}</span>
+              </li>}
               {job.type && (
                 <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                   <Briefcase className="w-4 h-4 text-[#64748B] shrink-0" />
@@ -799,8 +801,7 @@ export default function JobDetailView({
               <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                 <Laptop className="w-4 h-4 text-[#64748B] shrink-0" />
                 <span className="truncate">
-                  {workModelLabel(job)}
-                  {job.remoteScope && !["remote", "hybrid", "onsite", "on-site", "any"].includes(job.remoteScope.toLowerCase()) ? ` (${job.remoteScope})` : ""}
+                  {detailWorkModel}
                 </span>
               </li>
               {jobLevel && (
@@ -852,12 +853,12 @@ export default function JobDetailView({
             <div className="max-md:hidden grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0] text-[13px]">
               {/* Col 1: location, job type, work model */}
               <div className="space-y-2">
-                <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
+                {showLocation && <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
                   <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
                   <span className="truncate">
-                    {isUnlocked ? (job.location || "Remote") : <span className="text-[#64748B]">Location locked</span>}
+                    {isUnlocked ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                   </span>
-                </div>
+                </div>}
 
                 {job.type && (
                   <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
@@ -868,7 +869,7 @@ export default function JobDetailView({
 
                 <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
                   <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
-                  <span className="truncate">{workModelLabel(job)}</span>
+                  <span className="truncate">{detailWorkModel}</span>
                 </div>
               </div>
 
