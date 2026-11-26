@@ -230,3 +230,85 @@ describe("cue scope: each requirement, preference and negation applies to its ow
     expect(r.ambiguous[0]).toEqual({ raw: "Java required", sourceText: "Java required", provenance: "preferred_section" });
   });
 });
+
+describe("local cues: optional wording, combined qualifiers and '&' joins", () => {
+  const req = (bullet: string, section = "Requirements") => extractSkillRequirements({ description: `${section}\n- ${bullet}` });
+
+  describe("regressions from review", () => {
+    it("'Java is optional' under Requirements is never required", () => {
+      const r = req("Java is optional");
+      expect([r.required, r.preferred, r.negated]).toEqual([[], [], []]);
+      expect(r.unspecified).toEqual([{ skill: "java", evidence: [{ raw: "Java", sourceText: "Java is optional", provenance: "requirements_section" }] }]);
+    });
+
+    it("'Python is not required but preferred' keeps the preference", () => {
+      const r = req("Python is not required but preferred");
+      expect([skills(r.preferred), r.required, r.negated]).toEqual([["python"], [], []]);
+      expect(r.preferred[0].evidence[0]).toEqual({ raw: "Python", sourceText: "Python is not required but preferred", provenance: "requirements_section" });
+    });
+
+    it("'Java is required & Python is preferred' splits at '&'", () => {
+      const r = req("Java is required & Python is preferred");
+      expect([skills(r.required), skills(r.preferred)]).toEqual([["java"], ["python"]]);
+    });
+  });
+
+  it("optional wording overrides the section default in both sections and any case", () => {
+    for (const [bullet, section] of [
+      ["Java is optional", "Requirements"],
+      ["JAVA IS OPTIONAL", "Minimum Qualifications"],
+      ["Optional: Java", "Requirements"],
+      ["Java (optional)", "Requirements"],
+      ["Java is optional", "Preferred Qualifications"],
+    ]) {
+      const r = req(bullet, section);
+      expect([r.required, r.preferred, r.negated], `${section}: ${bullet}`).toEqual([[], [], []]);
+      expect(skills(r.unspecified), `${section}: ${bullet}`).toEqual(["java"]);
+    }
+  });
+
+  it("scopes optional to its own proposition", () => {
+    const a = req("Java is required, Python is optional");
+    expect([skills(a.required), skills(a.unspecified), a.preferred]).toEqual([["java"], ["python"], []]);
+    const b = req("Python is optional, but Java is required");
+    expect([skills(b.required), skills(b.unspecified)]).toEqual([["java"], ["python"]]);
+    const c = req("Java is optional but preferred");
+    expect([skills(c.preferred), c.required, c.unspecified]).toEqual([["java"], [], []]);
+  });
+
+  it("keeps an explicit preference whichever order 'not required' and 'preferred' come in", () => {
+    for (const bullet of ["Python is preferred but not required", "Python is not required but preferred", "Python: not required, but preferred", "PYTHON IS NOT REQUIRED BUT PREFERRED", "Python is not required, though nice to have"]) {
+      for (const section of ["Requirements", "Preferred Qualifications"]) {
+        const r = req(bullet, section);
+        expect([skills(r.preferred), r.required, r.negated], `${section}: ${bullet}`).toEqual([["python"], [], []]);
+      }
+    }
+  });
+
+  it("leaves a self-contradicting qualifier unspecified, never required", () => {
+    const r = req("Java is required but optional");
+    expect([r.required, r.preferred]).toEqual([[], []]);
+    expect(skills(r.unspecified)).toEqual(["java"]);
+    expect(r.ambiguous[0].raw).toBe("Java is required but optional");
+  });
+
+  it("splits '&' only between cue-bearing propositions", () => {
+    expect(skills(req("Java & Python").required)).toEqual(["java", "python"]);
+    expect(skills(req("Java & Python are a plus").preferred)).toEqual(["java", "python"]);
+    const rev = req("Python is preferred & Java is required");
+    expect([skills(rev.required), skills(rev.preferred)]).toEqual([["java"], ["python"]]);
+    const neg = req("Java is not required & Python is mandatory");
+    expect([skills(neg.negated), skills(neg.required)]).toEqual([["java"], ["python"]]);
+    const alt = req("Java or Python is required & Docker is a plus");
+    expect(alt.alternatives.map((a) => [a.bucket, a.options])).toEqual([["required", ["java", "python"]]]);
+    expect([skills(alt.preferred), alt.required]).toEqual([["docker"], []]);
+    // A mixed & / or list with one cue is still ambiguous, not two requirements
+    const mixed = req("Java & Python or Go");
+    expect([mixed.required, mixed.alternatives, skills(mixed.unspecified)]).toEqual([[], [], ["java", "python", "golang"]]);
+  });
+
+  it("does not let a skill-less clause with other words act as a bare qualifier", () => {
+    const r = req("Proficiency in SQL and Python is required, while Tableau is nice to have");
+    expect([skills(r.required), r.ambiguous]).toEqual([["sql", "python"], []]);
+  });
+});

@@ -20,6 +20,12 @@
  *   `unspecified` and `ambiguous`.
  * - A negated proposition ("not required", "do not / don't need", "no ... needed", "without") adds none of its
  *   skills; they are listed under `negated` instead. "do / does need" is affirmative.
+ * - "optional" overrides the section default in either list: the skill goes to `unspecified`, never `required`
+ *   or `preferred`, because optional says nothing about whether it is wanted.
+ * - A bare qualifier after a skill ("but preferred", "but not required", "though nice to have") combines with that
+ *   skill's cue: "not required but preferred" and "preferred but not required" are both `preferred`; a contradiction
+ *   ("required but optional") goes to `unspecified` and `ambiguous`.
+ * - "&" joins propositions like "and": it splits only between parts that each carry their own cue.
  * - "A or B" (or "A/B", "either", "one of") becomes one `alternatives` group, never two requirements. A clause that
  *   mixes "or" with "and", or offers one skill "or similar/equivalent", cannot be represented safely, so its skills
  *   go to `unspecified` and the clause is listed in `ambiguous`.
@@ -31,7 +37,7 @@
 import { descriptionSections } from "./descriptionSections";
 import { GENUINE_SKILL_ALIASES, getCanonicalSkillId } from "../matcher/scoring";
 
-export const extractorVersion = "skill-requirements-v2";
+export const extractorVersion = "skill-requirements-v3";
 
 export type SkillProvenance = "requirements_section" | "preferred_section" | "structured_skills";
 
@@ -98,16 +104,37 @@ const PREFERRED_CUE = /\b(?:preferred|nice[- ]to[- ]have|a plus|bonus|ideally|de
 const REQUIRED_CUE = /\b(?:required|requirement|mandatory|must|essential|need|needed)\b/i; // not "needs": usually a noun ("business needs")
 // Where one proposition ends and the next may begin inside a clause. Segments are only split apart when each
 // carries its own cue; otherwise they are joined back, so plain lists and alternatives stay whole.
-const SEGMENT_BREAK = /\s*,\s*(?:but|while|whereas|and)?\s*|\s+(?:but|while|whereas|and)\s+/gi;
+const SEGMENT_BREAK = /\s*,\s*(?:but|while|whereas|and|&)?\s*|\s+(?:but|while|whereas|and|&)\s+/gi;
+// "optional" says the skill is not required but not that it is wanted: it overrides the section default and lands
+// in `unspecified`, never `required` or `preferred`.
+const OPTIONAL_CUE = /\boptional\b/i;
 
-type Cue = "required" | "preferred" | "negated";
+type Cue = "required" | "preferred" | "negated" | "optional";
+const CUES = [["negated", NEGATION], ["optional", OPTIONAL_CUE], ["preferred", PREFERRED_CUE], ["required", REQUIRED_CUE]] as const;
 const cueOf = (text: string): { cue: Cue; at: number } | null => {
-  for (const [cue, re] of [["negated", NEGATION], ["preferred", PREFERRED_CUE], ["required", REQUIRED_CUE]] as const) {
+  for (const [cue, re] of CUES) {
     const m = re.exec(text);
     if (m) return { cue, at: m.index };
   }
   return null;
 };
+
+// A segment that is only a qualifier ("but preferred", "not required", "though nice to have") with no skill and no
+// other words describes the skills just before it, so its cue is combined with theirs instead of standing alone.
+const QUALIFIER_FILLER = /^[\s()\-:,.]*(?:(?:but|and|though|although|still|is|are|it|it's|very|much|strongly|highly|definitely|would|be)[\s()\-:,.]*)*$/i;
+const bareQualifier = (text: string) => {
+  let rest = text;
+  for (const [, re] of CUES) rest = rest.replace(new RegExp(re.source, "gi"), " ");
+  return rest !== text && QUALIFIER_FILLER.test(rest);
+};
+/** Cue for "<a> but <b>" about the same skills; null when they contradict ("required but optional"). */
+function combineCues(a: Cue | undefined, b: Cue): Cue | null {
+  if (!a || a === b) return b;
+  const pair = new Set([a, b]);
+  if (pair.has("preferred") && (pair.has("negated") || pair.has("optional"))) return "preferred"; // "not required but preferred"
+  if (pair.has("optional") && pair.has("negated")) return "optional";
+  return null;
+}
 
 interface Proposition {
   text: string;
@@ -122,18 +149,28 @@ interface Proposition {
  * two different cues, gets null.
  */
 function propositions(clause: string, sectionDefault: Cue): Proposition[] {
-  const segs: { start: number; end: number; own: { cue: Cue; prefix: boolean } | null }[] = [];
+  type Seg = { start: number; end: number; own: { cue: Cue | null; prefix: boolean } | null };
+  const raw: Seg[] = [];
   let start = 0;
   for (const m of Array.from(clause.matchAll(SEGMENT_BREAK))) {
-    if (m.index! > start) segs.push({ start, end: m.index!, own: null });
+    if (m.index! > start) raw.push({ start, end: m.index!, own: null });
     start = m.index! + m[0].length;
   }
-  if (start < clause.length) segs.push({ start, end: clause.length, own: null });
-  for (const s of segs) {
+  if (start < clause.length) raw.push({ start, end: clause.length, own: null });
+  const segs: Seg[] = [];
+  for (const s of raw) {
     const text = clause.slice(s.start, s.end);
     const c = cueOf(text);
     const firstSkill = findSkills(text)[0];
+    const prev = segs[segs.length - 1];
+    if (c && !firstSkill && prev && bareQualifier(text) && findSkills(clause.slice(prev.start, prev.end)).length) {
+      prev.end = s.end; // the qualifier joins the proposition it describes, so evidence covers both
+      const contradicted = prev.own !== null && prev.own.cue === null;
+      prev.own = { cue: contradicted ? null : combineCues(prev.own?.cue ?? undefined, c.cue), prefix: false };
+      continue;
+    }
     if (c) s.own = { cue: c.cue, prefix: !!firstSkill && c.at < text.indexOf(firstSkill.raw) };
+    segs.push(s);
   }
   const cued = segs.filter((s) => s.own);
   if (!cued.length) return [{ text: clause, cue: sectionDefault }];
@@ -141,7 +178,7 @@ function propositions(clause: string, sectionDefault: Cue): Proposition[] {
     if (s.own) return s.own.cue;
     const left = segs.slice(0, i).reverse().find((x) => x.own);
     const right = segs.slice(i + 1).find((x) => x.own);
-    const from = new Set<Cue>();
+    const from = new Set<Cue | null>();
     if (left?.own?.prefix) from.add(left.own.cue);
     if (right?.own && !right.own.prefix) from.add(right.own.cue);
     if (from.size === 1) return Array.from(from)[0];
@@ -205,6 +242,10 @@ export function extractSkillRequirements(input: SkillRequirementsInput): SkillRe
           };
           if (cue === "negated") {
             mentions.forEach((m) => add("negated", m.skill, ev(m.raw)));
+            continue;
+          }
+          if (cue === "optional") {
+            mentions.forEach((m) => add("unspecified", m.skill, ev(m.raw)));
             continue;
           }
           // No scopable cue, or "required" inside a preferred list: the source contradicts itself, so do not pick.
