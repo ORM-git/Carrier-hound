@@ -33,10 +33,13 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
         {"source": str(f.get("source")), "error": str(f.get("error") or "")[:300].replace("\n", " ")}
         for f in (report.get("failed_sources") or []) if isinstance(f, dict)
     ]
+    # A deferred no-op never wrote anything, so it is never ok, whatever exit code the runner reported.
+    deferred_noop = str(report.get("guard_block_reason") or "").split(":")[0] == "noop_deferred"
     return {
         "cohort": cohort,
-        # exit 3 = deferred no-op (nothing written): explicitly not ok, so the aggregate is never green on it
-        "status": "ok" if code == "0" else ("deferred_noop" if code == "3" else "failed"),
+        # exit 3 or guard noop_deferred = deferred no-op (nothing written): explicitly not ok, so the aggregate is never green on it
+        "status": ("deferred_noop" if code == "3" or (code == "0" and deferred_noop)
+                   else "ok" if code == "0" else "failed"),
         "exit_code": code,
         "dry_run": dry_run,
         "git_sha": report.get("git_sha"),
