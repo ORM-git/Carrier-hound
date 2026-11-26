@@ -75,12 +75,13 @@ export default function PhoneVideoFilters({
   const [query, setQuery] = useState("");
   const [salaryError, setSalaryError] = useState("");
   const panel = useRef<HTMLDivElement>(null),
-    pickerTrigger = useRef<HTMLButtonElement | null>(null);
+    pickerTrigger = useRef<Picker | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
     if (!isOpen) return;
     const trigger = triggerRef?.current;
+    pickerTrigger.current = null;
     setDraft({ ...filters, hidden: false });
     setExpanded(null);
     setPicker(null);
@@ -95,6 +96,10 @@ export default function PhoneVideoFilters({
   }, [isOpen]);
   useEffect(() => {
     if (picker) panel.current?.querySelector<HTMLInputElement>("input[type=search]")?.focus();
+    else if (pickerTrigger.current)
+      panel.current
+        ?.querySelector<HTMLButtonElement>(`[data-picker-trigger="${pickerTrigger.current}"]`)
+        ?.focus();
   }, [picker]);
   if (!present) return null;
   const set = <K extends keyof JobFilterValues>(key: K, value: JobFilterValues[K]) =>
@@ -111,10 +116,9 @@ export default function PhoneVideoFilters({
   const closePicker = () => {
     setPicker(null);
     setQuery("");
-    requestAnimationFrame(() => pickerTrigger.current?.focus());
   };
-  const launch = (key: Picker, e: React.MouseEvent<HTMLButtonElement>) => {
-    pickerTrigger.current = e.currentTarget;
+  const launch = (key: Picker) => {
+    pickerTrigger.current = key;
     setPicker(key);
     setQuery("");
   };
@@ -163,7 +167,12 @@ export default function PhoneVideoFilters({
           </span>
         </div>
       )}
-      <button className="cm-vf-add" type="button" onClick={(e) => launch(key, e)}>
+      <button
+        className="cm-vf-add"
+        type="button"
+        data-picker-trigger={key}
+        onClick={() => launch(key)}
+      >
         <Plus size={13} />
         {draft[key] ? "Change" : "Add"}
       </button>
