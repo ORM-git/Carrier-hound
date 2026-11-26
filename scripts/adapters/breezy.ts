@@ -1,3 +1,4 @@
+import { sourceEmploymentType } from '../utils/sourceEmploymentType';
 import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
@@ -5,7 +6,6 @@ import {
   cleanText,
   cleanAndTruncateDescription,
   detectRemote,
-  detectJobType,
   detectCategory,
   detectSeniority,
   detectCountryCode,
@@ -67,7 +67,7 @@ export class BreezyAdapter implements SourceAdapter {
             ? cleanText(locParts.join(', '))
             : cleanText(j.location?.name || 'Unspecified');
         const remote = Boolean(j.location?.is_remote) || detectRemote(title, location);
-        const jobType = detectJobType(title, j.type?.name || j.type?.id || '');
+        const jobType = sourceEmploymentType(title, j.type?.name ?? j.type?.id);
         const description = cleanAndTruncateDescription(j.description, 4000);
         const postedAt = normalizeDate(j.published_at || j.updated_at);
         const category = source.category || detectCategory(title, [j.department || '']);

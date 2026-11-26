@@ -21,21 +21,38 @@ describe("mobile card score weight (item 19)", () => {
     const block = card.slice(card.indexOf('data-testid="mobile-card-score"') - 200, card.indexOf('data-testid="mobile-card-score"') + 700);
     expect(block).toContain("matchScore !== null ? (");
     expect(block).toContain("aria-label={scoreDescription || `Fit Match: ${matchScore}%`}");
-    expect(block).toContain("<CircularMatchRing score={matchScore} size={56} strokeWidth={1.75} light />");
+    expect(block).toContain("<CircularMatchRing score={matchScore} size={56} strokeWidth={2.4} light />");
     expect(card).not.toContain("w-[54px] h-[30px]");
   });
 
-  it("both feed rings use a blue gradient and small percent sign; no-score cards keep the resume link", () => {
-    expect(ring).toContain('stroke={`url(#${gradientId})`}');
-    expect(ring).toContain('stopColor="#EFF6FF"');
-    expect(ring).toContain('stopColor="#2563EB"');
-    expect(ring).toContain('text-[0.6em]');
+  it("the capsule is a solid CM-blue arc on a pale track with a bold percent; no-score cards keep the resume link", () => {
+    expect(ring).not.toContain('linearGradient');
+    expect(ring).toContain('stroke={light ? "#2563EB" : "#2DD4BF"}');
+    expect(ring).toContain('stroke={light ? "#E2E8F0" : "#1E293B"}');
+    expect(ring).toContain('text-[0.62em]');
+    expect(ring).toContain('font-extrabold');
     expect(ring).toContain('const offset = 100 - displayScore;');
     expect(ring).toContain('pathLength={100}');
     expect(ring).toContain('d={outline}');
     expect(ring).toContain('58 / 104');
     expect(ring).not.toContain('<ellipse');
-    expect(ring).toContain('stroke={light ? "#F4F4F5" : "#1E293B"}');
+    // The arc starts where the bottom edge meets the right end and runs clockwise (reference).
+    expect(ring).toContain('M ${right} ${height - inset} H ${left}');
+    expect(ring).toContain('displayScore > 0 &&');
     expect(card).toContain("+Score");
+  });
+
+  it("Early applicant tags carry the blue glow on desktop and mobile", () => {
+    const glow = "shadow-[0_0_0_1px_rgba(37,99,235,0.18),0_1px_9px_rgba(37,99,235,0.42)]";
+    expect(card.split(glow).length - 1).toBe(2);
+  });
+
+  it("desktop match panel uses the same light capsule, not the turquoise circle", () => {
+    const panel = card.slice(card.indexOf("Desktop Match Panel"), card.indexOf("PREVIEW SCORE"));
+    expect(panel).toContain("<CircularMatchRing");
+    expect(panel).toContain("light");
+    expect(panel).not.toContain('shape="circle"');
+    expect(panel).not.toContain("hidden md:block");
+    expect(panel).toContain("size={70}");
   });
 });

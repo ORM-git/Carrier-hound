@@ -12,7 +12,7 @@ Deliberate strategy (engineering decision, open to owner review):
     /applications, /remote, /pricing)
   - `src/components/UserMenu.tsx`
   - `src/components/Footer.tsx` (landing-owned; many low-value public links)
-- **Font preloading**: via `next/font` in the root layout (automatic).
+- **Font preloading**: bundled Inter Latin WOFF2 in the root layout, with an explicit same-origin font preload (`crossOrigin="anonymous"`), imported local CSS, and the same font variable/fallback metrics. Home also preloads its two Jakarta subsets. No build-time Google font fetch.
 - **Preconnect**: browser-fetch third-party origins are preconnected in the
   root layout head. The current list is exactly one origin — unavatar.io
   (company-logo avatars on public pages). Every other third-party origin in
@@ -22,4 +22,4 @@ Deliberate strategy (engineering decision, open to owner review):
 
 `scripts/test-prefetch-strategy.ts` (CI) pins this strategy: no new
 `prefetch={false}` outside the curated allowlist, every curated client-fetch
-origin preconnected, `next/font` in use.
+origin preconnected, local Inter CSS, class, valid WOFF2 and preload stay wired (including negative controls for missing hints).

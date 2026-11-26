@@ -52,10 +52,15 @@ export function matchesJobTypeFilter(type: string | null | undefined, value?: st
   return Boolean(t) && keys.some(({ key }) => t.includes(key));
 }
 
+// Same precedence as workModelLabel (workModel.ts): a Hybrid or On-site signal wins over the remote flag, so a job
+// labelled Hybrid never appears under Remote, and a remote=false job labelled Hybrid never appears under On-site.
+const NOT_HYBRID = "and(or(location.is.null,location.not.ilike.%hybrid%),or(remote_scope.is.null,remote_scope.neq.hybrid))";
+const NOT_ONSITE_SCOPE = "or(remote_scope.is.null,and(remote_scope.neq.onsite,remote_scope.neq.on-site,remote_scope.neq.on_site))";
+const NOT_REMOTE_SCOPE = "or(remote_scope.is.null,and(remote_scope.neq.remote,remote_scope.neq.worldwide,remote_scope.neq.any))";
 const WORK_MODELS: Record<string, string> = {
-  remote: "remote.eq.true,location.ilike.%remote%",
+  remote: `and(or(remote.eq.true,location.ilike.%remote%),${NOT_HYBRID},${NOT_ONSITE_SCOPE})`,
   hybrid: "location.ilike.%hybrid%,remote_scope.eq.hybrid",
-  onsite: "remote.eq.false,location.ilike.%onsite%",
+  onsite: `and(or(remote.eq.false,location.ilike.%onsite%),${NOT_HYBRID},${NOT_REMOTE_SCOPE})`,
 };
 const workModelKeys = (value?: string | null) => filterTokens(value).filter((t) => t in WORK_MODELS);
 
@@ -73,12 +78,15 @@ export function matchesWorkModelFilter(
   const keys = workModelKeys(value);
   if (!keys.length) return true;
   const loc = (job.location || "").toLowerCase();
+  const scope = (job.remoteScope || "").trim().toLowerCase();
+  const hybrid = loc.includes("hybrid") || scope === "hybrid";
+  const onsiteScope = scope === "onsite" || scope === "on-site" || scope === "on_site";
   return keys.some((t) =>
     t === "remote"
-      ? Boolean(job.remote) || loc.includes("remote")
+      ? (Boolean(job.remote) || loc.includes("remote")) && !hybrid && !onsiteScope
       : t === "hybrid"
-      ? loc.includes("hybrid") || (job.remoteScope || "").toLowerCase() === "hybrid"
-      : !job.remote || loc.includes("onsite")
+      ? hybrid
+      : (!job.remote || loc.includes("onsite")) && !hybrid && !["remote", "worldwide", "any"].includes(scope)
   );
 }
 
