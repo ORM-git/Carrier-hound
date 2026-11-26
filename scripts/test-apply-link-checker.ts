@@ -231,6 +231,107 @@ test("exit contract: reachable-only 0, any failure 1, indeterminate-only 2, noth
   assert.equal(exitCodeFor([]), EXIT.NOT_RUN);
 });
 
+
+// ---- review #818 regressions: IPv6 policy, challenge priority, bounded DNS ----
+const dnsErr = (code: string) => Object.assign(new Error(`getaddrinfo ${code} host`), { code });
+const v6Lookup = (table: Record<string, string[]>) => async (host: string) =>
+  (table[host] ?? [PUBLIC]).map((address) => ({ address, family: address.includes(":") ? 6 : 4 }));
+
+test("IPv6: loopback/unspecified spellings, multicast, ULA, link-local, mapped, NAT64, 6to4, Teredo, doc are refused with zero fetches", async () => {
+  const denied = [
+    "0:0:0:0:0:0:0:1", "::1", "::", "0::0", "ff02::1", "fc00::1", "fd12:3456::1", "fe80::1", "fe80::1%eth0",
+    "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::7f00:1", "64:ff9b::10.0.0.1", "64:ff9b:1::1",
+    "2002:7f00:1::", "2002:cb00:710a::1", "2001:0:4136:e378::1", "2001:db8::1", "3fff::1",
+  ];
+  const f = fakeFetch({});
+  const jobs = denied.map((_, i) => job(`v${i}`, `https://ssrf${i}.example/a`));
+  const table = Object.fromEntries(denied.map((a, i) => [`ssrf${i}.example`, [a]]));
+  const results = await checkJobs(jobs, realTimeDeps(f.fetch, { lookup: v6Lookup(table) }));
+  results.forEach((r, i) => assert.equal(r.category, "unsafe_url", `${denied[i]} -> ${r.category} ${r.error ?? ""}`));
+  assert.equal(f.calls.length, 0);
+});
+
+test("IPv6: bracketed literal URLs are refused; a public AAAA is allowed and pinned", async () => {
+  const f = fakeFetch({ "HEAD https://v6.example/a": { status: 200 } });
+  const results = await checkJobs(
+    [job("l1", "http://[0:0:0:0:0:0:0:1]/a"), job("l2", "http://[2002:7f00:1::]/a"), job("l3", "http://[ff02::1]/a"), job("ok", "https://v6.example/a")],
+    realTimeDeps(f.fetch, { lookup: v6Lookup({ "v6.example": ["2a00:1450:4001::1"] }) }),
+  );
+  assert.deepEqual(results.map((r) => r.category), ["unsafe_url", "unsafe_url", "unsafe_url", "reachable"]);
+  assert.deepEqual(f.calls, [{ method: "HEAD", url: "https://v6.example/a" }]);
+});
+
+test("DNS: one denied answer among several public ones refuses the host", async () => {
+  const f = fakeFetch({});
+  const [r] = await checkJobs([job("m", "https://mixed.example/a")], realTimeDeps(f.fetch, { lookup: v6Lookup({ "mixed.example": [PUBLIC, "2a00:1450:4001::1", "fd00::1"] }) }));
+  assert.equal(r.category, "unsafe_url");
+  assert.equal(f.calls.length, 0);
+});
+
+test("IPv6: redirect to a host resolving to multicast/NAT64-loopback is refused after the first hop", async () => {
+  const f = fakeFetch({
+    "HEAD https://jobs.example/r1": { status: 302, headers: { location: "https://mc.example/x" } },
+    "HEAD https://jobs.example/r2": { status: 301, headers: { location: "https://nat64.example/x" } },
+  });
+  const results = await checkJobs(
+    [job("r1", "https://jobs.example/r1"), job("r2", "https://jobs.example/r2")],
+    realTimeDeps(f.fetch, { lookup: v6Lookup({ "mc.example": ["ff02::1"], "nat64.example": ["64:ff9b::7f00:1"] }) }),
+  );
+  assert.deepEqual(results.map((r) => r.category), ["unsafe_url", "unsafe_url"]);
+  assert.equal(f.calls.length, 2, "only the two safe first hops");
+});
+
+test("challenge header wins over HTTP status: 200+challenge and 503+challenge indeterminate, plain 200 reachable", async () => {
+  const f = fakeFetch({
+    "HEAD https://c.example/a": { status: 200, headers: { "cf-mitigated": "challenge" } },
+    "HEAD https://c.example/b": { status: 503, headers: { "cf-mitigated": "challenge" } },
+    "HEAD https://c.example/c": { status: 200 },
+  });
+  const results = await checkJobs(["a", "b", "c"].map((x) => job(x, `https://c.example/${x}`)), realTimeDeps(f.fetch));
+  assert.deepEqual(results.map((r) => r.category), ["blocked_or_challenge", "blocked_or_challenge", "reachable"]);
+  assert.equal(exitCodeFor([results[0]]), EXIT.INDETERMINATE);
+});
+
+test("DNS failures are transport_error (indeterminate), not unsafe_url; private answers stay unsafe_url", async () => {
+  const f = fakeFetch({});
+  const lk = async (host: string) => {
+    if (host === "nx.example") throw dnsErr("ENOTFOUND");
+    if (host === "again.example") throw dnsErr("EAI_AGAIN");
+    return [{ address: "192.168.1.10", family: 4 }];
+  };
+  const results = await checkJobs(
+    [job("nx", "https://nx.example/a"), job("ag", "https://again.example/a"), job("pv", "https://private.example/a")],
+    realTimeDeps(f.fetch, { lookup: lk }),
+  );
+  assert.deepEqual(results.map((r) => r.category), ["transport_error", "transport_error", "unsafe_url"]);
+  assert.match(results[0].error!, /DNS.*ENOTFOUND/);
+  assert.match(results[1].error!, /DNS.*EAI_AGAIN/);
+  assert.equal(exitCodeFor(results.slice(0, 2)), EXIT.INDETERMINATE, "transient DNS-only evidence is exit 2, not 1");
+  assert.equal(f.calls.length, 0);
+});
+
+test("DNS: a hung lookup times out within the hop deadline; a late rejection is swallowed; timers cleared", async () => {
+  const timersBefore = process.getActiveResourcesInfo().filter((x) => x === "Timeout").length;
+  let unhandled = 0;
+  const onUnhandled = () => unhandled++;
+  process.on("unhandledRejection", onUnhandled);
+  const lk = (host: string) =>
+    host === "hang.example"
+      ? new Promise<never>(() => {})
+      : new Promise<never>((_, reject) => setTimeout(() => reject(dnsErr("ESERVFAIL")), 60));
+  const f = fakeFetch({});
+  const t0 = Date.now();
+  const results = await checkJobs([job("h", "https://hang.example/a"), job("late", "https://late.example/a")], realTimeDeps(f.fetch, { lookup: lk, timeoutMs: 10 }));
+  assert.ok(Date.now() - t0 < 100, `took ${Date.now() - t0}ms`);
+  assert.deepEqual(results.map((r) => r.category), ["timeout", "timeout"]);
+  assert.match(results[0].error!, /DNS lookup timed out after 10ms/);
+  assert.equal(process.getActiveResourcesInfo().filter((x) => x === "Timeout").length, timersBefore + 1, "only the fake resolver's own late timer remains");
+  await new Promise((r) => setTimeout(r, 100));
+  process.off("unhandledRejection", onUnhandled);
+  assert.equal(unhandled, 0, "late rejection did not escape");
+  assert.equal(f.calls.length, 0);
+});
+
 // ---- CLI, spawned in an empty temp dir with no Supabase env, so --db cannot reach anything ----
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "applylink-"));
 const cli = path.resolve(__dirname, "check-apply-links.ts");
@@ -277,6 +378,16 @@ test("CLI fixture mode: all-2xx exits 0 with transport-only wording; a 404 exits
   assert.match(limited.text, /INDETERMINATE/);
 });
 
+test("CLI fixture mode: a 200 challenge alone exits 2; DNS ENOTFOUND alone exits 2, not 1", () => {
+  const ch = runCli(["--fixture", fixture("ch.json", { dns: { "jobs.example": PUBLIC }, jobs: [job("1", "https://jobs.example/a")], responses: { "HEAD https://jobs.example/a": { status: 200, headers: { "cf-mitigated": "challenge" } } } })]);
+  assert.equal(ch.code, EXIT.INDETERMINATE, ch.text);
+  assert.doesNotMatch(ch.text, /ALL REACHABLE/);
+  const nx = runCli(["--fixture", fixture("nx.json", { dns: {}, jobs: [job("1", "https://nowhere.example/a")], responses: {} })]);
+  assert.equal(nx.code, EXIT.INDETERMINATE, nx.text);
+  assert.match(nx.text, /\[indeterminate\/transport_error\]/);
+});
+
+process.exitCode = 1; // fail closed: a test that never settles drains the loop and must not exit 0
 (async () => {
   let failed = 0;
   for (const [name, fn] of tests) {

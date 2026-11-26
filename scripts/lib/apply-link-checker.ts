@@ -8,16 +8,21 @@
  * reachability only. It does NOT prove the job is still open, that the page is the right
  * posting, or that the company matches. No body is read; nothing is classified semantically.
  *
- * URL safety limits (honest): every hop is checked for http(s), default port, no
- * credentials, and a resolved address outside private/loopback/link-local/CGNAT/multicast
- * ranges (isPrivateIp from logoResolver). The real fetch pins the connection to the address
- * that was checked, so a second DNS answer cannot swap in an internal IP for that hop.
- * Not covered: IPv6 ranges isPrivateIp does not list (e.g. 6to4/NAT64 embeddings), any
- * HTTP proxy that re-resolves, and anything the resolver itself returns falsely.
+ * URL safety limits (honest): before every hop the URL must be http(s), default port, no
+ * credentials, no local hostname. DNS is bounded by the hop timeout. EVERY resolved answer
+ * must pass: IPv4 via isPrivateIp (logoResolver); IPv6 via the stricter checker-local
+ * allowlist isPublicIpv6 (2000::/3 only, minus 6to4, IETF 2001::/23 incl. Teredo, and doc
+ * ranges, so loopback in any spelling, multicast, ULA, link-local, IPv4-mapped and NAT64 are
+ * all refused). The real fetch pins the socket to the checked address, so a second DNS
+ * answer cannot swap in an internal IP for that hop.
+ * Not covered: IPv4 special ranges isPrivateIp does not list (e.g. 198.18/15, TEST-NETs),
+ * any HTTP proxy that re-resolves, and a resolver that lies.
  */
 
+import dns from "node:dns";
+import net from "node:net";
 import { Agent } from "undici";
-import { isPrivateIp, resolveAndValidateHost, type DnsLookupFn } from "../../src/lib/companies/logoResolver";
+import { isPrivateIp, type DnsLookupFn } from "../../src/lib/companies/logoResolver";
 
 export interface ApplyJob {
   id: string;
@@ -95,24 +100,99 @@ const HEADERS = {
   Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
 };
 
-/** Throws a reason string if the URL is not an ordinary public http(s) destination. */
-export async function assertSafeUrl(raw: string, lookup?: DnsLookupFn): Promise<{ url: URL; address: string; family: number }> {
+const fail = (category: Category, message: string) => Object.assign(new Error(message), { category });
+
+/** IPv6 -> 8 words, or null if unparseable. Handles "::", zone ids and an embedded dotted IPv4 tail. */
+function ipv6Words(ip: string): number[] | null {
+  let s = ip.toLowerCase().split("%")[0];
+  if (s.includes(".")) {
+    const colon = s.lastIndexOf(":");
+    const v4 = s.slice(colon + 1);
+    if (!net.isIPv4(v4)) return null;
+    const [a, b, c, d] = v4.split(".").map(Number);
+    s = `${s.slice(0, colon + 1)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < 0 || head.length + fill + tail.length !== 8) return null;
+  const words = [...head, ...Array<string>(fill).fill("0"), ...tail];
+  return words.every((w) => /^[0-9a-f]{1,4}$/.test(w)) ? words.map((w) => parseInt(w, 16)) : null;
+}
+
+/** Conservative allowlist: ordinary global unicast only. Fails closed on anything unparseable. */
+export function isPublicIpv6(ip: string): boolean {
+  const w = ipv6Words(ip);
+  if (!w) return false;
+  if ((w[0] & 0xe000) !== 0x2000) return false; // outside 2000::/3: ::, ::1, ::ffff:0:0/96, 64:ff9b::/96, fc00::/7, fe80::/10, ff00::/8
+  if (w[0] === 0x2002) return false; // 6to4 embeds an IPv4 that may be private
+  if (w[0] === 0x2001 && w[1] < 0x0200) return false; // 2001::/23 IETF special use, incl. Teredo 2001::/32
+  if (w[0] === 0x2001 && w[1] === 0x0db8) return false; // documentation 2001:db8::/32
+  if (w[0] === 0x3fff) return false; // documentation 3fff::/20 (whole /16, conservative)
+  return true;
+}
+
+function isBlockedAddress(address: string): boolean {
+  const family = net.isIP(address.split("%")[0]);
+  if (family === 4) return isPrivateIp(address);
+  if (family === 6) return !isPublicIpv6(address);
+  return true;
+}
+
+const realLookup: DnsLookupFn = (host) => dns.promises.lookup(host, { all: true });
+
+/** Resolver call that settles within timeoutMs whatever the resolver does; a late answer is ignored. */
+async function boundedLookup(lookup: DnsLookupFn, host: string, timeoutMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(fail("timeout", `DNS lookup timed out after ${timeoutMs}ms for ${host}`)), timeoutMs);
+  });
+  const answer = Promise.resolve()
+    .then(() => lookup(host))
+    .catch((e: NodeJS.ErrnoException) => {
+      throw fail("transport_error", `DNS lookup failed for ${host}: ${e?.code ?? e?.message ?? String(e)}`);
+    });
+  try {
+    return await Promise.race([answer, deadline]); // race subscribes to both, so a late rejection is handled
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Validates a URL and every DNS answer. Throws an Error carrying .category:
+ * unsafe_url (policy refusal), transport_error (DNS failure) or timeout (DNS too slow).
+ */
+export async function assertSafeUrl(
+  raw: string,
+  lookup: DnsLookupFn = realLookup,
+  timeoutMs: number = DEFAULTS.timeoutMs,
+): Promise<{ url: URL; address: string; family: number }> {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new Error("invalid URL");
+    throw fail("unsafe_url", "invalid URL");
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`scheme ${url.protocol} not allowed`);
-  if (url.username || url.password) throw new Error("credentials in URL not allowed");
-  if (url.port) throw new Error(`non-default port ${url.port} not allowed`);
-  const host = url.hostname.toLowerCase();
-  if (!host.includes(".") || /(^|\.)(localhost|local|internal|home\.arpa)$/.test(host)) {
-    throw new Error(`local hostname ${host} not allowed`);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw fail("unsafe_url", `scheme ${url.protocol} not allowed`);
+  if (url.username || url.password) throw fail("unsafe_url", "credentials in URL not allowed");
+  if (url.port) throw fail("unsafe_url", `non-default port ${url.port} not allowed`);
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  let answers: { address: string; family: number }[];
+  if (net.isIP(host)) {
+    answers = [{ address: host, family: net.isIP(host) }];
+  } else {
+    if (!host.includes(".") || /(^|\.)(localhost|local|internal|home\.arpa)$/.test(host)) {
+      throw fail("unsafe_url", `local hostname ${host} not allowed`);
+    }
+    answers = await boundedLookup(lookup, host, timeoutMs);
+    if (!answers?.length) throw fail("transport_error", `DNS lookup returned no addresses for ${host}`);
   }
-  const { resolvedIp, family } = await resolveAndValidateHost(host, lookup);
-  if (isPrivateIp(resolvedIp)) throw new Error(`private address ${resolvedIp}`); // belt and braces
-  return { url, address: resolvedIp, family };
+  const bad = answers.find((x) => isBlockedAddress(x.address));
+  if (bad) throw fail("unsafe_url", `blocked non-public address ${bad.address} for ${host}`);
+  return { url, address: answers[0].address, family: answers[0].family };
 }
 
 /**
@@ -157,8 +237,10 @@ export function sampleJobs<T>(universe: readonly T[], n: number, seed: number | 
 }
 
 function classifyStatus(status: number, headers: Headers): Category {
+  // Challenge marker first: a 200 challenge page is not evidence the apply page is reachable.
+  if (headers.get("cf-mitigated")?.toLowerCase() === "challenge") return "blocked_or_challenge";
   if (status >= 200 && status < 300) return "reachable";
-  if (status === 401 || status === 403 || status === 429 || headers.get("cf-mitigated") === "challenge") return "blocked_or_challenge";
+  if (status === 401 || status === 403 || status === 429) return "blocked_or_challenge";
   if (status === 404 || status === 410) return "missing";
   if (status >= 400 && status < 500) return "client_error";
   if (status >= 500) return "server_error";
@@ -169,14 +251,13 @@ type Schedule = (host: string) => Promise<void>;
 
 /** One request: validate, wait for the host slot, fetch with a timeout, discard the body. */
 async function requestOnce(method: "HEAD" | "GET", rawUrl: string, deps: CheckerDeps, schedule: Schedule, hops: Hop[]) {
-  const { url, address, family } = await assertSafeUrl(rawUrl, deps.lookup).catch((e: Error) => {
-    throw Object.assign(new Error(e.message), { category: "unsafe_url" as Category });
-  });
-  await schedule(url.hostname);
+  const timeoutMs = deps.timeoutMs ?? DEFAULTS.timeoutMs;
+  const { url, address, family } = await assertSafeUrl(rawUrl, deps.lookup, timeoutMs); // throws categorized errors
+  await schedule(url.hostname); // throttle wait sits outside every deadline and is never a finding
   const hop: Hop = { method, url: url.href, status: null, startedAt: deps.now() };
   hops.push(hop);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), deps.timeoutMs ?? DEFAULTS.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   // Pin the socket to the address that passed the private-range check (no DNS rebinding for this hop).
   const dispatcher = new Agent({ connect: { lookup: (_h, _o, cb) => cb(null, [{ address, family }]) } });
   try {
@@ -186,9 +267,7 @@ async function requestOnce(method: "HEAD" | "GET", rawUrl: string, deps: Checker
     return { url, status: res.status, headers: res.headers };
   } catch (e) {
     const aborted = controller.signal.aborted;
-    throw Object.assign(new Error(aborted ? `timed out after ${deps.timeoutMs ?? DEFAULTS.timeoutMs}ms` : (e as Error).message || String(e)), {
-      category: (aborted ? "timeout" : "transport_error") as Category,
-    });
+    throw fail(aborted ? "timeout" : "transport_error", aborted ? `timed out after ${timeoutMs}ms` : (e as Error).message || String(e));
   } finally {
     clearTimeout(timer);
     await dispatcher.destroy().catch(() => {});
