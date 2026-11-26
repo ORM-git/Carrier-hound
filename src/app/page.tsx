@@ -11,6 +11,7 @@ const LandingJobsPreview = dynamic(() => import("@/components/landing/LandingJob
 import "@/styles/jakarta-local.css";
 import "@/styles/careermonke-landing.css";
 import "@/styles/careermonke-landing-lower.css";
+import "@/styles/careermonke-landing-fold.css";
 import "@/styles/mobile-ticker.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 import { initCareerMonkeLandingLower } from "@/components/landing/careermonke-landing-lower-runtime";
