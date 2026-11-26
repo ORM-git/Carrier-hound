@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PGlite, types } from "@electric-sql/pglite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as canary from "../canary";
 import type { CanaryPlan, CanaryTable } from "../canary";
 import { extractOfficialCompanyPage, isAllowedCompanyProfileWriteTarget } from "../enrichment";
@@ -9,6 +9,8 @@ import * as inventory from "../inventory";
 import type { InventoryStore } from "../inventory";
 import { renderCanaryPlanSummary } from "../review";
 import fixture from "@/../scripts/fixtures/company-profile/official-pages.json";
+
+vi.setConfig({ testTimeout: 30000 }); // each test starts a fresh in-process Postgres
 
 const MIGRATION = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20261122a_company_profile_data.sql"), "utf8");
 const PREFLIGHT = fs.readFileSync(path.join(process.cwd(), "supabase/scripts/preflight-company-profile-20261122a.sql"), "utf8");
