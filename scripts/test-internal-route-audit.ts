@@ -4,7 +4,7 @@
  * Builds a temporary app tree; no network, accounts or real config.
  */
 import assert from "assert";
-import { spawnSync } from "child_process";
+import { spawnSync, type SpawnSyncReturns } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -159,6 +159,27 @@ const multiline = [
 write("src/components/Multi.tsx", multiline + "\n");
 write("src/components/__tests__/Nav.test.tsx", 'const t = <a href="/only-in-a-test" />;\n');
 
+// The fixture CLI takes ~2-3s locally; 45s per run leaves CI headroom while two runs still
+// fit inside suite-runner's default 120s per-suite timeout.
+const CLI_TIMEOUT_MS = 45_000;
+const HANG_CONTROL_TIMEOUT_MS = 1_000;
+
+/** Runs a child directly (no shell, so the kill reaches it) with a finite deadline. */
+function runChild(args: string[], timeoutMs = CLI_TIMEOUT_MS, command = process.execPath): SpawnSyncReturns<string> {
+  return spawnSync(command, args, { encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL" });
+}
+
+/** Fails with diagnostics unless the child started and exited on its own (no spawn error, no signal). */
+function assertExited(run: SpawnSyncReturns<string>, label: string): void {
+  if (run.error || run.signal !== null || run.status === null) {
+    const err = run.error as NodeJS.ErrnoException | undefined;
+    throw new Error(
+      `${label} did not exit normally: error=${err ? `${err.code ?? ""} ${err.message}` : "none"}, ` +
+        `signal=${run.signal}, status=${run.status}\n--- stdout ---\n${run.stdout ?? ""}\n--- stderr ---\n${run.stderr ?? ""}`,
+    );
+  }
+}
+
 let failures = 0;
 const check = (name: string, fn: () => void) => {
   try {
@@ -213,12 +234,29 @@ try {
   });
 
   const cli = (fixture: string) =>
-    spawnSync(process.execPath, ["--import", "tsx", path.join(__dirname, "check-internal-links.ts"), "--root", fixture], {
-      encoding: "utf8",
-    });
+    runChild(["--import", "tsx", path.join(__dirname, "check-internal-links.ts"), "--root", fixture]);
+
+  check("hang control: a stalled child is killed and reported, not left running", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "route-audit-hang-"));
+    try {
+      const hang = path.join(dir, "hang.cjs");
+      fs.writeFileSync(hang, "setInterval(() => {}, 1000);\n");
+      const started = Date.now();
+      const run = runChild([hang], HANG_CONTROL_TIMEOUT_MS);
+      assert.ok(Date.now() - started < 15_000, `hang control took ${Date.now() - started}ms`);
+      assert.throws(() => assertExited(run, "hang control"), /hang control did not exit normally.*ETIMEDOUT/s);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  check("launch control: a child that cannot start is reported, not read as an exit code", () => {
+    const run = runChild([], HANG_CONTROL_TIMEOUT_MS, path.join(os.tmpdir(), "route-audit-missing-binary-does-not-exist"));
+    assert.throws(() => assertExited(run, "launch control"), /launch control did not exit normally.*ENOENT/s);
+  });
 
   check("negative control: CLI exits 1 on invalid links and names file:line", () => {
     const run = cli(root);
+    assertExited(run, "fixture CLI (invalid links)");
     assert.strictEqual(run.status, 1, run.stdout + run.stderr);
     assert.match(run.stdout, /src\/components\/Nav\.tsx:24 -> \/missing-page/);
     assert.match(run.stdout, /src\/components\/Multi\.tsx:4 -> \/multiline-missing/);
@@ -230,6 +268,7 @@ try {
     );
     fs.rmSync(path.join(root, "src/components/Multi.tsx"));
     const run = cli(root);
+    assertExited(run, "fixture CLI (clean)");
     assert.strictEqual(run.status, 0, run.stdout + run.stderr);
     assert.match(run.stdout, /no network requests/);
     assert.match(run.stdout, /No confirmed invalid internal links\. \d+ dynamic, \d+ unresolved and \d+ external targets were not verified/);
