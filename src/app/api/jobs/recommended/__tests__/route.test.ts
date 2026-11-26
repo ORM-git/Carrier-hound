@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import { getLiveJobs } from "@/lib/jobs/service";
 import { FROZEN_REUSE_SECONDS } from "@/lib/jobs/feedSnapshot";
+import { annualSalaryRationals } from "@/lib/jobs/browseFilters";
 import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
 const state = vi.hoisted(() => ({
@@ -12,6 +13,8 @@ const state = vi.hoisted(() => ({
   rpcFail: null as null | { message: string; code?: string },
   rpcGate: null as null | Promise<void>, // holds freeze_feed_corpus open (concurrency tests)
   afterFrozenRead: null as null | (() => void), // runs after each read of the frozen relation (mid-build mutation hook)
+  salaryRpcCalls: [] as Array<{ name: string; args: any }>, // feed_frozen_salary_rows / jobs_salary_rows invocations
+  salaryRpcError: null as null | { message: string; code?: string }, // e.g. 22003 overflow from the salary RPCs
 }));
 
 /** Like PostgREST, return only the selected columns ("a, b, rel(x, y)"); "*" or aliases fall back to whole rows. */
@@ -40,9 +43,10 @@ vi.mock("@supabase/supabase-js", () => {
 
     const run = () => {
       if (state.failWhen?.(table, selectedCols)) return { data: null, count: null, error: { message: "injected failure" } };
+      if (table.startsWith("rpc:") && state.salaryRpcError) return { data: null, count: null, error: state.salaryRpcError };
       const result = runQuery();
-      if (table === "feed_corpus_frozen") state.afterFrozenRead?.();
-      if (table.startsWith("jobs") || table === "feed_corpus_frozen") {
+      if (table === "feed_corpus_frozen" || table === "rpc:feed_frozen_salary_rows") state.afterFrozenRead?.();
+      if (table.startsWith("jobs") || table === "feed_corpus_frozen" || table.startsWith("rpc:")) {
         result.data = projectRows(result.data, selectedCols);
         state.queries.push({ table, cols: selectedCols, count: selectedCount, rows: result.data.length, bytes: new TextEncoder().encode(JSON.stringify(result.data)).length, ids: result.data.map((r: any) => r.id) });
       }
@@ -202,7 +206,25 @@ vi.mock("@supabase/supabase-js", () => {
     from,
     // Emulates public.freeze_feed_corpus (docs/proposed SQL; the SQL itself is validated separately on a real Postgres):
     // reuse a fresh epoch, else copy the visible active rows in one step, hard-cap at max+1 and fail without a partial copy.
-    rpc: async (name: string, args: any) => {
+    // Emulates the exact salary RPCs (docs/proposed/feed_salary_exact_rpc.NOT_APPLIED.sql; the SQL itself is proven in
+    // feedSalaryExactRpc.test.ts on PGlite): a chainable builder over the rows that meet the exact rational threshold.
+    rpc: (name: string, args: any): any => {
+      if (name === "feed_frozen_salary_rows" || name === "jobs_salary_rows") {
+        state.salaryRpcCalls.push({ name, args });
+        const meets = (j: any) => j.salary_min != null && (args.p_thresholds as any[]).some((t) => {
+          if (t.currency !== j.currency || t.period !== j.salary_period) return false;
+          const [i, f = ""] = String(j.salary_min).split(".");
+          return BigInt(i + f) * BigInt(t.den) >= BigInt(t.num) * BigInt("1" + "0".repeat(f.length));
+        });
+        state.tables[`rpc:${name}`] = name === "feed_frozen_salary_rows"
+          ? (state.tables.feed_corpus_frozen || []).filter((j: any) => j.epoch === args.p_epoch && meets(j))
+          : (state.tables.jobs || []).filter((j: any) => args.p_ids.includes(j.id) && meets(j));
+        return from(`rpc:${name}`);
+      }
+      return rpcAsync(name, args);
+    },
+  };
+  async function rpcAsync(name: string, args: any) {
       if (name !== "freeze_feed_corpus") return { data: null, error: { message: "unknown function", code: "PGRST202" } };
       if (state.rpcGate) await state.rpcGate;
       if (state.rpcFail) return { data: null, error: state.rpcFail };
@@ -220,8 +242,7 @@ vi.mock("@supabase/supabase-js", () => {
       const mark = visible.map((j: any) => j.first_seen_at).sort().pop() ?? null; // newest first_seen_at INSIDE the epoch
       epochs.push({ epoch, frozen_ms: Date.now(), row_count: visible.length, mark });
       return { data: [{ out_epoch: epoch, out_frozen_at: new Date().toISOString(), out_row_count: visible.length, out_corpus_mark: mark }], error: null };
-    },
-  };
+  }
   return { createClient: () => client };
 });
 
@@ -429,6 +450,8 @@ beforeEach(() => {
   state.rpcFail = null;
   state.rpcGate = null;
   state.afterFrozenRead = null;
+  state.salaryRpcCalls = [];
+  state.salaryRpcError = null;
   state.tables = {
     jobs: corpus,
     jobs_public: corpus,
@@ -1877,6 +1900,81 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     expect(results.filter((r) => r.status === 200).length).toBeGreaterThan(0);
     const after = await call(`${BASE}/snapshot?${GUEST}`); // slots released in finally
     expect(after.status).toBe(200);
+  });
+
+  // --- Integration (#798 x #796): exact annual-salary filter HELD by the snapshot ---------------------------------
+  const SAL = "minAnnualSalary=100000&minAnnualSalaryCurrency=USD";
+  const heldOf = async (cursor: string) => (await (store as any).get(cursor.split(".")[1]))!;
+  const salaryRows = () => [
+    // 100000 USD/yr = 48.0769230769230769... USD/h: the first value passes exactly, the second (rounded down) does not.
+    ...Array.from({ length: 6 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.01, { salary_period: "hourly", salary_min: 48.07692307695, salary_max: 60 })),
+    ...Array.from({ length: 6 }, (_, k) => row(k + 101, "Frontend Developer", 1 + k * 0.01, { salary_period: "hourly", salary_min: 48.0769230769, salary_max: 60 })),
+  ];
+
+  it("salary: the build joins exact thresholds in the frozen read; continuations recheck against the HELD thresholds, never current FX; a cursorless request rebuilds", async () => {
+    state.tables.jobs = salaryRows();
+    state.queries = [];
+    const p1 = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=2`);
+    expect(p1.status).toBe(200);
+    const builds = state.salaryRpcCalls.filter((c) => c.name === "feed_frozen_salary_rows");
+    expect(builds.length).toBeGreaterThanOrEqual(1);
+    expect(state.queries.filter((q) => q.table === "feed_corpus_frozen")).toEqual([]); // no unfiltered frozen read, no fetch-IDs-then-hydrate
+    const held = (await heldOf(p1.body.nextCursor)).salary;
+    expect(held.thresholds).toEqual(annualSalaryRationals(100000, "USD", held.rates)); // exact rationals of the build's own rates
+    for (const b of builds) expect(b.args.p_thresholds).toEqual(held.thresholds);
+    expect(p1.body.salaryFx).toMatchObject({ rates: held.rates, baseCurrency: "USD", heldBySnapshot: true });
+    expect(p1.body.totalCount).toBe(6); // only the exact passes
+
+    // Continuation: the serve recheck sends exactly the held thresholds.
+    const p2 = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=2&cursor=${p1.body.nextCursor}`);
+    expect(p2.status).toBe(200);
+    expect(p2.body.jobs).toHaveLength(2);
+    const serves = state.salaryRpcCalls.filter((c) => c.name === "jobs_salary_rows");
+    expect(serves.at(-1)!.args.p_thresholds).toEqual(held.thresholds);
+    const passing = salaryRows().slice(0, 6).map((j: any) => j.id);
+    for (const j of [...p1.body.jobs, ...p2.body.jobs]) expect(passing).toContain(j.id);
+
+    // Prove the serve uses the HELD table: tighten the stored thresholds and the same continuation drops every row.
+    held.thresholds = held.thresholds.map((t: any) => ({ ...t, num: "1" + "0".repeat(30) }));
+    const p3 = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=2&cursor=${p2.body.nextCursor}`);
+    expect(p3.status).toBe(200);
+    expect(p3.body.jobs).toEqual([]);
+
+    // Explicit reset: a cursorless request builds a NEW snapshot with freshly computed thresholds.
+    const again = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=2`);
+    expect(again.body.nextCursor.split(".")[1]).not.toBe(p1.body.nextCursor.split(".")[1]);
+    expect((await heldOf(again.body.nextCursor)).salary.thresholds).toEqual(annualSalaryRationals(100000, "USD", held.rates));
+  });
+
+  it("salary: client fxRates and jobFunction are refused (400) and invalid salary input is a 400, all before any freeze or RPC", async () => {
+    state.tables.jobs = salaryRows();
+    for (const q of [`${SAL}&fxRates=USD:1,EUR:1,GBP:1,INR:1,CAD:1,AUD:1`, "jobFunction=ENGINEERING", "minAnnualSalary=abc&minAnnualSalaryCurrency=USD", "minAnnualSalary=100000", "minAnnualSalaryCurrency=USD"]) {
+      const r = await call(`${BASE}/snapshot?${GUEST}&${q}`);
+      expect([r.status, r.body.error], q).toEqual([400, "invalid_filter"]);
+    }
+    expect(state.salaryRpcCalls).toEqual([]);
+    expect(state.tables.feed_corpus_epochs ?? []).toEqual([]);
+  });
+
+  it("salary: a 22003 overflow from the salary RPC fails closed (503 snapshot_unavailable) at build and at serve", async () => {
+    state.tables.jobs = salaryRows();
+    state.salaryRpcError = { code: "22003", message: "numeric field overflow" };
+    let r = await call(`${BASE}/snapshot?${GUEST}&${SAL}`);
+    expect([r.status, r.body.error, r.body.jobs]).toEqual([503, "snapshot_unavailable", []]);
+    state.salaryRpcError = null;
+    const p1 = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=1`);
+    expect(p1.status).toBe(200);
+    state.salaryRpcError = { code: "22003", message: "numeric field overflow" };
+    r = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=1&cursor=${p1.body.nextCursor}`);
+    expect([r.status, r.body.error, r.body.jobs]).toEqual([503, "snapshot_unavailable", []]);
+  });
+
+  it("salary: a salary identity whose stored snapshot lost its held filter is never served unfiltered", async () => {
+    state.tables.jobs = salaryRows();
+    const p1 = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=1`);
+    delete (await heldOf(p1.body.nextCursor)).salary;
+    const r = await call(`${BASE}/snapshot?${GUEST}&${SAL}&pageSize=1&cursor=${p1.body.nextCursor}`);
+    expect([r.status, r.body.error]).toEqual([503, "snapshot_unavailable"]);
   });
 
   it("TTL: an expired snapshot resets its cursor and the next build deletes it", async () => {

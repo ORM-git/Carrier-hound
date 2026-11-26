@@ -5,9 +5,11 @@ import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@
 import { createLogger } from "@/lib/observability/logger";
 import { applyRecommendedFilters, baseCandidateQuery, formatRecommendedJobs, resolveRecommendedRequest } from "@/lib/jobs/recommendedRequest";
 import {
-  buildOnce, decodeSnapshotCursor, freezeCorpus, frozenCandidateQuery, readFrozenCandidates, SnapshotBusyError, SnapshotUnavailableError, encodeSnapshotCursor, prototypeMemoryStore, rankSnapshotIds, serveSnapshotPage,
+  buildOnce, decodeSnapshotCursor, freezeCorpus, frozenCandidateQuery, frozenSalaryQuery, liveSalaryRows, readFrozenCandidates, type HeldSalaryFilter, SnapshotBusyError, SnapshotUnavailableError, encodeSnapshotCursor, prototypeMemoryStore, rankSnapshotIds, serveSnapshotPage,
   snapshotIdentity, stillEligibleIds, SnapshotTooLargeError, supabaseSnapshotStore, SNAPSHOT_TTL_MS, type FeedSnapshot,
 } from "@/lib/jobs/feedSnapshot";
+import { annualSalaryRationals, isBrowseFilterError, parseBrowseFilters } from "@/lib/jobs/browseFilters";
+import { fxRatesSource, getFxRates } from "@/lib/salary/fx";
 
 const log = createLogger({ context: { route: "/api/jobs/recommended/snapshot" } });
 
@@ -43,6 +45,12 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const rawPageSize = parseInt(searchParams.get("pageSize") || "25", 10);
     const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, Math.floor(rawPageSize)) : 25;
+    // Browse filters (#796). The annual-salary filter is exact and HELD by the snapshot (FX + thresholds of the build).
+    const browse = parseBrowseFilters(searchParams);
+    if (isBrowseFilterError(browse)) return respond(browse, 400);
+    if (browse.fxRates) return respond({ error: "invalid_filter", field: "fxRates", reason: "the snapshot feed holds its own FX table; do not send fxRates" }, 400);
+    // shortcut: role_category is not in FROZEN_COLUMNS yet, so jobFunction is refused here, never silently ignored. Upgrade with Item 4.
+    if (browse.jobFunctions.length) return respond({ error: "invalid_filter", field: "jobFunctions", reason: "not supported by the snapshot feed yet" }, 400);
     const r = await resolveRecommendedRequest(req, searchParams, cfEnv, log);
     // The coherent build reads a frozen relation that only the service role can create and read. Without the service key
     // (jobs_public path) there is none: fail closed, never a weaker live read.
@@ -63,17 +71,35 @@ export async function GET(req: Request) {
         return respond({ error: "snapshot_reset", jobs: [], totalCount: 0, hasNextPage: false, nextCursor: null }, 409);
       }
       position = c.position;
+      // A salary-filtered identity whose snapshot lost its held filter (e.g. an older durable row) is never served unfiltered.
+      if (browse.minAnnualSalary !== null && !snapshot.salary) return respond({ error: "snapshot_unavailable", jobs: [], totalCount: 0 }, 503);
     } else {
       if (!applyRecommendedFilters(baseCandidateQuery(r, "id"), searchParams, r.answers, r.hasServiceKey)) {
         return respond({ error: "Company preferences unavailable", jobs: [], totalCount: 0 }, 503);
       }
+      // A cursorless request is the explicit reset: the current FX table is read and the exact thresholds computed ONCE here.
+      let salary: HeldSalaryFilter | null = null;
+      if (browse.minAnnualSalary !== null && browse.minAnnualSalaryCurrency) {
+        const rates = getFxRates();
+        const thresholds = annualSalaryRationals(browse.minAnnualSalary, browse.minAnnualSalaryCurrency, rates);
+        // Input was validated above, so a failure here is the server's FX table: fail closed, never an unfiltered feed.
+        if (isBrowseFilterError(thresholds)) {
+          log.error("Salary thresholds unavailable; refusing to build", { field: thresholds.field, reason: thresholds.reason });
+          return respond({ error: "snapshot_unavailable", jobs: [], totalCount: 0 }, 503);
+        }
+        const src = fxRatesSource();
+        salary = { minAnnualSalary: browse.minAnnualSalary, currency: browse.minAnnualSalaryCurrency, rates, fxSource: src.source, fxFetchedAt: src.fetchedAt, thresholds };
+      }
       // Concurrent identical cursorless builds (same viewer, session, tier, filters, answers) share ONE build.
       snapshot = await buildOnce(identity, async () => {
         const frozen = await freezeCorpus(r.supabaseAdmin);
+        const source = () => (salary
+          ? frozenSalaryQuery(r.supabaseAdmin, frozen.epoch, r.selectCols, salary.thresholds)
+          : frozenCandidateQuery(r.supabaseAdmin, frozen.epoch, r.selectCols));
         const rows = await readFrozenCandidates(r.supabaseAdmin, frozen.epoch, () =>
-          applyRecommendedFilters(frozenCandidateQuery(r.supabaseAdmin, frozen.epoch, r.selectCols), searchParams, r.answers, true, now));
+          applyRecommendedFilters(source(), searchParams, r.answers, true, now));
         const built: FeedSnapshot = {
-          id: crypto.randomUUID(), identity, corpusMark: frozen.corpusMark, epochId: frozen.epoch, frozenAt: frozen.frozenAt, builtAt: now, expiresAt: now + SNAPSHOT_TTL_MS,
+          id: crypto.randomUUID(), identity, corpusMark: frozen.corpusMark, epochId: frozen.epoch, frozenAt: frozen.frozenAt, builtAt: now, expiresAt: now + SNAPSHOT_TTL_MS, salary,
           jobIds: rankSnapshotIds(rows, r.answers, r.isPersonalized || r.hasResume, now),
         };
         await store.deleteExpired(now);
@@ -86,14 +112,18 @@ export async function GET(req: Request) {
     const cols = r.isPro && r.hasServiceKey ? Array.from(new Set([...r.selectCols.split(", "), ...PRO_EXTRA_COLS])).join(", ") : r.selectCols;
     const builtAt = snapshot.builtAt;
     const personalized = r.isPersonalized || r.hasResume;
+    const held = snapshot.salary ?? null;
     const page = await serveSnapshotPage(snapshot, position, pageSize, async (ids) => {
       // Frozen RANK, live hard ELIGIBILITY: the stored order stays, but every explicit filter, the saved-country and
       // relevance gate and the relevance prefilter are re-applied to the current row, with the date cutoff and
       // scoring time pinned to the ORIGINAL build time (builtAt), so a window never slides.
-      const q = applyRecommendedFilters(baseCandidateQuery(r, cols), searchParams, r.answers, r.hasServiceKey, builtAt);
+      // A held salary filter re-checks against the snapshot's OWN thresholds (jobs_salary_rows), never current FX.
+      const source = held ? liveSalaryRows(r.supabaseAdmin, ids, cols, held.thresholds) : undefined;
+      const q = applyRecommendedFilters(baseCandidateQuery(r, cols, source), searchParams, r.answers, r.hasServiceKey, builtAt);
       if (!q) throw new Error("company preferences unavailable");
       const { data, error } = await q.in("id", ids);
-      if (error) throw new Error(error.message || "hydrate failed");
+      // Salary RPC errors (22023 payload, 22003 overflow, missing function) fail closed as snapshot_unavailable.
+      if (error) throw held ? new SnapshotUnavailableError(error.message || "salary recheck failed") : new Error(error.message || "hydrate failed");
       const rows: any[] = data || [];
       const ok = stillEligibleIds(rows, r.answers, personalized, builtAt);
       return rows.filter((row) => ok.has(row.id));
@@ -121,6 +151,7 @@ export async function GET(req: Request) {
       corpusCapturedAt: snapshot.frozenAt ?? null, // when the epoch rows were captured (up to the reuse window earlier)
       personalized: r.isPersonalized || r.hasResume,
       isPro: r.isPro,
+      salaryFx: held ? { source: held.fxSource, fetchedAt: held.fxFetchedAt, rates: held.rates, baseCurrency: held.currency, heldBySnapshot: true } : null,
     });
   } catch (err: any) {
     if (err instanceof SnapshotBusyError) {

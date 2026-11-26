@@ -168,9 +168,9 @@ export async function resolveRecommendedRequest(
   return { supabaseAdmin, hasServiceKey, targetTable, isPro, userId, sessionEpoch, answers, displayAnswers, isPersonalized, hasResume, selectCols };
 }
 
-/** Candidate base query: visible sources, active rows. */
-export function baseCandidateQuery(r: Pick<RecommendedRequest, "supabaseAdmin" | "hasServiceKey" | "targetTable">, cols: string) {
-  let query = r.supabaseAdmin.from(r.targetTable).select(cols).or(VISIBLE_SOURCE_FILTER).eq("status", "active");
+/** Candidate base query: visible sources, active rows. `source` replaces the table read (e.g. a set-returning RPC). */
+export function baseCandidateQuery(r: Pick<RecommendedRequest, "supabaseAdmin" | "hasServiceKey" | "targetTable">, cols: string, source?: any) {
+  let query = (source ?? r.supabaseAdmin.from(r.targetTable).select(cols)).or(VISIBLE_SOURCE_FILTER).eq("status", "active");
   if (r.hasServiceKey) query = query.eq("is_active", true);
   return query;
 }
