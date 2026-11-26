@@ -663,22 +663,22 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto mb-1 mt-3 h-1.5 w-12 shrink-0 rounded-full bg-slate-300 sm:hidden" aria-hidden="true" />
-        <div className={`shrink-0 items-center justify-between gap-2 border-b border-[#E2E8F0] px-5 py-2.5 ${rolePickerOpen ? "hidden" : "flex"}`}>
+        <div className={`shrink-0 items-center justify-between gap-2 border-b border-[#E2E8F0] px-5 py-2.5 max-[359px]:px-3 ${rolePickerOpen ? "hidden" : "flex"}`}>
           <div className="flex min-w-0 items-center gap-2">
-            <h2 id={titleId} className="text-[17px] font-bold text-[#0F172A]">Preferences</h2>
+            <h2 id={titleId} className="min-w-0 truncate text-[17px] font-bold text-[#0F172A] max-[359px]:text-[16px]">Preferences</h2>
             {draftCount > 0 && (
-              <span className="rounded-full bg-[#2563EB] px-2 py-0.5 text-[11px] font-bold text-white" aria-label={`${draftCount} active preference${draftCount === 1 ? "" : "s"}`}>
+              <span className="shrink-0 rounded-full bg-[#2563EB] px-2 py-0.5 text-[11px] font-bold text-white" aria-label={`${draftCount} active preference${draftCount === 1 ? "" : "s"}`}>
                 {draftCount}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={handleUpdate}
               disabled={pending}
               aria-busy={pending}
-              className="flex h-11 min-w-[88px] items-center justify-center rounded-full bg-[#2563EB] px-5 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#1D4ED8] disabled:cursor-wait disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+              className="flex h-11 min-w-[88px] shrink-0 items-center justify-center rounded-full bg-[#2563EB] px-5 text-[13px] max-[359px]:min-w-[72px] max-[359px]:px-4 font-bold text-white shadow-sm transition hover:bg-[#1D4ED8] disabled:cursor-wait disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
             >
               {pending ? "Saving…" : "Update"}
             </button>
@@ -688,7 +688,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
               onClick={close}
               disabled={pending}
               aria-label="Close preferences without saving"
-              className="flex h-11 w-11 items-center justify-center rounded-full text-[#475569] hover:bg-slate-100 hover:text-[#0F172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-[#475569] max-[359px]:h-10 max-[359px]:w-10 hover:bg-slate-100 hover:text-[#0F172A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -720,10 +720,10 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
             {activeChips.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 px-5 pt-1 pb-1" data-testid="preferences-chips" aria-label="Selected preferences" role="list">
                 {(chipsExpanded ? activeChips : activeChips.slice(0, CHIP_STRIP_LIMIT)).map((c, i) => (
-                  <span key={`${c.kind}-${c.text}-${i}`} data-chip={c.kind} role="listitem" className="max-w-full truncate rounded-lg bg-[#E2E8F0] px-2.5 py-1 text-[13px] font-medium text-[#0F172A]">{c.text}</span>
+                  <span key={`${c.kind}-${c.text}-${i}`} data-chip={c.kind} role="listitem" className="max-w-full truncate rounded-md bg-[#E2E8F0] px-[5px] py-[3px] text-[11px] font-medium leading-[15px] text-[#0F172A]">{c.text}</span>
                 ))}
                 {activeChips.length > CHIP_STRIP_LIMIT && (
-                  <button type="button" aria-expanded={chipsExpanded} onClick={() => setChipsExpanded((v) => !v)} className="min-h-[32px] rounded-lg bg-white px-2.5 py-1 text-[13px] font-semibold text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]">
+                  <button type="button" aria-expanded={chipsExpanded} onClick={() => setChipsExpanded((v) => !v)} className="relative rounded-md bg-white px-[5px] py-[3px] text-[11px] font-medium leading-[15px] text-[#0F172A] before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]">
                     {chipsExpanded ? "Less" : `+${activeChips.length - CHIP_STRIP_LIMIT}`}
                   </button>
                 )}

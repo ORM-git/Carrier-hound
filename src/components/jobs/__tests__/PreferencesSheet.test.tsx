@@ -286,6 +286,22 @@ describe("PreferencesSheet", () => {
     expect(lastSaved(onSave).roles).toEqual(["Data Engineer"]);
   });
 
+  it("header stays on one row at 320: title truncates, badge and Update never shrink", () => {
+    setup({ roles: ["A", "B"] });
+    const h2 = screen.getByRole("heading", { name: "Preferences" });
+    expect(h2.className).toContain("truncate");
+    expect(screen.getByLabelText(/active preference/).className).toContain("shrink-0");
+    expect(screen.getByRole("button", { name: "Update" }).className).toContain("shrink-0");
+  });
+
+  it("top summary pills use the compact reference size (11px text, 5px/3px padding)", () => {
+    setup({ roles: ["A", "B"] });
+    const pill = screen.getByTestId("preferences-chips").querySelector("[role=listitem]") as HTMLElement;
+    expect(pill.className).toContain("text-[11px]");
+    expect(pill.className).toContain("px-[5px]");
+    expect(pill.className).toContain("py-[3px]");
+  });
+
   it("custom role from search, excluded titles de-duplicated, multi work model and job types", async () => {
     const { onSave } = setup();
     openGroup("Basic");
