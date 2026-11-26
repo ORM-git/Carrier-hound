@@ -167,6 +167,46 @@ export function annualSalaryThresholds(min: number, currency: string, rates: Rec
   return out;
 }
 
+/**
+ * Exact rational thresholds for a one-statement numeric comparison (PROPOSAL, not wired): a job passes iff
+ * salary_min * den >= num, with currency/period equal. num/den are decimal strings of arbitrary-size integers
+ * (no rounding, no 1e-10 scale), reduced by their gcd, meant to be compared in Postgres numeric inside one RPC.
+ */
+export const RATIONAL_LIMITS = { minRate: 1e-6, maxRate: 1e9, maxDigits: 80 } as const;
+export type SalaryRational = { currency: string; period: string; num: string; den: string };
+
+/**
+ * Preconditions are checked, not assumed: amount a finite integer 1..MAX_ANNUAL_SALARY, currency in the
+ * supported set, every rate finite and within RATIONAL_LIMITS (the upstream cache only checks > 0, so Infinity,
+ * NaN, 0 or absurd exponents must be rejected here), and num/den stay <= maxDigits. Failure is a typed error,
+ * never a throw or an invalid rational.
+ */
+export function annualSalaryRationals(min: number, currency: string, rates: Record<string, number>): SalaryRational[] | BrowseFilterError {
+  const bad = (field: string, reason: string): BrowseFilterError => ({ error: "invalid_filter", field, reason });
+  if (!Number.isInteger(min) || min < 1 || min > MAX_ANNUAL_SALARY) return bad("minAnnualSalary", `must be an integer 1..${MAX_ANNUAL_SALARY}`);
+  if (!SALARY_CURRENCIES.includes(currency)) return bad("minAnnualSalaryCurrency", "unsupported currency");
+  const L = RATIONAL_LIMITS;
+  for (const cur of SALARY_CURRENCIES) {
+    const r = rates?.[cur];
+    if (typeof r !== "number" || !Number.isFinite(r) || r < L.minRate || r > L.maxRate) return bad("fxRates", `rate for ${cur} must be finite and within ${L.minRate}..${L.maxRate}`);
+  }
+  const out: SalaryRational[] = [];
+  const [mN, mD] = toRational(min);
+  const [bN, bD] = toRational(rates[currency]);
+  const gcd = (a: bigint, b: bigint): bigint => { while (b > BigInt(0)) { [a, b] = [b, a % b]; } return a; };
+  for (const cur of SALARY_CURRENCIES) {
+    const [rN, rD] = toRational(rates[cur]);
+    for (const [period, factor] of Object.entries(PERIOD_FACTORS)) {
+      const num = mN * rN * bD, den = mD * rD * bN * BigInt(factor);
+      const g = gcd(num, den);
+      const n = (num / g).toString(), d = (den / g).toString();
+      if (n.length > L.maxDigits || d.length > L.maxDigits || d === "0" || n === "0") return bad("fxRates", "threshold exceeds supported precision");
+      out.push({ currency: cur, period, num: n, den: d });
+    }
+  }
+  return out;
+}
+
 interface BrowseQuery<Q> {
   in(column: string, values: readonly string[]): Q;
   or(expr: string): Q;
