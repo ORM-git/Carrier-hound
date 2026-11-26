@@ -120,11 +120,15 @@ const oracleType = (sel: string) => (j: (typeof JOBS)[number]) => {
 };
 const oracleWork = (sel: string) => (j: (typeof JOBS)[number]) => {
   const loc = j.location.toLowerCase();
+  // Same precedence as the card label: Hybrid / On-site signals win over the remote flag, so a job is only listed
+  // under the mode its card shows (no Hybrid-labelled result under Remote or On-site).
+  const hybrid = loc.includes("hybrid") || j.remote_scope === "hybrid";
+  const scope = j.remote_scope || "";
   return sel.split(",").some((s) => {
     const k = s.trim().toLowerCase();
-    if (k === "remote") return j.remote === true || loc.includes("remote");
-    if (k === "hybrid") return loc.includes("hybrid") || j.remote_scope === "hybrid";
-    if (k === "onsite") return j.remote === false || loc.includes("onsite");
+    if (k === "remote") return (j.remote === true || loc.includes("remote")) && !hybrid && !["onsite", "on-site", "on_site"].includes(scope);
+    if (k === "hybrid") return hybrid;
+    if (k === "onsite") return (j.remote === false || loc.includes("onsite")) && !hybrid && !["remote", "worldwide", "any"].includes(scope);
     return false;
   });
 };
