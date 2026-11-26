@@ -85,6 +85,20 @@ describe("account deletion contract", () => {
     expect(await resolvePostAuthDestination(db.client, user.id, "/jobs")).toBe("/onboarding?next=%2Fjobs");
   });
 
+  it("subscription reconcile writes only real subscriptions columns (no top-level canceled_at)", async () => {
+    const db = createFakeSupabase();
+    const user = db.signUp("sub@example.test");
+    seedCompletedAccount(db, user.id);
+    db.insert("subscriptions", { id: "sub-1", user_id: user.id, status: "active", cancel_at_period_end: false, metadata: {}, created_at: "2026-11-01T00:00:00.000Z" });
+    const result = await deleteAccount(db, user.id);
+    expect(result.status).toBe(200);
+    const sub = db.rowsOf("subscriptions")[0] as any;
+    expect(sub.status).toBe("canceled");
+    expect(sub.cancel_at_period_end).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(sub, "canceled_at")).toBe(false);
+    expect(typeof sub.metadata.canceled_at).toBe("string");
+  });
+
   it("billing reconciliation failure stops before tombstoning or deleting account data", async () => {
     const db = createFakeSupabase({ failTables: { subscriptions: { code: "XX000", message: "billing unavailable" } } });
     const user = db.signUp("billing@example.test");
