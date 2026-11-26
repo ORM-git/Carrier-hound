@@ -1,0 +1,105 @@
+{
+  "flag": "flagon",
+  "feedRequests": [
+    {
+      "device": "desktop",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25"
+      }
+    },
+    {
+      "device": "desktop",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "roles": "Business Analyst",
+        "experienceLevel": "entry",
+        "remotePreference": "any",
+        "locations": "United States",
+        "employmentTypes": "full-time",
+        "countryCode": "United States"
+      }
+    },
+    {
+      "device": "phone",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25"
+      }
+    },
+    {
+      "device": "phone",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "roles": "Business Analyst",
+        "experienceLevel": "entry",
+        "remotePreference": "any",
+        "locations": "United States",
+        "employmentTypes": "full-time",
+        "countryCode": "United States"
+      }
+    },
+    {
+      "device": "phone",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "roles": "Business Analyst",
+        "experienceLevel": "entry",
+        "remotePreference": "any",
+        "locations": "United States",
+        "employmentTypes": "full-time",
+        "countryCode": "United States",
+        "remoteOnly": "true",
+        "level": "entry",
+        "jobType": "contract",
+        "workModel": "remote",
+        "datePosted": "7d",
+        "excludeTitle": [
+          "Senior",
+          "Director"
+        ],
+        "includeCompany": "Acme, Inc.",
+        "excludeCompany": "Initech"
+      }
+    }
+  ],
+  "checks": {
+    "desktopPreferencesBox": true,
+    "phonePreferencesBox": false
+  },
+  "afterUpdate": [
+    {
+      "device": "phone",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "roles": "Business Analyst",
+        "experienceLevel": "entry",
+        "remotePreference": "any",
+        "locations": "United States",
+        "employmentTypes": "full-time",
+        "countryCode": "United States",
+        "remoteOnly": "true",
+        "level": "entry",
+        "jobType": "contract",
+        "workModel": "remote",
+        "datePosted": "7d",
+        "excludeTitle": [
+          "Senior",
+          "Director"
+        ],
+        "includeCompany": "Acme, Inc.",
+        "excludeCompany": "Initech"
+      }
+    }
+  ]
+}

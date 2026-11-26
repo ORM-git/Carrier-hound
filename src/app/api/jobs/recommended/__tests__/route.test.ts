@@ -1527,3 +1527,81 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     expect(body.jobs).toEqual([]);
   });
 });
+
+// CM arrival (jobs.first_seen_at) travels as firstSeenAt from both feed routes, through getLiveJobs, to the card.
+// postedAt is unchanged; a missing or invalid arrival renders no age (never the posting date).
+describe("firstSeenAt: search + recommended routes → service → card", () => {
+  const ARRIVED = "2026-11-20T08:00:00.000Z";
+  const J1 = "11111111-1111-4111-8111-111111111111";
+  const J2 = "22222222-2222-4222-8222-222222222222";
+  const J4 = "44444444-4444-4444-8444-444444444444";
+  let searchRoute: (r: Request) => Promise<Response>;
+  beforeAll(async () => {
+    searchRoute = (await import("@/app/api/jobs/search/route")).GET;
+  }, 30000);
+  beforeEach(() => {
+    const byId = (id: string) => state.tables.jobs.find((j: any) => j.id === id);
+    byId(J1).first_seen_at = ARRIVED;
+    byId(J2).first_seen_at = null;
+    byId(J4).first_seen_at = "not-a-date";
+    const dispatch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (urlStr.includes("/api/jobs/search")) return searchRoute(new Request(urlStr, init));
+      return dispatch(input, init);
+    }) as any;
+  });
+  const pick = (body: any, id: string) => body.jobs.find((j: any) => j.id === id);
+  const posted = (id: string) => {
+    const r = state.tables.jobs.find((j: any) => j.id === id);
+    return r.posted_at || r.created_at;
+  };
+
+  for (const token of [undefined, "tok-free-with-answers", "tok-pro-with-answers"]) {
+    it(`recommended (${token ?? "guest"}): firstSeenAt from first_seen_at; null when missing; postedAt unchanged`, async () => {
+      const body = await (await recommendedRoute(req("http://localhost/api/jobs/recommended?page=1&pageSize=50", token))).json();
+      expect(pick(body, J1).firstSeenAt).toBe(ARRIVED);
+      expect(pick(body, J1).postedAt).toBe(posted(J1));
+      const missing = body.jobs.find((j: any) => j.id !== J1 && j.id !== J4);
+      expect(missing.firstSeenAt).toBeNull();
+      expect(missing.postedAt).toBe(posted(missing.id));
+    });
+    it(`search (${token ?? "guest"}): selects first_seen_at and returns firstSeenAt; null when missing; postedAt unchanged`, async () => {
+      state.queries = [];
+      const res = await searchRoute(req("http://localhost/api/jobs/search?q=Frontend&page=1&pageSize=25", token));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(state.queries.filter((q) => q.table.startsWith("jobs")).every((q) => q.cols.includes("first_seen_at") || q.cols.startsWith("*") || !q.cols.includes("posted_at"))).toBe(true);
+      expect(pick(body, J1).firstSeenAt).toBe(ARRIVED);
+      expect(pick(body, J1).postedAt).toBe(posted(J1));
+      expect(body.jobs.find((j: any) => j.id !== J1 && j.id !== J4).firstSeenAt).toBeNull();
+    });
+  }
+
+  it("service → card: arrival age from firstSeenAt; missing or invalid shows nothing, never postedAt", async () => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { default: JobCardContent } = await import("@/components/jobs/JobCardContent");
+    const noop = () => {};
+    const footer = (job: any) => {
+      const html = renderToStaticMarkup(
+        React.createElement(JobCardContent, { job, index: 0, isPro: true, isSaved: false, matchScore: null, cardZeroSkills: false, isRecent: false, postedRelative: null, companyPills: [], locInfo: { primary: "", extraCount: 0, all: [] }, jobLevel: "", formattedJobType: null, getTagColorClass: () => "", formatRelativeTime: (d?: string) => `AGE<${d}>`, handleHideJob: noop, handleToggleApplied: noop, handleSaveJob: noop, handleSelectJob: noop, handleLockedAction: noop } as any)
+      );
+      return html.match(/data-testid="cm-arrival-age"[^>]*>([^<]*(?:<(?!\/span>)[^<]*)*)<\/span>/)?.[1] ?? null;
+    };
+    for (const [label, opts] of [
+      ["recommended", { baseUrl: "http://localhost", sortBy: "match" as const, pageSize: 50 }],
+      ["search", { baseUrl: "http://localhost", sortBy: "newest" as const, search: "Frontend", pageSize: 25 }],
+    ] as const) {
+      const res = await getLiveJobs(opts as any);
+      expect(res.error, label).toBeUndefined();
+      const j1 = res.jobs.find((j) => j.id === J1)!;
+      const j2 = res.jobs.find((j) => j.id !== J1 && j.id !== J4)!;
+      expect(j1.firstSeenAt, label).toBe(ARRIVED);
+      expect(footer(j1), label).toBe(`AGE&lt;${ARRIVED}&gt;`);
+      expect(footer(j2), label).toBe("");
+      expect(footer({ ...j2, firstSeenAt: "not-a-date" }), label).toBe("");
+      expect(footer({ ...j1, firstSeenAt: undefined }), label).toBe("");
+    }
+  });
+});
