@@ -24,7 +24,7 @@
  *    - Authenticity: NO fake "Set as default" button and NO "Default" chip.
  *    - Delete confirmation message preserved.
  *    - Empty state: centred icon, one line, upload button.
- *    - Free user ProUpgradeScreen gating preserved with exact copy.
+ *    - Own resume access for signed-in Free/Pro; auth, owner-bound storage and Pro AI gates preserved.
  * 4. Brand purity: Zero Jobright mentions, mascots, coaching/agent/autofill items.
  *
  * Supports --negative-control to verify non-zero exit on invalid conditions.
@@ -53,9 +53,14 @@ function runAudit() {
   let trackerCode = fs.readFileSync(trackerFile, "utf-8");
   let resumeCode = fs.readFileSync(resumeFile, "utf-8");
   let jobsCode = fs.readFileSync(jobsFile, "utf-8");
+  let manualCode = fs.readFileSync(path.resolve("src/app/resume/manual/page.tsx"), "utf-8");
+  let uploadCode = fs.readFileSync(path.resolve("src/components/resume/ResumeUploadAndConfirm.tsx"), "utf-8");
+  let storageCode = fs.readFileSync(path.resolve("src/lib/resume/storage.ts"), "utf-8");
 
   if (isNegativeControl) {
     // Sabotage code: simulate re-adding fake Default chip or Set as default action
+    manualCode = manualCode.replace("isPro={access.isPro}", "isPro={true}");
+    uploadCode = uploadCode.replaceAll("if (isProUser && getGroqApiKey())", "if (getGroqApiKey())");
     resumeCode += '<span data-testid="resume-default-chip">Default</span>\n<button>Set as default</button>';
   }
 
@@ -235,15 +240,31 @@ function runAudit() {
     failures.push("Resume Empty State: Missing centred icon, single-line message, or upload button.");
   }
 
-  // Free User Gating: ProUpgradeScreen with exact copy (AI tailoring claim removed with the AI tool entry points)
-  const hasProGating = resumeCode.includes("ProUpgradeScreen") &&
-    resumeCode.includes('title="Unlock Career Monke Pro"') &&
-    resumeCode.includes('subtitle="Upgrade to Pro to upload your resume and compute compatibility scores."') &&
+  // Own resume access is Free + Pro. This changes no paid AI entitlement or owner/auth boundary.
+  const hasOwnResumeAccess = !resumeCode.includes("ProUpgradeScreen") &&
+    !manualCode.includes("ProUpgradeScreen") &&
+    !/if\s*\(\s*!isPro(?:Definitive)?\s*\)/.test(resumeCode) &&
+    resumeCode.includes("getAuthUser()") && resumeCode.includes('router.replace("/login?returnTo=/resume")') &&
+    manualCode.includes("getAuthUser()") && manualCode.includes('router.replace("/login?returnTo=/resume/manual")') &&
+    resumeCode.includes("reviewOnly selectedFile={selectedFile} isPro={isPro}") &&
+    manualCode.includes("manualEntry isPro={access.isPro}") &&
     !/AI tailor/i.test(resumeCode);
-  if (hasProGating) {
-    console.log("  [PASS] Free User Gating: ProUpgradeScreen preserved with exact copy within logged-in shell");
+  if (hasOwnResumeAccess) {
+    console.log("  [PASS] Own Resume Access: signed-in Free/Pro upload and manual entry, auth and real plan passed through");
   } else {
-    failures.push("Free User Gating: ProUpgradeScreen or copy altered.");
+    failures.push("Own Resume Access: Free access, signed-out redirect or real plan pass-through changed.");
+  }
+  const hasPaidAiAndOwnerBoundary =
+    (uploadCode.match(/if \(isProUser && getGroqApiKey\(\)\)/g) || []).length === 2 &&
+    uploadCode.includes("const handleSaveConfirmedProfile = async () =>") &&
+    uploadCode.includes("await saveCandidateProfileToSupabase(confirmedProfile)") &&
+    storageCode.includes("await supabase.auth.getSession()") &&
+    storageCode.includes("await supabase.auth.getUser()") &&
+    storageCode.includes("user_id: user.id");
+  if (hasPaidAiAndOwnerBoundary) {
+    console.log("  [PASS] Resume Boundaries: both AI extraction paths need Pro + key; explicit confirmed save uses authenticated owner");
+  } else {
+    failures.push("Resume Boundaries: Pro AI gating, explicit confirmation or authenticated owner binding changed.");
   }
 
   // ===========================================================================
