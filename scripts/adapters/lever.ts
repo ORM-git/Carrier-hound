@@ -1,3 +1,4 @@
+import { sourceEmploymentType } from '../utils/sourceEmploymentType';
 import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
@@ -6,7 +7,6 @@ import {
   stripHtml,
   cleanAndTruncateDescription,
   detectRemote,
-  detectJobType,
   detectCategory,
   detectSeniority,
   detectCountryCode,
@@ -135,7 +135,7 @@ export class LeverAdapter implements SourceAdapter {
           remoteScope = remote ? 'remote' : 'onsite';
         }
 
-        const jobType = detectJobType(title, j.categories?.commitment || '');
+        const jobType = sourceEmploymentType(title, j.categories?.commitment);
         const rawDesc = j.descriptionPlain || stripHtml(j.description);
         const description = cleanAndTruncateDescription(rawDesc, 4000);
 
