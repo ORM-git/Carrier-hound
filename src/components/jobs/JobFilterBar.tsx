@@ -195,8 +195,9 @@ export default function JobFilterBar({
     r.toLowerCase().includes(roleSearchQuery.toLowerCase().trim())
   );
 
-  // Controls show an explicit (manual/URL) value first, else the saved preference.
-  const savedKeys = (["countryCode", "jobType", "workModel"] as const).filter((k) => !filters[k] && savedDisplay?.[k]);
+  // Controls show an explicit (manual/URL) value first, else the saved preference. An explicit location text also
+  // wins over the saved country (otherwise opening/Confirm would submit both and make the saved country strict).
+  const savedKeys = (["countryCode", "jobType", "workModel"] as const).filter((k) => !filters[k] && savedDisplay?.[k] && !(k === "countryCode" && filters.location));
   const shown: JobFilterValues = { ...filters };
   for (const k of savedKeys) shown[k] = savedDisplay![k] as string;
   const isSaved = (k: "countryCode" | "jobType" | "workModel") => savedKeys.includes(k);
@@ -376,7 +377,7 @@ export default function JobFilterBar({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleConfirm({ countryCode: draftFilters.countryCode, location: draftFilters.location })}
+                      onClick={() => handleConfirm({ countryCode: draftFilters.countryCode || "", location: draftFilters.location })}
                       className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition shadow-xs"
                     >
                       Confirm
