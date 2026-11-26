@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   annualSalaryThresholds,
   annualSalaryRationals,
@@ -12,6 +12,12 @@ import {
   parseBrowseFilters,
 } from "../browseFilters";
 import { normalizeFeedConstraints } from "@/lib/preferences/feedConstraints";
+// PGlite is a full WASM Postgres (~250 MB each): every instance a test opens is closed after it.
+const opened: Array<{ close(): Promise<void> }> = [];
+const track = <T extends { close(): Promise<void> }>(pg: T): T => (opened.push(pg), pg);
+afterEach(async () => {
+  await Promise.all(opened.splice(0).map((p) => p.close()));
+});
 
 const RATES = { USD: 1, EUR: 0.92, GBP: 0.79, INR: 84, CAD: 1.38, AUD: 1.52 };
 const parse = (qs: string) => parseBrowseFilters(new URLSearchParams(qs));
@@ -204,7 +210,7 @@ describe("exact numeric predicate fixture (PGlite, unconstrained numeric; SQL is
   };
   it("Postgres numeric verdict equals the exact BigInt verdict on boundary and random values of any scale", async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite();
+    const pg = track(new PGlite());
     await pg.exec(SQL);
     await pg.exec("create table jobs (id serial primary key, salary_min numeric, currency text, salary_period text)");
     const th = annualSalaryRationals(100000, "USD", R) as any[];
@@ -260,7 +266,7 @@ describe("exact numeric predicate fixture (PGlite, unconstrained numeric; SQL is
   });
   it("salary: NULL, NaN, +/-Infinity are false; unknown currency/period are false", async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite();
+    const pg = track(new PGlite());
     await pg.exec(SQL);
     const call = async (sal: string | null, cur: string, per: string, th: unknown) =>
       ((await pg.query("select salary_meets_threshold($1::numeric,$2,$3,$4::jsonb) as ok", [sal, cur, per, JSON.stringify(th)])).rows[0] as any).ok;
@@ -273,7 +279,7 @@ describe("exact numeric predicate fixture (PGlite, unconstrained numeric; SQL is
   });
   it("whole payload is validated before evaluation: every malformed shape raises 22023, never passes", async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite();
+    const pg = track(new PGlite());
     await pg.exec(SQL);
     const e = (o: Record<string, unknown> = {}) => ({ currency: "USD", period: "yearly", num: "100", den: "1", ...o });
     const entries = (n: number) => Array.from({ length: n }, (_, i) => ({ currency: ["USD", "EUR", "GBP", "INR", "CAD", "AUD"][i % 6], period: ["hourly", "monthly", "yearly"][Math.floor(i / 6) % 3], num: "100", den: "1" }));

@@ -2,7 +2,7 @@
 // client serializer (getLiveJobs). The fake supabase client evaluates every filter the handlers send
 // against fixture rows; pattern operators (ilike/imatch, plain or negated) are evaluated by REAL Postgres
 // (PGlite), so SQL wildcards and regex escapes behave as in production.
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
 // The first test of each describe cold-imports a full route module; under load that alone can pass 5s.
@@ -120,6 +120,10 @@ beforeAll(async () => {
   client = ((await import("@supabase/supabase-js")) as any).__client;
   const { PGlite } = await import("@electric-sql/pglite");
   db.pg = new PGlite();
+});
+// The one shared PGlite (a full WASM Postgres) is closed when the file is done.
+afterAll(async () => {
+  await db.pg.close();
 });
 beforeEach(() => {
   Object.assign(process.env, env, { SUPABASE_SERVICE_ROLE_KEY: "service-role-fake" });

@@ -1,8 +1,14 @@
 // Contract fixture (PGlite, NOT live) for docs/proposed/feed_salary_exact_rpc.NOT_APPLIED.sql on top of the #796
 // typed-threshold validator. Proves SQL semantics only; says nothing about PostgREST, roles, live data or cost.
 import fs from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { annualSalaryRationals } from "../browseFilters";
+// PGlite is a full WASM Postgres (~250 MB each): every instance a test opens is closed after it.
+const opened: Array<{ close(): Promise<void> }> = [];
+const track = <T extends { close(): Promise<void> }>(pg: T): T => (opened.push(pg), pg);
+afterEach(async () => {
+  await Promise.all(opened.splice(0).map((p) => p.close()));
+});
 
 const read = (f: string) => fs.readFileSync(`docs/proposed/${f}`, "utf8");
 // PGlite has no roles: only the privilege DDL and comment lines are dropped; everything else runs as written.
@@ -24,7 +30,7 @@ const MALFORMED: unknown[] = [[e({ den: "NaN" })], [e({ den: "0" })], [e(), e({ 
 
 async function db(instrument = false) {
   const { PGlite } = await import("@electric-sql/pglite");
-  const pg = new PGlite();
+  const pg = track(new PGlite());
   await pg.exec(`
     create table public.jobs (id uuid primary key, title text, currency text, salary_period text, salary_min numeric);
     create table public.feed_corpus_frozen (id uuid, title text, currency text, salary_period text, salary_min numeric, epoch uuid);`);

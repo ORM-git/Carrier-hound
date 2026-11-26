@@ -1,7 +1,13 @@
 // Contract fixture (PGlite, NOT live): validate-once typed thresholds + a single-statement join over a relation.
 // Proves SQL semantics and equality with the BigInt rational verdict; says nothing about PostgREST, roles or cost.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { annualSalaryRationals } from "../browseFilters";
+// PGlite is a full WASM Postgres (~250 MB each): every instance a test opens is closed after it.
+const opened: Array<{ close(): Promise<void> }> = [];
+const track = <T extends { close(): Promise<void> }>(pg: T): T => (opened.push(pg), pg);
+afterEach(async () => {
+  await Promise.all(opened.splice(0).map((p) => p.close()));
+});
 
 const read = (f: string) => (require("fs").readFileSync(`docs/proposed/${f}`, "utf8") as string);
 // Only the privilege DDL (no roles in PGlite) is dropped; schema qualification and search_path stay as canonical.
@@ -22,7 +28,7 @@ describe("salary exact RPC contract: validate once, join in the same statement",
   });
   it("single statement over a relation equals the exact BigInt verdict for every row, incl. 11+ digit scales", async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite();
+    const pg = track(new PGlite());
     await pg.exec(exec(FILE));
     await pg.exec("create table frozen (id serial primary key, epoch int, salary_min numeric, currency text, salary_period text)");
     const th = annualSalaryRationals(100000, "USD", R) as any[];
@@ -43,7 +49,7 @@ describe("salary exact RPC contract: validate once, join in the same statement",
   });
   it("explicit-validation RPC shape: malformed payload raises 22023 for empty relation, no-match epoch, zero limit and normal relation; validator runs once per call", async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite();
+    const pg = track(new PGlite());
     // test-only instrumentation: count validator invocations by injecting a sequence bump into the canonical body
     const instrumented = exec(FILE).replace("begin\n  if p_thresholds is null", "begin\n  perform nextval('public.validator_calls');\n  if p_thresholds is null");
     expect(instrumented).not.toBe(exec(FILE));
