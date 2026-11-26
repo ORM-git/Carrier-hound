@@ -140,7 +140,9 @@ vi.mock("@supabase/supabase-js", () => {
           }
           if (prop === "in") {
             return (c: string, values: any[]) => {
-              predicates.push((r) => Array.isArray(values) && values.includes(r[c]));
+              // Evaluated FIRST: AND of pure predicates is order-independent, so this changes no result, only cost
+              // (the serve-time recheck adds the relevance OR-tree, parsed per row, before `.in("id", ids)`).
+              predicates.unshift((r) => Array.isArray(values) && values.includes(r[c]));
               return b;
             };
           }
