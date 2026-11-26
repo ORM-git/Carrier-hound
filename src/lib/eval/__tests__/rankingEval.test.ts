@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { createHash } from "crypto";
 import { describe, expect, it } from "vitest";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { rankJobsByRecommendation } from "@/lib/jobs/recommendations";
@@ -65,5 +66,45 @@ describe("offline ranking eval on the synthetic fixture", () => {
     expect(bad((d) => ((d.profiles[0] as any).labelProvenance = ""))).toThrow(/labelProvenance is required/);
     expect(bad((d) => ((d as any).referenceTime = "soon"))).toThrow(/referenceTime/);
     expect(bad(() => undefined)).not.toThrow();
+  });
+});
+
+describe("human-judging-v1 package (judging pending)", () => {
+  const dir = "scripts/eval/ranking";
+  const d: EvalDataset = JSON.parse(readFileSync(`${dir}/human-judging-v1.json`, "utf8"));
+  // shortcut: handles quoted fields but not newlines inside a field; the generator never writes any
+  const parseLine = (line: string) =>
+    Array.from(line.matchAll(/(?:^|,)("(?:[^"]|"")*"|[^,]*)/g)).map((m) => m[1].replace(/^"|"$/g, "").replace(/""/g, '"'));
+  const [header, ...rows] = readFileSync(`${dir}/human-judging-v1-worksheet.csv`, "utf8").trim().split(/\r?\n/).map(parseLine);
+  const col = (name: string) => header.indexOf(name);
+
+  it("is a valid synthetic dataset with no labels and pending provenance", () => {
+    expect(() => validateDataset(d)).not.toThrow();
+    expect(d.synthetic).toBe(true);
+    for (const p of d.profiles) {
+      expect(p.labels, p.id).toEqual({});
+      expect(p.labelProvenance).toMatch(/^pending/);
+    }
+  });
+
+  it("worksheet has exactly one row per profile-job pair, each tied to the job snapshot", () => {
+    const pairs = d.profiles.flatMap((p) => p.candidates.map((j) => `${p.id}|${j}`));
+    expect(rows.map((r) => `${r[col("candidate_id")]}|${r[col("job_id")]}`)).toEqual(pairs);
+    for (const r of rows) {
+      const job = d.jobs.find((j) => j.id === r[col("job_id")])!;
+      const hash = createHash("sha256").update(JSON.stringify(job)).digest("hex").slice(0, 12);
+      expect(r[col("snapshot")]).toBe(`${d.version}/${job.id}@${hash}`);
+      expect(r[col("job_title")]).toBe(job.title);
+    }
+  });
+
+  it("ships with every judging column blank and reports zero human-label coverage", () => {
+    for (const name of ["relevance", "eligibility", "reason", "judge", "date"]) {
+      expect(col(name), name).toBeGreaterThan(-1);
+      expect(rows.every((r) => r[col(name)] === ""), name).toBe(true);
+    }
+    const r = evaluateDataset(d);
+    expect(r.labelCoverage).toEqual({ pairs: rows.length, relevanceJudged: 0, eligibilityJudged: 0 });
+    expect(r.macro.ndcgAtK).toMatchObject({ mean: null, included: 0 });
   });
 });

@@ -61,6 +61,10 @@ The harness sets no quality threshold and has no pass/fail on metric values.
 
 ## Next step: a human-judged held-out set
 
+A judging package now exists: `docs/ranking-eval-judging.md` (guide), `scripts/eval/ranking/human-judging-v1.json`
+(dataset, labels empty) and `human-judging-v1-worksheet.csv` (31 pairs). Judging is pending: human-label coverage is 0.
+Its profiles are synthetic, so the real-data plan below still stands.
+
 Data needed (none of it exists yet):
 
 1. **Profiles.** 30 or more anonymized profiles covering target roles, levels (intern to lead), work models and
