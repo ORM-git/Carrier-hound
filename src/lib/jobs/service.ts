@@ -1,5 +1,8 @@
 import { createClient } from "../supabase/client";
-import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted } from "@/lib/preferences/feedConstraints";
+import { appendExcludedSkillParams, appendRequiredYearsParams } from "@/lib/preferences/advancedFilters";
+import { normalizeSkillList } from "./skillKey";
+import { isRequiredYearsRangeActive, normalizeRequiredYearsRange } from "./requiredYears";
+import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted, type SavedFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
@@ -22,6 +25,7 @@ import {
 } from "./recommendations";
 import {
   applyExperienceLevelQuery,
+  resolveEffectiveLevel,
   formatExperienceLevels,
   parseExperienceLevels,
   EARLY_CAREER_OR_CLAUSE,
@@ -52,6 +56,8 @@ export interface LiveJob {
   description?: string;
   skills?: string[];
   postedAt?: string;
+  /** CM arrival: jobs.first_seen_at (DB default now() on insert, never written by ingestion). Not the employer date. */
+  firstSeenAt?: string | null;
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
   applicantCount?: number;
@@ -123,6 +129,10 @@ export interface GetJobsOptions {
   salaryMin?: number | string | null;
   sourceType?: string | null;
   company?: string | null;
+  /** Transient repeatable list filters; sent only when savedFeedConstraintsEnforced() (owner flag). */
+  excludedTitles?: string[];
+  includedCompanies?: string[];
+  excludedCompanies?: string[];
   cursor?: string | null;
   eligibility?: "on" | "off" | string;
   currency?: string;
@@ -350,7 +360,7 @@ export function extractCandidateRelevanceTerms(
 }
 
 const PUBLIC_SELECT_COLUMNS =
-  "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+  "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, first_seen_at";
 
 import { capJobsPerCompany } from "./capping";
 import { jobTypeOrClause, workModelOrClause } from "./jobFilters";
@@ -368,6 +378,34 @@ const DEGRADED_JOBS_RESULT: GetJobsResult = {
   isDegraded: true,
   error: "degraded",
 };
+
+/**
+ * Saved constraints AND transient sheet lists. Exclusions add up; two inclusion lists intersect. An empty
+ * intersection must match nothing, so it becomes include {saved} + exclude {saved} (empty by contract).
+ */
+export function mergeFeedConstraints(
+  saved: { excludedTitles?: string[]; includedCompanies?: string[]; excludedCompanies?: string[]; datePosted?: string | null } | null | undefined,
+  transient: { excludedTitles?: string[]; includedCompanies?: string[]; excludedCompanies?: string[] }
+): SavedFeedConstraints {
+  const s = normalizeFeedConstraints(saved);
+  const t = normalizeFeedConstraints(transient);
+  let included = s.includedCompanies.length ? s.includedCompanies : t.includedCompanies;
+  let excluded = [...s.excludedCompanies, ...t.excludedCompanies];
+  if (s.includedCompanies.length && t.includedCompanies.length) {
+    const wanted = new Set(t.includedCompanies.map((n) => n.toLowerCase()));
+    included = s.includedCompanies.filter((n) => wanted.has(n.toLowerCase()));
+    if (!included.length) {
+      included = s.includedCompanies;
+      excluded = [...excluded, ...s.includedCompanies];
+    }
+  }
+  return normalizeFeedConstraints({
+    excludedTitles: [...s.excludedTitles, ...t.excludedTitles],
+    includedCompanies: included,
+    excludedCompanies: excluded,
+    datePosted: s.datePosted,
+  });
+}
 
 /**
  * Fetches live active jobs from Supabase with strict server/payload-level Pro gating.
@@ -401,6 +439,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     salaryMin,
     sourceType,
     company,
+    excludedTitles,
+    includedCompanies,
+    excludedCompanies,
     cursor,
   } = options;
 
@@ -417,11 +458,26 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   // enabled nothing saved narrows the feed. When enabled they travel only with the personalized feed's
   // preferences (Recommended tab / match sort); the saved date window AND the browsing one: the narrower
   // wins. Company predicates need the server (jobs_public has no company column).
-  const feedConstraints = normalizeFeedConstraints(savedFeedConstraintsEnforced() ? preferences : null);
+  // Transient list filters from the Jobs filter sheet ride the same owner gate and are AND-ed with the saved ones.
+  const feedConstraints = savedFeedConstraintsEnforced()
+    ? mergeFeedConstraints(preferences, { excludedTitles, includedCompanies, excludedCompanies })
+    : normalizeFeedConstraints(null);
+  // Saved level: same owner gate and personalized-feed scope as the other saved constraints. An explicit
+  // browse level overrides it (no intersection). Unknown job titles follow the existing level predicate.
+  const effectiveLevelRaw = resolveEffectiveLevel(level, preferences?.experienceLevel, { enforced: savedFeedConstraintsEnforced(), personalized: isMatchSort });
+  const effectiveLevel = Array.isArray(effectiveLevelRaw) ? effectiveLevelRaw.join(",") : effectiveLevelRaw;
+  // Saved required-years range: same owner gate and personalized-feed scope; storage must exist.
+  const requiredYears = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
+    ? normalizeRequiredYearsRange({ min: preferences?.requiredYearsMin, max: preferences?.requiredYearsMax })
+    : normalizeRequiredYearsRange(null);
+  // Saved excluded skills: same gate and scope (Free and Pro alike); decided by the server before paging.
+  const excludedSkills = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
+    ? normalizeSkillList(preferences?.excludedSkills)
+    : [];
   const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
 
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
-  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
+  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || isRequiredYearsRangeActive(requiredYears) || excludedSkills.length > 0 || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
   const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
@@ -457,8 +513,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (category && category !== "all") recParams.set("category", category);
         if (remoteOnly) recParams.set("remoteOnly", "true");
         if (location && location !== "all") recParams.set("location", location);
-        if (level && level !== "all") {
-          const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+        if (effectiveLevel && effectiveLevel !== "all") {
+          const normLevel = formatExperienceLevels(parseExperienceLevels(effectiveLevel));
           if (normLevel) recParams.set("level", normLevel);
         }
         if (jobType && jobType !== "all") recParams.set("jobType", jobType);
@@ -466,6 +522,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         if (countryCode && countryCode !== "all") recParams.set("country_code", countryCode);
         if (effectiveDatePosted) recParams.set("datePosted", effectiveDatePosted);
         appendFeedConstraintParams(recParams, feedConstraints);
+        appendRequiredYearsParams(recParams, requiredYears);
+        appendExcludedSkillParams(recParams, excludedSkills);
         if (experience && experience !== "all" && experience.toLowerCase() !== "all experience") recParams.set("experience", experience);
         if (salaryMin) recParams.set("salaryMin", String(salaryMin));
         if (sourceType && sourceType !== "all") recParams.set("sourceType", sourceType);
@@ -517,14 +575,16 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (category && category !== "all") params.set("category", category);
       if (remoteOnly) params.set("remoteOnly", "true");
       if (location && location !== "all") params.set("location", location);
-      if (level && level !== "all") {
-        const normLevel = formatExperienceLevels(parseExperienceLevels(level));
+      if (effectiveLevel && effectiveLevel !== "all") {
+        const normLevel = formatExperienceLevels(parseExperienceLevels(effectiveLevel));
         if (normLevel) params.set("level", normLevel);
       }
       if (jobType && jobType !== "all") params.set("jobType", jobType);
       if (workModel && workModel !== "all") params.set("workModel", workModel);
       if (effectiveDatePosted) params.set("datePosted", effectiveDatePosted);
       appendFeedConstraintParams(params, feedConstraints);
+      appendRequiredYearsParams(params, requiredYears);
+      appendExcludedSkillParams(params, excludedSkills);
       if (countryCode && countryCode !== "all") params.set("country_code", countryCode);
       if (experience && experience !== "all" && experience !== "All Experience") params.set("experience", experience);
       if (salaryMin) params.set("salaryMin", String(salaryMin));
@@ -575,9 +635,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     }
   }
 
-  // The direct jobs_public query cannot express saved title/company constraints: a retryable error,
-  // never a silently broadened personalized feed.
-  if (feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints)) {
+  // The direct jobs_public query cannot express saved title/company constraints or a required-years range
+  // (the view may lack the columns): a retryable error, never a silently broadened personalized feed.
+  if (feedConstraints.excludedTitles.length || companyConstraintsActive(feedConstraints) || isRequiredYearsRangeActive(requiredYears) || excludedSkills.length > 0) {
     return DEGRADED_JOBS_RESULT;
   }
 
@@ -655,8 +715,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     const jobTypeClause = jobTypeOrClause(jobType);
     if (jobTypeClause) query = query.or(jobTypeClause);
 
-    if (level && level.trim() && level.toLowerCase() !== "all") {
-      query = applyExperienceLevelQuery(query, level);
+    if (effectiveLevel && effectiveLevel.trim() && effectiveLevel.toLowerCase() !== "all") {
+      query = applyExperienceLevelQuery(query, effectiveLevel);
     }
 
     if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
@@ -757,8 +817,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         }
         if (jobTypeClause) catQuery = catQuery.or(jobTypeClause);
         if (workModelClause) catQuery = catQuery.or(workModelClause);
-        if (level && level.trim() && level.toLowerCase() !== "all") {
-          catQuery = applyExperienceLevelQuery(catQuery, level);
+        if (effectiveLevel && effectiveLevel.trim() && effectiveLevel.toLowerCase() !== "all") {
+          catQuery = applyExperienceLevelQuery(catQuery, effectiveLevel);
         }
 
         if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
@@ -901,6 +961,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           description: "",
           skills: [],
           postedAt: row.posted_at || row.created_at,
+          firstSeenAt: row.first_seen_at ?? null,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
           scoreRevision: scoreInputRevision(row, isPro, scoredAt),
@@ -1097,6 +1158,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 description: stripHtmlAndExecutableMarkup(job.description || ""),
                 skills: job.skills || [],
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
+                firstSeenAt: job.first_seen_at ?? null,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
                 // Same employer logo / domain resolution as the Pro listing (search route): job logo, then companies.*.
@@ -1219,6 +1281,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         skills: [],
         scoreRevision: scoreInputRevision(row, false, scoredAt),
         postedAt: row.posted_at || row.created_at,
+        firstSeenAt: row.first_seen_at ?? null,
         isExpired: expired,
         status: expired ? "expired" : (row.status || "active"),
         proUnlockError,
@@ -1305,6 +1368,7 @@ async function loadAllActiveJobs(): Promise<LiveJob[]> {
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
+        firstSeenAt: row.first_seen_at ?? null,
       }));
 
       cachedAllActiveJobs = mapped;

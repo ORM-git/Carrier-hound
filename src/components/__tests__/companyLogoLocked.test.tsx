@@ -33,3 +33,25 @@ describe("CompanyLogo locked silhouette (item 14)", () => {
     expect(detail).not.toMatch(/\{(job|simJob)\.company \|\| "Verified Employer"\}/);
   });
 });
+
+// Gradient-only masked tile (user-approved): no icon, palette from constants, pick from the opaque job id only.
+describe("CompanyLogo masked gradient tile", () => {
+  const base = { company: "Acme Rockets", logoUrl: "https://cdn.example/acme.png", domain: "acme.com" };
+  it("renders a gradient tile with no svg icon, text or image", () => {
+    const html = renderToStaticMarkup(<CompanyLogo {...base} locked maskSeed="job-1" />);
+    expect(html).toContain("bg-gradient-to-br");
+    expect(html).not.toMatch(/<svg|<img|<span/);
+    for (const leak of ["Acme", "acme.com", "cdn.example"]) expect(html).not.toContain(leak);
+  });
+  it("colour depends on the job id, never on the company", () => {
+    const a = renderToStaticMarkup(<CompanyLogo {...base} locked maskSeed="job-1" />);
+    const b = renderToStaticMarkup(<CompanyLogo {...base} company="Zeta Corp" domain="zeta.io" locked maskSeed="job-1" />);
+    expect(a).toBe(b);
+    const picks = new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => renderToStaticMarkup(<CompanyLogo {...base} locked maskSeed={id} />)));
+    expect(picks.size).toBeGreaterThan(2);
+  });
+  it("no seed gives one fixed tile; unlocked chain is unchanged", () => {
+    expect(renderToStaticMarkup(<CompanyLogo {...base} locked />)).toBe(renderToStaticMarkup(<CompanyLogo company="Other" locked />));
+    expect(renderToStaticMarkup(<CompanyLogo {...base} />)).toContain('alt="Acme Rockets logo"');
+  });
+});
