@@ -146,6 +146,13 @@ function FieldClear({ show, label, onClear }: { show: boolean; label: string; on
   );
 }
 
+// Collapsed-card descriptors, one line with an ellipsis (reference wording).
+const GROUP_SUBTEXT: Record<string, string> = {
+  basic: "Job Function / Job Type / Work Model...",
+  compensation: "Annual Salary / H1B Sponsorship",
+  interests: "Industry / Skill / Role(IC/Manager)...",
+  company: "Company Search / Exclude Staffing Agency...",
+};
 const CHIP_STRIP_LIMIT = 6; // reference: first six selections, then "+N"
 
 function CheckOption({ checked, onChange, children, disabled }: { checked: boolean; onChange: () => void; children: React.ReactNode; disabled?: boolean }) {
@@ -531,7 +538,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 {title}
                 {count > 0 && <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] font-bold text-white">{count}</span>}
               </span>
-              {!open && <span className="mt-1 block space-y-0.5">{summary}</span>}
+              {!open && <span className="mt-1 block truncate text-[12px] text-[#64748B]" data-testid={`pref-group-sub-${id}`}>{GROUP_SUBTEXT[id]}</span>}
             </span>
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9]"><ChevronDown className={`h-4 w-4 text-[#0F172A] transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" /></span>
           </button>
@@ -708,12 +715,12 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
           roleList
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#EEF2F9]" data-testid="preferences-scroll-body" ref={scrollBodyRef} style={{ overflowAnchor: "none" }}>
-            <div className="flex items-center justify-between px-5 pt-3 text-[12px] text-[#64748B]">
-              <span>
+            <div className="flex items-center justify-end px-5 pt-1 text-[12px] text-[#64748B]">
+              <span className="sr-only">
                 Update saves these to your account and refreshes Recommended.
                 {isDirty && " Unsaved changes."}
               </span>
-              <button type="button" onClick={resetAll} className="ml-3 min-h-[44px] shrink-0 px-1 font-semibold text-[#475569] underline-offset-2 hover:underline">
+              <button type="button" onClick={resetAll} className="ml-3 min-h-[32px] shrink-0 px-1 font-semibold text-[#475569] underline-offset-2 hover:underline">
                 Clear all
               </button>
             </div>
@@ -732,7 +739,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
             {group(
               "basic",
-              "Basic",
+              "Basic Job Criteria",
               <span className="block text-[12px] text-[#64748B]">Function / Type / Work model / Location / Level / Posted</span>,
               <>
                 <div>
@@ -914,7 +921,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
             {group(
               "compensation",
-              "Compensation",
+              "Compensation & Sponsorship",
               <>
                 <SummaryLine label="Minimum" items={draft.minSalary && currency ? [`${formatMoney(draft.minSalary, currency)} / year`] : []} />
                 <SummaryLine label="Work authorization" items={workAuthIds.map((id) => WORK_AUTH_OPTIONS.find((o) => o.id === id)!.label)} />
@@ -997,7 +1004,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
             {group(
               "interests",
-              "Interests",
+              "Areas of Interests",
               advancedAvailable && (draft.preferredSkills.length > 0 || draft.excludedSkills.length > 0) ? (
                 <>
                   <SummaryLine label={`Preferred skills${preferredSkillsApplied ? "" : " (saved, not applied)"}`} items={draft.preferredSkills} />
@@ -1048,7 +1055,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
 
             {group(
               "company",
-              "Company",
+              "Company Insights",
               <>
                 <SummaryLine label={`Only${notAppliedTag}`} items={constraintsAvailable ? draft.includedCompanies : []} />
                 <SummaryLine label={`Never${notAppliedTag}`} items={constraintsAvailable ? draft.excludedCompanies : []} />
