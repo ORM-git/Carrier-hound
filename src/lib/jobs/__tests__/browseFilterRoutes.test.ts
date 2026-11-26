@@ -238,6 +238,71 @@ describe.each([
   });
 });
 
+describe.each([
+  ["recommended", recommended],
+  ["search", search],
+])("/api/jobs/%s salary repair (2026-11-26)", (_name, call) => {
+  const add = (title: string, salary_min: number, currency: string, salary_period: string) => {
+    const r = { ...job(title, "Boundary Co", 1), role_category: "SDE", salary_min, currency, salary_period };
+    rows.push(r as any);
+    byTitle[r.id] = title;
+  };
+  const SAL = "minAnnualSalary=100000&minAnnualSalaryCurrency=USD";
+
+  it("decimal boundaries through the real handler: hourly 48.50 passes / 48.00 fails, monthly, cross-currency", async () => {
+    add("B hourly 48.50", 48.5, "USD", "hourly"); // 100,880/yr
+    add("B hourly 48.00", 48, "USD", "hourly"); // 99,840/yr
+    add("B monthly 8333.34", 8333.34, "USD", "monthly"); // 100,000.08/yr
+    add("B monthly 8333.33", 8333.33, "USD", "monthly"); // 99,999.96/yr
+    add("B EUR monthly 7666.67", 7666.67, "EUR", "monthly"); // 92,000.04 EUR = 100,000.04 USD at 0.92
+    add("B EUR monthly 7666.66", 7666.66, "EUR", "monthly"); // 91,999.92 EUR = 99,999.91 USD
+    add("B INR hourly 4038.47", 4038.47, "INR", "hourly"); // 8,400,017.6 INR = 100,000.2 USD at 84
+    add("B INR hourly 4038.46", 4038.46, "INR", "hourly"); // 8,399,996.8 INR = 99,999.96 USD
+    const { status, body } = await call(`pageSize=50&${SAL}`);
+    expect(status).toBe(200);
+    expect(titles(body).filter((t: string) => t.startsWith("B "))).toEqual([
+      "B EUR monthly 7666.67", "B INR hourly 4038.47", "B hourly 48.50", "B monthly 8333.34",
+    ]);
+  });
+
+  it("FX (a): a rates refresh between pages never changes the continuation's cohort", async () => {
+    // The background refresh triggered by page 1 is held until page 1 has been served, then lands INR=95.
+    let release!: () => void;
+    const refreshed = new Promise<void>((r) => (release = r));
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => {
+      if (!String(u).includes("open.er-api.com")) throw new Error(`unexpected fetch ${u}`);
+      await refreshed;
+      return new Response(JSON.stringify({ rates: { USD: 1, EUR: 0.92, GBP: 0.79, INR: 95, CAD: 1.38, AUD: 1.52 } }), { status: 200 });
+    }));
+    const COHORT = ["Backend Engineer", "Frontend Engineer", "Platform Engineer", "Software Intern"]; // Backend = 9M INR ~107k at 84
+    const p1 = await call(`pageSize=2&page=1&${SAL}`);
+    expect(p1.status).toBe(200);
+    expect(p1.body.salaryFx).toMatchObject({ source: "static_fallback", rates: { INR: 84 } });
+    release();
+    const fx = await import("@/lib/salary/fx");
+    for (let i = 0; i < 40 && fx.getFxRates().INR !== 95; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(fx.getFxRates().INR).toBe(95); // rates really changed between page 1 and page 2
+
+    // A continuation page without the pinned rates is refused, never served on the new rates.
+    const unpinned = await call(`pageSize=2&page=2&${SAL}`);
+    expect(unpinned.status).toBe(400);
+    expect(unpinned.body).toMatchObject({ error: "invalid_filter", field: "fxRates" });
+
+    const pin = Object.entries(p1.body.salaryFx.rates).map(([c, r]) => `${c}:${r}`).join(",");
+    const pages = [...titles(p1.body)];
+    for (const p of [2, 3]) {
+      const res = await call(`pageSize=2&page=${p}&${SAL}&fxRates=${encodeURIComponent(pin)}`);
+      expect(res.status).toBe(200);
+      expect(res.body.salaryFx).toMatchObject({ source: "continuation_pinned", rates: { INR: 84 } });
+      pages.push(...titles(res.body));
+    }
+    expect(pages.sort()).toEqual(COHORT);
+
+    // Control: a NEW query (page 1, unpinned) on the refreshed rates is a different cohort.
+    expect(titles((await call(`pageSize=50&${SAL}`)).body)).not.toContain("Backend Engineer");
+  });
+});
+
 describe("client serializer (getLiveJobs): browse filters", () => {
   async function capture(opts: Record<string, unknown>, status = 200, body: unknown = { jobs: [], totalCount: 0 }) {
     const urls: string[] = [];
@@ -288,6 +353,26 @@ describe("client serializer (getLiveJobs): browse filters", () => {
     const salaryFx = { source: "static_fallback", fetchedAt: null, rates: { USD: 1 }, baseCurrency: "USD" };
     const { result } = await capture({ sortBy: "newest", browse: { minAnnualSalary: 1, minAnnualSalaryCurrency: "USD" } }, 200, { jobs: [], totalCount: 0, salaryFx });
     expect(result.salaryFx).toEqual(salaryFx);
+  });
+
+  it("invalid salary input reaches the real handler verbatim and is a 400 (never a broadened feed)", async () => {
+    const candidate = { skills: ["React"], titles: ["Frontend Engineer"], updatedAt: "2026-11-25T00:00:00Z" };
+    for (const b of [
+      { minAnnualSalary: -5, minAnnualSalaryCurrency: "usd" },
+      { minAnnualSalary: 0, minAnnualSalaryCurrency: "usd" },
+      { minAnnualSalary: 100000.9, minAnnualSalaryCurrency: "usd" },
+      { minAnnualSalary: NaN, minAnnualSalaryCurrency: "usd" },
+      { minAnnualSalaryCurrency: "usd" },
+    ]) {
+      const { url } = await capture({ sortBy: "match", candidate, preferences: null, browse: b });
+      expect(url, JSON.stringify(b)).not.toBeNull();
+      expect(url!.pathname, JSON.stringify(b)).toBe("/api/jobs/search");
+      vi.unstubAllGlobals();
+      const res = await search(url!.search.slice(1));
+      expect(res.status, JSON.stringify(b)).toBe(400);
+      expect(res.body.error).toBe("invalid_filter");
+      expect(["minAnnualSalary", "minAnnualSalaryCurrency"]).toContain(res.body.field);
+    }
   });
 
   it("empty browse object is a no-op: no browse params", async () => {

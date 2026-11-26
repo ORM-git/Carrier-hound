@@ -10,8 +10,7 @@ import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { getCountryFilterClause } from "@/lib/countries";
 import { decodeCursor, encodeCursor } from "@/lib/pagination/cursor";
-import { applyBrowseFilters, browseFiltersActive, isBrowseFilterError, parseBrowseFilters, salaryFxReport } from "@/lib/jobs/browseFilters";
-import { getFxRates } from "@/lib/salary/fx";
+import { applyBrowseFilters, browseFiltersActive, isBrowseFilterError, parseBrowseFilters, resolveBrowseFxRates, salaryFxReport } from "@/lib/jobs/browseFilters";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { normalizeUserCountries, applyEligibilityFilter, isJobEligible } from "@/lib/jobs/eligibility";
 import {
@@ -361,7 +360,9 @@ async function getHandler(req: Request) {
         { status: 503 }
       );
     }
-    const fxRates = getFxRates(); // one rate table per response: the predicate and salaryFx report agree
+    // One rate table per response; a salary-filtered continuation evaluates on page 1's pinned rates.
+    const fxRates = resolveBrowseFxRates(browse, Boolean(cursorParam) || page > 1);
+    if (isBrowseFilterError(fxRates)) return NextResponse.json(fxRates, { status: 400 });
 
     const hasActiveFilter = Boolean(
       browseFiltersActive(browse) ||
