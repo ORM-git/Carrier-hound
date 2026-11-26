@@ -173,6 +173,25 @@ export function parseTickerResponse(raw: unknown): TickerItemParsed[] {
   return out;
 }
 
+/** Import-freshness mode is separate: nullable employer date is never the displayed clock. */
+export interface ImportedTickerItemParsed {
+  company: string;
+  title: string;
+  posted_at: string | null;
+  added_at: string;
+  logo_url: string | null;
+}
+export function parseImportedTickerResponse(raw: unknown): ImportedTickerItemParsed[] {
+  const list = Array.isArray(raw) ? raw : isRecord(raw) && Array.isArray(raw.jobs) ? raw.jobs : [];
+  return list.flatMap((item): ImportedTickerItemParsed[] => {
+    if (!isRecord(item) || typeof item.company !== "string" || typeof item.title !== "string" ||
+      typeof item.added_at !== "string" || !(item.posted_at === null || typeof item.posted_at === "string")) return [];
+    const logo = "logo_url" in item ? item.logo_url : null;
+    if (logo !== null && typeof logo !== "string") return [];
+    return [{company:item.company,title:item.title,posted_at:item.posted_at,added_at:item.added_at,logo_url:logo}];
+  });
+}
+
 export interface SearchJobRowParsed {
   id: string;
   title: string;
