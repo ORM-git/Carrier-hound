@@ -34,8 +34,21 @@ export interface JobCardContentProps {
   handleLockedAction: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
+/**
+ * When CareerMonke first saw this job (its arrival), or null. Only firstSeenAt counts: never postedAt, date or
+ * created_at, which mix employer posting time with fallbacks. Unparseable or future (beyond 5 min clock skew) is null.
+ */
+export function cmArrivalAt(job: { firstSeenAt?: unknown } | null | undefined, now: number = Date.now()): string | null {
+  const raw = job?.firstSeenAt;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t) || t > now + 5 * 60_000) return null;
+  return new Date(t).toISOString();
+}
+
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
 export default function JobCardContent({ job, index, isPro, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription }: JobCardContentProps) {
+  const arrivalAt = cmArrivalAt(job);
   return <>
                             {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
                             <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[196px] w-full">
@@ -425,10 +438,9 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
 
                               {/* Footer divider, posted time on left, existing actions on right with 44px targets */}
                               <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0] mt-1">
-                                <span className="text-xs text-[#475569] truncate">
-                                  {footerText || (job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added")}
-                                  {/* Source provenance, as in the desktop card panel */}
-                                  {!footerText && <span> · {job.directSource ? "Direct feed" : "Active feed"}</span>}
+                                {/* CM arrival age (first_seen_at) only: nothing when unknown, never the employer posting time */}
+                                <span data-testid="cm-arrival-age" className="text-xs text-[#475569] truncate">
+                                  {footerText || (arrivalAt ? formatRelativeTime(arrivalAt) : null)}
                                 </span>
 
                                 {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}

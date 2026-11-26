@@ -153,7 +153,7 @@ function formatRelativeTime(dateStr?: string): string {
     if (isNaN(diffMs)) return dateStr;
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
@@ -175,7 +175,7 @@ function formatDesktopPillTime(dateStr?: string): string {
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return "Just now";
     if (diffHours === 1) return "1 hour ago";
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
@@ -355,6 +355,9 @@ function JobsPageInner() {
   const [selectedSalaryMin, setSelectedSalaryMin] = useState("");
   const [selectedSourceType, setSelectedSourceType] = useState("");
   const [selectedCompany, setSelectedCompany] = useState("");
+  const [selectedExcludedTitles, setSelectedExcludedTitles] = useState<string[]>([]);
+  const [selectedIncludedCompanies, setSelectedIncludedCompanies] = useState<string[]>([]);
+  const [selectedExcludedCompanies, setSelectedExcludedCompanies] = useState<string[]>([]);
   const [allFiltersDrawerOpen, setAllFiltersDrawerOpen] = useState(false);
   const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [sortBy, setSortBy] = useState<"match" | "newest">("match");
@@ -951,6 +954,9 @@ function JobsPageInner() {
       salaryMin: selectedSalaryMin,
       sourceType: selectedSourceType,
       company: selectedCompany,
+      excludedTitles: selectedExcludedTitles,
+      includedCompanies: selectedIncludedCompanies,
+      excludedCompanies: selectedExcludedCompanies,
       isPro,
       sortBy: effectiveSortBy,
       candidateUpdated: effectiveCandidate?.updatedAt || null,
@@ -1000,6 +1006,9 @@ function JobsPageInner() {
       salaryMin: selectedSalaryMin,
       sourceType: selectedSourceType,
       company: selectedCompany,
+      excludedTitles: selectedExcludedTitles,
+      includedCompanies: selectedIncludedCompanies,
+      excludedCompanies: selectedExcludedCompanies,
       isPro,
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
@@ -1103,6 +1112,9 @@ function JobsPageInner() {
             salaryMin: selectedSalaryMin,
             sourceType: selectedSourceType,
             company: selectedCompany,
+            excludedTitles: selectedExcludedTitles,
+            includedCompanies: selectedIncludedCompanies,
+            excludedCompanies: selectedExcludedCompanies,
             isPro,
             sortBy: effectiveSortBy,
             candidate: effectiveCandidate,
@@ -1537,6 +1549,9 @@ function JobsPageInner() {
     setSelectedSalaryMin("");
     setSelectedSourceType("");
     setSelectedCompany("");
+    setSelectedExcludedTitles([]);
+    setSelectedIncludedCompanies([]);
+    setSelectedExcludedCompanies([]);
     setViewHiddenJobs(false);
     setSortBy("match");
     setPage(1);
@@ -1855,6 +1870,9 @@ function JobsPageInner() {
     (selectedSalaryMin ? 1 : 0) +
     (selectedSourceType ? 1 : 0) +
     (selectedCompany ? 1 : 0) +
+    (selectedExcludedTitles.length ? 1 : 0) +
+    (selectedIncludedCompanies.length ? 1 : 0) +
+    (selectedExcludedCompanies.length ? 1 : 0) +
     (effectiveViewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
 
@@ -1870,6 +1888,9 @@ function JobsPageInner() {
     salaryMin: selectedSalaryMin,
     sourceType: selectedSourceType,
     company: selectedCompany,
+    excludedTitles: selectedExcludedTitles,
+    includedCompanies: selectedIncludedCompanies,
+    excludedCompanies: selectedExcludedCompanies,
     hidden: effectiveViewHiddenJobs,
     sort: sortBy,
   }), [
@@ -1885,6 +1906,9 @@ function JobsPageInner() {
     selectedSalaryMin,
     selectedSourceType,
     selectedCompany,
+    selectedExcludedTitles,
+    selectedIncludedCompanies,
+    selectedExcludedCompanies,
     viewHiddenJobs,
     effectiveViewHiddenJobs,
     sortBy,
@@ -1923,6 +1947,10 @@ function JobsPageInner() {
     setSelectedSalaryMin(updated.salaryMin !== undefined ? String(updated.salaryMin) : "");
     setSelectedSourceType(updated.sourceType || "");
     setSelectedCompany(updated.company || "");
+    // Sheets without list controls (desktop drawers) leave these undefined: keep the current lists.
+    if (updated.excludedTitles) setSelectedExcludedTitles(updated.excludedTitles);
+    if (updated.includedCompanies) setSelectedIncludedCompanies(updated.includedCompanies);
+    if (updated.excludedCompanies) setSelectedExcludedCompanies(updated.excludedCompanies);
     setViewHiddenJobs(updated.hidden);
     setSortBy(updated.sort);
     setPage(1);
@@ -2087,8 +2115,9 @@ function JobsPageInner() {
           ) : (
             <>
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
-                {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded. */}
-                {user && preferences && activeTab === "recommended" && (
+                {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded.
+                    Desktop only: on phones Filters is the single entry into the transient filter flow. */}
+                {user && preferences && activeTab === "recommended" && !isPhone && (
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5">
                     <p className="min-w-0 truncate text-[13px] text-[#475569]">
                       Recommended uses your saved preferences
@@ -2109,7 +2138,7 @@ function JobsPageInner() {
                     </button>
                   </div>
                 )}
-                {user && preferences && (
+                {user && preferences && !isPhone && (
                   <PreferencesSheet
                     key={user.id}
                     ownerId={user.id}

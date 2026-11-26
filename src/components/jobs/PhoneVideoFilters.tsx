@@ -3,12 +3,24 @@ import React, { useEffect, useRef, useState } from "react";
 import { X, ChevronDown, Plus, Search } from "lucide-react";
 import { SUPPORTED_COUNTRIES } from "@/lib/countries";
 import { CANONICAL_EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS } from "@/lib/jobs/experienceLevels";
+import { normalizeTextList, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
 import type { JobFilterValues } from "./JobFilterBar";
 import { useSheetPresence } from "./hooks/useSheetPresence";
 import "./phone-video-filters.css";
 
 type Group = "basic" | "compensation" | "interests" | "company";
 type Picker = "countryCode" | "location" | "category" | "company";
+type ListKey = "excludedTitles" | "includedCompanies" | "excludedCompanies";
+const LIST_LABELS: Record<ListKey, string> = {
+  excludedTitles: "Excluded title",
+  includedCompanies: "Include company",
+  excludedCompanies: "Exclude company",
+};
+const LIST_CHIP: Record<ListKey, string> = {
+  excludedTitles: "Not title: ",
+  includedCompanies: "Company: ",
+  excludedCompanies: "Not company: ",
+};
 const CATEGORIES = [
   ["ai", "AI & Machine Learning"],
   ["engineering", "Engineering & Software"],
@@ -50,6 +62,9 @@ const reset = (sort: JobFilterValues["sort"]): JobFilterValues => ({
   company: "",
   industry: "",
   experience: "",
+  excludedTitles: [],
+  includedCompanies: [],
+  excludedCompanies: [],
   hidden: false,
   sort,
 });
@@ -69,6 +84,8 @@ export default function PhoneVideoFilters({
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }) {
   const { present, exiting } = useSheetPresence(isOpen);
+  // Owner flag (default off): when off the list params are never sent, so their controls are not shown.
+  const listsEnabled = savedFeedConstraintsEnforced();
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [expanded, setExpanded] = useState<Group | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -82,7 +99,13 @@ export default function PhoneVideoFilters({
     if (!isOpen) return;
     const trigger = triggerRef?.current;
     pickerTrigger.current = null;
-    setDraft({ ...filters, hidden: false });
+    setDraft({
+      ...filters,
+      excludedTitles: filters.excludedTitles ?? [],
+      includedCompanies: filters.includedCompanies ?? [],
+      excludedCompanies: filters.excludedCompanies ?? [],
+      hidden: false,
+    });
     setExpanded(null);
     setPicker(null);
     setQuery("");
@@ -178,7 +201,45 @@ export default function PhoneVideoFilters({
       </button>
     </div>
   );
+  const textList = (key: ListKey) => (
+    <div className="cm-vf-field">
+      <div className="cm-vf-label">{LIST_LABELS[key]}</div>
+      {!!draft[key]?.length && (
+        <div className="cm-vf-tags">
+          {draft[key]!.map((v) => (
+            <span className="cm-vf-tag" key={v}>
+              {v}
+              <button
+                type="button"
+                aria-label={`Remove ${LIST_LABELS[key]} ${v}`}
+                onClick={() => set(key, (draft[key] ?? []).filter((x) => x !== v))}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <form
+        className="cm-vf-inline-add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const input = e.currentTarget.elements.namedItem("value") as HTMLInputElement;
+          set(key, normalizeTextList([...(draft[key] ?? []), input.value]));
+          input.value = "";
+        }}
+      >
+        <input name="value" aria-label={`Add ${LIST_LABELS[key]}`} maxLength={100} />
+        <button type="submit">
+          <Plus size={13} />
+          Add
+        </button>
+      </form>
+    </div>
+  );
   const chips: Array<{ key: keyof JobFilterValues; value: string; label: string }> = [];
+  for (const key of ["excludedTitles", "includedCompanies", "excludedCompanies"] as const)
+    for (const value of draft[key] ?? []) chips.push({ key, value, label: LIST_CHIP[key] + value });
   for (const key of [
     "countryCode",
     "location",
@@ -210,7 +271,9 @@ export default function PhoneVideoFilters({
     }
   }
   const removeChip = (key: keyof JobFilterValues, value: string) => {
-    if (key === "jobType" || key === "workModel" || key === "level") toggle(key, value);
+    if (key === "excludedTitles" || key === "includedCompanies" || key === "excludedCompanies")
+      set(key, (draft[key] ?? []).filter((x) => x !== value));
+    else if (key === "jobType" || key === "workModel" || key === "level") toggle(key, value);
     else setDraft((d) => ({ ...d, [key]: "" }));
   };
   const keydown = (e: React.KeyboardEvent) => {
@@ -467,8 +530,9 @@ export default function PhoneVideoFilters({
                                 ))}
                               </div>
                             </fieldset>
+                            {listsEnabled && textList("excludedTitles")}
                             {unavailable(
-                              "Job function, excluded titles, required years, executive level and radius."
+                              `Multiple job functions, required years of experience, Director / Executive level and search radius${listsEnabled ? "" : ", and excluded titles (off until enabled by the owner)"}.`
                             )}
                           </>
                         )}
@@ -499,14 +563,14 @@ export default function PhoneVideoFilters({
                         {id === "interests" && (
                           <>
                             {listField("category")}
-                            {unavailable(
-                              "Multiple job functions, industry, skills and IC / manager."
-                            )}
+                            {unavailable("Industry, skills and IC / manager role type.")}
                           </>
                         )}
                         {id === "company" && (
                           <>
                             {listField("company")}
+                            {listsEnabled && textList("includedCompanies")}
+                            {listsEnabled && textList("excludedCompanies")}
                             <fieldset className="cm-vf-field">
                               <legend>
                                 Job source
@@ -533,7 +597,7 @@ export default function PhoneVideoFilters({
                               </div>
                             </fieldset>
                             {unavailable(
-                              "Company include / exclude lists, company stage and staffing-agency exclusion."
+                              `Company stage and staffing-agency exclusion${listsEnabled ? "" : ", and company include / exclude lists (off until enabled by the owner)"}.`
                             )}
                           </>
                         )}

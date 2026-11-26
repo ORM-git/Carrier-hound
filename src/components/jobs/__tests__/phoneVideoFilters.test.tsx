@@ -13,6 +13,9 @@ const base: JobFilterValues = {
   datePosted: "",
   sort: "match",
   hidden: false,
+  excludedTitles: [],
+  includedCompanies: [],
+  excludedCompanies: [],
 };
 beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
@@ -116,5 +119,37 @@ describe("Actual phone Jobs filter contract", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update" }));
     expect(onApply).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("zero or more");
+  });
+});
+
+describe("Owner-gated list filters (excludeTitle / includeCompany / excludeCompany)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("flag off: no list controls; the sheet says they are off", () => {
+    setup();
+    expect(screen.queryByLabelText("Add Excluded title")).toBeNull();
+    expect(screen.queryByLabelText("Add Exclude company")).toBeNull();
+    expect(screen.getByText(/excluded titles \(off until enabled by the owner\)/)).toBeTruthy();
+    expect(screen.getByText(/company include \/ exclude lists \(off until enabled by the owner\)/)).toBeTruthy();
+  });
+  it("flag on: list entries stay draft until Update, then apply as lists", () => {
+    vi.stubEnv("NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "true");
+    const { onApply } = setup();
+    const add = (label: string, value: string) => {
+      const input = screen.getByLabelText(`Add ${label}`);
+      fireEvent.change(input, { target: { value } });
+      fireEvent.submit(input.closest("form")!);
+    };
+    add("Excluded title", "Senior");
+    add("Excluded title", " senior ");
+    add("Include company", "Acme");
+    add("Exclude company", "Initech");
+    expect(onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter Company: Acme" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+    expect(onApply.mock.calls[0][0]).toMatchObject({
+      excludedTitles: ["Senior"],
+      includedCompanies: [],
+      excludedCompanies: ["Initech"],
+    });
   });
 });
