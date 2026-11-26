@@ -10,19 +10,20 @@
  *
  * URL safety limits (honest): before every hop the URL must be http(s), default port, no
  * credentials, no local hostname. DNS is bounded by the hop timeout. EVERY resolved answer
- * must pass: IPv4 via isPrivateIp (logoResolver); IPv6 via the stricter checker-local
- * allowlist isPublicIpv6 (2000::/3 only, minus 6to4, IETF 2001::/23 incl. Teredo, and doc
- * ranges, so loopback in any spelling, multicast, ULA, link-local, IPv4-mapped and NAT64 are
- * all refused). The real fetch pins the socket to the checked address, so a second DNS
- * answer cannot swap in an internal IP for that hop.
- * Not covered: IPv4 special ranges isPrivateIp does not list (e.g. 198.18/15, TEST-NETs),
- * any HTTP proxy that re-resolves, and a resolver that lies.
+ * must pass the checker-local, fail-closed policies: isPublicIPv4 (rejects every IANA
+ * special-use block listed in IPV4_NON_PUBLIC, incl. TEST-NETs, 192.0.0/24, 198.18/15,
+ * multicast, reserved, broadcast, and anything malformed) and isPublicIpv6 (2000::/3 only,
+ * minus 6to4, IETF 2001::/23 incl. Teredo, and doc ranges, so loopback in any spelling,
+ * multicast, ULA, link-local, IPv4-mapped and NAT64 are all refused). The real fetch pins
+ * the socket to the checked address, so a second DNS answer cannot swap in an internal IP
+ * for that hop.
+ * Not covered: any HTTP proxy that re-resolves, and a resolver that lies.
  */
 
 import dns from "node:dns";
 import net from "node:net";
 import { Agent } from "undici";
-import { isPrivateIp, type DnsLookupFn } from "../../src/lib/companies/logoResolver";
+import type { DnsLookupFn } from "../../src/lib/companies/logoResolver";
 
 export interface ApplyJob {
   id: string;
@@ -134,9 +135,24 @@ export function isPublicIpv6(ip: string): boolean {
   return true;
 }
 
+// IANA special-purpose IPv4 blocks (RFC 6890 and successors). 240/4 includes 255.255.255.255.
+const IPV4_NON_PUBLIC: [string, number][] = [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
+  ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.88.99.0", 24], ["192.168.0.0", 16],
+  ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
+];
+const v4ToInt = (ip: string) => ip.split(".").reduce((n, o) => n * 256 + Number(o), 0);
+
+/** True only for a well-formed, unambiguous public unicast IPv4. Fails closed on anything else. */
+export function isPublicIPv4(ip: string): boolean {
+  if (!net.isIPv4(ip)) return false; // rejects malformed, leading zeros, short forms
+  const n = v4ToInt(ip);
+  return !IPV4_NON_PUBLIC.some(([base, bits]) => Math.floor(n / 2 ** (32 - bits)) === Math.floor(v4ToInt(base) / 2 ** (32 - bits)));
+}
+
 function isBlockedAddress(address: string): boolean {
   const family = net.isIP(address.split("%")[0]);
-  if (family === 4) return isPrivateIp(address);
+  if (family === 4) return !isPublicIPv4(address);
   if (family === 6) return !isPublicIpv6(address);
   return true;
 }

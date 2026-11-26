@@ -1,7 +1,8 @@
 /**
  * Offline tests for scripts/lib/apply-link-checker.ts and the check-apply-links CLI.
- * No real DNS, no network, no database: fetch and lookup are fakes; addresses are
- * RFC 5737 documentation IPs; hostnames use the reserved .example TLD.
+ * No real DNS, no network, no database: fetch and lookup are fakes. Public-looking
+ * answers (8.8.8.8, 2a00:...) come only from fake DNS and are never connected to;
+ * hostnames use the reserved .example TLD.
  *
  *   npx tsx scripts/test-apply-link-checker.ts
  */
@@ -22,7 +23,7 @@ import {
   type FetchFn,
 } from "./lib/apply-link-checker";
 
-const PUBLIC = "203.0.113.10"; // TEST-NET-3, not in any private range
+const PUBLIC = "8.8.8.8"; // a real public unicast address; only ever returned by fake DNS, never connected to
 const job = (id: string, url: string): ApplyJob => ({ id, title: `Role ${id}`, company: "Acme", apply_url: url });
 const lookup = async (host: string) => {
   const table: Record<string, string> = { "evil-rebind.example": "10.0.0.5", "metadata.example": "169.254.169.254" };
@@ -330,6 +331,67 @@ test("DNS: a hung lookup times out within the hop deadline; a late rejection is 
   process.off("unhandledRejection", onUnhandled);
   assert.equal(unhandled, 0, "late rejection did not escape");
   assert.equal(f.calls.length, 0);
+});
+
+
+// ---- review #818 round 2: fail-closed public-IPv4 policy ----
+const BLOCKED_V4 = [
+  "0.0.0.0", "0.255.255.255", "10.0.0.1", "10.255.255.255", "100.64.0.1", "100.127.255.255", "127.0.0.1", "127.1.2.3",
+  "169.254.169.254", "172.16.0.1", "172.31.255.255", "192.168.1.1",
+  "192.0.0.8", "192.0.0.170", "192.0.0.171", "192.0.0.255", "192.88.99.1",
+  "192.0.2.1", "198.51.100.7", "203.0.113.10", "198.18.0.1", "198.19.255.255",
+  "224.0.0.1", "239.255.255.250", "240.0.0.1", "254.1.2.3", "255.255.255.255",
+];
+
+test("IPv4: every special-use/non-public address is refused via DNS with zero fetches", async () => {
+  const f = fakeFetch({});
+  const table = Object.fromEntries(BLOCKED_V4.map((a, i) => [`v4-${i}.example`, [a]]));
+  const results = await checkJobs(BLOCKED_V4.map((_, i) => job(`v4${i}`, `https://v4-${i}.example/a`)), realTimeDeps(f.fetch, { lookup: v6Lookup(table) }));
+  results.forEach((r, i) => assert.equal(r.category, "unsafe_url", `${BLOCKED_V4[i]} -> ${r.category} ${r.error ?? ""}`));
+  assert.equal(f.calls.length, 0);
+});
+
+test("IPv4: the same addresses as URL literals are refused; malformed DNS answers are refused", async () => {
+  const f = fakeFetch({});
+  const literals = BLOCKED_V4.map((a, i) => job(`lit${i}`, `http://${a}/a`));
+  const malformed = ["256.1.1.1", "1.2.3", "8.8.8.8.8", "08.8.8.8", "", "not-an-ip"];
+  const table = Object.fromEntries(malformed.map((a, i) => [`bad-${i}.example`, [a]]));
+  const results = await checkJobs([...literals, ...malformed.map((_, i) => job(`bad${i}`, `https://bad-${i}.example/a`))], realTimeDeps(f.fetch, { lookup: v6Lookup(table) }));
+  results.forEach((r) => assert.equal(r.category, "unsafe_url", `${r.originalUrl} -> ${r.category} ${r.error ?? ""}`));
+  assert.equal(f.calls.length, 0);
+});
+
+test("IPv4: one blocked address mixed with public answers refuses the host", async () => {
+  for (const bad of ["198.18.0.1", "192.0.0.170", "203.0.113.10", "10.0.0.1"]) {
+    const f = fakeFetch({});
+    const lk = v6Lookup({ "mix4.example": [PUBLIC, "1.1.1.1", bad] });
+    const [r] = await checkJobs([job("m", "https://mix4.example/a")], realTimeDeps(f.fetch, { lookup: lk }));
+    assert.equal(r.category, "unsafe_url", `${bad}: ${r.category}`);
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test("IPv4: a redirect chain whose third hop resolves to a blocked IP is refused there", async () => {
+  const f = fakeFetch({
+    "HEAD https://hop1.example/a": { status: 302, headers: { location: "https://hop2.example/b" } },
+    "HEAD https://hop2.example/b": { status: 301, headers: { location: "https://hop3.example/c" } },
+  });
+  const [r] = await checkJobs([job("rc", "https://hop1.example/a")], realTimeDeps(f.fetch, { lookup: v6Lookup({ "hop3.example": ["192.0.0.171"] }) }));
+  assert.equal(r.category, "unsafe_url");
+  assert.match(r.error!, /192\.0\.0\.171/);
+  assert.deepEqual(f.calls.map((c) => c.url), ["https://hop1.example/a", "https://hop2.example/b"]);
+});
+
+test("IPv4: public unicast just outside each blocked range still passes", async () => {
+  const edges = ["8.8.8.8", "1.1.1.1", "11.0.0.1", "100.63.255.255", "100.128.0.1", "172.15.255.255", "172.32.0.1", "192.0.1.1", "192.0.3.1", "192.88.98.1", "192.169.0.1", "198.17.255.255", "198.20.0.1", "198.51.99.1", "203.0.112.1", "223.255.255.254"];
+  const table: Record<string, { status: number }> = {};
+  const dnsTable: Record<string, string[]> = {};
+  edges.forEach((a, i) => {
+    table[`HEAD https://edge-${i}.example/a`] = { status: 200 };
+    dnsTable[`edge-${i}.example`] = [a];
+  });
+  const results = await checkJobs(edges.map((_, i) => job(`e${i}`, `https://edge-${i}.example/a`)), realTimeDeps(fakeFetch(table).fetch, { lookup: v6Lookup(dnsTable) }));
+  results.forEach((r, i) => assert.equal(r.category, "reachable", `${edges[i]} -> ${r.category} ${r.error ?? ""}`));
 });
 
 // ---- CLI, spawned in an empty temp dir with no Supabase env, so --db cannot reach anything ----
