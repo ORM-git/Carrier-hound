@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import SavedPrioritiesNote from "./SavedPrioritiesNote";
 import {
   X,
   ChevronRight,
@@ -27,6 +28,8 @@ interface AllFiltersDrawerProps {
   onResetAll: () => void;
   activeCount: number;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  /** Saved-priorities context (display only; never merged into the draft or Apply). */
+  savedPriorities?: { summary: string; onEdit: () => void };
 }
 
 export default function AllFiltersDrawer({
@@ -37,6 +40,7 @@ export default function AllFiltersDrawer({
   onResetAll,
   activeCount,
   triggerRef,
+  savedPriorities,
 }: AllFiltersDrawerProps) {
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [activeSection, setActiveSection] = useState<"basic" | "preferences">("basic");
@@ -383,6 +387,9 @@ export default function AllFiltersDrawer({
 
           {/* Right Form Container (Scrollable) */}
           <div className="flex-1 p-6 overflow-y-auto space-y-8">
+            {savedPriorities && (
+              <SavedPrioritiesNote where="drawer" summary={savedPriorities.summary} onEdit={savedPriorities.onEdit} />
+            )}
             {/* 1. BASIC JOB CRITERIA */}
             {(activeSection === "basic" || typeof window !== "undefined") && (
               <section className="space-y-6">
