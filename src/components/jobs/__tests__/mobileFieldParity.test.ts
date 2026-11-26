@@ -14,11 +14,13 @@ function expectCanonicalMobileMode(source: string) {
 }
 
 describe("mobile field parity (item 20)", () => {
-  it("mobile card keeps location, type, work model, seniority, early-applicant, salary + original, date and source", () => {
+  it("mobile card keeps location, type, work model, seniority, early-applicant, salary + original and CM arrival age", () => {
     expectCanonicalMobileMode(card);
-    for (const s of ["locInfo.primary", "formattedJobType",  "{jobLevel}", "Early applicant", "{isPro ? job.salary", "({job.salary_original})", "formatRelativeTime(job.postedAt)", '"Direct feed" : "Active feed"', "job.category"]) {
+    for (const s of ["locInfo.primary", "formattedJobType", "{jobLevel}", "Early applicant", "{isPro ? job.salary", "({job.salary_original})", "formatRelativeTime(arrivalAt)", "job.category"]) {
       expect(mobileCard).toContain(s);
     }
+    // The footer age is CM arrival (first_seen_at), never the employer posting time.
+    expect(mobileCard).not.toContain("formatRelativeTime(job.postedAt)");
   });
 
   it("rejects removal or replacement of the canonical mobile work-mode chip", () => {
