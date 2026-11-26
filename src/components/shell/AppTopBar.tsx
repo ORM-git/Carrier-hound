@@ -137,6 +137,41 @@ export default function AppTopBar({
 
   return (
     <>
+      {/* Shared mobile brand row (below md, every app screen): horizontal wordmark left, own-profile icon right.
+          It sits OUTSIDE the sticky bar so the bar keeps its 56px height and every sticky offset below it
+          (filters, detail header) stays as it was; this row scrolls away, the bar below stays. */}
+      <div
+        data-testid="app-mobile-brand-row"
+        className="md:hidden h-12 bg-white border-b border-[#F1F5F9] w-full px-4 flex items-center justify-between gap-3"
+      >
+        <Link
+          href="/jobs"
+          aria-label="Career Monke Jobs"
+          data-testid="app-mobile-brand"
+          className="inline-flex items-center min-h-[44px] shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+        >
+          {/* Single-line wordmark in the logo's own blue (rgb 0,46,216) and its bold "career" / light "monke" weights.
+              The only logo asset is the stacked two-line image, so the horizontal form is set as text. */}
+          <span className="text-[#002ED8] text-[24px] leading-none tracking-tight whitespace-nowrap select-none">
+            <span className="font-extrabold">career</span> <span className="font-light">monke</span>
+          </span>
+        </Link>
+        <div className="flex items-center gap-1 shrink-0">
+          {/* /profile sends a signed-out visitor to login with a return to the profile, so the same link serves guests. */}
+          <Link
+            href="/profile"
+            aria-label="Open my profile"
+            aria-current={pathname === "/profile" ? "page" : undefined}
+            data-testid="app-mobile-profile-link"
+            className="inline-flex items-center justify-center w-10 h-10 min-h-[44px] min-w-[44px] rounded-full text-[#0F172A] hover:bg-[#F1F5F9] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
+          >
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+            </svg>
+          </Link>
+        </div>
+      </div>
       <header
         data-testid="app-top-bar"
         className="sticky top-0 z-30 h-14 bg-white border-b border-[#E2E8F0] w-full"
@@ -146,17 +181,6 @@ export default function AppTopBar({
           {/* LEFT: Mobile Hamburger + Page Label + Tabs (on /jobs)               */}
           {/* =================================================================== */}
           <div className={`flex items-center ${mobileTabs ? "gap-1" : "gap-2.5"} sm:gap-4 min-w-0 flex-1 sm:flex-initial`}>
-            {/* The desktop rail owns branding from md up; mobile needs the same
-                brand anchor on every app page, including the compact Jobs tabs. */}
-            <Link
-              href="/jobs"
-              aria-label="Career Monke Jobs"
-              data-testid="app-mobile-brand"
-              className="md:hidden inline-flex items-center justify-center min-w-[56px] min-h-[44px] shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#93C5FD]"
-            >
-              <BrandIcon variant="full" height={24} className="h-6 w-auto" priority />
-            </Link>
-
             {/* Mobile Hamburger Button */}
             <button
               ref={menuButtonRef}
