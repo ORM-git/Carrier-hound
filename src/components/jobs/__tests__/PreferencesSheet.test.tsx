@@ -259,6 +259,33 @@ describe("PreferencesSheet", () => {
     expect(saved.categories).toEqual(["engineering", "data"]); // custom role adds no invented category
   });
 
+  it("job-function picker shows roles as compact chips (checkbox kept for a11y), selected chips above search", () => {
+    setup({ roles: ["Data Engineer"] });
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
+    fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
+    const cb = screen.getByRole("checkbox", { name: "Data Engineer" });
+    expect(cb.className).toContain("sr-only");
+    expect(cb.closest("label")?.className).toContain("bg-[#DBEAFE]");
+    const sel = screen.getByLabelText("Selected job functions");
+    const search = screen.getByLabelText("Search job functions");
+    expect(sel.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("picker has one Job Function header; Back returns to the sheet with the draft and Update intact", () => {
+    const { onSave } = setup({ roles: [] });
+    openGroup("Basic");
+    fireEvent.click(screen.getByRole("button", { name: /Choose job functions|Add job function/ }));
+    expect(screen.getByRole("heading", { name: "Job Function" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Preferences", hidden: true }).parentElement?.parentElement?.className).toContain("hidden");
+    fireEvent.change(screen.getByLabelText("Search job functions"), { target: { value: "data eng" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Data Engineer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByLabelText("Search job functions")).toBeNull();
+    update();
+    expect(lastSaved(onSave).roles).toEqual(["Data Engineer"]);
+  });
+
   it("custom role from search, excluded titles de-duplicated, multi work model and job types", async () => {
     const { onSave } = setup();
     openGroup("Basic");
