@@ -45,6 +45,17 @@ const MIN_ONLY = [
   new RegExp(String.raw`\b(?:at\s+least|minimum(?:\s+of)?|min\.?)\s+${N}\s*\+?\s*${YEARS}`, "gi"),
   new RegExp(String.raw`\b${N}\s*${YEARS}`, "gi"), // plain "2 years": a minimum only with an experience cue
 ];
+// A minus sign attached to the amount ("-2 years"): rejected as invalid, never stripped to a positive.
+const NEGATIVE_AMOUNT = new RegExp(String.raw`(?<![\w.])[-−]${N}\s*\+?\s*${YEARS}`, "gi");
+// Inclusive upper bounds: a max only, never a minimum. A trailing "+" ("up to 3+") is contradictory.
+const UPPER_INCLUSIVE = new RegExp(
+  String.raw`\b(?:up\s+to|at\s+most|maximum(?:\s+of)?|max\.?|no\s+more\s+than|not\s+more\s+than)\s+${N}\s*(\+)?\s*${YEARS}`,
+  "gi",
+);
+// Strict upper bounds ("less than 2"): not representable without approximating, so ambiguous.
+const UPPER_STRICT = new RegExp(String.raw`\b(?:less\s+than|fewer\s+than|under|below)\s+${N}\s*\+?\s*${YEARS}`, "gi");
+// "no more than" / "not more than" are bounds, not negations.
+const UPPER_NEGATION_WORDS = /\b(?:no|not)\s+more\s+than\b/gi;
 const MAX_YEARS = 40;
 
 // A proposition: sentence/bullet, or the side of a contrastive conjunction. Commas do not split.
@@ -63,7 +74,8 @@ export interface YearsEvidence {
   match: string;
   status: YearsEvidenceStatus;
 }
-export type YearsBounds = { years_min: number; years_max: number | null };
+/** years_min null with years_max set = an inclusive upper bound only ("up to 3 years"). */
+export type YearsBounds = { years_min: number | null; years_max: number | null };
 
 /**
  * Every years mention with why it was or was not used. Bounds only when there is at least one scoped,
@@ -79,27 +91,34 @@ export function extractYearsEvidence(text?: string | null): { bounds: YearsBound
     const clause = (raw || "").trim();
     if (!clause) continue;
     const scoped = EXPERIENCE_CUE.test(clause);
-    const classify = (m: RegExpMatchArray, lo: number, hi: number | null): YearsEvidenceStatus => {
+    const negated = NEGATION.test(clause.replace(UPPER_NEGATION_WORDS, " "));
+    type Forced = "ambiguous" | "invalid" | undefined;
+    const classify = (m: RegExpMatchArray, lo: number | null, hi: number | null, forced: Forced): YearsEvidenceStatus => {
       const after = clause.slice((m.index ?? 0) + m[0].length);
       if (AGE_AFTER.test(after) || !scoped) return "not_experience";
-      if (NEGATION.test(clause)) return "negated";
+      if (negated) return "negated";
       if (COMPANY_CUE.test(clause)) return "ambiguous";
-      if (lo < 0 || lo > MAX_YEARS || (hi !== null && (hi < lo || hi > MAX_YEARS))) return "invalid";
+      if (forced) return forced;
+      const bad = (v: number | null) => v !== null && (v < 0 || v > MAX_YEARS);
+      if ((lo === null && hi === null) || bad(lo) || bad(hi) || (lo !== null && hi !== null && hi < lo)) return "invalid";
       return "requirement";
     };
-    const record = (m: RegExpMatchArray, lo: number, hi: number | null) => {
-      const status = classify(m, lo, hi);
+    const record = (m: RegExpMatchArray, lo: number | null, hi: number | null, forced?: Forced) => {
+      const status = classify(m, lo, hi, forced);
       evidence.push({ text: clause, match: m[0].trim(), status });
-      if (status === "requirement") accepted.set(`${lo}-${hi ?? ""}`, { years_min: lo, years_max: hi });
+      if (status === "requirement") accepted.set(`${lo ?? ""}-${hi ?? ""}`, { years_min: lo, years_max: hi });
     };
-
+    // Each pass blanks what it matched, so later passes cannot re-read it ("3-5+ years" is not also "5+ years").
     let rest = clause;
-    for (const m of Array.from(clause.matchAll(RANGE))) record(m, Number(m[1]), Number(m[2]));
-    rest = rest.replace(RANGE, (s) => " ".repeat(s.length)); // "3-5+ years" is not also "5+ years"
-    for (const re of MIN_ONLY) {
-      for (const m of Array.from(rest.matchAll(re))) record(m, Number(m[1]), null);
-      rest = rest.replace(re, (s) => " ".repeat(s.length));
-    }
+    const pass = (re: RegExp, fn: (m: RegExpMatchArray) => void) => {
+      for (const m of Array.from(rest.matchAll(re))) fn(m);
+      rest = rest.replace(re, (x) => " ".repeat(x.length));
+    };
+    pass(RANGE, (m) => record(m, Number(m[1]), Number(m[2])));
+    pass(NEGATIVE_AMOUNT, (m) => record(m, null, null, "invalid"));
+    pass(UPPER_INCLUSIVE, (m) => record(m, null, Number(m[1]), m[2] ? "ambiguous" : undefined));
+    pass(UPPER_STRICT, (m) => record(m, null, null, "ambiguous"));
+    for (const re of MIN_ONLY) pass(re, (m) => record(m, Number(m[1]), null));
   }
 
   const blocked = evidence.some((e) => e.status === "negated" || e.status === "ambiguous" || e.status === "invalid");
