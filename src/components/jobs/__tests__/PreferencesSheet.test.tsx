@@ -294,6 +294,14 @@ describe("PreferencesSheet", () => {
     expect(screen.getByRole("button", { name: "Update" }).className).toContain("shrink-0");
   });
 
+  it("top summary pills use the compact reference size (11px text, 5px/3px padding)", () => {
+    setup({ roles: ["A", "B"] });
+    const pill = screen.getByTestId("preferences-chips").querySelector("[role=listitem]") as HTMLElement;
+    expect(pill.className).toContain("text-[11px]");
+    expect(pill.className).toContain("px-[5px]");
+    expect(pill.className).toContain("py-[3px]");
+  });
+
   it("custom role from search, excluded titles de-duplicated, multi work model and job types", async () => {
     const { onSave } = setup();
     openGroup("Basic");
