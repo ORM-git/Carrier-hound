@@ -1,4 +1,6 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
+import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
+import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
@@ -172,6 +174,10 @@ export async function GET(req: Request) {
           if (isOnboardingStep2EnabledServer(cfEnv)) {
             dbAnswers.resumeProfile = await loadResumeProfileForRanking(supabaseAdmin, user.id);
           }
+          // Preferred skills: ranking only. ONE read per request (the display answers above), reused for ordering so a
+          // transient second-read failure cannot split rank from display. Free: skills are a paid scoring input, so
+          // no boost (and nothing derived from hidden skills reorders the feed).
+          dbAnswers.preferredSkills = isPro ? (displayAnswers?.preferredSkills ?? []) : [];
         }
       } catch (authErr) {
         log.warn("Auth check failed in /api/jobs/recommended", { error: authErr });
@@ -204,6 +210,7 @@ export async function GET(req: Request) {
       country: queryCountry || dbAnswers.country || null,
       countryCode: queryCountryCode || dbAnswers.countryCode || null,
       resumeProfile: dbAnswers.resumeProfile ?? null,
+      preferredSkills: dbAnswers.preferredSkills ?? [],
     };
 
     const isPersonalized = hasOnboardingAnswers(answers);
@@ -230,13 +237,24 @@ export async function GET(req: Request) {
     const hasResume = hasResumeSignals(answers.resumeProfile);
     const selectCols = hasServiceKey
       ? "id, title, company, company_id, location, remote, remote_scope, remote_eligibility, job_type, salary_text, salary_min, salary_max, salary_period, currency, first_seen_at, posted_at, created_at, category, country, country_code" +
-        (hasResume ? ", description, skills" : "") // resume matching reads them
+        (hasResume ? ", description, skills" : isPro && (answers.preferredSkills?.length ?? 0) > 0 ? ", skills" : "") // resume matching (and Pro preferred skills) read them
       : "id, title, location, remote, remote_scope, remote_eligibility, job_type, first_seen_at, last_seen_at, posted_at, created_at, status, is_active, category, country, country_code";
     const PRO_HYDRATE_COLS = "id, apply_url, description, skills, logo_url, companies(logo_url, domain)";
 
     // No count: nothing reads it, and an exact count over the filtered table is extra DB work on every request.
-    let query = supabaseAdmin
-      .from(targetTable)
+    // Excluded skills: decided in the database (RPC) before paging. Needs the service key, the applied RPC and the
+    // owner readiness flag; otherwise fail rather than silently broaden a personalized feed.
+    const excludedParse = parseExcludedSkillParams(searchParams);
+    if (!excludedParse.ok) {
+      return respond({ error: "Invalid excluded skills", jobs: [], totalCount: 0 }, { status: 400 });
+    }
+    const excludedSkillKeys = excludedParse.keys;
+    if (excludedSkillKeys.length && (!hasServiceKey || !excludedSkillsRpcReady(getRuntimeEnv("CM_EXCLUDED_SKILLS_RPC", cfEnv)))) {
+      return respond({ error: "Skill preferences unavailable", jobs: [], totalCount: 0 }, { status: 503 });
+    }
+    let query = (excludedSkillKeys.length
+      ? (supabaseAdmin as any).rpc(EXCLUDED_SKILLS_RPC, { p_excluded: excludedSkillKeys })
+      : supabaseAdmin.from(targetTable))
       .select(selectCols).or(VISIBLE_SOURCE_FILTER)
       .eq("status", "active");
 
@@ -372,6 +390,12 @@ export async function GET(req: Request) {
       return respond({ error: "Company preferences unavailable", jobs: [], totalCount: 0 }, { status: 503 });
     }
     query = applyFeedConstraints(query, feedConstraints);
+    // Required years: needs the jobs min/max_experience_years columns (not on jobs_public): fail rather than broaden.
+    const requiredYears = requiredYearsFromParams(searchParams);
+    if (isRequiredYearsRangeActive(requiredYears) && !hasServiceKey) {
+      return respond({ error: "Experience-years preferences unavailable", jobs: [], totalCount: 0 }, { status: 503 });
+    }
+    query = applyRequiredYears(query, requiredYears);
 
     // 10. Company hard filter (server-side, jobs table only)
     if (companyParam && companyParam.trim() && companyParam.toLowerCase() !== "all") {

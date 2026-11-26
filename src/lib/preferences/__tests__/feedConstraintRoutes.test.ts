@@ -12,6 +12,10 @@ const db = vi.hoisted(() => ({
   tables: {} as Record<string, any[]>,
   users: {} as Record<string, { id: string; user_metadata: Record<string, unknown> }>,
   pg: null as any,
+  rpcCalls: [] as any[],
+  failPreferredRead: false,
+  cfEnv: undefined as Record<string, any> | undefined,
+  preferredReads: 0,
 }));
 
 vi.mock("@supabase/supabase-js", () => {
@@ -23,14 +27,19 @@ vi.mock("@supabase/supabase-js", () => {
     const r = await db.pg.query(`select ($1::text ${SQL_OP[op]} $2::text) as m`, [String(value), pat]);
     return r.rows[0].m as boolean;
   };
-  function from(table: string) {
-    const preds: Array<(r: any) => boolean | Promise<boolean>> = [];
+  function from(table: string, pre?: (r: any) => boolean) {
+    const preds: Array<(r: any) => boolean | Promise<boolean>> = pre ? [pre] : [];
     let range: [number, number] | null = null;
     let limit: number | null = null;
     let method = "select";
+    let selectedCols = "";
     const orders: Array<{ col: string; asc: boolean }> = [];
     const run = async () => {
       if (method !== "select") return { data: [], error: null, count: 0 };
+      if (table === "user_preferences" && selectedCols === "preferred_skills") {
+        db.preferredReads++;
+        if (db.failPreferredRead) return { data: null, error: { code: "40001", message: "transient" }, count: 0 };
+      }
       const keep: any[] = [];
       for (const r of db.tables[table] || []) {
         let ok = true;
@@ -48,7 +57,7 @@ vi.mock("@supabase/supabase-js", () => {
       get(_t, p) {
         if (p === "then") return (res: any, rej: any) => Promise.resolve().then(run).then(res, rej);
         if (p === "maybeSingle" || p === "single") return async () => ({ data: (await run()).data?.[0] ?? null, error: null });
-        if (p === "select") return () => b;
+        if (p === "select") return (cols?: string) => { if (typeof cols === "string") selectedCols = cols; return b; };
         if (p === "insert" || p === "update" || p === "upsert" || p === "delete") return () => { method = String(p); return b; };
         if (p === "eq") return (c: string, v: unknown) => { preds.push((r) => r[c] === v); return b; };
         if (p === "in") return (c: string, vs: unknown[]) => { preds.push((r) => vs.includes(r[c])); return b; };
@@ -78,7 +87,13 @@ vi.mock("@supabase/supabase-js", () => {
   }
   const client = {
     from,
-    rpc: async () => ({ data: null, error: { message: "no rpc in this fake" } }),
+    rpc: (name: string, args: any) => {
+      if (name !== "jobs_without_excluded_skills") return Promise.resolve({ data: null, error: { message: "no rpc in this fake" } });
+      db.rpcCalls.push(args);
+      // Models the RPC contract (exact skillKey equality on jobs.skills, empty/NULL kept); the SQL itself is proven in PGlite.
+      const ex = new Set((args.p_excluded as string[]) || []);
+      return from("jobs", (r) => !(r.skills || []).some((x: string) => ex.has(x.replace(/[ \t\n\r\f\v]+/g, " ").replace(/^ +| +$/g, "").replace(/[A-Z]/g, (c) => c.toLowerCase()))));
+    },
     auth: {
       getUser: async (token?: string) => ({ data: { user: db.users[token || ""] ?? null }, error: db.users[token || ""] ? null : { message: "no session" } }),
       getSession: async () => ({ data: { session: null }, error: null }),
@@ -86,7 +101,7 @@ vi.mock("@supabase/supabase-js", () => {
   };
   return { createClient: () => client, __client: client };
 });
-vi.mock("@cloudflare/next-on-pages", () => ({ getRequestContext: () => ({ env: undefined }) }));
+vi.mock("@cloudflare/next-on-pages", () => ({ getRequestContext: () => ({ env: db.cfEnv }) }));
 vi.mock("@/lib/billing/serverEntitlement", () => ({ getServerEntitlement: async (id: string) => ({ isPro: id.startsWith("pro") }) }));
 vi.mock("@/lib/admin/auth", () => ({ verifyUserNotBanned: async () => ({ isBlocked: false }) }));
 
@@ -291,5 +306,236 @@ describe("client serializer (getLiveJobs): saved constraints are policy-gated", 
     expect(u.pathname).toBe("/api/jobs/search");
     expect(u.searchParams.getAll("excludeTitle")).toEqual([]);
     expect(u.searchParams.get("datePosted")).toBeNull();
+  });
+});
+
+describe.each([
+  ["recommended", recommended],
+  ["search", search],
+])("/api/jobs/%s applies the required-years range (inclusive overlap, unknown kept)", (_name, call) => {
+  const years: Record<string, [number | null, number | null]> = {
+    "Frontend Engineer": [2, 4],
+    "Backend Engineer": [3, null],
+    "Data Engineer": [null, 1],
+    "Platform Engineer": [5, 8],
+    "Editor": [0, 0],
+  };
+  beforeEach(() => {
+    for (const r of rows as any[]) {
+      const y = years[r.title];
+      r.min_experience_years = y ? y[0] : null;
+      r.max_experience_years = y ? y[1] : null;
+    }
+  });
+  const UNKNOWN = ["C++ Developer", "CX Developer", "Sales Engineer", "Software Intern", "Unknown Date Engineer", "Writer"];
+
+  it("0-2: touching 2-4 passes, 3+ and 5-8 do not, 'up to 1' and 0-0 pass, unknown stays", async () => {
+    const { body } = await call("pageSize=50&yearsMin=0&yearsMax=2");
+    expect(titles(body)).toEqual(["Data Engineer", "Editor", "Frontend Engineer", ...UNKNOWN].sort());
+  });
+  it("lower handle only (3, no upper bound): 3+ and 5-8 pass, 'up to 1' does not", async () => {
+    const { body } = await call("pageSize=50&yearsMin=3");
+    expect(titles(body)).toEqual(["Backend Engineer", "Frontend Engineer", "Platform Engineer", ...UNKNOWN].sort());
+  });
+  it("0..top (no params) is no filter; junk values are ignored, never turned into a filter", async () => {
+    expect(titles((await call("pageSize=50&yearsMin=abc&yearsMax=Infinity")).body)).toEqual(ALL);
+    expect(titles((await call("pageSize=50&yearsMin=-3")).body)).toEqual(ALL);
+  });
+  it("ANDs with other constraints", async () => {
+    const { body } = await call("pageSize=50&yearsMin=3&excludeCompany=Globex");
+    expect(titles(body)).toEqual(["Frontend Engineer", "Platform Engineer", ...UNKNOWN.filter((t) => !["Software Intern"].includes(t))].sort());
+  });
+  it("without the service key the range is refused (503), never silently broadened", async () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const { status } = await call("pageSize=50&yearsMin=3");
+    expect(status).toBe(503);
+  });
+});
+
+describe.each([
+  ["recommended", recommended],
+  ["search", search],
+])("/api/jobs/%s excluded skills (database RPC before paging; Free and Pro alike)", (_name, call) => {
+  const ex = (...v: string[]) => `excludedSkills=${encodeURIComponent(JSON.stringify(v))}`;
+  beforeEach(() => {
+    db.rpcCalls.length = 0;
+    process.env.CM_EXCLUDED_SKILLS_RPC = "1";
+    const skills: Record<string, string[] | null> = { "Frontend Engineer": ["React", "CSS"], "Backend Engineer": [" react native "], "Data Engineer": ["SQL"], "Writer": [], "Editor": null };
+    for (const r of rows as any[]) r.skills = skills[r.title] ?? ["Go"];
+  });
+  afterEach(() => { delete process.env.CM_EXCLUDED_SKILLS_RPC; });
+
+  it("hides exact matches only; React does not hide React Native; empty and unknown skills are kept; ANDs with other filters", async () => {
+    const t = titles((await call(`pageSize=50&${ex("react")}`)).body);
+    expect(t).not.toContain("Frontend Engineer");
+    expect(t).toContain("Backend Engineer");
+    expect(t).toContain("Writer");
+    expect(t).toContain("Editor");
+    expect(titles((await call(`pageSize=50&${ex("REACT ", "react native")}`)).body)).not.toEqual(expect.arrayContaining(["Backend Engineer"]));
+    expect(titles((await call(`pageSize=50&${ex("sql")}&excludeCompany=Globex`)).body)).not.toContain("Data Engineer");
+    expect(db.rpcCalls[0]).toEqual({ p_excluded: ["react"] });
+  });
+  it("ABSENT or a valid empty list is a no-op and never calls the RPC", async () => {
+    expect(titles((await call("pageSize=50")).body)).toEqual(ALL);
+    expect(titles((await call(`pageSize=50&${ex()}`)).body)).toEqual(ALL);
+    expect(db.rpcCalls).toEqual([]);
+  });
+  it("PRESENT but invalid is rejected with 400 before any query, even with the readiness flag off: never an unfiltered feed", async () => {
+    const bad = [
+      "notjson", "%7B%7D", "null", encodeURIComponent('[null]'), encodeURIComponent('[5]'), encodeURIComponent('["react",""]'),
+      encodeURIComponent('["  "]'), encodeURIComponent(JSON.stringify(Array.from({ length: 51 }, (_, i) => `s${i}`))),
+      encodeURIComponent(JSON.stringify(["a".repeat(101)])), encodeURIComponent('"react"'), "",
+    ];
+    for (const flag of ["1", undefined]) {
+      if (flag) process.env.CM_EXCLUDED_SKILLS_RPC = flag; else delete process.env.CM_EXCLUDED_SKILLS_RPC;
+      for (const b of bad) {
+        const r = await call(`pageSize=50&excludedSkills=${b}`);
+        expect([b, r.status]).toEqual([b, 400]);
+        expect(titles(r.body)).toEqual([]);
+      }
+    }
+    expect(db.rpcCalls).toEqual([]);
+  });
+  it("boundaries: 50 items and 100 characters are accepted", async () => {
+    const ok = await call(`pageSize=50&${ex("a".repeat(100))}`);
+    expect(ok.status).toBe(200);
+    const fifty = await call(`pageSize=50&${ex(...Array.from({ length: 50 }, (_, i) => `s${i}`))}`);
+    expect(fifty.status).toBe(200);
+  });
+  it("RPC not applied (readiness flag off) or no service key: refused with 503, never silently broadened", async () => {
+    delete process.env.CM_EXCLUDED_SKILLS_RPC;
+    expect((await call(`pageSize=50&${ex("react")}`)).status).toBe(503);
+    process.env.CM_EXCLUDED_SKILLS_RPC = "1";
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    expect((await call(`pageSize=50&${ex("react")}`)).status).toBe(503);
+  });
+});
+
+describe("client serializer: saved excluded skills", () => {
+  const capture = async (opts: Record<string, unknown>) => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => {
+      urls.push(String(u));
+      return new Response(JSON.stringify({ jobs: [], totalCount: 0 }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    const { getLiveJobs } = await import("@/lib/jobs/service");
+    await getLiveJobs({ page: 1, pageSize: 25, baseUrl: "http://x", ...opts } as any);
+    return new URL(urls[0]);
+  };
+  const prefs = { roles: [], categories: [], employmentTypes: [], locations: [], remotePreference: "any", dailyDigestOptIn: false, onboardingCompleted: true, updatedAt: "2026-11-25T00:00:00Z", excludedSkills: [" React ", "react", "SQL"] };
+  afterEach(() => { delete process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS; });
+  it("gate off: never sent. gate on: sent once, keyed and deduped, personalized feed only", async () => {
+    expect((await capture({ sortBy: "match", preferences: prefs })).searchParams.get("excludedSkills")).toBeNull();
+    process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS = "true";
+    expect(JSON.parse((await capture({ sortBy: "match", preferences: prefs })).searchParams.get("excludedSkills")!)).toEqual(["React", "SQL"]);
+    expect((await capture({ sortBy: "newest", preferences: prefs })).searchParams.get("excludedSkills")).toBeNull();
+    expect((await capture({ sortBy: "match", preferences: { ...prefs, advancedPreferencesAvailable: false } })).searchParams.get("excludedSkills")).toBeNull();
+  });
+});
+
+describe("/api/jobs/recommended preferred skills: ranking only, Pro only effect, off by default", () => {
+  const prefsRow = (id: string) => ({ user_id: id, roles: ["Engineer"], experience_level: "mid", remote_preference: "any", locations: [], employment_types: [], categories: [], preferred_skills: [" REACT "] });
+  const order = async (token: string) => (await recommended("pageSize=50", token)).body.jobs.map((j: any) => byTitle[j.id]);
+  beforeEach(() => {
+    for (const r of rows as any[]) r.skills = r.title === "CX Developer" ? ["React"] : ["Vue"];
+    db.tables.user_preferences = [prefsRow("pro-1"), prefsRow("free-1")];
+  });
+  afterEach(() => { delete process.env.CM_PREFERRED_SKILLS_RANKING; delete process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS; db.failPreferredRead = false; db.cfEnv = undefined; });
+
+  it("flag off: identical order for everyone. Flag on: Pro moves the React job up within its tier, Free is unchanged, nothing is hidden", async () => {
+    const proOff = await order("tok-pro");
+    const freeOff = await order("tok-free");
+    process.env.CM_PREFERRED_SKILLS_RANKING = "1";
+    process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS = "true";
+    const proOn = await order("tok-pro");
+    const freeOn = await order("tok-free");
+    expect(proOn.slice().sort()).toEqual(proOff.slice().sort());
+    expect(freeOn).toEqual(freeOff);
+    expect(proOff.indexOf("CX Developer")).toBeGreaterThan(proOff.indexOf("Editor"));
+    expect(proOn.indexOf("CX Developer")).toBeLessThan(proOn.indexOf("Editor"));
+  });
+
+  const cx = (body: any) => body.jobs.find((j: any) => byTitle[j.id] === "CX Developer");
+  const detail = async (id: string, token: string) => (await search(`id=${id}`, token)).body;
+
+  it("route parity: card (recommended) and detail (search?id=) show the same score for Pro with the boost on; Free equals its no-preference score", async () => {
+    const cxId = (rows as any[]).find((r) => r.title === "CX Developer").id;
+    process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS = "true";
+    const freeOff = cx((await recommended("pageSize=50", "tok-free")).body).matchScore;
+    const proOff = cx((await recommended("pageSize=50", "tok-pro")).body).matchScore;
+    process.env.CM_PREFERRED_SKILLS_RANKING = "1";
+    const proCard = cx((await recommended("pageSize=50", "tok-pro")).body);
+    const freeCard = cx((await recommended("pageSize=50", "tok-free")).body);
+    const proDetail = (await detail(cxId, "tok-pro")).jobs[0];
+    const freeDetail = (await detail(cxId, "tok-free")).jobs[0];
+    expect(proCard.matchScore).toBeGreaterThan(proOff);
+    expect(proDetail.matchScore).toBe(proCard.matchScore);
+    expect(freeCard.matchScore).toBe(freeOff);
+    expect(freeDetail.matchScore).toBe(freeCard.matchScore);
+  });
+  it("gate OFF with the flag ON: no boost anywhere and no preferred-skills read at all", async () => {
+    process.env.CM_PREFERRED_SKILLS_RANKING = "1";
+    delete process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS;
+    db.preferredReads = 0;
+    const o = await order("tok-pro");
+    expect(o.indexOf("CX Developer")).toBeGreaterThan(o.indexOf("Editor"));
+    expect(db.preferredReads).toBe(0);
+  });
+  it("one read per request; a failed read means no boost (same rank and display), never an error", async () => {
+    process.env.CM_PREFERRED_SKILLS_RANKING = "1";
+    process.env.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS = "true";
+    db.preferredReads = 0;
+    await order("tok-pro");
+    expect(db.preferredReads).toBe(1);
+    db.failPreferredRead = true;
+    const failed = await recommended("pageSize=50", "tok-pro");
+    expect(failed.status).toBe(200);
+    const off = cx((await (async () => { delete process.env.CM_PREFERRED_SKILLS_RANKING; return recommended("pageSize=50", "tok-pro"); })()).body);
+    expect(cx(failed.body).matchScore).toBe(off.matchScore);
+    expect(failed.body.jobs.map((j: any) => byTitle[j.id])).toEqual((await recommended("pageSize=50", "tok-pro")).body.jobs.map((j: any) => byTitle[j.id]));
+  });
+
+  it("reviewer POST unlock binding-only bonus, gate-off/error fallback, and auth failures", async () => {
+    const cxId = (rows as any[]).find((r) => r.title === "CX Developer").id;
+    const { POST } = await import("@/app/api/jobs/pro/route");
+    const unlock = async (token: string, ids: unknown = [cxId]) => {
+      const r = await POST(new Request("http://x/api/jobs/pro", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }));
+      return { status: r.status, body: await r.json() };
+    };
+    const off = await unlock("tok-pro");
+    expect(off.status).toBe(200);
+    db.cfEnv = { CM_PREFERRED_SKILLS_RANKING: "1", NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS: "true" };
+    db.preferredReads = 0;
+    const on = await unlock("tok-pro");
+    expect(on.status).toBe(200);
+    expect(db.preferredReads).toBe(1);
+    expect(on.body.jobs[0].matchScore).toBeGreaterThan(off.body.jobs[0].matchScore);
+    const card = cx((await recommended("pageSize=50", "tok-pro")).body);
+    expect(on.body.jobs[0].matchScore).toBe(card.matchScore);
+    expect(on.body.jobs[0].scoreRevision).toBe(card.scoreRevision);
+    db.failPreferredRead = true;
+    expect((await unlock("tok-pro")).body.jobs[0].matchScore).toBe(off.body.jobs[0].matchScore);
+    db.failPreferredRead = false;
+    db.cfEnv.NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS = "false";
+    expect((await unlock("tok-pro")).body.jobs[0].matchScore).toBe(off.body.jobs[0].matchScore);
+    expect((await unlock("tok-free")).status).toBe(403);
+    expect((await unlock("bad-token")).status).toBe(401);
+    expect((await unlock("tok-pro", [])).status).toBe(400);
+  });
+
+  it("Cloudflare-binding-only flags (nothing in process.env): list, detail and the Pro endpoint all boost the same Pro score", async () => {
+    db.cfEnv = { CM_PREFERRED_SKILLS_RANKING: "1", NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS: "true" };
+    const cxId = (rows as any[]).find((r) => r.title === "CX Developer").id;
+    const { GET: proGET } = await import("@/app/api/jobs/pro/route");
+    const proRes = await proGET(req(`/api/jobs/pro?id=${cxId}`, "tok-pro"));
+    const proBody = await proRes.json();
+    const proJob = proBody.job ?? proBody.jobs?.[0] ?? proBody;
+    const card = cx((await recommended("pageSize=50", "tok-pro")).body);
+    const det = (await detail(cxId, "tok-pro")).jobs[0];
+    db.cfEnv = undefined;
+    const off = cx((await recommended("pageSize=50", "tok-pro")).body);
+    expect(card.matchScore).toBeGreaterThan(off.matchScore);
+    expect(det.matchScore).toBe(card.matchScore);
+    expect(proJob.matchScore).toBe(card.matchScore);
   });
 });

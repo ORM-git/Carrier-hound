@@ -14,6 +14,10 @@ describe("official ticker logo assets", () => {
   it("matches exact normalized names only", () => {
     expect(officialLogoFor("Reddit")).toBe("/company-logos-static/reddit.png");
     expect(officialLogoFor("  Cloudflare, Inc. ")).toBe("/company-logos-static/cloudflare.png");
+    expect(officialLogoFor("Microsoft")).toBe("/company-logos-static/microsoft.png");
+    expect(officialLogoFor("Microsoft Corporation")).toBe("/company-logos-static/microsoft.png");
+    expect(officialLogoFor("Bosch Group")).toBe("/company-logos-static/bosch.png");
+    expect(officialLogoFor("Wise")).toBe("/company-logos-static/wise.png");
     expect(officialLogoFor("Reddit Analytics Co")).toBeNull();
     expect(officialLogoFor("Wolt Labs")).toBeNull();
     expect(officialLogoFor("Warp")).toBeNull();
