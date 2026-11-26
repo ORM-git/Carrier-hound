@@ -8,7 +8,9 @@
  *    source URLs, company records, Ashby publicWebsite, or board Schema.org metadata).
  *    Never invents or guesses `${slug}.com`.
  * 2. Fetches and validates logos through a multi-tier fallback pipeline:
- *    - Tier 1: ATS Board icons or og:image (Greenhouse, Ashby, Lever).
+ *    - Tier 1: ATS Board icons or og:image (Greenhouse, Ashby, Lever), only when the image is
+ *      NOT hosted on an ATS/aggregator host (see isAtsImageUrl). Board pages still feed domain
+ *      derivation (Ashby publicWebsite, Schema.org Organization url).
  *    - Tier 2: Company website homepage favicon, apple-touch-icon, or og:image.
  *    - Tier 3: Free logo service fallback (Unavatar -> Google Favicons -> DuckDuckGo).
  * 3. Rigorous image validation:
@@ -246,7 +248,48 @@ export const ATS_HOST_KEYWORDS = [
   "sng.link",
   "youtu.be",
   "youtube.com",
+  // Job aggregators / remote-job boards: their apply/source URLs and icons are never a company's own.
+  "remoteok.com",
+  "remoteok.io",
+  "weworkremotely.com",
+  "remotive.com",
+  "remotive.io",
+  "himalayas.app",
+  "jobicy.com",
+  "workingnomads.com",
+  "remote.co",
+  "adzuna.com",
+  "adzuna.co.uk",
+  "monster.com",
+  "simplyhired.com",
+  "dice.com",
+  "jooble.org",
+  "careerjet.com",
+  "otta.com",
+  "welcometothejungle.com",
+  "levels.fyi",
+  // Additional ATS vendors, their CDNs and hosted career sites
+  "greenhouse-cdn.com",
+  "myworkdaysite.com",
+  "jobvite.com",
+  "teamtailor.com",
+  "teamtailor-cdn.com",
+  "join.com",
+  "jobs.personio.de",
+  "jobs.personio.com",
+  "pinpointhq.com",
+  "applytojob.com",
+  "taleo.net",
+  "successfactors.com",
+  "ultipro.com",
+  "recruiting.paylocity.com",
 ];
+
+/**
+ * Hostname prefixes for ATS-owned asset buckets on shared cloud hosts (e.g. Lever's client logos on S3),
+ * which cannot be matched by registrable-domain suffix without blocking the whole cloud provider.
+ */
+const ATS_ASSET_HOST_PREFIXES = ["lever-client-logos."];
 
 const STRIPPED_SUBDOMAINS = [
   "www",
@@ -268,8 +311,24 @@ const STRIPPED_SUBDOMAINS = [
  * Returns true if hostname belongs to an ATS vendor, job board aggregator, or CDN.
  */
 export function isAtsHost(host: string): boolean {
-  const h = host.toLowerCase().trim();
-  return ATS_HOST_KEYWORDS.some((k) => h === k || h.endsWith("." + k));
+  const h = host.toLowerCase().trim().replace(/\.$/, "");
+  return (
+    ATS_HOST_KEYWORDS.some((k) => h === k || h.endsWith("." + k)) ||
+    ATS_ASSET_HOST_PREFIXES.some((p) => h.startsWith(p))
+  );
+}
+
+/**
+ * Returns true if a logo image URL is hosted on an ATS vendor, job aggregator, or their CDNs.
+ * Logos must come from the company's own canonical domain or brand asset, never from a job board.
+ * Unparseable URLs are treated as denied.
+ */
+export function isAtsImageUrl(url: string): boolean {
+  try {
+    return isAtsHost(new URL(url).hostname);
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -834,7 +893,8 @@ export async function inspectCompanyHomepage(
     } catch {}
   }
 
-  if (!html || !finalUrl) {
+  // A homepage that redirects onto an ATS/aggregator host is not the company's own site.
+  if (!html || !finalUrl || isAtsImageUrl(finalUrl)) {
     return null;
   }
 
@@ -849,6 +909,7 @@ export async function inspectCompanyHomepage(
 
   // 1. Try icons in order of declared size
   for (const icon of iconUrls) {
+    if (isAtsImageUrl(icon.url)) continue;
     const imgData = await downloadAndValidateImage(icon.url, minSize);
     if (imgData) {
       return {
@@ -865,7 +926,7 @@ export async function inspectCompanyHomepage(
   }
 
   // 2. Try og:image fallback
-  if (ogImageUrl) {
+  if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
     const imgData = await downloadAndValidateImage(ogImageUrl, minSize);
     if (imgData) {
       return {
@@ -1007,6 +1068,7 @@ export async function resolveCompanyLogo(
 
       // Check board icon >= 128px
       for (const icon of iconUrls) {
+        if (isAtsImageUrl(icon.url)) continue;
         const imgData = await downloadAndValidateImage(icon.url, 128);
         if (imgData) {
           return {
@@ -1022,7 +1084,7 @@ export async function resolveCompanyLogo(
       }
 
       // Check board og:image
-      if (ogImageUrl) {
+      if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
         const imgData = await downloadAndValidateImage(ogImageUrl, 128);
         if (imgData) {
           return {

@@ -32,6 +32,7 @@ import path from "node:path";
 import {
   cleanDomain as libCleanDomain,
   isAtsHost as libIsAtsHost,
+  isAtsImageUrl as libIsAtsImageUrl,
   deriveCompanyDomain as libDeriveCompanyDomain,
   getImageDimensions as libGetImageDimensions,
   getCleanImageMeta as libGetCleanImageMeta,
@@ -127,6 +128,7 @@ export const MIN_HOST_INTERVAL_MS = 1000;
 export const COMPANY_LOGOS_BUCKET = "company-logos";
 
 export const isAtsHost = libIsAtsHost;
+export const isAtsImageUrl = libIsAtsImageUrl;
 export const cleanDomain = libCleanDomain;
 export const getImageDimensions = libGetImageDimensions;
 export const getCleanImageMeta = libGetCleanImageMeta;
@@ -519,8 +521,10 @@ export async function inspectCompany(
   let iconCandidate: CandidateLogo | null = null;
   let ogCandidate: CandidateLogo | null = null;
 
-  // 1. Inspect icon candidates (favicon / apple-touch-icon of at least 128px)
+  // 1. Inspect icon candidates (favicon / apple-touch-icon of at least 128px).
+  // Images hosted by the ATS/aggregator itself (e.g. recruiting.cdn.greenhouse.io) are never canonical.
   for (const icon of iconUrls) {
+    if (isAtsImageUrl(icon.url)) continue;
     const imgData = await downloadAndValidateImage(icon.url, 128, fetcher);
     if (imgData) {
       const ratio = imgData.width / imgData.height;
@@ -544,7 +548,7 @@ export async function inspectCompany(
   }
 
   // 2. Inspect og:image candidate (aspect ratio between 0.6 and 1.6)
-  if (ogImageUrl) {
+  if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
     const imgData = await downloadAndValidateImage(ogImageUrl, 128, fetcher);
     if (imgData) {
       const ratio = imgData.width / imgData.height;
@@ -600,7 +604,8 @@ export async function inspectCompanyHomepage(
     } catch {}
   }
 
-  if (!html || !finalUrl) {
+  // Never treat an ATS/aggregator host (directly or via redirect) as the company's homepage.
+  if (!html || !finalUrl || isAtsHost(domain) || isAtsImageUrl(finalUrl)) {
     return null;
   }
 
@@ -623,6 +628,7 @@ export async function inspectCompanyHomepage(
   }> = [];
 
   for (const icon of iconUrls) {
+    if (isAtsImageUrl(icon.url)) continue;
     const imgData = await downloadAndValidateImage(icon.url, minSize, fetcher);
     if (imgData) {
       downloadedCandidates.push({
@@ -659,7 +665,7 @@ export async function inspectCompanyHomepage(
     };
   }
 
-  if (ogImageUrl) {
+  if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
     const imgData = await downloadAndValidateImage(ogImageUrl, minSize, fetcher);
     if (imgData) {
       return {
