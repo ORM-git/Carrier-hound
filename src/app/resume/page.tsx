@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
-import ProUpgradeScreen from "@/components/billing/ProUpgradeScreen";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import {
   getCandidateProfile,
@@ -65,7 +64,6 @@ export default function ResumePage() {
 
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [isPro, setIsPro] = useState(false);
-  const [isProDefinitive, setIsProDefinitive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
 
@@ -99,7 +97,6 @@ export default function ResumePage() {
         getCandidateProfile(userId),
       ]);
       setIsPro(proRes.isPro);
-      setIsProDefinitive(Boolean(proRes.isDefinitive));
       if (cp && cp.confirmedAt) {
         setCandidate(cp);
         if (typeof window !== "undefined") {
@@ -199,22 +196,10 @@ export default function ResumePage() {
     toast.success("Resume facts confirmed successfully!");
   };
 
-  if (loading || (!isPro && !isProDefinitive)) {
+  // Own Resume page, upload and manual entry are open to every signed-in user (Free and Pro).
+  // Pro stays only for the AI extras (isPro is still passed to them).
+  if (loading) {
     return <ResumeSkeleton user={user} isPro={isPro} />;
-  }
-
-  // Definitively non-Pro
-  if (!isPro) {
-    return (
-      <LoggedInAppShell pageLabel="RESUME" user={user} isPro={false}>
-        <div className="max-w-[1176px] mx-auto px-4 sm:px-6 py-8 w-full">
-          <ProUpgradeScreen
-            title="Unlock Career Monke Pro"
-            subtitle="Upgrade to Pro to upload your resume and compute compatibility scores."
-          />
-        </div>
-              </LoggedInAppShell>
-    );
   }
 
   const isConfirmed = Boolean(candidate && candidate.confirmedAt);

@@ -12,7 +12,7 @@ describe("shared mobile app brand", () => {
     const brand=screen.getByTestId("app-mobile-brand");
     expect(brand.getAttribute("href")).toBe("/jobs");
     expect(brand.getAttribute("aria-label")).toBe("Career Monke Jobs");
-    expect(brand.querySelector('img')?.getAttribute('src')).toContain("careermonke-logo-v2.png");
+    expect(brand.textContent).toBe("career monke");
     expect(screen.getByRole("heading", { name: pageLabel })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
     expect(screen.getByRole("button", { name: "Close navigation menu" })).toBeTruthy();

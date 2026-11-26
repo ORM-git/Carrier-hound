@@ -3,6 +3,28 @@ import { normalizeUserCountries } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 import { clampMatchScore } from "@/lib/matcher/scoring";
+import { normalizeSkillList } from "./skillKey";
+import { savedFeedConstraintsEnforcedFor } from "@/lib/preferences/feedConstraints";
+
+/**
+ * Saved preferred skills for ranking. Server flag CM_PREFERRED_SKILLS_RANKING=1 (owner decision) AND the column must
+ * exist: a separate read, so a missing column (migration not applied) or any error is just "no preferred skills".
+ * Free accounts never see a boost: skills are a paid scoring input and sharedDisplayScore strips them.
+ */
+export async function loadPreferredSkills(db: any, userId: string | null, env?: Record<string, any>): Promise<string[]> {
+  if (!userId) return [];
+  // Same contract as the capability: owner gate (saved constraints applied) AND the ranking flag.
+  const bound = typeof env?.CM_PREFERRED_SKILLS_RANKING === "string" && env.CM_PREFERRED_SKILLS_RANKING.trim() ? env.CM_PREFERRED_SKILLS_RANKING.trim() : undefined;
+  const flag = bound ?? process.env.CM_PREFERRED_SKILLS_RANKING;
+  if (flag !== "1" || !savedFeedConstraintsEnforcedFor(env)) return [];
+  try {
+    const { data, error } = await db.from("user_preferences").select("preferred_skills").eq("user_id", userId).maybeSingle();
+    if (error) return [];
+    return normalizeSkillList(data?.preferred_skills);
+  } catch {
+    return [];
+  }
+}
 
 /** Same saved profile for every list, single-job and unlock response. Never accepts another user's id from a request. */
 export async function loadDisplayScoreAnswers(db: any, userId: string | null, env?: Record<string, any>): Promise<OnboardingAnswers | null> {
@@ -23,6 +45,8 @@ export async function loadDisplayScoreAnswers(db: any, userId: string | null, en
       country: countries.names[0] || null, countryCode: countries.codes[0] || null,
       resumeProfile: isOnboardingStep2EnabledServer(env) ? await loadResumeProfileForRanking(db, userId) : null,
     };
+    const preferredSkills = await loadPreferredSkills(db, userId, env);
+    if (preferredSkills.length) answers.preferredSkills = preferredSkills;
     return hasOnboardingAnswers(answers) || hasResumeSignals(answers.resumeProfile) ? answers : null;
   } catch { return null; }
 }

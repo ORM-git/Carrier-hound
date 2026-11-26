@@ -28,8 +28,10 @@ import JobDetailView, { type ResumeState } from "@/components/jobs/JobDetailView
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
+import SavedPrioritiesNote from "@/components/jobs/SavedPrioritiesNote";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
+import PhoneVideoFilters from "@/components/jobs/PhoneVideoFilters";
 import PreferencesSheet from "@/components/jobs/PreferencesSheet";
 import { activeCount as activePreferenceCount, draftFromPreferences } from "@/lib/preferences/model";
 import JobCardContent from "@/components/jobs/JobCardContent";
@@ -58,6 +60,7 @@ import { withFeedScore } from "@/lib/jobs/recommendations";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader, FEED_PAGE_SIZE, isStalledCursor, PREFETCH_PAGES, refillTarget, type PageLoadOutcome } from "@/lib/jobs/pagination";
 import { datePostedCutoff, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
+import { savedControlDisplay, savedPrioritiesSummary, SAVED_CONTROL_KEYS, type SavedControlKey } from "@/lib/preferences/savedControlDisplay";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
   consumeFirstRunMarker,
@@ -152,7 +155,7 @@ function formatRelativeTime(dateStr?: string): string {
     if (isNaN(diffMs)) return dateStr;
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
@@ -174,7 +177,7 @@ function formatDesktopPillTime(dateStr?: string): string {
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     if (diffHours < 1) return "Just now";
     if (diffHours === 1) return "1 hour ago";
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays === 1) return "1 day ago";
     if (diffDays < 30) return `${diffDays} days ago`;
@@ -354,11 +357,16 @@ function JobsPageInner() {
   const [selectedSalaryMin, setSelectedSalaryMin] = useState("");
   const [selectedSourceType, setSelectedSourceType] = useState("");
   const [selectedCompany, setSelectedCompany] = useState("");
+  const [selectedExcludedTitles, setSelectedExcludedTitles] = useState<string[]>([]);
+  const [selectedIncludedCompanies, setSelectedIncludedCompanies] = useState<string[]>([]);
+  const [selectedExcludedCompanies, setSelectedExcludedCompanies] = useState<string[]>([]);
   const [allFiltersDrawerOpen, setAllFiltersDrawerOpen] = useState(false);
   const allFiltersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [sortBy, setSortBy] = useState<"match" | "newest">("match");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  // Saved-preference values the user has cleared or replaced on the controls this visit.
+  const [dismissedSaved, setDismissedSaved] = useState<SavedControlKey[]>([]);
   const preferencesTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [_openDropdown, setOpenDropdown] = useState<string | null>(null);
 
@@ -950,6 +958,9 @@ function JobsPageInner() {
       salaryMin: selectedSalaryMin,
       sourceType: selectedSourceType,
       company: selectedCompany,
+      excludedTitles: selectedExcludedTitles,
+      includedCompanies: selectedIncludedCompanies,
+      excludedCompanies: selectedExcludedCompanies,
       isPro,
       sortBy: effectiveSortBy,
       candidateUpdated: effectiveCandidate?.updatedAt || null,
@@ -999,6 +1010,9 @@ function JobsPageInner() {
       salaryMin: selectedSalaryMin,
       sourceType: selectedSourceType,
       company: selectedCompany,
+      excludedTitles: selectedExcludedTitles,
+      includedCompanies: selectedIncludedCompanies,
+      excludedCompanies: selectedExcludedCompanies,
       isPro,
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
@@ -1102,6 +1116,9 @@ function JobsPageInner() {
             salaryMin: selectedSalaryMin,
             sourceType: selectedSourceType,
             company: selectedCompany,
+            excludedTitles: selectedExcludedTitles,
+            includedCompanies: selectedIncludedCompanies,
+            excludedCompanies: selectedExcludedCompanies,
             isPro,
             sortBy: effectiveSortBy,
             candidate: effectiveCandidate,
@@ -1522,6 +1539,7 @@ function JobsPageInner() {
   }, [selectedJob, trackedApplications]);
 
   const handleResetFilters = () => {
+    dismissSaved(SAVED_CONTROL_KEYS);
     setSearch("");
     setSelectedCategory("");
     setSelectedCountryCode("");
@@ -1536,6 +1554,9 @@ function JobsPageInner() {
     setSelectedSalaryMin("");
     setSelectedSourceType("");
     setSelectedCompany("");
+    setSelectedExcludedTitles([]);
+    setSelectedIncludedCompanies([]);
+    setSelectedExcludedCompanies([]);
     setViewHiddenJobs(false);
     setSortBy("match");
     setPage(1);
@@ -1854,8 +1875,33 @@ function JobsPageInner() {
     (selectedSalaryMin ? 1 : 0) +
     (selectedSourceType ? 1 : 0) +
     (selectedCompany ? 1 : 0) +
+    (selectedExcludedTitles.length ? 1 : 0) +
+    (selectedIncludedCompanies.length ? 1 : 0) +
+    (selectedExcludedCompanies.length ? 1 : 0) +
     (effectiveViewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
+  // Phone + saved preferences: Filters is the saved-preferences sheet (as in the reference video); its badge counts them.
+  const phoneSavedFilters = Boolean(isPhone && user && preferences);
+  const savedPreferenceCount = preferences
+    ? activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())
+    : 0;
+
+  // Onboarding choices shown as pre-selected on the existing controls: display only (never sent as filters, not
+  // counted, no pills). A control with its own value (URL or manual) or one cleared by the user shows that instead.
+  const dismissSaved = (keys: SavedControlKey[]) => {
+    if (keys.length) setDismissedSaved((prev) => Array.from(new Set([...prev, ...keys])));
+  };
+  const savedSummary = useMemo(
+    () => (user && preferences && activeTab === "recommended" ? savedPrioritiesSummary(savedControlDisplay(preferences)) : ""),
+    [user, preferences, activeTab]
+  );
+  const savedDisplay = useMemo(() => {
+    if (!user || !preferences || activeTab !== "recommended") return undefined;
+    const all = savedControlDisplay(preferences);
+    const out: Partial<Record<SavedControlKey, string>> = {};
+    for (const k of SAVED_CONTROL_KEYS) if (all[k] && !dismissedSaved.includes(k)) out[k] = all[k];
+    return out;
+  }, [user, preferences, activeTab, dismissedSaved]);
 
   const filterValues: JobFilterValues = useMemo(() => ({
     countryCode: selectedCountryCode,
@@ -1869,6 +1915,9 @@ function JobsPageInner() {
     salaryMin: selectedSalaryMin,
     sourceType: selectedSourceType,
     company: selectedCompany,
+    excludedTitles: selectedExcludedTitles,
+    includedCompanies: selectedIncludedCompanies,
+    excludedCompanies: selectedExcludedCompanies,
     hidden: effectiveViewHiddenJobs,
     sort: sortBy,
   }), [
@@ -1884,12 +1933,16 @@ function JobsPageInner() {
     selectedSalaryMin,
     selectedSourceType,
     selectedCompany,
+    selectedExcludedTitles,
+    selectedIncludedCompanies,
+    selectedExcludedCompanies,
     viewHiddenJobs,
     effectiveViewHiddenJobs,
     sortBy,
   ]);
 
   const handleFilterChange = (patch: Partial<JobFilterValues>) => {
+    dismissSaved(SAVED_CONTROL_KEYS.filter((k) => patch[k] !== undefined));
     if (patch.countryCode !== undefined) setSelectedCountryCode(patch.countryCode);
     if (patch.location !== undefined) setSelectedLocation(patch.location);
     if (patch.category !== undefined) setSelectedCategory(patch.category);
@@ -1910,6 +1963,7 @@ function JobsPageInner() {
   };
 
   const handleApplyAllFilters = (updated: JobFilterValues) => {
+    dismissSaved(SAVED_CONTROL_KEYS);
     setSelectedCountryCode(updated.countryCode || "");
     setSelectedLocation(updated.location);
     setSelectedCategory(updated.category);
@@ -1922,6 +1976,10 @@ function JobsPageInner() {
     setSelectedSalaryMin(updated.salaryMin !== undefined ? String(updated.salaryMin) : "");
     setSelectedSourceType(updated.sourceType || "");
     setSelectedCompany(updated.company || "");
+    // Sheets without list controls (desktop drawers) leave these undefined: keep the current lists.
+    if (updated.excludedTitles) setSelectedExcludedTitles(updated.excludedTitles);
+    if (updated.includedCompanies) setSelectedIncludedCompanies(updated.includedCompanies);
+    if (updated.excludedCompanies) setSelectedExcludedCompanies(updated.excludedCompanies);
     setViewHiddenJobs(updated.hidden);
     setSortBy(updated.sort);
     setPage(1);
@@ -2086,8 +2144,12 @@ function JobsPageInner() {
           ) : (
             <>
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
-                {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded. */}
-                {user && preferences && activeTab === "recommended" && (
+                {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded.
+                    Desktop row only: on phones the Filters button opens this same saved-preferences sheet. */}
+                {user && preferences && activeTab === "recommended" && !isPhone && savedSummary && (
+                  <SavedPrioritiesNote where="bar" summary={savedSummary} onEdit={() => setPreferencesOpen(true)} />
+                )}
+                {user && preferences && activeTab === "recommended" && !isPhone && (
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5">
                     <p className="min-w-0 truncate text-[13px] text-[#475569]">
                       Recommended uses your saved preferences
@@ -2100,9 +2162,9 @@ function JobsPageInner() {
                       className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
                     >
                       Preferences
-                      {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced()) > 0 && (
+                      {savedPreferenceCount > 0 && (
                         <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] text-white">
-                          {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())}
+                          {savedPreferenceCount}
                         </span>
                       )}
                     </button>
@@ -2115,7 +2177,8 @@ function JobsPageInner() {
                     isOpen={preferencesOpen}
                     onClose={() => setPreferencesOpen(false)}
                     committed={preferences}
-                    triggerRef={preferencesTriggerRef}
+                    accountPlan={isPro ? "pro" : isProDefinitive ? "free" : "unknown"}
+                    triggerRef={phoneSavedFilters ? filtersTriggerRef : preferencesTriggerRef}
                     onSave={async (next) => {
                       // Persist once; the saved-event re-reads the row, which changes the feed query key
                       // and resets pagination through the existing loader. A failure rejects to the sheet.
@@ -2131,14 +2194,15 @@ function JobsPageInner() {
                   filters={filterValues}
                   onChange={handleFilterChange}
                   onClearAll={handleResetFilters}
-                  activeCount={activeFiltersCount}
+                  activeCount={phoneSavedFilters ? savedPreferenceCount : activeFiltersCount}
                   hiddenCount={hiddenJobIds.length}
                   onOpenAllFilters={() => setAllFiltersDrawerOpen(true)}
-                  onOpenMobileFilters={() => setMobileFiltersOpen(true)}
-                  isMobileFiltersOpen={mobileFiltersOpen}
+                  onOpenMobileFilters={() => (phoneSavedFilters ? setPreferencesOpen(true) : setMobileFiltersOpen(true))}
+                  isMobileFiltersOpen={phoneSavedFilters ? preferencesOpen : mobileFiltersOpen}
                   mobileFiltersTriggerRef={filtersTriggerRef}
                   allFiltersTriggerRef={allFiltersTriggerRef}
                   hasConfirmedResume={hasConfirmedResume}
+                  savedDisplay={savedDisplay}
                 />
 
                 <AllFiltersDrawer
@@ -2152,10 +2216,25 @@ function JobsPageInner() {
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
                   triggerRef={allFiltersTriggerRef}
+                  savedPriorities={
+                    savedSummary
+                      ? { summary: savedSummary, onEdit: () => { setAllFiltersDrawerOpen(false); setPreferencesOpen(true); } }
+                      : undefined
+                  }
                 />
 
+                <PhoneVideoFilters
+                  isOpen={mobileFiltersOpen && isPhone}
+                  onClose={() => {
+                    setMobileFiltersOpen(false);
+                    filtersTriggerRef.current?.focus();
+                  }}
+                  filters={filterValues}
+                  onApply={handleApplyAllFilters}
+                  triggerRef={filtersTriggerRef}
+                />
                 <MobileFilterSheet
-                  isOpen={mobileFiltersOpen}
+                  isOpen={mobileFiltersOpen && !isPhone}
                   onClose={() => {
                     setMobileFiltersOpen(false);
                     filtersTriggerRef.current?.focus();
@@ -2333,6 +2412,7 @@ function JobsPageInner() {
                               job={job}
                               index={index}
                               isPro={isPro}
+                              locationVisible={Boolean(user)}
                               isSaved={isSaved}
                               matchScore={matchScore}
                               cardZeroSkills={cardZeroSkills}
