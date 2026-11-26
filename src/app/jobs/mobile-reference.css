@@ -63,9 +63,6 @@
   .cm-jobs-reference [data-testid="mobile-sticky-header-strip"] > div button:first-child { color: #777; }
   .cm-jobs-reference [data-testid="mobile-sticky-header-strip"] > div button[aria-pressed="true"] { color: #111; }
   .cm-jobs-reference [data-mobile-early="true"] { order: -1; background: #eff6ff !important; }
-  .cm-jobs-reference [data-testid="mobile-card-score"] stop:first-child { stop-color: #dbeafe; }
-  .cm-jobs-reference [data-testid="mobile-card-score"] stop:nth-child(2) { stop-color: #93c5fd; }
-  .cm-jobs-reference [data-testid="mobile-card-score"] stop:last-child { stop-color: #2563eb; }
   .cm-jobs-reference [data-testid="overview-body"] > div:nth-child(2) > div:first-child > div.md\:hidden > span { border-radius: 6px; background: #eff6ff; color: #111; font-weight: 400; }
 }
 @media (max-width: 359px) {
