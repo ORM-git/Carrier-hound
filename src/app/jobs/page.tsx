@@ -2365,7 +2365,7 @@ function JobsPageInner() {
                             <p className="text-xs text-[#B91C1C] pb-2" role="alert">Couldn&apos;t load more jobs.</p>
                           )}
                           {loadingMore && <p className="text-xs text-[#475569] py-3" role="status">Loading Positions...</p>}
-                          {(loadMoreError || autoLoadPaused) && (
+                          {(isPhone ? !loadingMore : (loadMoreError || autoLoadPaused)) && (
                             <button
                               type="button"
                               onClick={handleLoadMore}
@@ -2377,9 +2377,9 @@ function JobsPageInner() {
                           )}
                         </div>
                       )}
-                      {activeTab === "recommended" && !canLoadMore && page > 1 && (
+                      {activeTab === "recommended" && !canLoadMore && (isPhone ? (!loadingJobs && !isDegraded && displayedJobs.length > 0) : page > 1) && (
                         <p data-testid="jobs-list-end" className="pt-4 text-center text-xs text-[#475569]">
-                          You&apos;ve reached the end of this list.
+                          {isPhone ? "You've reached the end of this recommended list for your current search and filters." : "You've reached the end of this list."}
                         </p>
                       )}
                     </div>
