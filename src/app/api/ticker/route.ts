@@ -13,6 +13,7 @@ import { computeWeakEtag, notModifiedResponse } from "@/lib/api/etag";
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 import { officialLogoFor } from "@/lib/companies/officialLogoAssets";
+import { orderTickerQuery, parseTickerMode, tickerTimes, type TickerTimes } from "@/lib/jobs/tickerMode";
 
 export const runtime = "edge";
 
@@ -46,7 +47,10 @@ function getSupabaseAdmin() {
 export interface TickerJobItem {
   company: string;
   title: string;
-  posted_at: string;
+  /** Source posting date. Always set in default mode; null in imported mode when missing/invalid. */
+  posted_at: string | null;
+  /** Imported mode only: when the job was added to CareerMonke (jobs.created_at). */
+  added_at?: string;
   logo_url: string | null;
 }
 
@@ -96,6 +100,7 @@ function sanitizeLogoUrl(rawLogoUrl: string | null | undefined, supabaseUrl?: st
  * Clamps future-dated timestamps within 5 minutes; drops rows further in the future.
  * Matches companies by company_id where available, with case-insensitive name fallback.
  * Returns logo_url only if it points to the project storage host under /company-logos/.
+ * ?mode=imported orders by import time (created_at, id) and adds added_at; see lib/jobs/tickerMode.
  */
 async function getHandler(req: Request) {
   try {
@@ -132,12 +137,12 @@ async function getHandler(req: Request) {
     }
 
     const { supabase, supabaseUrl } = getSupabaseAdmin();
+    const mode = parseTickerMode(new URL(req.url).searchParams.get("mode"));
 
     const TARGET_ITEMS = 20;
     const MAX_PER_COMPANY = 2;
     const PAGE_SIZE = 100;
     const MAX_CANDIDATE_ROWS = 500;
-    const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
     const nowMs = Date.now();
 
     const selectedRows: Array<{
@@ -146,7 +151,7 @@ async function getHandler(req: Request) {
       company_id?: string | null;
       logo_url?: string | null;
       title: string;
-      rawTimestamp: string;
+      times: TickerTimes;
     }> = [];
     const companyCounts = new Map<string, number>();
     const seenJobKeys = new Set<string>();
@@ -156,13 +161,14 @@ async function getHandler(req: Request) {
       const from = offset;
       const to = Math.min(offset + PAGE_SIZE - 1, MAX_CANDIDATE_ROWS - 1);
 
-      const { data: pageRows, error: jobsError } = await supabase
-        .from("jobs")
-        .select("id, company, company_id, title, posted_at, created_at, logo_url").or(VISIBLE_SOURCE_FILTER)
-        .eq("status", "active")
-        .eq("is_active", true)
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(from, to);
+      const { data: pageRows, error: jobsError } = await orderTickerQuery(
+        supabase
+          .from("jobs")
+          .select("id, company, company_id, title, posted_at, created_at, logo_url").or(VISIBLE_SOURCE_FILTER)
+          .eq("status", "active")
+          .eq("is_active", true),
+        mode
+      ).range(from, to);
 
       if (jobsError || !pageRows) {
         if (selectedRows.length === 0 && offset === 0) {
@@ -196,17 +202,8 @@ async function getHandler(req: Request) {
           break;
         }
 
-        const rawTimestamp = row.posted_at || row.created_at;
-        if (!rawTimestamp) {
-          continue;
-        }
-
-        const timeMs = new Date(rawTimestamp).getTime();
-        if (isNaN(timeMs)) {
-          continue;
-        }
-
-        if (timeMs > nowMs + MAX_FUTURE_SKEW_MS) {
+        const times = tickerTimes(row, mode, nowMs);
+        if (!times) {
           continue;
         }
 
@@ -227,7 +224,7 @@ async function getHandler(req: Request) {
           company_id: row.company_id,
           logo_url: row.logo_url,
           title: row.title,
-          rawTimestamp,
+          times,
         });
       }
 
@@ -359,7 +356,8 @@ async function getHandler(req: Request) {
       tickerItems.push({
         company: cleanCompany,
         title: String(row.title || "").trim(),
-        posted_at: new Date(row.rawTimestamp).toISOString(),
+        posted_at: row.times.posted_at,
+        ...(mode === "imported" ? { added_at: row.times.added_at } : {}),
         logo_url: resolvedLogo,
       });
     }

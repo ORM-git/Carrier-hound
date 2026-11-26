@@ -136,11 +136,14 @@ export async function writeJobsByCanonicalIdentity<T extends JobIdentityRow & Re
   const existing = await findExistingJobs(supabase, rows, { canonical: true });
 
   const updates: Array<Record<string, any>> = [];
-  const inserts: T[] = [];
+  const inserts: Array<Record<string, any>> = [];
   rows.forEach((r, i) => {
+    // created_at is the DB insert time (default now()) behind the ticker's added_at: an update
+    // or retry must never reset it, and a source-supplied value must never backdate an insert.
+    const { created_at: _createdAt, ...row } = r;
     const hit = existing[i];
-    if (hit) updates.push({ ...r, id: hit.id, source: hit.source });
-    else inserts.push(r);
+    if (hit) updates.push({ ...row, id: hit.id, source: hit.source });
+    else inserts.push(row);
   });
 
   if (opts.allowUpdates && updates.length > 0) {

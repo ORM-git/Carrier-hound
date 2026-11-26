@@ -521,6 +521,20 @@ async function runTests() {
     twinRes.updated === 1 && twinRes.inserted === 0 && twinDb._dbJobs.length === 2 && twinRow.title === 'New' && twinRow.source === 'greenhouse',
     'greenhouse-board write for an existing greenhouse canonical id updates that row (keeps its source) instead of failing the unique index'
   );
+  // created_at (ticker added_at) is DB-owned: an update, a retry and an insert never send it.
+  const stampDb = createMockSupabase([
+    { id: 'st-1', source: 'greenhouse', source_id: 'greenhouse:acme', source_job_id: 'acme-st', title: 'Old', created_at: '2026-01-01T00:00:00.000Z', is_active: true },
+  ]);
+  const stamped = { source: 'greenhouse', source_id: 'greenhouse:acme', title: 'Retry', is_active: true, created_at: '2030-01-01T00:00:00.000Z' };
+  await writeJobsByCanonicalIdentity(stampDb, [{ ...stamped, source_job_id: 'acme-st' }], { allowUpdates: true });
+  await writeJobsByCanonicalIdentity(stampDb, [{ ...stamped, source_job_id: 'acme-st' }], { allowUpdates: true });
+  await writeJobsByCanonicalIdentity(stampDb, [{ ...stamped, source_job_id: 'acme-new' }], { allowUpdates: true });
+  const sentRows = [...stampDb._upsertCalls.flatMap((c: any) => c.payload), ...stampDb._insertCalls.flatMap((c: any) => c.payload)];
+  assert(
+    sentRows.length === 3 && sentRows.every((r: any) => !('created_at' in r)) &&
+      stampDb._dbJobs.find((j: any) => j.id === 'st-1').created_at === '2026-01-01T00:00:00.000Z',
+    'Canonical writer never sends created_at on update, retry or insert, so the import time is preserved'
+  );
   const twinInsertOnly = await writeJobsByCanonicalIdentity(twinDb, [boardTwin], { allowUpdates: false });
   assert(twinInsertOnly.skippedExisting === 1 && twinInsertOnly.inserted === 0, 'Insert-only mode skips an existing canonical twin without error');
   const scoped = await findExistingJobs(

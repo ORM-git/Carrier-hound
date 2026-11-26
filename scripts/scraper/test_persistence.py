@@ -221,6 +221,23 @@ class WriterTests(unittest.TestCase):
         self.assertFalse(stats["persistence_failed"])
         self.assertEqual(sorted(map(tuple, stats["persisted_source_keys"])), [("greenhouse:acme", "1"), ("greenhouse:acme", "3")])
 
+    def test_created_at_is_never_sent_on_unchanged_changed_or_new_rows(self):
+        # created_at is the DB insert time behind the ticker's added_at; a re-run must never reset it.
+        stamp = {"created_at": "2030-01-01T00:00:00+00:00"}
+        existing = [{**good_row(1), "id": "ex-1"}, {**good_row(2), "id": "ex-2", "title": "Old"}]
+
+        def patch_(req, _body):
+            return httpx.Response(200, json=[{"id": i} for i in re.findall(r"ex-\d+", str(req.url))])
+
+        rec = Recorder(existing=existing, post=ok_insert, patch_=patch_)
+        stats, _ = run_writer(rec, [good_row(1, **stamp), good_row(2, **stamp), good_row(3, **stamp)])
+        self.assertEqual((stats["skipped_unchanged"], stats["updated"], stats["inserted"]), (1, 1, 1))
+        writes = [b for m, b in rec.calls if m in ("PATCH", "POST")]
+        rows = [r for b in writes for r in (b if isinstance(b, list) else [b])]
+        self.assertTrue(rows and all("created_at" not in r for r in rows), rows)
+        touch = [b for m, b in rec.calls if m == "PATCH" and set(b) == {"last_seen_at"}]
+        self.assertEqual(len(touch), 1, "unchanged row only refreshes last_seen_at")
+
     def test_invalid_update_is_rejected_before_patch(self):
         existing = [{**good_row(1), "id": "ex-1", "title": "Old"}]
         rec = Recorder(existing=existing, patch_=lambda *_: self.fail("invalid update must not be sent"))

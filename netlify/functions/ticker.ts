@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
 import { VISIBLE_SOURCE_FILTER } from "../../src/lib/jobs/sourcePolicy";
+import { orderTickerQuery, parseTickerMode, tickerTimes, type TickerTimes } from "../../src/lib/jobs/tickerMode";
 
 function getSupabaseAdmin() {
   const supabaseUrl =
@@ -83,13 +84,14 @@ export async function handler(event?: any) {
 
   try {
     const { supabase, supabaseUrl } = getSupabaseAdmin();
+    // ?mode=imported orders by import time (created_at, id) and adds added_at; see lib/jobs/tickerMode.
+    const mode = parseTickerMode(event?.queryStringParameters?.mode);
 
     const TARGET_ITEMS = 20;
     const MAX_PER_COMPANY = 2;
 
     const PAGE_SIZE = 100;
     const MAX_CANDIDATE_ROWS = 500;
-    const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
     const nowMs = Date.now();
 
     const selectedRows: Array<{
@@ -98,7 +100,7 @@ export async function handler(event?: any) {
       company_id?: string | null;
       logo_url?: string | null;
       title: string;
-      rawTimestamp: string;
+      times: TickerTimes;
     }> = [];
     const companyCounts = new Map<string, number>();
     const seenJobKeys = new Set<string>();
@@ -108,13 +110,14 @@ export async function handler(event?: any) {
       const from = offset;
       const to = Math.min(offset + PAGE_SIZE - 1, MAX_CANDIDATE_ROWS - 1);
 
-      const { data: pageRows, error: jobsError } = await supabase
-        .from("jobs")
-        .select("id, company, company_id, title, posted_at, created_at, logo_url").or(VISIBLE_SOURCE_FILTER)
-        .eq("status", "active")
-        .eq("is_active", true)
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(from, to);
+      const { data: pageRows, error: jobsError } = await orderTickerQuery(
+        supabase
+          .from("jobs")
+          .select("id, company, company_id, title, posted_at, created_at, logo_url").or(VISIBLE_SOURCE_FILTER)
+          .eq("status", "active")
+          .eq("is_active", true),
+        mode
+      ).range(from, to);
 
       if (jobsError || !pageRows) {
         if (selectedRows.length === 0 && offset === 0) {
@@ -147,17 +150,8 @@ export async function handler(event?: any) {
           break;
         }
 
-        const rawTimestamp = row.posted_at || row.created_at;
-        if (!rawTimestamp) {
-          continue;
-        }
-
-        const timeMs = new Date(rawTimestamp).getTime();
-        if (isNaN(timeMs)) {
-          continue;
-        }
-
-        if (timeMs > nowMs + MAX_FUTURE_SKEW_MS) {
+        const times = tickerTimes(row, mode, nowMs);
+        if (!times) {
           continue;
         }
 
@@ -178,7 +172,7 @@ export async function handler(event?: any) {
           company_id: row.company_id,
           logo_url: row.logo_url,
           title: row.title,
-          rawTimestamp,
+          times,
         });
       }
 
@@ -288,7 +282,8 @@ export async function handler(event?: any) {
     const tickerItems: Array<{
       company: string;
       title: string;
-      posted_at: string;
+      posted_at: string | null;
+      added_at?: string;
       logo_url: string | null;
     }> = [];
 
@@ -310,7 +305,8 @@ export async function handler(event?: any) {
       tickerItems.push({
         company: cleanCompany,
         title: String(row.title || "").trim(),
-        posted_at: new Date(row.rawTimestamp).toISOString(),
+        posted_at: row.times.posted_at,
+        ...(mode === "imported" ? { added_at: row.times.added_at } : {}),
         logo_url: resolvedLogo,
       });
     }
