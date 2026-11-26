@@ -7,21 +7,13 @@ import React, { useEffect, useRef } from "react";
 import LiveLandingTicker from "@/components/landing/LiveLandingTicker";
 import dynamic from "next/dynamic";
 const LandingJobsPreview = dynamic(() => import("@/components/landing/LandingJobsPreview"));
-import { Plus_Jakarta_Sans } from "next/font/google";
+import "@/styles/jakarta-local.css";
 import "@/styles/careermonke-landing.css";
 import "@/styles/careermonke-landing-lower.css";
 import "@/styles/mobile-ticker.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 import { initCareerMonkeLandingLower } from "@/components/landing/careermonke-landing-lower-runtime";
 import { useDailyJobsCount } from "@/lib/api/stats";
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500", "600", "700", "800"],
-  display: "swap",
-  variable: "--font-cm-jakarta",
-  adjustFontFallback: false, // glyphs Jakarta lacks (→ ✓) must fall back to system-ui, as in the source
-});
 
 export default function HomePage() {
   const lowerRef = useRef<HTMLDivElement>(null);
@@ -37,7 +29,9 @@ export default function HomePage() {
 
   return (
     <>
-      <div className={`cm-top ${jakarta.variable}`}>
+      <div className="cm-top cm-jakarta-font">
+        <link rel="preload" href="/fonts/plus-jakarta-sans/plus-jakarta-sans-2.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/plus-jakarta-sans/plus-jakarta-sans-3.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <main className="fold">
           <header className="hero">
             <div className="container">

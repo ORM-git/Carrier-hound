@@ -123,11 +123,15 @@ const keyframes = (css: string) => Array.from(css.matchAll(/@keyframes\s+([\w-]+
 
 function check(x: Input) {
   // --- split the page into the top fold and the lower page ---
-  const TOP_OPEN = "<div className={`cm-top ${jakarta.variable}`}>";
+  const TOP_OPEN = '<div className="cm-top cm-jakarta-font">';
+  assert.ok(x.page.includes('import "@/styles/jakarta-local.css";'), "local Jakarta CSS must remain imported");
+  for (const n of [2, 3]) assert.ok(x.page.includes(`<link rel="preload" href="/fonts/plus-jakarta-sans/plus-jakarta-sans-${n}.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />`), "local Jakarta subset preloads must remain wired");
   const LOW_OPEN = '<div className="landing-wrapper" ref={lowerRef}>';
   const t0 = x.page.indexOf(TOP_OPEN), l0 = x.page.indexOf(LOW_OPEN), end = x.page.lastIndexOf("</>");
   assert.ok(t0 > 0 && l0 > t0 && end > l0, "page must render .cm-top then .landing-wrapper as siblings");
-  let top = x.page.slice(t0 + TOP_OPEN.length, l0);
+  // Resource hints add no visible content. Assert exact hints above before removing them
+  // from the pinned visible-markup comparison; keep every hero/layout assertion intact.
+  let top = x.page.slice(t0 + TOP_OPEN.length, l0).replace(/<link rel="preload" href="\/fonts\/plus-jakarta-sans\/plus-jakarta-sans-[23]\.woff2" as="font" type="font\/woff2" crossOrigin="anonymous" \/>/g, "");
   let lower = x.page.slice(l0 + LOW_OPEN.length, end);
 
   // --- 1. top fold: unchanged from f21504b (text, classes), only the three hrefs and the header logo ---
@@ -390,6 +394,9 @@ const mut = (k: keyof Omit<Input, "asset">, a: string | RegExp, b: string): Inpu
   return { ...real, [k]: next };
 };
 const controls: [string, Input][] = [ // each must fail for its own reason (see WHY below)
+  ["local font class removed", mut("page", "cm-top cm-jakarta-font", "cm-top")],
+  ["local font import removed", mut("page", 'import "@/styles/jakarta-local.css";', '')],
+  ["local font preload removed", mut("page", '/fonts/plus-jakarta-sans/plus-jakarta-sans-2.woff2', '/fonts/missing.woff2')],
   ["live ticker removed", mut("page", "<LiveLandingTicker />", "")],
   ["live ticker wrapper redesigned", mut("page", 'className="ls" aria-label="Companies hiring now"', 'className="new-strip" aria-label="Companies hiring now"')],
   ["hero copy changed", mut("page", "Daily jobs count pending verification", "1,240 new jobs found today")],
@@ -447,6 +454,9 @@ const controls: [string, Input][] = [ // each must fail for its own reason (see 
   ["hero CSS styles the cards", mut("topCss", /$/, "\n.cm-top .card { font-family: serif; }\n")],
 ];
 const WHY: Record<string, RegExp> = {
+  "local font class removed": /page must render/,
+  "local font import removed": /local Jakarta CSS/,
+  "local font preload removed": /local Jakarta subset preloads/,
   "live ticker removed": /live ticker keeps/ ,
   "live ticker wrapper redesigned": /live ticker keeps/ ,
   "hero copy changed": /top fold text/,
