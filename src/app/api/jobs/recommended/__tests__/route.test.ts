@@ -1710,12 +1710,12 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     // Every still-valid stored ID exactly once; removed ones never return.
     expect([...p1Ids, ...p2Ids, ...rest]).toEqual(all.filter((id) => id !== del && id !== deact));
     // Inside the epoch reuse window a rebuild shares the same frozen corpus (bounded copy work): the new job is NOT yet in it.
-    expect(ids(await walk(GUEST))).not.toContain(fresh.id);
+    expect(ids(await walk(GUEST, undefined, 100))).not.toContain(fresh.id); // membership-only: walk() visits every page at any size
     // After the reuse window a new epoch is frozen and the next natural reset includes the newly ingested job.
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date(Date.now() + (FROZEN_REUSE_SECONDS + 1) * 1000));
-      expect(ids(await walk(GUEST))).toContain(fresh.id);
+      expect(ids(await walk(GUEST, undefined, 100))).toContain(fresh.id);
     } finally {
       vi.useRealTimers();
     }
