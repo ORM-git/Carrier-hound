@@ -133,3 +133,100 @@ describe("extractSkillRequirements (offline, unwired)", () => {
     expect(skills(extractSkillRequirements({ description: "Requirements\n- Go and REST APIs" }).required)).toEqual(["golang", "rest api"]);
   });
 });
+
+describe("cue scope: each requirement, preference and negation applies to its own proposition", () => {
+  const req = (bullet: string, section = "Requirements") => extractSkillRequirements({ description: `${section}\n- ${bullet}` });
+
+  describe("regressions from review", () => {
+    it("'Java is required, Python is preferred' splits required and preferred", () => {
+      const r = req("Java is required, Python is preferred");
+      expect(skills(r.required)).toEqual(["java"]);
+      expect(skills(r.preferred)).toEqual(["python"]);
+      expect(r.required[0].evidence[0]).toEqual({ raw: "Java", sourceText: "Java is required, Python is preferred", provenance: "requirements_section" });
+    });
+
+    it("'Java not required, but Python is mandatory' negates only Java", () => {
+      const r = req("Java not required, but Python is mandatory");
+      expect(skills(r.negated)).toEqual(["java"]);
+      expect(skills(r.required)).toEqual(["python"]);
+    });
+
+    it("'Python required and Docker is a plus' keeps Python required", () => {
+      const r = req("Python required and Docker is a plus");
+      expect(skills(r.required)).toEqual(["python"]);
+      expect(skills(r.preferred)).toEqual(["docker"]);
+    });
+
+    it("'We do need Java experience' is affirmative, not negated", () => {
+      const r = req("We do need Java experience");
+      expect(skills(r.required)).toEqual(["java"]);
+      expect(r.negated).toEqual([]);
+    });
+  });
+
+  it("distinguishes do/does need from do not/does not/don't/doesn't need", () => {
+    for (const bullet of ["We do need Java", "The team does need Java", "You need Java", "Java is needed"]) {
+      expect(skills(req(bullet).required), bullet).toEqual(["java"]);
+      expect(req(bullet).negated, bullet).toEqual([]);
+    }
+    for (const bullet of ["We do not need Java", "The team does not need Java", "You don't need Java", "It doesn't need Java", "You don’t need Java", "No Java experience needed", "Java experience not needed", "No need for Java"]) {
+      expect(skills(req(bullet).negated), bullet).toEqual(["java"]);
+      expect(req(bullet).required, bullet).toEqual([]);
+    }
+  });
+
+  it("does not read the noun 'needs' as a cue", () => {
+    const r = req("Understanding of business needs, SQL");
+    expect([skills(r.required), r.ambiguous]).toEqual([["sql"], []]);
+  });
+
+  it("handles reversed cue order", () => {
+    const a = req("Python is preferred, Java is required");
+    expect([skills(a.required), skills(a.preferred)]).toEqual([["java"], ["python"]]);
+    const b = req("Docker is a plus, but Python is required");
+    expect([skills(b.required), skills(b.preferred)]).toEqual([["python"], ["docker"]]);
+    const c = req("Python is mandatory, Java is not required");
+    expect([skills(c.required), skills(c.negated)]).toEqual([["python"], ["java"]]);
+    const d = req("Python is preferred but not required");
+    expect([skills(d.preferred), d.required, d.negated]).toEqual([["python"], [], []]);
+  });
+
+  it("keeps a plain required list together", () => {
+    for (const bullet of ["Java, Python and Docker", "Java, Python and Docker required", "Required: Java, Python, Docker", "Experience with Java and Python"]) {
+      expect(skills(req(bullet).required), bullet).toEqual(bullet.includes("Docker") ? ["java", "python", "docker"] : ["java", "python"]);
+    }
+    expect(skills(req("Java, Python and Docker are a plus").preferred)).toEqual(["java", "python", "docker"]);
+  });
+
+  it("keeps comma-separated alternatives as one group", () => {
+    const r = req("Java, Python, or Go");
+    expect(r.required).toEqual([]);
+    expect(r.alternatives.map((a) => [a.bucket, a.options])).toEqual([["required", ["java", "python", "golang"]]]);
+  });
+
+  it("scopes AND/OR groups inside a multi-cue clause", () => {
+    const r = req("Java or Python required, Docker and Kubernetes a plus");
+    expect(r.alternatives.map((a) => [a.bucket, a.options])).toEqual([["required", ["java", "python"]]]);
+    expect(skills(r.preferred)).toEqual(["docker", "kubernetes"]);
+    expect(r.required).toEqual([]);
+  });
+
+  it("keeps semicolon and sentence scope", () => {
+    const r = req("Java is required; Python preferred. Go is not required.");
+    expect([skills(r.required), skills(r.preferred), skills(r.negated)]).toEqual([["java"], ["python"], ["golang"]]);
+  });
+
+  it("marks a skill with no cue of its own after several cued propositions as ambiguous", () => {
+    const r = req("Java is required, Python is preferred, Go");
+    expect([skills(r.required), skills(r.preferred)]).toEqual([["java"], ["python"]]);
+    expect(skills(r.unspecified)).toEqual(["golang"]);
+    expect(r.ambiguous.map((a) => a.raw)).toEqual(["Go"]);
+  });
+
+  it("does not let a required cue inside a preferred list pick a confident bucket", () => {
+    const r = req("Java required", "Preferred Qualifications");
+    expect([r.required, r.preferred]).toEqual([[], []]);
+    expect(skills(r.unspecified)).toEqual(["java"]);
+    expect(r.ambiguous[0]).toEqual({ raw: "Java required", sourceText: "Java required", provenance: "preferred_section" });
+  });
+});
