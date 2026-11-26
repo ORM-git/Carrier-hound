@@ -206,8 +206,8 @@ async function getHandler(req: Request) {
     const selectColumns = (isPro && hasServiceKey)
       ? "*, companies(name, logo_url, category, canonical_domain, domain)"
       : hasServiceKey
-      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
-      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, role_category, top_keywords, is_remote";
+      ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, first_seen_at, salary_min, salary_max, currency, salary_period, salary_text, source_type, source, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
+      : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, first_seen_at, role_category, top_keywords, is_remote";
 
     const displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, userId, cfEnv);
     // One reference instant per response: every score and revision below is computed at it.
@@ -218,8 +218,8 @@ async function getHandler(req: Request) {
       const singleColumns = (isPro && hasServiceKey)
         ? "*, companies(name, logo_url, category, canonical_domain, domain)"
         : hasServiceKey
-        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, status, is_active, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
-        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, status, is_active, role_category, top_keywords, is_remote";
+        ? "id, title, company, location, category, remote, remote_scope, remote_eligibility, country_code, country, job_type, verified, posted_at, created_at, first_seen_at, status, is_active, company_id, companies(name, logo_url), role_category, top_keywords, is_remote"
+        : "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, first_seen_at, status, is_active, role_category, top_keywords, is_remote";
 
       const { data: rawJobRow, error: singleError } = await (supabaseAdmin
         .from(targetTable)
@@ -323,6 +323,7 @@ async function getHandler(req: Request) {
         matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro, scoredAt),
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
+        firstSeenAt: jobRow.first_seen_at ?? null,
         isExpired: isInactive,
         status: isInactive ? "expired" : (jobRow.status || "active"),
         companyDomain: (isPro && !isInactive) ? (jobRow.companies?.domain || null) : null,
@@ -878,6 +879,7 @@ async function getHandler(req: Request) {
           scoreRevision: scoreInputRevision(row, true, scoredAt),
           matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
           postedAt: row.posted_at || row.created_at,
+          firstSeenAt: row.first_seen_at ?? null,
           companyDomain: row.companies?.domain || null,
           companyLogoUrl: row.companies?.logo_url || null,
           logoUrl: resolvedLogo,
@@ -913,6 +915,7 @@ async function getHandler(req: Request) {
         scoreRevision: scoreInputRevision(row, false, scoredAt),
         matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
         postedAt: row.posted_at || row.created_at,
+        firstSeenAt: row.first_seen_at ?? null,
         logoUrl: null,
         logo_url: null,
       };

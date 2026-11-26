@@ -16,6 +16,8 @@ export interface JobCardContentProps {
   job: LiveJob;
   index: number;
   isPro: boolean;
+  /** Signed-in users (Free or Pro) see the job location; guests keep the lock. Defaults to isPro. */
+  locationVisible?: boolean;
   isSaved: boolean;
   matchScore: number | null;
   cardZeroSkills: boolean;
@@ -34,10 +36,24 @@ export interface JobCardContentProps {
   handleLockedAction: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
+/**
+ * When CareerMonke first saw this job (its arrival), or null. Only firstSeenAt counts: never postedAt, date or
+ * created_at, which mix employer posting time with fallbacks. Unparseable or future (beyond 5 min clock skew) is null.
+ */
+export function cmArrivalAt(job: { firstSeenAt?: unknown } | null | undefined, now: number = Date.now()): string | null {
+  const raw = job?.firstSeenAt;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t) || t > now + 5 * 60_000) return null;
+  return new Date(t).toISOString();
+}
+
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
-export default function JobCardContent({ job, index, isPro, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription }: JobCardContentProps) {
+export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription }: JobCardContentProps) {
   const mode = workModelLabel(job);
-  const showLocation = !isPro || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
+  const canSeeLocation = locationVisible ?? isPro;
+  const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
+  const arrivalAt = cmArrivalAt(job);
   return <>
                             {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
                             <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[196px] w-full">
@@ -118,10 +134,10 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                   {/* Row 1, Col 1: Location */}
                                   {showLocation && <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate" title={isPro ? (locInfo.primary || "Location unlisted") : undefined}>
-                                      {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
+                                    <span className="truncate" title={canSeeLocation ? (locInfo.primary || "Location unlisted") : undefined}>
+                                      {canSeeLocation ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                                     </span>
-                                    {isPro && locInfo.extraCount > 0 && (
+                                    {canSeeLocation && locInfo.extraCount > 0 && (
                                       <span
                                         className="text-[11px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded shrink-0 cursor-help leading-none"
                                         title={locInfo.all.join(", ")}
@@ -383,8 +399,8 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                 {showLocation && <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <MapPin className="w-3 h-3 text-[#475569]" />
-                                  {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
-                                  {isPro && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
+                                  {canSeeLocation ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
+                                  {canSeeLocation && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
                                 </span>}
                                 {formattedJobType && (
                                   <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
@@ -425,10 +441,9 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
 
                               {/* Footer divider, posted time on left, existing actions on right with 44px targets */}
                               <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0] mt-1">
-                                <span className="text-xs text-[#475569] truncate">
-                                  {footerText || (job.postedAt ? formatRelativeTime(job.postedAt) : "Recently added")}
-                                  {/* Source provenance, as in the desktop card panel */}
-                                  {!footerText && <span> · {job.directSource ? "Direct feed" : "Active feed"}</span>}
+                                {/* CM arrival age (first_seen_at) only: nothing when unknown, never the employer posting time */}
+                                <span data-testid="cm-arrival-age" className="text-xs text-[#475569] truncate">
+                                  {footerText || (arrivalAt ? formatRelativeTime(arrivalAt) : null)}
                                 </span>
 
                                 {/* Hide lives in the card menu (Remove From List); no standalone ban icon on mobile */}

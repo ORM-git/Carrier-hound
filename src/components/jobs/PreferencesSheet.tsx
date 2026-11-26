@@ -108,6 +108,18 @@ function FieldLabel({ id, children, help }: { id?: string; children: React.React
   );
 }
 
+function FieldClear({ show, label, onClear }: { show: boolean; label: string; onClear: () => void }) {
+  if (!show) return <div className="clear-both" />;
+  return (
+    <>
+      <button type="button" aria-label={`Clear ${label}`} onClick={onClear} className="float-right -my-3 min-h-[44px] px-1 text-[12px] font-semibold text-[#2563EB]">
+        Clear
+      </button>
+      <div className="clear-both" />
+    </>
+  );
+}
+
 function CheckOption({ checked, onChange, children, disabled }: { checked: boolean; onChange: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
     <label
@@ -399,6 +411,17 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
   const committedCountry = (committed.countryCode || "").toUpperCase();
   const legacyLocations = committed.locations || [];
 
+  type PrefChip = { kind: "function" | "excluded" | "type" | "work-model" | "level" | "posted" | "location"; text: string };
+  const activeChips: PrefChip[] = [
+    ...draft.roles.map((text) => ({ kind: "function" as const, text })),
+    ...(constraintsAvailable ? draft.excludedTitles.map((t) => ({ kind: "excluded" as const, text: `Not: ${t}${notAppliedTag}` })) : []),
+    ...draft.employmentTypes.map((t) => ({ kind: "type" as const, text: JOB_TYPE_OPTIONS.find((o) => o.id === t)?.label || t })),
+    ...draft.workModels.map((m) => ({ kind: "work-model" as const, text: WORK_MODEL_LABELS[m] })),
+    ...(draft.experienceLevel ? [{ kind: "level" as const, text: EXPERIENCE_LEVEL_LABELS[draft.experienceLevel as keyof typeof EXPERIENCE_LEVEL_LABELS] || draft.experienceLevel }] : []),
+    ...(constraintsAvailable && draft.datePosted ? [{ kind: "posted" as const, text: `${DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label}${notAppliedTag}` }] : []),
+    ...normalizeTextList([countryName, ...draft.locations]).map((text) => ({ kind: "location" as const, text })),
+  ];
+
   const group = (id: PreferenceGroup, title: string, summary: React.ReactNode, body: React.ReactNode) => {
     const open = expanded === id;
     const count = counts[id];
@@ -602,19 +625,18 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 Clear all
               </button>
             </div>
+            {activeChips.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto px-5 pt-1 pb-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]" data-testid="preferences-chips" aria-label="Selected preferences" role="list" tabIndex={0}>
+                {activeChips.map((c, i) => (
+                  <span key={`${c.kind}-${c.text}-${i}`} data-chip={c.kind} role="listitem" className="shrink-0 whitespace-nowrap rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-[12px] font-medium text-[#1E3A8A]">{c.text}</span>
+                ))}
+              </div>
+            )}
 
             {group(
               "basic",
               "Basic",
-              <>
-                <SummaryLine label="Function" items={draft.roles} />
-                <SummaryLine label={`Excluding${notAppliedTag}`} items={constraintsAvailable ? draft.excludedTitles : []} />
-                <SummaryLine label="Type" items={draft.employmentTypes.map((t) => JOB_TYPE_OPTIONS.find((o) => o.id === t)?.label || t)} />
-                <SummaryLine label="Work model" items={draft.workModels.map((m) => WORK_MODEL_LABELS[m])} />
-                <SummaryLine label="Location" items={[...(countryName ? [countryName] : []), ...draft.locations]} />
-                <SummaryLine label="Level" items={draft.experienceLevel ? [EXPERIENCE_LEVEL_LABELS[draft.experienceLevel as keyof typeof EXPERIENCE_LEVEL_LABELS] || draft.experienceLevel] : []} />
-                <SummaryLine label={`Posted${notAppliedTag}`} items={constraintsAvailable && draft.datePosted ? [DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label] : []} />
-              </>,
+              <span className="block text-[12px] text-[#64748B]">Function / Type / Work model / Location / Level / Posted</span>,
               <>
                 <div>
                   <FieldLabel help="Ranks matching roles higher. Pick from the list or add your own title.">Job function</FieldLabel>
@@ -646,7 +668,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 {constraintsAvailable && !constraintsApplied && <NotAppliedNote />}
 
                 <fieldset>
-                  <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Job type</legend>
+                  <legend className="float-left mb-[13px] text-[13px] font-bold text-[#0F172A]">Job type</legend>
+                    <FieldClear show={draft.employmentTypes.length > 0} label="job type" onClear={() => set("employmentTypes", [])} />
                   <div className="grid grid-cols-2 gap-2">
                     {JOB_TYPE_OPTIONS.map((o) => (
                       <CheckOption key={o.id} checked={draft.employmentTypes.includes(o.id)} onChange={() => set("employmentTypes", toggleIn(draft.employmentTypes, o.id))}>
@@ -657,7 +680,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 </fieldset>
 
                 <fieldset>
-                  <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Work model</legend>
+                  <legend className="float-left mb-[13px] text-[13px] font-bold text-[#0F172A]">Work model</legend>
+                    <FieldClear show={draft.workModels.length > 0} label="work model" onClear={() => set("workModels", [])} />
                   <div className="grid grid-cols-3 gap-2">
                     {WORK_MODELS.map((m) => (
                       <CheckOption
@@ -744,7 +768,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 <PendingControl label="Years of experience (min / max)" reason="Jobs don't carry stated years yet, so a years range can't be matched." />
 
                 <fieldset>
-                  <legend className="mb-2 text-[13px] font-bold text-[#0F172A]">Date posted</legend>
+                  <legend className="float-left mb-[13px] text-[13px] font-bold text-[#0F172A]">Date posted</legend>
+                    <FieldClear show={constraintsAvailable && draft.datePosted !== null} label="date posted" onClear={() => set("datePosted", null)} />
                   {constraintsAvailable ? (
                     <>
                       <div className="grid grid-cols-2 gap-2">

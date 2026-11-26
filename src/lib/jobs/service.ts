@@ -1,5 +1,5 @@
 import { createClient } from "../supabase/client";
-import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted } from "@/lib/preferences/feedConstraints";
+import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted, type SavedFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
@@ -52,6 +52,8 @@ export interface LiveJob {
   description?: string;
   skills?: string[];
   postedAt?: string;
+  /** CM arrival: jobs.first_seen_at (DB default now() on insert, never written by ingestion). Not the employer date. */
+  firstSeenAt?: string | null;
   trackerNotes?: string;
   proUnlockError?: ProUnlockError;
   applicantCount?: number;
@@ -123,6 +125,10 @@ export interface GetJobsOptions {
   salaryMin?: number | string | null;
   sourceType?: string | null;
   company?: string | null;
+  /** Transient repeatable list filters; sent only when savedFeedConstraintsEnforced() (owner flag). */
+  excludedTitles?: string[];
+  includedCompanies?: string[];
+  excludedCompanies?: string[];
   cursor?: string | null;
   eligibility?: "on" | "off" | string;
   currency?: string;
@@ -350,7 +356,7 @@ export function extractCandidateRelevanceTerms(
 }
 
 const PUBLIC_SELECT_COLUMNS =
-  "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
+  "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at, first_seen_at";
 
 import { capJobsPerCompany } from "./capping";
 import { jobTypeOrClause, workModelOrClause } from "./jobFilters";
@@ -368,6 +374,34 @@ const DEGRADED_JOBS_RESULT: GetJobsResult = {
   isDegraded: true,
   error: "degraded",
 };
+
+/**
+ * Saved constraints AND transient sheet lists. Exclusions add up; two inclusion lists intersect. An empty
+ * intersection must match nothing, so it becomes include {saved} + exclude {saved} (empty by contract).
+ */
+export function mergeFeedConstraints(
+  saved: { excludedTitles?: string[]; includedCompanies?: string[]; excludedCompanies?: string[]; datePosted?: string | null } | null | undefined,
+  transient: { excludedTitles?: string[]; includedCompanies?: string[]; excludedCompanies?: string[] }
+): SavedFeedConstraints {
+  const s = normalizeFeedConstraints(saved);
+  const t = normalizeFeedConstraints(transient);
+  let included = s.includedCompanies.length ? s.includedCompanies : t.includedCompanies;
+  let excluded = [...s.excludedCompanies, ...t.excludedCompanies];
+  if (s.includedCompanies.length && t.includedCompanies.length) {
+    const wanted = new Set(t.includedCompanies.map((n) => n.toLowerCase()));
+    included = s.includedCompanies.filter((n) => wanted.has(n.toLowerCase()));
+    if (!included.length) {
+      included = s.includedCompanies;
+      excluded = [...excluded, ...s.includedCompanies];
+    }
+  }
+  return normalizeFeedConstraints({
+    excludedTitles: [...s.excludedTitles, ...t.excludedTitles],
+    includedCompanies: included,
+    excludedCompanies: excluded,
+    datePosted: s.datePosted,
+  });
+}
 
 /**
  * Fetches live active jobs from Supabase with strict server/payload-level Pro gating.
@@ -401,6 +435,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     salaryMin,
     sourceType,
     company,
+    excludedTitles,
+    includedCompanies,
+    excludedCompanies,
     cursor,
   } = options;
 
@@ -417,7 +454,10 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   // enabled nothing saved narrows the feed. When enabled they travel only with the personalized feed's
   // preferences (Recommended tab / match sort); the saved date window AND the browsing one: the narrower
   // wins. Company predicates need the server (jobs_public has no company column).
-  const feedConstraints = normalizeFeedConstraints(savedFeedConstraintsEnforced() ? preferences : null);
+  // Transient list filters from the Jobs filter sheet ride the same owner gate and are AND-ed with the saved ones.
+  const feedConstraints = savedFeedConstraintsEnforced()
+    ? mergeFeedConstraints(preferences, { excludedTitles, includedCompanies, excludedCompanies })
+    : normalizeFeedConstraints(null);
   const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
 
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
@@ -901,6 +941,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           description: "",
           skills: [],
           postedAt: row.posted_at || row.created_at,
+          firstSeenAt: row.first_seen_at ?? null,
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
           scoreRevision: scoreInputRevision(row, isPro, scoredAt),
@@ -1097,6 +1138,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 description: stripHtmlAndExecutableMarkup(job.description || ""),
                 skills: job.skills || [],
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
+                firstSeenAt: job.first_seen_at ?? null,
                 isExpired: isInactive,
                 status: isInactive ? "expired" : (job.status || "active"),
                 // Same employer logo / domain resolution as the Pro listing (search route): job logo, then companies.*.
@@ -1219,6 +1261,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         skills: [],
         scoreRevision: scoreInputRevision(row, false, scoredAt),
         postedAt: row.posted_at || row.created_at,
+        firstSeenAt: row.first_seen_at ?? null,
         isExpired: expired,
         status: expired ? "expired" : (row.status || "active"),
         proUnlockError,
@@ -1305,6 +1348,7 @@ async function loadAllActiveJobs(): Promise<LiveJob[]> {
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
+        firstSeenAt: row.first_seen_at ?? null,
       }));
 
       cachedAllActiveJobs = mapped;

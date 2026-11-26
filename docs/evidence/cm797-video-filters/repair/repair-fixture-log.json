@@ -1,0 +1,95 @@
+{
+  "flag": "repair-fixture",
+  "feedRequests": [
+    {
+      "device": "desktop",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25"
+      }
+    },
+    {
+      "device": "desktop",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "jobType": "contract"
+      }
+    },
+    {
+      "device": "desktop",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "roles": "Business Analyst",
+        "experienceLevel": "entry",
+        "remotePreference": "any",
+        "locations": "United States",
+        "employmentTypes": "full-time",
+        "countryCode": "United States",
+        "jobType": "contract"
+      }
+    },
+    {
+      "device": "phone",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25"
+      }
+    },
+    {
+      "device": "phone",
+      "path": "/api/jobs/recommended",
+      "params": {
+        "page": "1",
+        "pageSize": "25",
+        "roles": "Business Analyst",
+        "experienceLevel": "entry",
+        "remotePreference": "any",
+        "locations": "United States",
+        "employmentTypes": "full-time",
+        "countryCode": "United States"
+      }
+    }
+  ],
+  "checks": {
+    "desktopPreferencesBox": true,
+    "desktopActiveStripVisible": true,
+    "phonePreferencesRow": false,
+    "phoneFiltersBadge": "Filters 5",
+    "phoneArrivalAges": [
+      "2 hours ago",
+      "",
+      "",
+      "4 days ago"
+    ],
+    "phoneFiltersOpensSavedPreferences": true,
+    "phoneUpdateWrites": [
+      "POST /rest/v1/user_preferences",
+      "POST /rest/v1/profiles",
+      "POST /rest/v1/user_preferences"
+    ],
+    "phoneActiveStripVisible": false
+  },
+  "writes": [
+    {
+      "method": "POST",
+      "path": "/rest/v1/user_preferences",
+      "body": "{\"user_id\":\"00000000-0000-4000-8000-000000000001\",\"roles\":[\"Business Analyst\"],\"categories\":[],\"experience_level\":\"entry\",\"employment_types\":[\"full-time\"],\"locations\":[\"United States\"],\"remote_preference\":\"any\",\"work_auth\":null,\"min_salary\":null,\"salary_currency\":\"USD\",\"daily_digest_opt_in\":false,\"onboarding_completed\":true,\"eligibility_filter\":true,\"deleted_at\":null,\"updated_at\":\"2026-11-26T06:54:35.541Z\",\"work_models\":[],\"date_posted\":null,\"excluded_titles\":[],\"included_companies\":[],\"excluded_companies\":[],\"country\":\"United States\",\"country_code\":\"US\"}"
+    },
+    {
+      "method": "POST",
+      "path": "/rest/v1/profiles",
+      "body": "{\"user_id\":\"00000000-0000-4000-8000-000000000001\",\"onboarding_completed_at\":\"2026-11-26T06:54:35.550Z\"}"
+    },
+    {
+      "method": "POST",
+      "path": "/rest/v1/user_preferences",
+      "body": "{\"user_id\":\"00000000-0000-4000-8000-000000000001\",\"onboarding_completed\":true,\"updated_at\":\"2026-11-26T06:54:35.550Z\"}"
+    }
+  ]
+}
