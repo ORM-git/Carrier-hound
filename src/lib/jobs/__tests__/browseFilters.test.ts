@@ -291,7 +291,7 @@ describe("exact numeric predicate fixture (PGlite, unconstrained numeric; SQL is
       let err: any = null;
       try { await pg.query("select salary_meets_threshold(100000::numeric,'USD','yearly',$1::jsonb)", [JSON.stringify(th)]); } catch (x) { err = x; }
       expect(err, name).not.toBeNull();
-      expect(String(err.code ?? err.message), name).toMatch(/22023|must be|malformed|duplicate/);
+      expect(err.code, name).toBe("22023");
     }
     // 80 digits and 18 entries are accepted
     expect(((await pg.query("select salary_meets_threshold(1::numeric,'USD','yearly',$1::jsonb) as ok", [JSON.stringify([e({ num: "1" + "0".repeat(79), den: "1" + "0".repeat(79) })])])).rows[0] as any).ok).toBe(true);
