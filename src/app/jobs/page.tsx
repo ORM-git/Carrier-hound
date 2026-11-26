@@ -1875,6 +1875,11 @@ function JobsPageInner() {
     (selectedExcludedCompanies.length ? 1 : 0) +
     (effectiveViewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
+  // Phone + saved preferences: Filters is the saved-preferences sheet (as in the reference video); its badge counts them.
+  const phoneSavedFilters = Boolean(isPhone && user && preferences);
+  const savedPreferenceCount = preferences
+    ? activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())
+    : 0;
 
   const filterValues: JobFilterValues = useMemo(() => ({
     countryCode: selectedCountryCode,
@@ -2116,7 +2121,7 @@ function JobsPageInner() {
             <>
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
                 {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded.
-                    Desktop only: on phones Filters is the single entry into the transient filter flow. */}
+                    Desktop row only: on phones the Filters button opens this same saved-preferences sheet. */}
                 {user && preferences && activeTab === "recommended" && !isPhone && (
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5">
                     <p className="min-w-0 truncate text-[13px] text-[#475569]">
@@ -2130,22 +2135,22 @@ function JobsPageInner() {
                       className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
                     >
                       Preferences
-                      {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced()) > 0 && (
+                      {savedPreferenceCount > 0 && (
                         <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] text-white">
-                          {activePreferenceCount(draftFromPreferences(preferences), preferences.feedConstraintsAvailable !== false && savedFeedConstraintsEnforced())}
+                          {savedPreferenceCount}
                         </span>
                       )}
                     </button>
                   </div>
                 )}
-                {user && preferences && !isPhone && (
+                {user && preferences && (
                   <PreferencesSheet
                     key={user.id}
                     ownerId={user.id}
                     isOpen={preferencesOpen}
                     onClose={() => setPreferencesOpen(false)}
                     committed={preferences}
-                    triggerRef={preferencesTriggerRef}
+                    triggerRef={phoneSavedFilters ? filtersTriggerRef : preferencesTriggerRef}
                     onSave={async (next) => {
                       // Persist once; the saved-event re-reads the row, which changes the feed query key
                       // and resets pagination through the existing loader. A failure rejects to the sheet.
@@ -2161,11 +2166,11 @@ function JobsPageInner() {
                   filters={filterValues}
                   onChange={handleFilterChange}
                   onClearAll={handleResetFilters}
-                  activeCount={activeFiltersCount}
+                  activeCount={phoneSavedFilters ? savedPreferenceCount : activeFiltersCount}
                   hiddenCount={hiddenJobIds.length}
                   onOpenAllFilters={() => setAllFiltersDrawerOpen(true)}
-                  onOpenMobileFilters={() => setMobileFiltersOpen(true)}
-                  isMobileFiltersOpen={mobileFiltersOpen}
+                  onOpenMobileFilters={() => (phoneSavedFilters ? setPreferencesOpen(true) : setMobileFiltersOpen(true))}
+                  isMobileFiltersOpen={phoneSavedFilters ? preferencesOpen : mobileFiltersOpen}
                   mobileFiltersTriggerRef={filtersTriggerRef}
                   allFiltersTriggerRef={allFiltersTriggerRef}
                   hasConfirmedResume={hasConfirmedResume}

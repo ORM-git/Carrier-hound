@@ -84,7 +84,7 @@ it("real phone Update sends multi-facet browse options and resets pagination; di
 const SIGNED_IN = { id: "u-1", email: "u@example.com" };
 const PREFS = { roles: ["Business Analyst"], employmentTypes: ["full-time"], updatedAt: "2026-11-01T00:00:00Z" };
 
-it("signed-in phone: no Preferences box or sheet; Filters is the single entry into the filter flow", async () => {
+it("signed-in phone: no Preferences row; Filters opens the saved-preferences sheet with its count; Active strip hidden", async () => {
   phone = true;
   h.user = SIGNED_IN;
   h.isPro = true;
@@ -92,28 +92,48 @@ it("signed-in phone: no Preferences box or sheet; Filters is the single entry in
   render(<JobsPage />);
   await flush(10);
   expect(screen.queryByText("Recommended uses your saved preferences")).toBeNull();
-  expect(screen.queryByRole("button", { name: /^Preferences/ })).toBeNull();
+  // Saved roles + employment types: 2 counted preferences on the Filters badge.
+  expect(within(screen.getByTestId("mobile-reference-filters")).getByText("2")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
   await flush();
-  const dialogs = screen.getAllByRole("dialog");
-  expect(dialogs).toHaveLength(1);
-  expect(dialogs[0].getAttribute("aria-label")).toBe("Filter positions");
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.getAttribute("aria-label")).not.toBe("Filter positions");
+  expect(within(dialog).getByText(/Update saves these to your account/)).toBeTruthy();
+  expect(screen.getByTestId("active-filters-strip").className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "md:flex"]));
 });
 
-it("signed-in desktop keeps the Preferences box and sheet; a phone resize removes them", async () => {
+it("guest phone: Filters keeps the transient video filter sheet (no saved preferences to edit)", async () => {
+  phone = true;
+  render(<JobsPage />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  expect(screen.getByRole("dialog", { name: "Filter positions" })).toBeTruthy();
+});
+
+it("signed-in desktop: Preferences box and sheet present; the Active strip renders (md:flex) with its chips and Clear all", async () => {
   h.user = SIGNED_IN;
   h.isPro = true;
   h.prefs = PREFS;
+  window.history.replaceState(null, "", "/jobs?jobType=contract");
   render(<JobsPage />);
   await flush(10);
   expect(screen.getByText("Recommended uses your saved preferences")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /^Preferences/ }));
   await flush();
   expect(screen.getByRole("dialog")).toBeTruthy();
+  const strip = screen.getByTestId("active-filters-strip");
+  expect(strip.className).toContain("md:flex");
+  expect(within(strip).getByText("Active:")).toBeTruthy();
+  expect(within(strip).getByRole("button", { name: "Clear all" })).toBeTruthy();
+  // On a phone resize the row goes; Preferences stay reachable through Filters.
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   await act(async () => { phone = true; listeners.forEach((f) => f()); });
   await flush();
   expect(screen.queryByText("Recommended uses your saved preferences")).toBeNull();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  expect(screen.getAllByRole("dialog").some((d) => d.getAttribute("aria-label") !== "Filter positions")).toBe(true);
 });
 
 it("phone: the Active chips strip is removed below md; filters, the Filters badge and sort stay", async () => {
