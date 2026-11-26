@@ -51,4 +51,25 @@ describe("mapEmploymentType (offline, unwired)", () => {
       expect(CANONICAL_JOB_TYPES).toContain(mapEmploymentType(value, "x").job_type);
     }
   });
+
+  it("never returns an inherited Object.prototype member for adversarial keys", () => {
+    // "toString" is a control: same prototype-inheritance shape, must also fall back.
+    for (const value of ["constructor", "__proto__", "hasOwnProperty", "valueOf", "toString", "  Constructor ", "__PROTO__"]) {
+      expect(mapEmploymentType(value, "x")).toEqual({ job_type: "other", source_value: value, confidence: "fallback" });
+    }
+  });
+
+  it("invariant: job_type is always a CANONICAL_JOB_TYPES member (adversarial + valid table)", () => {
+    const table: unknown[] = [
+      "constructor", "__proto__", "hasOwnProperty", "valueOf", "toString", "isPrototypeOf",
+      "propertyIsEnumerable", "toLocaleString", "__defineGetter__", "__lookupSetter__",
+      "full-time", "Full Time", "permanent", "contractor", "co-op", "internship", "job", "other",
+      "full-time;contract", "", "   ", "temporary", null, undefined, 0, {}, ["contract"],
+    ];
+    for (const value of table) {
+      const { job_type } = mapEmploymentType(value, "x");
+      expect(typeof job_type).toBe("string");
+      expect(CANONICAL_JOB_TYPES).toContain(job_type);
+    }
+  });
 });

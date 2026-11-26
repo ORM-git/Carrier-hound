@@ -32,7 +32,8 @@ export function mapEmploymentType(rawSourceValue: unknown, _sourceName?: string)
   if ((CANONICAL_JOB_TYPES as readonly string[]).includes(key)) {
     return { job_type: key as CanonicalJobType, source_value, confidence: "exact" };
   }
-  const mapped = SYNONYMS[key];
+  // Own-property guard: "constructor", "__proto__", etc. must not resolve to inherited Object.prototype members.
+  const mapped = Object.hasOwn(SYNONYMS, key) ? SYNONYMS[key] : undefined;
   if (mapped) return { job_type: mapped, source_value, confidence: "mapped" };
   return { job_type: "other", source_value, confidence: "fallback" };
 }
