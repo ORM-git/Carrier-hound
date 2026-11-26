@@ -611,7 +611,8 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
                 <SummaryLine label={`Excluding${notAppliedTag}`} items={constraintsAvailable ? draft.excludedTitles : []} />
                 <SummaryLine label="Type" items={draft.employmentTypes.map((t) => JOB_TYPE_OPTIONS.find((o) => o.id === t)?.label || t)} />
                 <SummaryLine label="Work model" items={draft.workModels.map((m) => WORK_MODEL_LABELS[m])} />
-                <SummaryLine label="Location" items={[...(countryName ? [countryName] : []), ...draft.locations]} />
+                {/* Display only: one entry per place (country "United States" + location "united states " shows once); draft.locations is untouched. */}
+                <SummaryLine label="Location" items={normalizeTextList([countryName, ...draft.locations])} />
                 <SummaryLine label="Level" items={draft.experienceLevel ? [EXPERIENCE_LEVEL_LABELS[draft.experienceLevel as keyof typeof EXPERIENCE_LEVEL_LABELS] || draft.experienceLevel] : []} />
                 <SummaryLine label={`Posted${notAppliedTag}`} items={constraintsAvailable && draft.datePosted ? [DATE_OPTIONS.find((o) => o.id === draft.datePosted)!.label] : []} />
               </>,
