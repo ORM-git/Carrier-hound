@@ -7,10 +7,12 @@ const detail = readFileSync("src/components/jobs/JobDetailView.tsx", "utf8");
 const mobileCard = card.slice(card.indexOf("MOBILE VIEW (under sm"), card.indexOf("function CircularMatchRing("));
 
 describe("mobile field parity (item 20)", () => {
-  it("mobile card keeps location, type, work model, seniority, early-applicant, salary + original, date and source", () => {
-    for (const s of ["locInfo.primary", "formattedJobType", "{workModelLabel(job)}", "{jobLevel}", "Early applicant", "{isPro ? job.salary", "({job.salary_original})", "formatRelativeTime(job.postedAt)", '"Direct feed" : "Active feed"', "job.category"]) {
+  it("mobile card keeps location, type, work model, seniority, early-applicant, salary + original and CM arrival age", () => {
+    for (const s of ["locInfo.primary", "formattedJobType", "{workModelLabel(job)}", "{jobLevel}", "Early applicant", "{isPro ? job.salary", "({job.salary_original})", "formatRelativeTime(arrivalAt)", "job.category"]) {
       expect(mobileCard).toContain(s);
     }
+    // The footer age is CM arrival (first_seen_at), never the employer posting time.
+    expect(mobileCard).not.toContain("formatRelativeTime(job.postedAt)");
   });
 
   it("detail keeps salary original, skills, description, Company section and shows the rail (similar jobs, notes) below lg", () => {

@@ -24,7 +24,7 @@
   .cm-jobs-reference [data-testid="mobile-reference-card"] > div:nth-of-type(2) > span svg { display: none; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] > div:nth-of-type(2) > span:last-child { max-width: 100%; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] > div:last-child { margin-top: 6px; padding-top: 0; border-color: transparent; gap: 6px; justify-content: flex-end; }
-  .cm-jobs-reference [data-testid="mobile-reference-card"] > div:last-child > span { display: none; }
+  .cm-jobs-reference [data-testid="mobile-reference-card"] > div:last-child > span { margin-right: auto; font-size: 13px; color: #6b7280; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] button[aria-label="Save job"],
   .cm-jobs-reference [data-testid="mobile-reference-card"] button[aria-label="Unlike job"] { background: transparent; border: 0; color: #111; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] button[aria-label="Save job"] svg,
