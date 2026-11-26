@@ -4,7 +4,7 @@ import { useSheetPresence } from "./hooks/useSheetPresence";
 import "./sheet-motion.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronDown, ChevronLeft, ChevronRight, Search, Check, Lock } from "lucide-react";
+import { X, ChevronDown, ChevronLeft, ChevronRight, Plus, Search, Check, Lock } from "lucide-react";
 import type { UserPreferences } from "@/lib/auth/types";
 import { ONBOARDING_CATEGORIES, JOB_TYPE_OPTIONS, LOCATION_OPTIONS, WORK_AUTH_OPTIONS } from "@/data/onboardingCategories";
 import { SUPPORTED_COUNTRIES, getCountryName } from "@/lib/countries";
@@ -640,19 +640,23 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
               <>
                 <div>
                   <FieldLabel help="Ranks matching roles higher. Pick from the list or add your own title.">Job function</FieldLabel>
+                  {draft.roles.length > 0 && (
+                    <div data-testid="job-function-chips" className="mb-2 flex flex-wrap gap-1.5">
+                      {draft.roles.map((r) => (
+                        <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
+                      ))}
+                    </div>
+                  )}
                   <button
                     ref={roleTriggerRef}
                     type="button"
-                    onClick={() => {
-                      setRolePickerOpen(true);
-
-                    }}
-                    className="flex min-h-[44px] w-full items-center justify-between rounded-xl border border-[#CBD5E1] px-3 text-left text-[14px] text-[#0F172A] hover:border-[#94A3B8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+                    onClick={() => setRolePickerOpen(true)}
+                    aria-label={draft.roles.length ? "Add job function" : "Choose job functions"}
+                    aria-haspopup="dialog"
+                    className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-[#CBD5E1] bg-white px-3 text-[14px] font-medium text-[#0F172A] hover:border-[#94A3B8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
                   >
-                    <span className="truncate">
-                      {draft.roles.length ? `${summarize(draft.roles).shown.join(", ")}${summarize(draft.roles).more ? ` +${summarize(draft.roles).more}` : ""}` : "Choose job functions"}
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-[#94A3B8]" aria-hidden="true" />
+                    <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {draft.roles.length ? "Add" : "Choose job functions"}
                   </button>
                 </div>
 
