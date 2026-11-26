@@ -67,7 +67,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -162,7 +162,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -173,7 +173,7 @@ jobs:
 
       - name: Restore Workday cooldown state
         if: matrix.cohort == 'workday'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .ingest-state/workday-sources.json
           key: workday-state-${{ github.run_id }}-${{ github.run_attempt }}
@@ -217,7 +217,7 @@ jobs:
 
       - name: Save Workday cooldown state
         if: always() && matrix.cohort == 'workday' && needs.plan.outputs.mode == 'write-production-expire'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .ingest-state/workday-sources.json
           key: workday-state-${{ github.run_id }}-${{ github.run_attempt }}
@@ -234,7 +234,7 @@ jobs:
 
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-ingest-${{ matrix.cohort }}-${{ github.run_id }}
           path: reports/python-ingest-*
@@ -252,7 +252,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Download cohort reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: python-ingest-*-${{ github.run_id }}
           path: reports
