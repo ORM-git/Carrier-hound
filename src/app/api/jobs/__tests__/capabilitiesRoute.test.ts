@@ -7,10 +7,10 @@ const KEYS = ["NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "SUPABASE_SERVICE_RO
 afterEach(() => { for (const k of KEYS) delete process.env[k]; cf.env = undefined; });
 
 describe("GET /api/jobs/capabilities", () => {
-  it("is an edge, force-dynamic, uncached route (no build-time capture of server flags)", async () => {
+  it("is an edge, uncached route with no static-export-incompatible dynamic export (no build-time capture of server flags)", async () => {
     const m = await import("../capabilities/route");
     expect(m.runtime).toBe("edge");
-    expect(m.dynamic).toBe("force-dynamic");
+    expect((m as Record<string, unknown>).dynamic).toBeUndefined();
   });
   it("reads the server flags on every request: off by default, on only with gate + service key + RPC flag", async () => {
     const { GET } = await import("../capabilities/route");
