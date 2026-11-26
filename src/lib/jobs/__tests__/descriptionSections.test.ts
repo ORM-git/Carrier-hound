@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { descriptionSections, structuredDescriptionList } from "../descriptionSections";
+import { descriptionSections, extendedDescriptionSections, structuredDescriptionList } from "../descriptionSections";
 
 describe("conservative display-only description sections", () => {
   it("extracts only explicit headed bullets and preserves their wording", () => {
@@ -26,5 +26,40 @@ describe("conservative display-only description sections", () => {
   it("cleans explicit source lists without object coercion", () => {
     expect(structuredDescriptionList(["<b>Paid leave</b>", {}, null, "Paid leave"])).toEqual(["Paid leave"]);
     expect(structuredDescriptionList("- R&amp;D\n• Go")).toEqual(["R&D", "Go"]);
+  });
+});
+
+describe("education and languages sections (opt-in, headed bullets only)", () => {
+  const empty = { responsibilities: [], requirements: [], preferred: [], benefits: [], education: [], languages: [] };
+  it("captures headed education and languages bullet lists", () => {
+    const text = "Education Requirements:\n- BS in Computer Science.\n- Or equivalent experience.\n## Languages\n* English (fluent).\n* Hindi.\nEducational Qualifications\n1. MBA preferred.\nLanguage Requirements\n• German B2.";
+    expect(extendedDescriptionSections(text)).toEqual({ ...empty, education: ["BS in Computer Science.", "Or equivalent experience.", "MBA preferred."], languages: ["English (fluent).", "Hindi.", "German B2."] });
+  });
+  it("does not capture unheaded or inline education/language prose", () => {
+    for (const text of ["A bachelor's degree in CS is required.\n- BS in CS", "Education is important to us.\n- Masters", "Education: BS in CS", "Languages spoken: English, Hindi", "- Fluent English"]) {
+      expect(extendedDescriptionSections(text)).toEqual(empty);
+    }
+  });
+  it("ends a languages list at the first paragraph", () => {
+    expect(extendedDescriptionSections("Languages\n- English\nWe are a global team.\n- Spanish").languages).toEqual(["English"]);
+  });
+  it("still excludes EEO blocks after the new sections", () => {
+    const value = extendedDescriptionSections("Education\n- BS degree\nEqual Opportunity Employer\n- We do not discriminate on any basis.\nLanguages\n- English\nWe are an equal opportunity employer.\n- Race, religion, gender.");
+    expect(value.education).toEqual(["BS degree"]);
+    expect(value.languages).toEqual(["English"]);
+  });
+  it("negative control: education mentioned inside a benefits paragraph is not captured", () => {
+    const value = extendedDescriptionSections("Benefits\n- Paid leave.\nWe also fund continuing education and language classes.\n- Education stipend");
+    expect(value).toEqual({ ...empty, benefits: ["Paid leave."] });
+  });
+  it("keeps the original four sections and shape identical when education/languages headings are present", () => {
+    const text = "Responsibilities\n- Build tools.\nEducation\n- BS degree\n- Review code.\nQualifications\n- Go.\nLanguages\n- English\nBenefits\n- Paid leave.";
+    const legacy = { responsibilities: ["Build tools."], requirements: ["Go."], preferred: [], benefits: ["Paid leave."] };
+    expect(descriptionSections(text)).toStrictEqual(legacy);
+    expect(Object.keys(descriptionSections(text))).toEqual(["responsibilities", "requirements", "preferred", "benefits"]);
+    const { education, languages, ...rest } = extendedDescriptionSections(text);
+    expect(rest).toStrictEqual(legacy);
+    expect(education).toEqual(["BS degree", "Review code."]);
+    expect(languages).toEqual(["English"]);
   });
 });

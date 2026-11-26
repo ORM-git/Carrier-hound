@@ -6,18 +6,31 @@ export type DescriptionSections = {
   preferred: string[];
   benefits: string[];
 };
-type Section = keyof DescriptionSections;
+/** Opt-in superset; descriptionSections() keeps its original four-key shape for existing consumers. */
+export type ExtendedDescriptionSections = DescriptionSections & {
+  education: string[];
+  languages: string[];
+};
+type Section = keyof ExtendedDescriptionSections;
 const headings: Record<Section, RegExp> = {
   responsibilities: /^(?:(?:(?:key|your|main) )?(?:responsibilities|duties)|what you(?:'|’)ll do)$/i,
   requirements: /^(?:(?:required|minimum|basic|essential) )?(?:qualifications|requirements)$/i,
   preferred: /^(?:preferred|desired|nice.to.have) (?:qualifications|requirements|skills)$/i,
   benefits: /^(?:(?:(?:employee|our) )?(?:benefits|perks)|what we offer)$/i,
+  education: /^(?:education(?: requirements)?|educational qualifications)$/i,
+  languages: /^(?:languages|language requirements)$/i,
 };
 const bullet = /^\s*(?:[-*•●▪◦]|\d+[.)])\s+(.+)$/;
 
 /** Only lift explicit headed bullet lists. All original description text remains available. */
 export function descriptionSections(description?: string | null): DescriptionSections {
-  const result: DescriptionSections = { responsibilities: [], requirements: [], preferred: [], benefits: [] };
+  const { responsibilities, requirements, preferred, benefits } = extendedDescriptionSections(description);
+  return { responsibilities, requirements, preferred, benefits };
+}
+
+/** Same headed-bullet-only discipline, plus explicit Education and Languages lists. */
+export function extendedDescriptionSections(description?: string | null): ExtendedDescriptionSections {
+  const result: ExtendedDescriptionSections = { responsibilities: [], requirements: [], preferred: [], benefits: [], education: [], languages: [] };
   const lines = jobDescriptionText(description, true).split(/\r?\n/);
   let section: Section | null = null;
   for (const raw of lines) {
