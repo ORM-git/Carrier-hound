@@ -38,13 +38,33 @@ const update = () => fireEvent.click(screen.getByRole("button", { name: /^(Updat
 const lastSaved = (onSave: any): UserPreferences => onSave.mock.calls.at(-1)[0];
 
 describe("PreferencesSheet", () => {
+
+  it("per-field Clear resets job type, work model and date posted only, and Update saves it", () => {
+    const { onSave } = setup({ employmentTypes: ["full-time"] as any, workModels: ["remote"], datePosted: "7d" });
+    openGroup("Basic");
+    for (const n of ["Job type", "Work model", "Date posted"]) expect(screen.getByRole("group", { name: n })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear date posted" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear date posted" }));
+    expect(screen.queryByRole("button", { name: "Clear date posted" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear work model" }));
+    expect(screen.queryByRole("button", { name: "Clear work model" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear job type" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear job type" }));
+    update();
+    const saved = lastSaved(onSave);
+    expect(saved.datePosted).toBeNull();
+    expect(saved.workModels).toEqual([]);
+    expect(saved.employmentTypes).toEqual([]);
+    expect(saved.roles).toContain("Frontend Developer");
+  });
   it("is a labelled dialog with a top count, compact summaries and +N overflow", () => {
     setup();
     const dialog = screen.getByRole("dialog", { name: "Preferences" });
     // roles, work model, country
     expect(within(dialog).getByLabelText("3 active preferences")).toBeTruthy();
-    expect(dialog.textContent).toContain("Frontend Developer, Backend Engineer");
-    expect(within(dialog).getAllByText("+1").length).toBeGreaterThan(0);
+    expect(chipTexts("function")).toEqual(["Frontend Developer", "Backend Engineer", "My Custom Role"]);
+    expect(chipTexts("work-model")).toEqual(["Remote"]);
+    expect(chipTexts("location")).toEqual(["India"]);
   });
 
   it("nested job-function picker: search, select, back keeps the draft, remove chip", () => {
@@ -280,8 +300,33 @@ describe("Preferences focus lifecycle", () => {
 });
 
 // The collapsed Basic summary's "Location:" line (country first, then saved locations), display only.
-const locationLine = () =>
-  Array.from(screen.getByRole("dialog", { name: "Preferences" }).querySelectorAll("p")).find((p) => p.textContent?.startsWith("Location:"))?.textContent ?? null;
+const chipTexts = (kind: string) =>
+  Array.from(screen.getByRole("dialog", { name: "Preferences" }).querySelectorAll(`[data-testid="preferences-chips"] [data-chip="${kind}"]`)).map((c) => c.textContent || "");
+const locationLine = () => "Location: " + chipTexts("location").join(", ");
+
+describe("PreferencesSheet chips are truthful about saved-but-not-applied constraints", () => {
+  const over = { excludedTitles: ["Intern"], datePosted: "7d" as const };
+  it("flag off: excluded and posted chips say saved, not applied", () => {
+    vi.stubEnv("NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "false");
+    setup(over);
+    expect(chipTexts("excluded")).toEqual(["Not: Intern (saved, not applied)"]);
+    expect(chipTexts("posted")).toEqual(["Past week (saved, not applied)"]);
+    vi.unstubAllEnvs();
+  });
+  it("flag on: the same chips carry no not-applied tag", () => {
+    vi.stubEnv("NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "true");
+    setup(over);
+    expect(chipTexts("excluded")).toEqual(["Not: Intern"]);
+    expect(chipTexts("posted")).toEqual(["Past week"]);
+    vi.unstubAllEnvs();
+  });
+  it("constraints unavailable: no excluded or posted chips, and the chip row is keyboard focusable", () => {
+    setup({ ...over, feedConstraintsAvailable: false });
+    expect(chipTexts("excluded")).toEqual([]);
+    expect(chipTexts("posted")).toEqual([]);
+    expect(screen.getByTestId("preferences-chips").getAttribute("tabindex")).toBe("0");
+  });
+});
 
 describe("PreferencesSheet Location summary de-duplication (display only)", () => {
   it("country plus an identical location shows once", () => {
