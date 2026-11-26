@@ -59,6 +59,29 @@ export function detectNormalizedPeriod(text: string | null | undefined): Normali
 
 const usable = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 
+// Frequencies that reuse a period word but are not that period (twice monthly, bi-weekly, every two weeks).
+const QUALIFIED_FREQUENCY =
+  /\b(?:twice|thrice|fortnight(?:ly)?|bi|semi)\b|\b(?:bi|semi)(?:week|month|annual|year|dai|hour)|\bevery\s+(?:other|few|two|three|four|\d+)\b|\b(?:\d+|two|three|four|several)\s+times\b/i;
+const NEGATION = /^(?:not|non|no|never|without)$/i;
+
+/**
+ * Strict-mode guard: a period is usable only if it is single, unqualified and unnegated. Reuses
+ * detectNormalizedPeriod on 1- and 2-token windows so it recognizes exactly the same aliases.
+ */
+function periodAmbiguity(text: string): string | null {
+  if (QUALIFIED_FREQUENCY.test(text)) return `qualified/unsupported frequency "${text}"; not annualized`;
+  const tokens = text.split(/[\s,;-]+|(?=\/)/).filter(Boolean);
+  const at = (i: number, n: number) => detectNormalizedPeriod(tokens.slice(i, i + n).join(" "));
+  const found = new Set<NormalizedPeriod>();
+  for (let i = 0; i < tokens.length; i++) {
+    if (NEGATION.test(tokens[i]) && (at(i + 1, 1) || at(i + 1, 2))) return `negated period "${text}"; not annualized`;
+    const p = at(i, 1) || at(i, 2);
+    if (p) found.add(p);
+  }
+  if (found.size > 1) return `conflicting periods (${Array.from(found).join(", ")}) in "${text}"; not annualized`;
+  return null;
+}
+
 export function normalizeSalary(input: SalaryInput, options: { compatibility?: boolean } = {}): NormalizedSalary {
   const currency = input.currency?.trim() || null;
   const rawPeriod = (input.period ?? "").toString().trim();
@@ -102,6 +125,10 @@ export function normalizeSalary(input: SalaryInput, options: { compatibility?: b
   }
 
   if (!rawPeriod) return empty("period not stated; not annualized");
+  const ambiguity = periodAmbiguity(rawPeriod);
+  if (ambiguity) return empty(ambiguity, null);
   if (!period) return empty(`unrecognized period "${rawPeriod}"; not annualized`, null);
-  return annualize(period, ANNUALIZATION_FACTORS[period].factor, false, ANNUALIZATION_FACTORS[period].conversionAssumed, invalidNote);
+  const result = annualize(period, ANNUALIZATION_FACTORS[period].factor, false, ANNUALIZATION_FACTORS[period].conversionAssumed, invalidNote);
+  const overflow = [result.annualMin, result.annualMax].some((v) => v !== null && !Number.isFinite(v));
+  return overflow ? empty(`annualized amount overflows (x${ANNUALIZATION_FACTORS[period].factor}); not annualized`) : result;
 }

@@ -59,6 +59,56 @@ describe("normalizeSalary strict mode (default)", () => {
   });
 });
 
+describe("normalizeSalary strict ambiguity guards (review of #789)", () => {
+  const nulled = { annualMin: null, annualMax: null, period: null, periodInferred: false, conversionAssumed: false };
+
+  it.each(["not hourly", "non-hourly", "no weekly", "not paid monthly"])("negated period %s -> null, reason negated", (p) => {
+    const r = normalizeSalary({ min: 20, max: 30, period: p });
+    expect(r).toMatchObject(nulled);
+    expect(r.reason).toContain("negated");
+  });
+
+  it.each(["twice monthly", "bi-weekly", "biweekly", "semi-monthly", "semimonthly", "every two weeks", "every 2 weeks", "twice a week", "fortnightly"])(
+    "qualified/unsupported frequency %s -> null, never x12/x52",
+    (p) => {
+      const r = normalizeSalary({ min: 2000, max: 3000, period: p });
+      expect(r).toMatchObject(nulled);
+      expect(r.reason).toMatch(/qualified|unsupported/);
+    },
+  );
+
+  it.each(["per hour or per year", "hourly/yearly", "monthly or annual", "per week, per day"])("conflicting periods %s -> null, reason names conflict", (p) => {
+    const r = normalizeSalary({ min: 50, max: 60, period: p });
+    expect(r).toMatchObject(nulled);
+    expect(r.reason).toContain("conflicting");
+  });
+
+  it("names both conflicting periods", () => {
+    expect(normalizeSalary({ max: 50, period: "per hour or per year" }).reason).toMatch(/hourly.*yearly|yearly.*hourly/);
+  });
+
+  it.each([
+    [{ min: 1, max: 1e308, period: "monthly" }],
+    [{ min: 1e306, period: "hourly" }],
+  ])("finite input that overflows on annualization -> null, never Infinity (%o)", (input) => {
+    const r = normalizeSalary(input);
+    expect(r.annualMin).toBeNull();
+    expect(r.annualMax).toBeNull();
+    expect(r.reason).toContain("overflow");
+  });
+
+  it.each([
+    ["per month", "monthly", 12], ["$50/hr", "hourly", 2080], ["per annum", "yearly", 1], ["a week", "weekly", 52], ["Monthly", "monthly", 12],
+  ] as const)("clean single period %s still annualizes", (p, period, factor) => {
+    expect(normalizeSalary({ min: 10, max: 20, period: p })).toMatchObject({ annualMin: 10 * factor, annualMax: 20 * factor, period });
+  });
+
+  it("guards are strict-only: compatibility mode is unchanged", () => {
+    expect(normalizeSalary({ max: 3000, period: "twice monthly" }, { compatibility: true })).toMatchObject({ annualMax: 36000, period: "monthly", periodInferred: false });
+    expect(normalizeSalary({ max: 20, period: "not hourly" }, { compatibility: true })).toMatchObject({ annualMax: 41600, period: "hourly" });
+  });
+});
+
 describe("normalizeSalary compatibility mode (opt-in parity with recommendations.ts)", () => {
   const compat = (max: number, period?: string) => normalizeSalary({ max, period, currency: "USD" }, { compatibility: true });
 
