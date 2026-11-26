@@ -351,7 +351,7 @@ export function extractCandidateRelevanceTerms(
     .slice(0, 10);
 }
 
-const PUBLIC_SELECT_COLUMNS =
+export const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
 import { capJobsPerCompany } from "./capping";
@@ -365,15 +365,28 @@ const SCAN_CURSOR_PREFIX = "cs1.";
 type ScanSource = "m" | "c"; // title-match query, or the saved-category fallback
 interface ScanCursor { q: string; t: number; src: ScanSource; skip: number; before: number; after: KeysetCursorPayload | null }
 
-/** Query identity: a continuation is honoured only by the exact query and ranking inputs that issued it. */
+/** A continuation older than this is refused (reset), so a long-idle tab never resumes a stale scan. */
+const SCAN_CURSOR_TTL_MS = 6 * 3600_000;
+/** An invalid continuation (other query, tier, viewer/session, expired, malformed): the caller restarts at page 1. */
+export const CURSOR_RESET_ERROR = "cursor_reset";
+const CURSOR_RESET_RESULT: GetJobsResult = { jobs: [], totalCount: 0, nextCursor: null, hasNextPage: false, error: CURSOR_RESET_ERROR };
+
+/** Identity of filters + ranking inputs + tier + viewer/session epoch (cyrb53, 53-bit). A fail-closed consistency
+ *  check against resuming the wrong continuation, not authentication: the cursor carries no token or secret. */
 function scanQueryId(parts: unknown[]): string {
-  let h = 0x811c9dc5;
-  for (const ch of JSON.stringify(parts)) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0;
-  return h.toString(36);
+  const s = JSON.stringify(parts);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-/** cs1.<query>.<scoredAt>.<src>.<skip>.<before>.<keyset|0>; null when the window key cannot round-trip
- *  (the caller then falls back to page arithmetic, which is slower but never skips). */
+/** cs1.<identity>.<scoredAt>.<src>.<skip>.<before>.<keyset|0>; null when the window key cannot round-trip. */
 function encodeScanCursor(c: ScanCursor): string | null {
   let key = "0";
   if (c.after) {
@@ -390,7 +403,8 @@ function decodeScanCursor(raw: string | null | undefined, q: string): ScanCursor
   const [, id, t, src, skip, before, key] = parts;
   if (parts.length !== 7 || id !== q || (src !== "m" && src !== "c")) return null;
   const nums = [t, skip, before].map((n) => (/^\d{1,15}$/.test(n) ? Number(n) : NaN));
-  if (!nums.every(Number.isSafeInteger) || nums[0] > Date.now() + 60_000) return null;
+  const age = Date.now() - nums[0];
+  if (!nums.every(Number.isSafeInteger) || age < -60_000 || age > SCAN_CURSOR_TTL_MS) return null;
   const after = key === "0" ? null : decodeCursor(key);
   if (key !== "0" && !after) return null;
   return { q, t: nums[0], src, skip: nums[1], before: nums[2], after };
@@ -636,10 +650,28 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       ? extractCandidateRelevanceTerms(candidate, preferences)
       : [];
 
+    const isCandidateScan = isMatchSort && Boolean(candidate) && relevanceTerms.length > 0;
+    const answers = answersFromCandidate(candidate, preferences);
+    let queryId = "";
+    let resumed: ScanCursor | null = null;
+    if (isCandidateScan) {
+      // Session epoch: changes on a new sign-in or account switch, not on a token refresh. Never the token itself.
+      const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      queryId = scanQueryId([category, search, remoteOnly, countryCode, location, jobType, level, experience, workModel,
+        effectiveDatePosted, relevanceTerms, answers, isPro, session?.user?.id ?? null, session?.user?.last_sign_in_at ?? null]);
+      if (cursor) {
+        resumed = decodeScanCursor(cursor, queryId);
+        // Never resume another query's (or viewer's, tier's, expired) continuation: the caller restarts at page 1.
+        if (!resumed) return CURSOR_RESET_RESULT;
+        // One instant per continuation: same scores and the same date window on every page.
+        scoredAt = resumed.t;
+      }
+    }
+
     const jobTypeClause = jobTypeOrClause(jobType);
     const workModelClause = workModelOrClause(workModel);
     // 24h / 3d / 7d / 30d. A NULL posted_at (unknown source date) never passes an active window.
-    const postedCutoff = datePostedCutoff(effectiveDatePosted);
+    const postedCutoff = datePostedCutoff(effectiveDatePosted, scoredAt);
 
     // PostgREST builders mutate in place, so every scan window needs a freshly built query.
     // Later windows skip the exact count: the scan never reads it, and one count per request is today's cost.
@@ -767,13 +799,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     // Set only by the candidate scan: server-owned continuation instead of page arithmetic over `count`.
     let scanMeta: { hasNextPage: boolean; nextCursor: string | null; partial: boolean } | null = null;
 
-    if (isMatchSort && candidate && relevanceTerms.length > 0) {
+    if (isCandidateScan) {
       // Scan SCAN_WINDOW-row windows in (posted_at desc, id desc) order. Each window is ranked on its own with the
       // unchanged scorer and per-company cap; pages are cut from the ranked windows in window order.
-      // Ordering tradeoff: a strong match in a later (older) window never outranks a weaker one in an earlier
-      // window. A corpus that fits one window ranks exactly as before (the whole pool ranked together).
+      // NOT parity with one rank over the whole corpus beyond one window (owner decision pending, PR #788):
+      // a stronger match in a later (older) window lands after the weaker rows of earlier windows.
       const matchClause = relevanceTerms.map((t) => `title.ilike.%${t}%`).join(",");
-      const answers = answersFromCandidate(candidate, preferences);
       const buildCatQuery = () => {
         let catQuery = supabase
           .from("jobs_public")
@@ -838,13 +869,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         return catQuery;
       };
 
-      const queryId = scanQueryId([category, search, remoteOnly, countryCode, location, jobType, level, experience, workModel, effectiveDatePosted, relevanceTerms, answers]);
-      const resumed = decodeScanCursor(cursor, queryId);
-      // One scoring instant per continuation, so a window re-ranked on a later page orders identically.
-      if (resumed) scoredAt = resumed.t;
       let src: ScanSource = resumed?.src ?? "m";
       let after = resumed?.after ?? null;
-      let skip = resumed ? resumed.skip : from; // no (valid) cursor: page arithmetic from the stream start
+      let skip = resumed ? resumed.skip : from; // no cursor (legacy callers): page arithmetic from the stream start
       let before = resumed?.before ?? 0;
       const picked: any[] = [];
       let windows = 0;
@@ -887,6 +914,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         before = known;
         skip -= ranked.length;
         after = { posted_at: rows[rows.length - 1].posted_at ?? null, id: rows[rows.length - 1].id };
+        // Only a validated (UUID, ISO) key may reach the next window's filter or a cursor; otherwise fail closed.
+        if (!encodeScanCursor({ q: queryId, t: scoredAt, src, skip, before, after })) return DEGRADED_JOBS_RESULT;
         if (picked.length === pageSize) break;
       }
 
@@ -900,13 +929,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         data = fallbackRes.data;
         count = fallbackRes.count;
       } else {
+        const nextCursor = exhausted ? null : encodeScanCursor({ q: queryId, t: scoredAt, src, skip, before, after });
+        // A key that cannot round-trip has no safe continuation: fail closed (retryable), never guess a page offset.
+        if (!exhausted && !nextCursor) return DEGRADED_JOBS_RESULT;
         data = picked;
         count = known;
-        scanMeta = {
-          hasNextPage: !exhausted,
-          nextCursor: exhausted ? null : encodeScanCursor({ q: queryId, t: scoredAt, src, skip, before, after }),
-          partial: !exhausted,
-        };
+        scanMeta = { hasNextPage: !exhausted, nextCursor, partial: !exhausted };
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       if (hasOnboardingAnswers(preferences)) {

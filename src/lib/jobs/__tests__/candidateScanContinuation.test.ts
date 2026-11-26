@@ -4,16 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const proFetch = vi.hoisted(() => ({ status: 200, calls: [] as string[][] }));
 vi.mock("@/lib/supabase/client", async () => {
-  const { table } = await import("./fixtures/fakeJobsPublic");
+  const { table, getSession } = await import("./fixtures/fakeJobsPublic");
   return {
     createClient: () => ({
-      auth: { getSession: async () => ({ data: { session: { access_token: "fixture-token" } } }) },
+      auth: { getSession },
       from: () => table(),
     }),
   };
 });
 
-import { getLiveJobs, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
+import { getLiveJobs, capJobsPerCompany, CURSOR_RESET_ERROR, type GetJobsResult } from "@/lib/jobs/service";
 import { rankJobsByRecommendation, answersFromCandidate } from "@/lib/jobs/recommendations";
 import * as F from "./fixtures/fakeJobsPublic";
 const { db, cmp, job, junior, senior, rows251, CANDIDATE, PREFS } = F;
@@ -173,17 +173,102 @@ describe("continuation safety", () => {
     expect(res.isDegraded).toBe(true);
   });
 
-  it("a cursor from a different query (filter change) is ignored and the scan restarts from page arithmetic", async () => {
+  const expectReset = (res: GetJobsResult) =>
+    expect([res.error, res.jobs.length, res.hasNextPage, res.nextCursor]).toEqual([CURSOR_RESET_ERROR, 0, false, null]);
+
+  it("page 2 with a cursor from a different query resets: no rows skipped by page arithmetic, nothing read", async () => {
     db.rows = rows251();
     const p1 = await fetchPage(1);
-    const other = await fetchPage(1, p1.nextCursor, { remoteOnly: true });
-    expect(other.jobs.map((j) => j.id)).toEqual(p1.jobs.map((j) => j.id));
+    const reads = db.queries;
+    expectReset(await fetchPage(2, p1.nextCursor, { remoteOnly: true }));
+    expect(db.queries).toBe(reads);
+    // The caller restarts the new query at page 1, which starts at the top of the stream.
+    expect((await fetchPage(1, null, { remoteOnly: true })).jobs.map((j) => j.id)).toEqual(p1.jobs.map((j) => j.id));
   });
 
-  it("a tampered cursor is ignored, never sent to the database", async () => {
+  it("a tier change invalidates the continuation in the service itself (Free cursor on Pro, and back)", async () => {
+    db.rows = rows251();
+    expectReset(await fetchPage(2, (await fetchPage(1)).nextCursor, { isPro: true }));
+    expectReset(await fetchPage(2, (await fetchPage(1, null, { isPro: true })).nextCursor));
+  });
+
+  it("a viewer or session change invalidates the continuation; a token refresh does not", async () => {
+    db.rows = rows251();
+    const p1 = await fetchPage(1);
+    db.session = { ...db.session, access_token: "refreshed-token" };
+    expect((await fetchPage(2, p1.nextCursor)).jobs.map((j) => j.id)).toEqual([junior(251).id]);
+    db.session = { access_token: "t", user: { id: "viewer-a", last_sign_in_at: "2026-11-26T09:00:00Z" } };
+    expectReset(await fetchPage(2, p1.nextCursor));
+    db.session = { access_token: "t", user: { id: "viewer-b", last_sign_in_at: "2026-11-25T08:00:00Z" } };
+    expectReset(await fetchPage(2, p1.nextCursor));
+    db.session = null;
+    expectReset(await fetchPage(2, p1.nextCursor));
+  });
+
+  it("the cursor carries no token or user id", async () => {
+    db.rows = rows251();
+    const { nextCursor } = await fetchPage(1);
+    const decodedKey = Buffer.from(nextCursor!.split(".")[6], "base64").toString();
+    for (const secret of ["fixture-token", "viewer-a"]) {
+      expect(nextCursor).not.toContain(secret);
+      expect(decodedKey).not.toContain(secret);
+    }
+  });
+
+  it("tampered, foreign and expired cursors reset; none reaches the database", async () => {
     db.rows = Array.from({ length: 30 }, (_, k) => junior(k + 1));
-    const res = await fetchPage(1, "cs1.x.0.0.m.0.eyJbIjoiKSJ9");
-    expect(res.jobs).toHaveLength(25);
+    const parts = (await fetchPage(1)).nextCursor!.split(".");
+    const reads = db.queries;
+    for (const bad of [
+      "cs1.x.0.m.0.0.eyJbIjoiKSJ9",
+      "not-a-scan-cursor",
+      [...parts.slice(0, 6), "WyIpOyBkcm9wIiwiMSJd"].join("."),
+      [...parts.slice(0, 4), "-1", ...parts.slice(5)].join("."),
+      [parts[0], parts[1], String(Date.now() - 7 * 3600_000), ...parts.slice(3)].join("."),
+    ]) expectReset(await fetchPage(2, bad));
+    expect(db.queries).toBe(reads);
+  });
+
+  it("a window key that cannot round-trip fails closed: retryable error, never a null cursor with more", async () => {
+    // Non-UUID id on the last row of a full window: no safe keyset exists past it.
+    db.rows = [...Array.from({ length: 249 }, (_, k) => senior(k + 1)), { ...senior(250), id: "not-a-uuid" }, junior(251)];
+    const res = await fetchPage(1);
+    expect([res.isDegraded, res.error, res.hasNextPage, res.nextCursor]).toEqual([true, "degraded", false, null]);
+  });
+
+  it("the date window is frozen at cursor creation: a later request scans the same window", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      db.rows = rows251();
+      const row251At = Date.parse(junior(251).posted_at!);
+      // Page 1 at a time whose 24h window still holds row 251.
+      vi.setSystemTime(row251At + 23 * 3600_000);
+      const p1 = await fetchPage(1, null, { datePosted: "24h" });
+      expect(p1.hasNextPage).toBe(true);
+      // Two hours later a recomputed 24h cutoff would exclude row 251; only the frozen cutoff still reaches it.
+      vi.setSystemTime(row251At + 25 * 3600_000);
+      const p2 = await fetchPage(2, p1.nextCursor, { datePosted: "24h" });
+      expect(p2.jobs.map((j) => j.id)).toEqual([junior(251).id]);
+      expect((await fetchPage(1, null, { datePosted: "24h" })).totalCount).toBe(25); // fresh query: new window
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("abort mid-scan, then retry from the last good cursor: same rows, no duplicates, no cursor loss", async () => {
+    db.rows = [...rows251(), ...Array.from({ length: 600 }, (_, k) => senior(k + 252)), junior(852)];
+    const p1 = await fetchPage(1);
+    const reference = await fetchPage(2, p1.nextCursor);
+    const ctl = new AbortController();
+    const start = db.queries;
+    db.onQuery = (n) => { if (n === start + 1) ctl.abort(); };
+    expect((await fetchPage(2, p1.nextCursor, { signal: ctl.signal })).isDegraded).toBe(true);
+    db.onQuery = null;
+    const retried = await fetchPage(2, p1.nextCursor);
+    expect(retried.jobs.map((j) => j.id)).toEqual(reference.jobs.map((j) => j.id));
+    expect(retried.nextCursor).toBe(reference.nextCursor);
+    const all = [...p1.jobs, ...retried.jobs].map((j) => j.id);
+    expect(new Set(all).size).toBe(all.length);
   });
 
   it("Free: masked rows, no unlock call; Pro: page-2 rows unlocked by the batch call", async () => {

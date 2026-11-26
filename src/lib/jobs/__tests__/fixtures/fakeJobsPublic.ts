@@ -1,5 +1,6 @@
 // FIXTURE jobs_public for the For You (resume) direct path. Honours only what that path's continuation depends on:
-// (posted_at desc nulls last, id desc) order, the (posted_at, id) keyset clause, range, and an injectable error.
+// (posted_at desc nulls last, id desc) order, the (posted_at, id) keyset clause, the posted_at date window, range,
+// an injectable error and a switchable session.
 // Title/visibility filters are not under test, so every fixture row is a title match.
 
 export const db = {
@@ -7,13 +8,19 @@ export const db = {
   queries: 0,
   failAt: null as number | null,
   onQuery: null as null | ((n: number) => void),
+  /** What auth.getSession() returns: the viewer and its sign-in epoch (no real token). */
+  session: null as any,
 };
+const DEFAULT_SESSION = { access_token: "fixture-token", user: { id: "viewer-a", last_sign_in_at: "2026-11-25T08:00:00Z" } };
+db.session = DEFAULT_SESSION;
+export const getSession = async () => ({ data: { session: db.session }, error: null });
 
 export function resetDb() {
   db.rows = [];
   db.queries = 0;
   db.failAt = null;
   db.onQuery = null;
+  db.session = DEFAULT_SESSION;
 }
 
 export function cmp(a: any, b: any) {
@@ -45,6 +52,7 @@ export function table() {
         return b;
       };
       if (prop === "is") return (c: string, v: any) => (preds.push((r) => r[c] === v), b);
+      if (prop === "gte") return (c: string, v: any) => (preds.push((r) => r[c] !== null && r[c] >= v), b);
       if (prop === "lt") return (c: string, v: any) => (preds.push((r) => r[c] < v), b);
       return () => b; // select / eq / order / not / in / abortSignal
     },

@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, Suspense,
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { getLiveJobs, getLiveJobById, keepSameJobLogoIdentity, LatestJobSelectionGate, LiveJob, isEarlyApplicant, capJobsPerCompany, type GetJobsResult } from "@/lib/jobs/service";
+import { getLiveJobs, getLiveJobById, keepSameJobLogoIdentity, LatestJobSelectionGate, LiveJob, isEarlyApplicant, capJobsPerCompany, CURSOR_RESET_ERROR, type GetJobsResult } from "@/lib/jobs/service";
 import { getAuthUser, getUserPreferences, saveUserPreferences } from "@/lib/auth/session";
 import { getCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -884,6 +884,8 @@ function JobsPageInner() {
   const pageLoaderRef = useRef(createNextPageLoader<GetJobsResult>());
   const loadedPageRef = useRef(1);
   const cursorRef = useRef<string | null>(null);
+  // Automatic restarts after a refused continuation since the last applied page (bounded to one).
+  const cursorResetsRef = useRef(0);
   const hasNextPageRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const autoLoadArmedRef = useRef(true);
@@ -1078,6 +1080,7 @@ function JobsPageInner() {
     let requested = 0;
     let grew = false;
     let stalled = false;
+    let resetRequested = false;
 
     while (!stalled && gen === chainGenRef.current && hasNextPageRef.current && loadedPageRef.current < refillTargetRef.current) {
       const nextPage = loadedPageRef.current + 1;
@@ -1109,6 +1112,11 @@ function JobsPageInner() {
             signal,
           }),
         (res) => {
+          // The service refused this continuation: apply nothing, restart the query from page 1 below.
+          if (res.error === CURSOR_RESET_ERROR) {
+            resetRequested = true;
+            return;
+          }
           // Degraded/forbidden pages are failures: nothing is applied and the cursor stays put.
           if (res.isDegraded || res.error) throw new Error(res.error || "degraded");
           // Server order kept; ids already shown or repeated within this page are skipped.
@@ -1120,6 +1128,7 @@ function JobsPageInner() {
             // Re-ranking may place new cards above the reader; remember their card to hold it in place.
             scrollAnchorRef.current ??= readScrollAnchor();
           }
+          cursorResetsRef.current = 0;
           stalled = isStalledCursor(sentCursor, res, seenCursorsRef.current);
           if (res.nextCursor) seenCursorsRef.current.add(res.nextCursor);
           liveJobsRef.current = nextRows;
@@ -1132,10 +1141,15 @@ function JobsPageInner() {
           if (res.totalCount) setTotalCount(res.totalCount);
         }
       );
-      if (outcome !== "applied") break;
+      if (outcome !== "applied" || resetRequested) break;
     }
     // A stale chain belongs to an old query or an unmounted page; its reset already cleared state.
     if (outcome === "stale" || gen !== chainGenRef.current) return;
+    if (resetRequested && cursorResetsRef.current++ < 1) {
+      setRetryNonce((n) => n + 1); // the query effect resets the whole chain and loads page 1 cleanly
+      return;
+    }
+    if (resetRequested) outcome = "error"; // a second refusal in a row: show Retry instead of looping
     setLoadingMore(false);
     if (outcome === "error") {
       // Recovery is the Retry button at this same continuation, never a queued refill.
