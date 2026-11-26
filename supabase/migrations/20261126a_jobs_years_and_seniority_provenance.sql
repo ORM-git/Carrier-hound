@@ -19,17 +19,37 @@ ADD COLUMN IF NOT EXISTS years_max NUMERIC,
 ADD COLUMN IF NOT EXISTS seniority_source TEXT,
 ADD COLUMN IF NOT EXISTS seniority_confidence TEXT;
 
+-- Existence checks are scoped to public.jobs (conrelid), so a same-named constraint on another
+-- table or schema cannot make these silently skip.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'jobs_seniority_confidence_check') THEN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'jobs_seniority_confidence_check' AND conrelid = 'public.jobs'::regclass
+  ) THEN
     ALTER TABLE public.jobs
       ADD CONSTRAINT jobs_seniority_confidence_check
       CHECK (seniority_confidence IS NULL OR seniority_confidence IN ('high', 'medium', 'low'));
+  END IF;
+
+  -- Years bounds: NULL allowed (not stated / not parsed); when present, nonnegative and min <= max.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'jobs_years_bounds_check' AND conrelid = 'public.jobs'::regclass
+  ) THEN
+    ALTER TABLE public.jobs
+      ADD CONSTRAINT jobs_years_bounds_check
+      CHECK (
+        (years_min IS NULL OR years_min >= 0)
+        AND (years_max IS NULL OR years_max >= 0)
+        AND (years_min IS NULL OR years_max IS NULL OR years_min <= years_max)
+      );
   END IF;
 END $$;
 
 -- ============================================================================
 -- ROLLBACK (run manually):
+--   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_years_bounds_check;
 --   ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS jobs_seniority_confidence_check;
 --   ALTER TABLE public.jobs
 --     DROP COLUMN IF EXISTS years_min,
