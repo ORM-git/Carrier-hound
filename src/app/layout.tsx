@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import "@/styles/inter-local.css";
 import "@/styles/tokens.css";
 import "./globals.css";
 import { ToastContainer } from "react-toastify";
@@ -15,13 +15,6 @@ import { getConnectionHints } from "@/lib/seo/structuredData";
 import RouteFocusManager from "@/components/a11y/RouteFocusManager";
 import JsonLd from "@/components/seo/JsonLd";
 
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
-  display: "swap",
-  variable: "--font-inter",
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -91,8 +84,9 @@ export default function RootLayout({
   const connectionHints = getConnectionHints();
 
   return (
-    <html lang="en" className={`${inter.variable} scroll-smooth`}>
+    <html lang="en" className="cm-inter-font scroll-smooth">
       <head>
+        <link rel="preload" href="/fonts/inter/inter-6.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         {connectionHints.map((origin) => (
           <link key={`preconnect-${origin}`} rel="preconnect" href={origin} />
         ))}
