@@ -79,13 +79,14 @@ export function recallMatchScore(snap: string | null, job: JobLike): number | nu
 
 /**
  * When a detail fetch shows a newer score-input revision than the feed row for the same job, the feed's score is
- * stale: replace that row with the fetched job and drop its score, so card, detail and insights all fall back to
- * the same computation from the same data. Returns the same array when nothing is stale.
+ * stale: replace that row with the fetched job. Keep a finite authoritative detail score when supplied;
+ * otherwise drop the old score so every surface falls back from the same data.
+ * Returns the same array when nothing is stale.
  */
 export function reconcileFeedWithDetail<T extends JobLike & { matchScore?: number | null }>(feed: T[], detail: T): T[] {
   const i = feed.findIndex((j) => j.id === detail.id);
   if (i < 0 || !detail.scoreRevision || feed[i].scoreRevision === detail.scoreRevision) return feed;
   const next = [...feed];
-  next[i] = { ...detail, matchScore: null };
+  next[i] = { ...detail, matchScore: typeof detail.matchScore === "number" && Number.isFinite(detail.matchScore) ? detail.matchScore : null };
   return next;
 }
