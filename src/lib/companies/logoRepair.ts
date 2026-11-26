@@ -1,0 +1,249 @@
+/**
+ * src/lib/companies/logoRepair.ts
+ *
+ * Repairs ONE claimed company against the shared logo contract (see logoEligibility.ts):
+ *   resolve (verified ATS image -> verified homepage icon -> free resolver on the verified domain,
+ *   all via logoResolver.ts with its SSRF/redirect/raster/size/dimension checks)
+ *   -> reject vendor/default branding (known default fingerprints, image shared by other companies)
+ *   -> upload validated bytes to company-logos/<company_id>/<sha256>.<ext> (content-hashed,
+ *      versioned, idempotent: identical bytes reuse the existing object)
+ *   -> commit hosted URL + verified domain with a conditional update (claim token + expected old
+ *      logo_url). Objects are never deleted here: an uncertain commit (lost response, reclaimed lease,
+ *      same-content key) could otherwise remove a live logo; an unreferenced content-hashed object is
+ *      harmless and is reused by the next attempt for the same bytes.
+ * A "pending" row is always repaired for real, even when its URL is well-formed (the sweep marks
+ * verified-broken hosted logos pending), so URL shape never stands in for asset health.
+ * If every source fails the company keeps logo_url null (an ineligible external URL is cleared),
+ * gets a reason and a bounded backoff, and the UI shows initials. Never throws for branding issues.
+ */
+import crypto from "node:crypto";
+import sharp from "sharp";
+import { eligibleLogoUrl, hostedLogoPublicUrl, logoObjectKey } from "./logoEligibility";
+import { LOGO_SAMPLE_PX, logoVisibility } from "./logoVisibility";
+import { fetchWithTimeout, getCleanImageMeta, type CompanyRecord, type FetchWithTimeoutOptions, type JobUrlInfo, type ResolveLogoOptions, type ResolvedLogoResult } from "./logoResolver";
+
+/**
+ * Vendor/default marks observed in production that must never become a company logo. The worker also
+ * probes favicon services for their "unknown domain" image and rejects any image that resolves for two
+ * or more companies in one run, so new vendor defaults are caught without being listed here.
+ */
+export const KNOWN_VENDOR_DEFAULT_SHA256: readonly string[] = [
+  "d3b538025d8270a6514e8243278afe7f8ad1e1e19faa3d094ff2b76c2ccd2f54", // Ashby job-board default mark (19 Ashby boards, 2026-11-22)
+];
+
+export const sha256Hex = (buf: Buffer) => crypto.hash("sha256", buf, "hex");
+
+/** Decode limits: logos are icons, so anything past these bounds is rejected before/while decoding. */
+export const MAX_DECODE_SIDE_PX = 2048;
+const MAX_DECODE_PIXELS = MAX_DECODE_SIDE_PX * MAX_DECODE_SIDE_PX; // <= 16 MiB of RGBA once decoded
+const DECODABLE = new Set(["png", "jpeg", "webp", "gif"]);
+
+/**
+ * True only when the bytes fully decode as a PNG, JPEG, WebP or GIF (header sniffing is not enough).
+ * libvips decodes every pixel with failOn "error" (bad filter bytes, CRC errors, truncated or missing image
+ * data all fail). Bounded: the header's dimensions are checked before decoding, libvips refuses inputs above
+ * the pixel limit, and only the first animation frame is decoded, so a small compressed bomb cannot expand
+ * past MAX_DECODE_PIXELS x 4 bytes.
+ */
+export async function decodesAsRaster(buf: Buffer): Promise<boolean> {
+  try {
+    const opts = { failOn: "error" as const, limitInputPixels: MAX_DECODE_PIXELS, pages: 1 };
+    const meta = await sharp(buf, opts).metadata();
+    if (!meta.format || !DECODABLE.has(meta.format) || !meta.width || !meta.height) return false;
+    if (meta.width > MAX_DECODE_SIDE_PX || meta.height > MAX_DECODE_SIDE_PX) return false;
+    const { info } = await sharp(buf, opts).raw().toBuffer({ resolveWithObject: true });
+    return info.width === meta.width && info.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Readable on every light tile we render (see logoVisibility.ts)? null when it is, otherwise the reason.
+ * Measured on the image contain-fitted into the same LOGO_SAMPLE_PX square the browser check uses.
+ */
+export async function logoInvisibleReason(buf: Buffer): Promise<string | null> {
+  try {
+    const { data, info } = await sharp(buf, { failOn: "error", limitInputPixels: MAX_DECODE_PIXELS, pages: 1 })
+      .ensureAlpha()
+      .resize(LOGO_SAMPLE_PX, LOGO_SAMPLE_PX, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const v = logoVisibility(data, info.width, info.height);
+    return v.ok ? null : v.reason;
+  } catch {
+    return "does-not-decode";
+  }
+}
+
+/**
+ * Why a candidate image may never become this company's logo, or null if it may: vendor/default mark,
+ * a hash the owner rejected for this company (whatever source returned it), not a real raster, or not
+ * readable on the tile. Used inside the resolver chain (so the next tier still runs) and before upload.
+ */
+export async function candidateRejection(buf: Buffer, defaults: ReadonlySet<string>, rejected: ReadonlySet<string>): Promise<string | null> {
+  const sha = sha256Hex(buf);
+  if (defaults.has(sha)) return "default-branding";
+  if (rejected.has(sha)) return "rejected-image";
+  if (!(await decodesAsRaster(buf))) return "corrupt-image";
+  const invisible = await logoInvisibleReason(buf);
+  return invisible ? `invisible-logo: ${invisible}` : null;
+}
+
+/**
+ * Health check for a stored hosted logo: "ok" or a reason. Only this project's eligible URLs are fetched,
+ * through the SSRF-safe fetcher (scheme + DNS/private-IP checks, timeout, size cap) with no redirects
+ * followed; the bytes must fully decode (every format, see decodesAsRaster).
+ */
+export async function verifyHostedLogo(url: string, supabaseUrl: string, opts: FetchWithTimeoutOptions = {}): Promise<string> {
+  if (!eligibleLogoUrl(url, supabaseUrl)) return "ineligible-url";
+  try {
+    const r = await fetchWithTimeout(url, { ...opts, maxRedirects: 0 });
+    if (!r.ok) return `http-${r.status}`;
+    const buf = Buffer.from(await r.arrayBuffer());
+    const meta = buf.length ? getCleanImageMeta(r.headers.get("content-type") || "", buf, url) : null;
+    if (!meta) return "not-a-raster-image";
+    if (!(await decodesAsRaster(buf))) return "does-not-decode";
+    return "ok";
+  } catch (e) {
+    return `fetch-error: ${String((e as Error)?.message || e).slice(0, 120)}`;
+  }
+}
+
+export interface ClaimedCompany {
+  id: string;
+  name: string;
+  slug: string | null;
+  domain: string | null;
+  careers_url: string | null;
+  ats_type: string | null;
+  logo_url: string | null;
+  /** "pending" = queued or a hosted logo the sweep verified broken: always repaired for real. */
+  logo_status?: string | null;
+  logo_attempts: number;
+  claim_token: string;
+}
+
+export type RepairStatus = "repaired" | "already-eligible" | "missing" | "failed";
+export interface RepairOutcome {
+  id: string;
+  name: string;
+  status: RepairStatus;
+  reason: string | null;
+  source: string | null;
+  logoUrl: string | null;
+  previousLogoUrl: string | null;
+  sha256: string | null;
+  attempts: number;
+  nextAttemptAt: string | null;
+}
+
+export interface LogoRepairDeps {
+  supabaseUrl: string;
+  resolve(company: CompanyRecord, jobs: JobUrlInfo[], options: ResolveLogoOptions): Promise<ResolvedLogoResult | null>;
+  jobsFor(companyId: string): Promise<JobUrlInfo[]>;
+  /** sha256 hex digests of vendor/default images (e.g. favicon-service "unknown domain" globes). */
+  knownDefaultHashes: ReadonlySet<string>;
+  /** Image hashes the owner rejected for this company (company_logo_rejected_hashes); never re-selected. */
+  rejectedHashes(companyId: string): Promise<ReadonlySet<string>>;
+  /** Number of OTHER companies whose committed logo has this content hash. */
+  companiesSharingHash(sha256: string, excludeId: string): Promise<number>;
+  /** Uploads with no overwrite; "exists" when the content-hashed key is already present. */
+  upload(key: string, bytes: Buffer, contentType: string): Promise<"created" | "exists">;
+  /** Conditional commit: only if the row still holds our claim token and the logo we read. */
+  commitHosted(args: { id: string; token: string; expectedLogoUrl: string | null; logoUrl: string; domain: string | null; sha256: string; source: string; at: Date }): Promise<boolean>;
+  recordFailure(args: { id: string; token: string; expectedLogoUrl: string | null; clearLogoUrl: boolean; status: "missing" | "failed"; reason: string; attempts: number; nextAttemptAt: Date | null; at: Date }): Promise<boolean>;
+  markAlreadyEligible(args: { id: string; token: string; at: Date }): Promise<void>;
+  now(): Date;
+}
+
+/** shortcut: fixed backoff ladder (1h, 6h, 24h, 72h, 7d); then "missing" rechecked every 30 days. */
+const BACKOFF_HOURS = [1, 6, 24, 72, 168];
+export const MAX_LOGO_ATTEMPTS = BACKOFF_HOURS.length;
+const MISSING_RECHECK_HOURS = 24 * 30;
+/** Company marks/icons are small; larger images are banners or photos, not logos. */
+export const MAX_LOGO_SIDE_PX = 1024;
+/** A real company mark is never byte-identical across this many other companies. */
+const SHARED_HASH_LIMIT = 1;
+
+export function nextAttempt(attempts: number, now: Date, transient: boolean): { status: "missing" | "failed"; at: Date } {
+  const h = attempts <= MAX_LOGO_ATTEMPTS ? BACKOFF_HOURS[Math.max(0, attempts - 1)] : MISSING_RECHECK_HOURS;
+  return { status: transient && attempts < MAX_LOGO_ATTEMPTS ? "failed" : "missing", at: new Date(now.getTime() + h * 3600_000) };
+}
+
+export async function repairCompanyLogo(company: ClaimedCompany, deps: LogoRepairDeps): Promise<RepairOutcome> {
+  const at = deps.now();
+  const base = { id: company.id, name: company.name, previousLogoUrl: company.logo_url, sha256: null, source: null, logoUrl: null, attempts: company.logo_attempts, nextAttemptAt: null };
+
+  if (company.logo_status !== "pending" && eligibleLogoUrl(company.logo_url, deps.supabaseUrl)) {
+    await deps.markAlreadyEligible({ id: company.id, token: company.claim_token, at });
+    return { ...base, status: "already-eligible", reason: null, logoUrl: company.logo_url };
+  }
+
+  const attempts = company.logo_attempts + 1;
+  const fail = async (reason: string, transient: boolean): Promise<RepairOutcome> => {
+    const nx = nextAttempt(attempts, at, transient);
+    // Ineligible external URLs are never kept: the company falls back to initials until a hosted logo exists.
+    await deps.recordFailure({ id: company.id, token: company.claim_token, expectedLogoUrl: company.logo_url, clearLogoUrl: company.logo_url != null, status: nx.status, reason, attempts, nextAttemptAt: nx.at, at });
+    return { ...base, status: transient ? "failed" : "missing", reason, attempts, nextAttemptAt: nx.at.toISOString() };
+  };
+
+  let resolved: ResolvedLogoResult | null;
+  let rejected: ReadonlySet<string>;
+  try {
+    rejected = await deps.rejectedHashes(company.id);
+    const jobs = await deps.jobsFor(company.id);
+    // logo_url is withheld so the resolver never short-circuits on a stored (possibly broken) value.
+    resolved = await deps.resolve(
+      { id: company.id, name: company.name, slug: company.slug, domain: company.domain, careers_url: company.careers_url, ats_type: company.ats_type, logo_url: null },
+      jobs,
+      // Default/vendor, owner-rejected and unreadable images are skipped inside the chain, so the next tier still runs.
+      { isRejected: async (buf) => (await candidateRejection(buf, deps.knownDefaultHashes, rejected)) !== null }
+    );
+  } catch (e) {
+    return fail(`resolver-error: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
+  }
+  if (!resolved) return fail("no-source: no verified ATS image, homepage icon or resolver logo for a verified domain", false);
+
+  if (resolved.width > MAX_LOGO_SIDE_PX || resolved.height > MAX_LOGO_SIDE_PX) {
+    return fail(`not-a-logo: ${resolved.width}x${resolved.height} image from ${resolved.source} is a banner/photo, not an icon`, false);
+  }
+  const rejection = await candidateRejection(resolved.buffer, deps.knownDefaultHashes, rejected);
+  if (rejection) return fail(`${rejection} (${resolved.serviceName || resolved.source})`, false);
+  const sha256 = sha256Hex(resolved.buffer);
+  let sharing: number;
+  try {
+    sharing = await deps.companiesSharingHash(sha256, company.id);
+  } catch (e) {
+    return fail(`shared-hash-check-error: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
+  }
+  if (sharing >= SHARED_HASH_LIMIT) return fail("shared-image: identical bytes already used by another company (vendor/default mark)", false);
+
+  let key: string;
+  try {
+    key = logoObjectKey(company.id, sha256, resolved.ext);
+  } catch (e) {
+    return fail(`invalid-image: ${String((e as Error).message).slice(0, 120)}`, false);
+  }
+
+  try {
+    await deps.upload(key, resolved.buffer, resolved.contentType);
+  } catch (e) {
+    return fail(`upload-failed: ${String((e as Error)?.message || e).slice(0, 160)}`, true);
+  }
+
+  const logoUrl = hostedLogoPublicUrl(key, deps.supabaseUrl);
+  const source = resolved.serviceName ? `${resolved.source}:${resolved.serviceName}` : resolved.source;
+  let committed = false;
+  let commitError: string | null = null;
+  try {
+    committed = await deps.commitHosted({ id: company.id, token: company.claim_token, expectedLogoUrl: company.logo_url, logoUrl, domain: resolved.domain || company.domain || null, sha256, source, at });
+  } catch (e) {
+    commitError = String((e as Error)?.message || e).slice(0, 160);
+  }
+  if (!committed) {
+    // Outcome may be uncertain (e.g. committed but the response was lost): keep the object, retry later.
+    return { ...base, status: "failed", reason: commitError ? `db-update-failed: ${commitError}` : "db-update-skipped: row changed or claim expired", sha256, source, attempts };
+  }
+  return { ...base, status: "repaired", reason: null, source, logoUrl, sha256, attempts };
+}
