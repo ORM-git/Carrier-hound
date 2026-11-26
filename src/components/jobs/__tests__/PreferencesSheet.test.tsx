@@ -304,6 +304,25 @@ const chipTexts = (kind: string) =>
   Array.from(screen.getByRole("dialog", { name: "Preferences" }).querySelectorAll(`[data-testid="preferences-chips"] [data-chip="${kind}"]`)).map((c) => c.textContent || "");
 const locationLine = () => "Location: " + chipTexts("location").join(", ");
 
+describe("PreferencesSheet Clear on salary and company lists", () => {
+  it("clears minimum salary only, and each company list separately, then Update saves it", () => {
+    const { onSave } = setup({ minSalary: 90000, salaryCurrency: "USD", includedCompanies: ["Acme"], excludedCompanies: ["Globex"] });
+    openGroup("Compensation");
+    fireEvent.click(screen.getByRole("button", { name: "Clear minimum salary" }));
+    expect(screen.queryByRole("button", { name: "Clear minimum salary" })).toBeNull();
+    openGroup("Company");
+    fireEvent.click(screen.getByRole("button", { name: "Clear never-show companies" }));
+    expect(screen.queryByRole("button", { name: "Clear never-show companies" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Clear only-show companies" })).toBeTruthy();
+    update();
+    const saved = lastSaved(onSave);
+    expect(saved.minSalary).toBeUndefined(); // serializer omits a cleared minimum, as the existing salary test asserts
+    expect(saved.excludedCompanies).toEqual([]);
+    expect(saved.includedCompanies).toEqual(["Acme"]);
+    expect(saved.salaryCurrency).toBe("USD");
+  });
+});
+
 describe("PreferencesSheet chips are truthful about saved-but-not-applied constraints", () => {
   const over = { excludedTitles: ["Intern"], datePosted: "7d" as const };
   it("flag off: excluded and posted chips say saved, not applied", () => {
