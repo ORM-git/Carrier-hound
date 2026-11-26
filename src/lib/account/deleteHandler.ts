@@ -445,7 +445,6 @@ export async function handleAccountDeleteRequest(
             .update({
               status: "canceled",
               cancel_at_period_end: true,
-              canceled_at: nowIso,
               updated_at: nowIso,
               metadata: {
                 ...(sub.metadata || {}),
