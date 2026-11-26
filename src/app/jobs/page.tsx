@@ -2150,6 +2150,7 @@ function JobsPageInner() {
                     isOpen={preferencesOpen}
                     onClose={() => setPreferencesOpen(false)}
                     committed={preferences}
+                    accountPlan={isPro ? "pro" : isProDefinitive ? "free" : "unknown"}
                     triggerRef={phoneSavedFilters ? filtersTriggerRef : preferencesTriggerRef}
                     onSave={async (next) => {
                       // Persist once; the saved-event re-reads the row, which changes the feed query key
