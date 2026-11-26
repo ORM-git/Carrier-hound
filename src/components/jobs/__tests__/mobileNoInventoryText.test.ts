@@ -6,7 +6,7 @@ const page = readFileSync("src/app/jobs/page.tsx", "utf8");
 
 describe("mobile bottom inventory text (item 22)", () => {
   it("normal loading has no button or remaining count at any width", () => {
-    expect(page).toContain("{(loadMoreError || autoLoadPaused) && (");
+    expect(page).toContain("{(isPhone ? !loadingMore : (loadMoreError || autoLoadPaused)) && (");
     expect(page).not.toContain("remaining)`");
     expect(page).not.toContain("`Load More Verified Positions (~");
   });

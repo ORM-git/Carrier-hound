@@ -6,7 +6,7 @@ import { ArrowRight, Briefcase, Clock, DollarSign, EyeOff, Heart, Laptop, Lock, 
 import CompanyLogo from "@/components/CompanyLogo";
 import { JobCardMenu } from "@/components/jobs/JobCardMenu";
 import type { LiveJob } from "@/lib/jobs/service";
-import { workModelLabel } from "@/lib/jobs/workModel";
+import { workModelLabel, isDuplicateWorkModelLocation } from "@/lib/jobs/workModel";
 
 export interface JobCardContentProps {
   /** Optional landing preview slots. Default Jobs presentation/actions are unchanged. */
@@ -36,6 +36,8 @@ export interface JobCardContentProps {
 
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
 export default function JobCardContent({ job, index, isPro, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription }: JobCardContentProps) {
+  const mode = workModelLabel(job);
+  const showLocation = !isPro || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
   return <>
                             {/* DESKTOP VIEW (sm and up: 768px, 1024px, 1440px) */}
                             <div className="hidden sm:flex items-stretch justify-between gap-4 flex-1 min-h-[196px] w-full">
@@ -114,7 +116,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                 {/* Aligned 2-row × 3-column metadata grid, 16px SVG icons, 4px gap, 13px text */}
                                 <div className="grid grid-cols-3 grid-rows-2 gap-x-4 gap-y-2 text-[13px] font-semibold text-[#1E293B]">
                                   {/* Row 1, Col 1: Location */}
-                                  <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
+                                  {showLocation && <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
                                     <span className="truncate" title={isPro ? (locInfo.primary || "Location unlisted") : undefined}>
                                       {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
@@ -128,7 +130,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                         +{locInfo.extraCount}
                                       </span>
                                     )}
-                                  </div>
+                                  </div>}
 
                                   {/* Row 1, Col 2: Job type */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
@@ -159,7 +161,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                   {/* Row 2, Col 1: Work mode */}
                                   <div className="flex items-center gap-1.5 min-w-0 truncate h-5">
                                     <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
-                                    <span className="truncate">{job.remote ? "Remote" : "On-site"}</span>
+                                    <span className="truncate">{mode}</span>
                                   </div>
 
                                   {/* Row 2, Col 2: Seniority level */}
@@ -335,11 +337,9 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                         {(isPro && job.company) || "Verified Employer"}
                                       </span>
                                     </div>
-                                    {(job.category || job.remote) ? (
+                                    {job.category ? (
                                       <div className="text-xs text-[#475569] truncate mt-0.5">
                                         {job.category && <span className="capitalize">{job.category}</span>}
-                                        {job.category && job.remote && <span> · </span>}
-                                        {job.remote && <span>Remote</span>}
                                       </div>
                                     ) : null}
                                   </div>
@@ -381,11 +381,11 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
 
                               {/* Small wrapping metadata chips beneath title: roughly 24px high, 12px text (posted time not duplicated here) */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
+                                {showLocation && <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <MapPin className="w-3 h-3 text-[#475569]" />
                                   {isPro ? (locInfo.primary || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                                   {isPro && locInfo.extraCount > 0 && <span>(+{locInfo.extraCount})</span>}
-                                </span>
+                                </span>}
                                 {formattedJobType && (
                                   <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                     <Briefcase className="w-3 h-3 text-[#475569]" />
@@ -395,7 +395,7 @@ export default function JobCardContent({ job, index, isPro, isSaved, matchScore,
                                 {/* Work model always shown, from remoteScope (Remote / Hybrid / On-site / Flexible) */}
                                 <span className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">
                                   <Laptop className="w-3 h-3 text-[#475569]" />
-                                  {workModelLabel(job)}
+                                  {mode}
                                 </span>
                                 {jobLevel && (
                                   <span data-testid="mobile-card-level" className="h-6 px-2.5 py-0.5 rounded-md bg-[#F1F5F9] text-[#1E293B] text-[12px] font-semibold inline-flex items-center gap-1">

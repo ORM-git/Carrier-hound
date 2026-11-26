@@ -1,3 +1,4 @@
+import { sourceEmploymentType } from '../utils/sourceEmploymentType';
 import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
@@ -5,7 +6,6 @@ import {
   cleanText,
   cleanAndTruncateDescription,
   detectRemote,
-  detectJobType,
   detectCategory,
   detectSeniority,
   detectCountryCode,
@@ -58,7 +58,7 @@ export class WorkableAdapter implements SourceAdapter {
         const locParts = [j.city, j.state, j.country].filter(Boolean);
         const location = locParts.length > 0 ? cleanText(locParts.join(', ')) : 'Unspecified';
         const remote = Boolean(j.telecommuting) || detectRemote(title, location);
-        const jobType = detectJobType(title, j.type || '');
+        const jobType = sourceEmploymentType(title, j.type);
         const description = cleanAndTruncateDescription(j.description, 4000);
         const postedAt = normalizeDate(j.publishedOn || j.published);
         const category = source.category || detectCategory(title, [j.department || '']);
