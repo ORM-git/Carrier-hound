@@ -1,23 +1,22 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
-import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
+import { loadDisplayScoreAnswers } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
-import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
-import { formatSalary } from "@/lib/salary/parser";
 import { getSupabaseAdminClient, getRuntimeEnv, getClientIpFromRequest, checkRateLimit } from "@/lib/ai/serviceHandler";
 import { checkSharedRateLimit, SEARCH_RATE_LIMIT, searchRateLimitStore } from "@/lib/api/sharedRateLimit";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { capJobsPerCompany, buildCompanyGroupIdMap, COMPANY_GROUP_SECRET_ENV } from "@/lib/jobs/capping";
 import { OnboardingAnswers, rankJobsByRecommendation, hasOnboardingAnswers, hasResumeSignals, buildRelevancePrefilter } from "@/lib/jobs/recommendations";
 import { createLogger } from "@/lib/observability/logger";
-import { getCountryFilterClause, normalizeUserCountries } from "@/lib/countries";
+import { getCountryFilterClause } from "@/lib/countries";
 import { isOnboardingStep2EnabledServer } from "@/config/onboarding";
 import { loadResumeProfileForRanking } from "@/lib/onboarding/resumeParse";
 import { applyExperienceLevelQuery, parseExperienceLevels, EARLY_CAREER_OR_CLAUSE } from "@/lib/jobs/experienceLevels";
 import { jobTypeOrClause, workModelOrClause } from "@/lib/jobs/jobFilters";
 import { normalizeUserCountries as normalizeEligibleCountries } from "@/lib/jobs/eligibility";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { answersFromPreferencesRow, formatRecommendedRow, PREFERENCE_ANSWER_COLUMNS } from "@/lib/jobs/recommendedShared";
 
 const baseLog = createLogger({ context: { route: "/api/jobs/recommended" } });
 
@@ -33,22 +32,6 @@ function sanitizeSearchQuery(input: string): string {
     .trim();
 }
 
-function formatDate(dateStr?: string | null): string {
-  if (!dateStr) return "Recently";
-  try {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diffHours = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60));
-    if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 30) return `${diffDays}d ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  } catch {
-    return "Recently";
-  }
-}
 
 /**
  * GET /api/jobs/recommended
@@ -148,24 +131,11 @@ export async function GET(req: Request) {
           // Fetch user preferences for onboarding answers
           const { data: prefs } = await supabaseAdmin
             .from("user_preferences")
-            .select("roles, experience_level, remote_preference, locations, employment_types, categories, min_salary, salary_currency")
+            .select(PREFERENCE_ANSWER_COLUMNS)
             .eq("user_id", user.id)
             .maybeSingle();
 
-          if (prefs) {
-            dbAnswers = {
-              roles: Array.isArray(prefs.roles) ? prefs.roles : [],
-              experienceLevel: prefs.experience_level || null,
-              remotePreference: prefs.remote_preference || null,
-              locations: Array.isArray(prefs.locations) ? prefs.locations : [],
-              employmentTypes: Array.isArray(prefs.employment_types) ? prefs.employment_types : [],
-              categories: Array.isArray(prefs.categories) ? prefs.categories : [],
-              minSalary: prefs.min_salary != null ? Number(prefs.min_salary) : null,
-              salaryCurrency: prefs.salary_currency || null,
-              country: (prefs as any).country || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).names[0] : null) || null,
-              countryCode: (prefs as any).country_code || (Array.isArray(prefs.locations) && prefs.locations.length > 0 ? normalizeUserCountries(prefs.locations).codes[0] : null) || null,
-            };
-          }
+          if (prefs) dbAnswers = answersFromPreferencesRow(prefs);
 
           // Parsed onboarding resume / LinkedIn PDF: soft ranking boost, behind the Step 2 flag.
           // Read server-side for this user only; null on any error, so ranking never breaks.
@@ -518,70 +488,14 @@ export async function GET(req: Request) {
     }
 
     // Format response according to entitlement (Masked for Free, Unmasked for Pro)
-    const formattedJobs = paginatedJobs.map((row: any) => {
-      const originalSalary = formatSalary(row.salary_min, row.salary_max, row.currency, row.salary_period) || row.salary_text || null;
-      const displaySalary = originalSalary;
-
-      if (isPro && hasServiceKey) {
-        return {
-          id: row.id,
-          title: row.title || "Untitled Position",
-          company: row.company || "Verified Employer",
-          companyId: row.company_id || null,
-          company_id: row.company_id || null,
-          location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
-          date: formatDate(row.posted_at || row.created_at || row.first_seen_at),
-          salary: displaySalary || "",
-          salary_display: displaySalary,
-          salary_original: originalSalary,
-          category: row.category || "engineering",
-          remote: Boolean(row.remote),
-          remoteScope: row.remote_scope || undefined,
-          remoteEligibility: row.remote_eligibility || undefined,
-          country: row.country_code || row.country || "",
-          type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
-          directSource: Boolean(row.verified ?? true),
-          applyUrl: row.apply_url || "",
-          description: row.description || "",
-          skills: row.skills || [],
-          postedAt: row.posted_at || row.created_at,
-          companyDomain: row.companies?.domain || null,
-          companyLogoUrl: row.companies?.logo_url || null,
-          logoUrl: row.logo_url || row.companies?.logo_url || null,
-          logo_url: row.logo_url || row.companies?.logo_url || null,
-          matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt),
-          scoreRevision: scoreInputRevision(row, true, scoredAt),
-        };
-      }
-
-      // Guest / Free masked format — ZERO paid data leakage
-      return {
-        id: row.id,
-        title: row.title || "Untitled Position",
-        company: "Verified Employer",
-        companyGroupId: row.company_id ? listGroupIds.get(row.company_id) ?? null : null,
-        location: row.location || (row.remote ? "Remote (Worldwide)" : "Remote"),
-        date: formatDate(row.posted_at || row.created_at || row.first_seen_at),
-        salary: "",
-        salary_display: null,
-        salary_original: null,
-        category: row.category || "engineering",
-        remote: Boolean(row.remote),
-        remoteScope: row.remote_scope || undefined,
-        remoteEligibility: row.remote_eligibility || undefined,
-        country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
-        directSource: Boolean(row.verified ?? true),
-        applyUrl: "",
-        description: "",
-        skills: [],
-        postedAt: row.posted_at || row.created_at,
-        logoUrl: null,
-        logo_url: null,
-        matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt),
-        scoreRevision: scoreInputRevision(row, false, scoredAt),
-      };
-    });
+    const formatCtx = {
+      unmasked: isPro && hasServiceKey,
+      isPro,
+      listGroupIds,
+      scoreAnswers: displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null),
+      scoredAt,
+    };
+    const formattedJobs = paginatedJobs.map((row: any) => formatRecommendedRow(row, formatCtx));
 
     return respond({
       jobs: formattedJobs,
