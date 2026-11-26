@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import { getLiveJobs } from "@/lib/jobs/service";
+import { FROZEN_REUSE_SECONDS } from "@/lib/jobs/feedSnapshot";
 import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
 const state = vi.hoisted(() => ({
@@ -8,6 +9,9 @@ const state = vi.hoisted(() => ({
   // Log of executed queries on jobs tables: selected columns, count option, rows and UTF-8 response bytes.
   queries: [] as Array<{ table: string; cols: string; count?: string; rows: number; bytes: number; ids: string[] }>,
   failWhen: null as null | ((table: string, cols: string) => boolean),
+  rpcFail: null as null | { message: string; code?: string },
+  rpcGate: null as null | Promise<void>, // holds freeze_feed_corpus open (concurrency tests)
+  afterFrozenRead: null as null | (() => void), // runs after each read of the frozen relation (mid-build mutation hook)
 }));
 
 /** Like PostgREST, return only the selected columns ("a, b, rel(x, y)"); "*" or aliases fall back to whole rows. */
@@ -37,7 +41,8 @@ vi.mock("@supabase/supabase-js", () => {
     const run = () => {
       if (state.failWhen?.(table, selectedCols)) return { data: null, count: null, error: { message: "injected failure" } };
       const result = runQuery();
-      if (table.startsWith("jobs")) {
+      if (table === "feed_corpus_frozen") state.afterFrozenRead?.();
+      if (table.startsWith("jobs") || table === "feed_corpus_frozen") {
         result.data = projectRows(result.data, selectedCols);
         state.queries.push({ table, cols: selectedCols, count: selectedCount, rows: result.data.length, bytes: new TextEncoder().encode(JSON.stringify(result.data)).length, ids: result.data.map((r: any) => r.id) });
       }
@@ -193,6 +198,27 @@ vi.mock("@supabase/supabase-js", () => {
       getSession: async () => ({ data: { session: null }, error: null }),
     },
     from,
+    // Emulates public.freeze_feed_corpus (docs/proposed SQL; the SQL itself is validated separately on a real Postgres):
+    // reuse a fresh epoch, else copy the visible active rows in one step, hard-cap at max+1 and fail without a partial copy.
+    rpc: async (name: string, args: any) => {
+      if (name !== "freeze_feed_corpus") return { data: null, error: { message: "unknown function", code: "PGRST202" } };
+      if (state.rpcGate) await state.rpcGate;
+      if (state.rpcFail) return { data: null, error: state.rpcFail };
+      const epochs = (state.tables.feed_corpus_epochs ||= []);
+      const fresh = epochs.filter((e: any) => Date.now() - e.frozen_ms < args.p_reuse_seconds * 1000).sort((a: any, b: any) => b.frozen_ms - a.frozen_ms)[0];
+      if (fresh) {
+        if (fresh.row_count > args.p_max_rows) return { data: null, error: { message: "snapshot_too_large", code: "54000" } };
+        return { data: [{ out_epoch: fresh.epoch, out_frozen_at: new Date(fresh.frozen_ms).toISOString(), out_row_count: fresh.row_count, out_corpus_mark: fresh.mark }], error: null };
+      }
+      const visible = (state.tables.jobs || []).filter((j: any) => j.status === "active" && j.is_active === true && j.source_type !== "jobspy").slice(0, args.p_max_rows + 1);
+      if (visible.length > args.p_max_rows) return { data: null, error: { message: "snapshot_too_large", code: "54000" } };
+      const epoch = crypto.randomUUID();
+      const frozen = (state.tables.feed_corpus_frozen ||= []);
+      for (const j of visible) frozen.push({ ...j, epoch });
+      const mark = visible.map((j: any) => j.first_seen_at).sort().pop() ?? null; // newest first_seen_at INSIDE the epoch
+      epochs.push({ epoch, frozen_ms: Date.now(), row_count: visible.length, mark });
+      return { data: [{ out_epoch: epoch, out_frozen_at: new Date().toISOString(), out_row_count: visible.length, out_corpus_mark: mark }], error: null };
+    },
   };
   return { createClient: () => client };
 });
@@ -398,6 +424,9 @@ beforeEach(() => {
 
   state.queries = [];
   state.failWhen = null;
+  state.rpcFail = null;
+  state.rpcGate = null;
+  state.afterFrozenRead = null;
   state.tables = {
     jobs: corpus,
     jobs_public: corpus,
@@ -1578,7 +1607,7 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     process.env.FEED_SNAPSHOT_PROTOTYPE = "on";
     const mod = await import("@/app/api/jobs/recommended/snapshot/route");
     snapshotRoute = mod.GET;
-    store = mod.prototypeMemoryStore;
+    store = (await import("@/lib/jobs/feedSnapshot")).prototypeMemoryStore;
   });
   afterAll(() => {
     delete process.env.FEED_SNAPSHOT_PROTOTYPE;
@@ -1619,7 +1648,7 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     const first = (await call(`${BASE}/snapshot?${GUEST}`)).body;
     expect(first.jobs[0].id).toBe(strong.id);
     expect(first.totalCount).toBeGreaterThan(1000); // no pool cap: every eligible row is in the snapshot
-    expect(state.queries.filter((q) => q.table === "jobs" && q.rows === 1000).length).toBeGreaterThanOrEqual(1); // paged build reads
+    expect(state.queries.filter((q) => q.table === "feed_corpus_frozen" && q.rows === 1000).length).toBeGreaterThanOrEqual(1); // paged build reads
     // The existing route's 1000-row pool never reads it.
     const existing = await (await recommendedRoute(req(`${BASE}?${GUEST}&page=1&pageSize=25`))).json();
     expect(existing.jobs.map((j: any) => j.id)).not.toContain(strong.id);
@@ -1655,8 +1684,16 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     }
     // Every still-valid stored ID exactly once; removed ones never return.
     expect([...p1Ids, ...p2Ids, ...rest]).toEqual(all.filter((id) => id !== del && id !== deact));
-    // The next natural reset (no cursor) builds a new snapshot that includes the newly ingested job.
-    expect(ids(await walk(GUEST))).toContain(fresh.id);
+    // Inside the epoch reuse window a rebuild shares the same frozen corpus (bounded copy work): the new job is NOT yet in it.
+    expect(ids(await walk(GUEST))).not.toContain(fresh.id);
+    // After the reuse window a new epoch is frozen and the next natural reset includes the newly ingested job.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + (FROZEN_REUSE_SECONDS + 1) * 1000));
+      expect(ids(await walk(GUEST))).toContain(fresh.id);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("invalidation: filter, viewer, session-epoch and tier changes reset the continuation (409)", async () => {
@@ -1689,6 +1726,155 @@ describe("snapshot prototype: /api/jobs/recommended/snapshot (FEED_SNAPSHOT_PROT
     const pro = (await call(`${BASE}/snapshot?pageSize=25`, "tok-pro-with-answers")).body;
     expect(pro.isPro).toBe(true);
     expect(pro.jobs[0].applyUrl).toMatch(/^https:/);
+  });
+
+  it("serve-time eligibility: a row edited to a US-only remote job after the build is NOT served to an India-saved viewer (frozen rank, live hard eligibility)", async () => {
+    const tok = "tok-free-with-answers";
+    state.tables.user_preferences = [{ user_id: "u_free_answers", roles: [], locations: ["India"], employment_types: [] }];
+    state.tables.jobs = Array.from({ length: 12 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.01));
+    const p1 = (await call(`${BASE}/snapshot?pageSize=1`, tok)).body;
+    const edited = state.tables.jobs.find((j: any) => !p1.jobs.some((x: any) => x.id === j.id))!;
+    Object.assign(edited, { location: "United States", country_code: "US", country: "US", remote: true, remote_scope: "country", remote_eligibility: "US" });
+    const rest = ids(await (async () => {
+      const pages: any[] = [];
+      let cursor: string | null = p1.nextCursor;
+      while (cursor) {
+        const { status, body } = await call(`${BASE}/snapshot?pageSize=3&cursor=${cursor}`, tok);
+        expect(status).toBe(200);
+        pages.push(body);
+        cursor = body.hasNextPage ? body.nextCursor : null;
+      }
+      return pages;
+    })());
+    expect(rest).not.toContain(edited.id);
+    expect(new Set(rest).size).toBe(rest.length);
+  });
+
+  it("serve-time eligibility: an edit that breaks relevance is not served, and the FROZEN date window does not slide", async () => {
+    // Every row is 7d - 2h old at build, inside datePosted=7d. 5h later (inside the 6h TTL) a sliding cutoff would exclude all of them.
+    state.tables.jobs = Array.from({ length: 10 }, (_, k) => row(k + 1, "Frontend Developer", 7 - 2 / 24 - k * 0.001));
+    const q = `${GUEST}&datePosted=7d`;
+    const p1 = (await call(`${BASE}/snapshot?${q}&pageSize=2`)).body;
+    expect(p1.jobs.length).toBe(2);
+    const unserved = state.tables.jobs.filter((j: any) => !p1.jobs.some((x: any) => x.id === j.id));
+    const [a, ...others] = unserved;
+    a.title = "Warehouse Operator"; // no longer relevant to the saved role
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 5 * 3600_000));
+      const pages: any[] = [];
+      let cursor: string | null = p1.nextCursor;
+      while (cursor) {
+        const { status, body } = await call(`${BASE}/snapshot?${q}&pageSize=3&cursor=${cursor}`);
+        expect(status).toBe(200);
+        pages.push(body);
+        cursor = body.hasNextPage ? body.nextCursor : null;
+      }
+      const got = ids(pages);
+      expect(got).not.toContain(a.id);
+      expect(got.sort()).toEqual(others.map((j: any) => j.id).sort()); // frozen window: every still-eligible row is still served
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("response is private, no-store", async () => {
+    const res = await snapshotRoute(req(`${BASE}/snapshot?${GUEST}`));
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("coherent build: live edits, deactivations and inserts DURING the multi-batch build cannot change the stored membership", async () => {
+    state.tables.jobs = Array.from({ length: 1500 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.001));
+    const lowest = [...state.tables.jobs].sort((a: any, b: any) => (a.id < b.id ? -1 : 1))[0]; // read in the LAST batch (id desc)
+    const highest = [...state.tables.jobs].sort((a: any, b: any) => (a.id < b.id ? 1 : -1))[0]; // read in the FIRST batch
+    let reads = 0;
+    state.afterFrozenRead = () => {
+      if (++reads !== 1) return;
+      lowest.is_active = false; lowest.title = "Warehouse Operator"; // unread row leaves the live filter
+      highest.posted_at = "2001-01-01T00:00:00.000Z"; // read row moves behind any boundary
+      state.tables.jobs.push(row(9001, "Frontend Developer", 0.5)); // an insert
+    };
+    const p1 = (await call(`${BASE}/snapshot?${GUEST}&pageSize=1`)).body;
+    expect(reads).toBeGreaterThan(1); // really a multi-batch build
+    state.afterFrozenRead = null;
+    const { prototypeMemoryStore } = await import("@/lib/jobs/feedSnapshot");
+    const stored = (await (prototypeMemoryStore as any).get(p1.nextCursor.split(".")[1]))!.jobIds as string[];
+    expect(new Set(stored).size).toBe(stored.length); // no duplicate
+    expect(stored).toContain(lowest.id); // frozen membership: not skipped, not dropped by the mid-build edit
+    expect(stored).toContain(highest.id);
+    expect(stored).not.toContain(row(9001, "x", 1).id); // the mid-build insert is not in this build
+    expect(stored.length).toBe(1500);
+    // Serve time still re-checks hard eligibility: the deactivated/irrelevant row is not served.
+    const served = ids(await walk(GUEST, undefined, 100));
+    expect(served).not.toContain(lowest.id);
+  }, 60000);
+
+  it("fails closed, never a weaker build: missing function, purged epoch, no service key, over-bound corpus", async () => {
+    state.tables.jobs = Array.from({ length: 30 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.01));
+    state.rpcFail = { message: "Could not find the function public.freeze_feed_corpus", code: "PGRST202" };
+    let r = await call(`${BASE}/snapshot?${GUEST}`);
+    expect([r.status, r.body.error, r.body.jobs]).toEqual([503, "snapshot_unavailable", []]);
+    state.rpcFail = { message: "snapshot_too_large", code: "54000" };
+    r = await call(`${BASE}/snapshot?${GUEST}`);
+    expect([r.status, r.body.error]).toEqual([503, "snapshot_too_large"]);
+    state.rpcFail = null;
+    state.afterFrozenRead = () => { state.tables.feed_corpus_epochs = []; }; // the epoch is purged while the build reads it
+    r = await call(`${BASE}/snapshot?${GUEST}`);
+    expect([r.status, r.body.error]).toEqual([503, "snapshot_unavailable"]);
+    state.afterFrozenRead = null;
+    state.tables.feed_corpus_epochs = [];
+    state.queries = [];
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      r = await call(`${BASE}/snapshot?${GUEST}`);
+      expect(r.status).toBe(503); // refused (the shared request setup itself fails without the service key); never a live read
+      expect(r.body.jobs).toEqual([]);
+      expect(state.queries.filter((q) => q.table === "feed_corpus_frozen")).toEqual([]);
+    } finally {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = key;
+    }
+  });
+
+  it("epoch metadata and best-effort stale mark: a job inserted AFTER the epoch capture but BEFORE this viewer's build reads stale=true, and capturedAt is reported separately from rankedAt", async () => {
+    state.tables.jobs = Array.from({ length: 12 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.01));
+    const first = (await call(`${BASE}/snapshot?${GUEST}&pageSize=3`)).body;
+    expect(first.stale).toBe(false);
+    // The DB clock and the app clock are different reads: assert order and a loose bound, never equality.
+    expect(Date.parse(first.corpusCapturedAt)).not.toBeNaN();
+    expect(Math.abs(Date.parse(first.snapshotBuiltAt) - Date.parse(first.corpusCapturedAt))).toBeLessThan(5_000);
+    state.tables.jobs.push(row(9100, "Frontend Developer", 0.0001, { first_seen_at: new Date(Date.now() + 1000).toISOString() }));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 10_000)); // inside the reuse window: the epoch is reused, the insert is not in it
+      const second = (await call(`${BASE}/snapshot?${GUEST}&pageSize=3`)).body;
+      expect(second.stale).toBe(true); // truthful: newer jobs exist than the epoch holds
+      expect(second.corpusCapturedAt).toBe(first.corpusCapturedAt); // epoch reused
+      expect(second.snapshotBuiltAt).not.toBe(second.corpusCapturedAt); // ranked later than captured
+      const { prototypeMemoryStore } = await import("@/lib/jobs/feedSnapshot");
+      const st = (await (prototypeMemoryStore as any).get(second.nextCursor.split(".")[1]))!;
+      expect([typeof st.epochId, st.frozenAt, st.corpusMark === null]).toEqual(["string", first.corpusCapturedAt, false]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("admission: distinct builds beyond the in-flight bound are refused with a typed retryable 503 and the slots are released afterwards", async () => {
+    state.tables.jobs = Array.from({ length: 30 }, (_, k) => row(k + 1, "Frontend Developer", 1 + k * 0.01));
+    const { MAX_INFLIGHT_BUILDS } = await import("@/lib/jobs/feedSnapshot");
+    const urls = Array.from({ length: MAX_INFLIGHT_BUILDS + 2 }, (_, k) => `${BASE}/snapshot?roles=Frontend%20Developer&experienceLevel=senior&q=distinct${k}`);
+    let open: () => void = () => {};
+    state.rpcGate = new Promise<void>((r) => { open = r; });
+    const pending = urls.map((u) => snapshotRoute(req(u)).then(async (r) => ({ status: r.status, body: await r.json(), retry: r.headers.get("retry-after") })));
+    await new Promise((r) => setTimeout(r, 50)); // all requests are now either holding a slot at the freeze or refused
+    open();
+    const results = await Promise.all(pending);
+    const busy = results.filter((r) => r.body.error === "snapshot_busy");
+    expect(busy.length).toBeGreaterThan(0);
+    for (const b of busy) expect([b.status, b.retry]).toEqual([503, "5"]);
+    expect(results.filter((r) => r.status === 200).length).toBeGreaterThan(0);
+    const after = await call(`${BASE}/snapshot?${GUEST}`); // slots released in finally
+    expect(after.status).toBe(200);
   });
 
   it("TTL: an expired snapshot resets its cursor and the next build deletes it", async () => {

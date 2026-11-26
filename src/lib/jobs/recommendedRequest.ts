@@ -179,7 +179,7 @@ export function baseCandidateQuery(r: Pick<RecommendedRequest, "supabaseAdmin" |
  * EXPLICIT feed filters as HARD filters, saved feed constraints, and the relevance pre-filter.
  * Returns null when company constraints need the jobs table and only jobs_public is available (caller: 503).
  */
-export function applyRecommendedFilters(query: any, searchParams: URLSearchParams, answers: OnboardingAnswers, hasServiceKey: boolean): any | null {
+export function applyRecommendedFilters(query: any, searchParams: URLSearchParams, answers: OnboardingAnswers, hasServiceKey: boolean, now: number = Date.now()): any | null {
   const categoryParam = searchParams.get("category") || "";
   const remoteOnly = searchParams.get("remoteOnly") === "true";
   const countryCodeParam = searchParams.get("country_code") || "";
@@ -312,7 +312,7 @@ export function applyRecommendedFilters(query: any, searchParams: URLSearchParam
 
   // 9. Date posted hard filter
   // 24h / 3d / 7d / 30d. A NULL posted_at (unknown source date) never passes an active window.
-  const postedCutoff = datePostedCutoff(dateParam);
+  const postedCutoff = datePostedCutoff(dateParam, now); // `now` lets a snapshot re-check with its FROZEN build time
   if (postedCutoff) query = query.gte("posted_at", postedCutoff);
 
   // 9b. Saved feed constraints (Preferences sheet), AND-ed with everything else, before the pool range.
