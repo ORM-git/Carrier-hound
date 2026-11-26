@@ -90,6 +90,37 @@ export function normalizeSalary(input: SalaryInput, options: { compatibility?: b
     annualMin: null, annualMax: null, period: p, periodInferred: false, conversionAssumed: false, currency, reason,
   });
 
+  if (options.compatibility) {
+    // Legacy parity (recommendations.ts ~654-690). Selection happens BEFORE any strict validation:
+    //   rawMax = max ?? min  (only null/undefined fall through; 0, negative and NaN are kept and then skipped)
+    //   skipped unless typeof rawMax === "number" && rawMax > 0  (no min>max check; the other bound is never read)
+    // A skipped selection returns null annual values with a reason: the caller's filter does not run.
+    // Comparison value for a later parity swap is (annualMax ?? annualMin): annualMax when max was selected,
+    // annualMin when max was absent and min was selected.
+    const selected = input.max ?? input.min;
+    if (typeof selected !== "number" || !(selected > 0)) {
+      return empty("compatibility: selected amount (max, else min) is not a positive number; filter skipped");
+    }
+    // Legacy test is `typeof v === "number" && v > 0`: Infinity passes it (and never disqualifies), NaN/0/negative do not.
+    const side = (v: number | null | undefined): number | null => (typeof v === "number" && v > 0 ? v : null);
+    const cMin = side(input.min);
+    const cMax = side(input.max);
+    const compat = (p: NormalizedPeriod | null, factor: number, periodInferred: boolean, conversionAssumed: boolean, reason?: string): NormalizedSalary => ({
+      annualMin: cMin === null ? null : cMin * factor,
+      annualMax: cMax === null ? null : cMax * factor,
+      period: p, periodInferred, conversionAssumed, currency, ...(reason ? { reason } : {}),
+    });
+    const recognized = period === "hourly" || period === "monthly" || period === "yearly" ? period : null;
+    if (recognized) return compat(recognized, ANNUALIZATION_FACTORS[recognized].factor, false, ANNUALIZATION_FACTORS[recognized].conversionAssumed);
+    if (rawPeriod) {
+      // Explicit but not hourly/monthly/yearly: today's code uses the amount as-is, never guesses monthly.
+      return compat(null, 1, true, true, `compatibility: unrecognized period "${rawPeriod}" used as annual`);
+    }
+    const guessed: NormalizedPeriod =
+      selected < COMPAT_GUESS_THRESHOLDS.hourlyBelow ? "hourly" : selected < COMPAT_GUESS_THRESHOLDS.monthlyBelow ? "monthly" : "yearly";
+    return compat(guessed, ANNUALIZATION_FACTORS[guessed].factor, true, true, `compatibility: period guessed ${guessed} from amount`);
+  }
+
   const min = usable(input.min) ? input.min : null;
   const max = usable(input.max) ? input.max : null;
   const badMin = input.min != null && min === null;
@@ -109,20 +140,6 @@ export function normalizeSalary(input: SalaryInput, options: { compatibility?: b
     currency,
     ...(reason ? { reason } : {}),
   });
-
-  if (options.compatibility) {
-    // recommendations.ts reads one amount (max, else min) and picks one factor from it.
-    const probe = (max ?? min) as number;
-    const recognized = period === "hourly" || period === "monthly" || period === "yearly" ? period : null;
-    if (recognized) return annualize(recognized, ANNUALIZATION_FACTORS[recognized].factor, false, ANNUALIZATION_FACTORS[recognized].conversionAssumed, invalidNote);
-    if (rawPeriod) {
-      // Explicit but not hourly/monthly/yearly: today's code uses the amount as-is, never guesses monthly.
-      return annualize(null, 1, true, true, `compatibility: unrecognized period "${rawPeriod}" used as annual`);
-    }
-    const guessed: NormalizedPeriod =
-      probe < COMPAT_GUESS_THRESHOLDS.hourlyBelow ? "hourly" : probe < COMPAT_GUESS_THRESHOLDS.monthlyBelow ? "monthly" : "yearly";
-    return annualize(guessed, ANNUALIZATION_FACTORS[guessed].factor, true, true, `compatibility: period guessed ${guessed} from amount`);
-  }
 
   if (!rawPeriod) return empty("period not stated; not annualized");
   const ambiguity = periodAmbiguity(rawPeriod);
