@@ -30,7 +30,7 @@ describe('phone cosmetic scope',()=>{
 it('uses CM blue instead of reference green for phone accents',()=>{
  const css=readFileSync('src/app/jobs/mobile-reference.css','utf8');
  expect(css).toContain('background: #2563eb; color: #fff');
- expect(css).toContain('stop-color: #2563eb');
+ expect(readFileSync('src/components/jobs/JobCardContent.tsx','utf8')).toContain('stroke={light ? "#2563EB"');
  expect(css).not.toMatch(/#00dba0|#97f8e7|#8cecc2|#d8fbc8|#e3faf3/);
 });
 
