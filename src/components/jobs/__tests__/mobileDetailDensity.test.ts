@@ -10,9 +10,11 @@ const facts = detail.slice(detail.indexOf('data-testid="mobile-job-facts"'), det
 describe("mobile detail density", () => {
   it("the fact list is mobile-only, one icon row per fact, with salary always shown", () => {
     expect(detail).toContain('<ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden');
-    for (const fact of ["job.location", "Location locked", "workModelLabel(job)", "job.remoteScope", "{job.type}", "{jobLevel}", "{expText}", "job.salary", "Not disclosed"]) {
+    for (const fact of ["job.location", "Location locked", "detailWorkModel", "{job.type}", "{jobLevel}", "{expText}", "job.salary", "Not disclosed"]) {
       expect(facts).toContain(fact);
     }
+    expect(detail).toContain("const detailWorkModel = workModelDetailLabel(job)");
+    expect(detail).toContain("!isUnlocked || !isDuplicateWorkModelLocation(job.location, detailWorkModel)");
     // salary is never masked on mobile: free viewers see it, "Not disclosed" when empty
     expect(facts).not.toContain("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
     expect(detail).toContain('data-testid="mobile-job-salary"');
