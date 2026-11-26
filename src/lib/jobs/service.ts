@@ -133,6 +133,8 @@ export interface GetJobsResult {
   totalCount: number;
   nextCursor?: string | null;
   hasNextPage?: boolean;
+  /** Candidate scan only: true when totalCount is a lower bound (the scan has not reached the end). */
+  totalCountPartial?: boolean;
   isDegraded?: boolean;
   error?: string | null;
   appliedEligibility?: { countries: string[]; filteredOut: number } | null;
@@ -349,10 +351,69 @@ export function extractCandidateRelevanceTerms(
     .slice(0, 10);
 }
 
-const PUBLIC_SELECT_COLUMNS =
+export const PUBLIC_SELECT_COLUMNS =
   "id, title, location, category, remote, remote_scope, remote_eligibility, country_code, job_type, verified, posted_at, created_at";
 
 import { capJobsPerCompany } from "./capping";
+import { decodeCursor, encodeCursor, type KeysetCursorPayload } from "@/lib/pagination/cursor";
+
+/** Raw rows ranked together by the candidate scan (the pool size before continuation existed). */
+const SCAN_WINDOW = 250;
+/** Windows one request may scan before returning a partial page with a continuation. */
+const SCAN_WINDOWS_PER_REQUEST = 4;
+const SCAN_CURSOR_PREFIX = "cs1.";
+type ScanSource = "m" | "c"; // title-match query, or the saved-category fallback
+interface ScanCursor { q: string; t: number; src: ScanSource; skip: number; before: number; after: KeysetCursorPayload | null }
+
+/** A continuation older than this is refused (reset), so a long-idle tab never resumes a stale scan. */
+const SCAN_CURSOR_TTL_MS = 6 * 3600_000;
+/** An invalid continuation (other query, tier, viewer/session, expired, malformed): the caller restarts at page 1. */
+export const CURSOR_RESET_ERROR = "cursor_reset";
+const CURSOR_RESET_RESULT: GetJobsResult = { jobs: [], totalCount: 0, nextCursor: null, hasNextPage: false, error: CURSOR_RESET_ERROR };
+
+/** Identity of filters + ranking inputs + tier + viewer/session epoch (cyrb53, 53-bit). A fail-closed consistency
+ *  check against resuming the wrong continuation, not authentication: the cursor carries no token or secret. */
+function scanQueryId(parts: unknown[]): string {
+  const s = JSON.stringify(parts);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+/** cs1.<identity>.<scoredAt>.<src>.<skip>.<before>.<keyset|0>; null when the window key cannot round-trip. */
+function encodeScanCursor(c: ScanCursor): string | null {
+  let key = "0";
+  if (c.after) {
+    key = encodeCursor(c.after.posted_at, c.after.id);
+    const back = decodeCursor(key);
+    if (!back || back.id !== c.after.id || back.posted_at !== c.after.posted_at) return null;
+  }
+  return `${SCAN_CURSOR_PREFIX}${c.q}.${c.t}.${c.src}.${c.skip}.${c.before}.${key}`;
+}
+
+function decodeScanCursor(raw: string | null | undefined, q: string): ScanCursor | null {
+  if (!raw || !raw.startsWith(SCAN_CURSOR_PREFIX)) return null;
+  const parts = raw.split(".");
+  const [, id, t, src, skip, before, key] = parts;
+  if (parts.length !== 7 || id !== q || (src !== "m" && src !== "c")) return null;
+  const nums = [t, skip, before].map((n) => (/^\d{1,15}$/.test(n) ? Number(n) : NaN));
+  const age = Date.now() - nums[0];
+  if (!nums.every(Number.isSafeInteger) || age < -60_000 || age > SCAN_CURSOR_TTL_MS) return null;
+  const after = key === "0" ? null : decodeCursor(key);
+  if (key !== "0" && !after) return null;
+  return { q, t: nums[0], src, skip: nums[1], before: nums[2], after };
+}
+
+const uniqueById = <T extends { id?: unknown }>(rows: T[]): T[] => {
+  const seen = new Set<unknown>();
+  return rows.filter((r) => !seen.has(r.id) && (seen.add(r.id), true));
+};
 import { jobTypeOrClause, workModelOrClause } from "./jobFilters";
 
 import { createLogger } from "@/lib/observability/logger";
@@ -376,8 +437,8 @@ const DEGRADED_JOBS_RESULT: GetJobsResult = {
  * When sortBy is "match", computes fit across the full corpus on the server/DB.
  */
 export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobsResult> {
-  // One reference instant per response: every score and revision below is computed at it.
-  const scoredAt = Date.now();
+  // One reference instant per response (a scan continuation keeps its first page's): every score and revision below is computed at it.
+  let scoredAt = Date.now();
   const isLegacyBehavior =
     process.env.NODE_ENV === "test" &&
     process.env.__CAREERMONKE_LEGACY_JOBS_SERVICE === "true";
@@ -421,7 +482,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const effectiveDatePosted = stricterDatePosted(datePosted, feedConstraints.datePosted) ?? undefined;
 
   const baseUrl = options.baseUrl ?? (typeof window !== "undefined" ? "" : (process.env.TEST_BASE_URL || ""));
-  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || cursor);
+  // A candidate-scan continuation stays on the direct path that issued it; any other cursor belongs to the server.
+  const hasServerFilter = Boolean(hasFeedConstraints(feedConstraints) || (search && search.trim()) || (company && company.trim()) || salaryMin || (sourceType && sourceType !== "all") || (cursor && !cursor.startsWith(SCAN_CURSOR_PREFIX)));
   const shouldUseServer = (typeof window !== "undefined" || Boolean(baseUrl)) && (hasServerFilter || !candidate || relevanceTerms.length === 0);
   if (shouldUseServer) {
     try {
@@ -588,150 +650,168 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       ? extractCandidateRelevanceTerms(candidate, preferences)
       : [];
 
-    let query = supabase
-      .from("jobs_public")
-      .select(PUBLIC_SELECT_COLUMNS, { count: "exact" }).or(VISIBLE_SOURCE_FILTER)
-      .eq("is_active", true)
-      .eq("status", "active");
-
-    if (category && category !== "all") {
-      const c = category.toLowerCase().trim();
-      if (c === "trending") {
-        query = query.in("category", ["ai", "engineering", "devops"]);
-      } else if (c === "tech") {
-        query = query.in("category", ["engineering", "devops", "ai", "software"]);
-      } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
-        query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%,title.imatch.\\yAI\\y,title.ilike.ai %,title.ilike.% ai %,title.ilike.% ai,title.ilike.ai");
-      } else if (c === "data" || c === "data-analytics" || c === "data-science") {
-        query = query.or("category.eq.data,category.eq.data-analytics,title.ilike.%data %,title.ilike.%analytics%,title.ilike.%database%");
-      } else if (c === "engineering" || c === "software") {
-        query = query.in("category", ["engineering", "software"]);
-      } else if (c === "internships") {
-        query = query.or("job_type.eq.internship,title.ilike.%internship%,title.ilike.%internships%,title.ilike.% intern %,title.ilike.intern %,title.ilike.% intern,title.ilike.%-intern%,title.ilike.%(intern)%,title.ilike.%co-op%,title.ilike.%coop%");
-      } else if (c === "remote") {
-        query = query.eq("remote", true);
-      } else if (c === "fresher") {
-        query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%,title.ilike.%internship%,title.ilike.% intern %,job_type.eq.internship");
-      } else if (c === "operations") {
-        query = query.or("category.eq.operations,title.ilike.%operation%,title.ilike.%ops%");
-      } else if (c === "cyber-security") {
-        query = query.or("category.eq.cyber-security,title.ilike.%security%,title.ilike.%cyber%");
-      } else if (c === "customer-support") {
-        query = query.or("category.eq.customer-support,title.ilike.%support%,title.ilike.%customer%,title.ilike.%success%");
-      } else if (c === "legal") {
-        query = query.or("category.eq.legal,title.ilike.%legal%,title.ilike.%compliance%");
-      } else if (c === "healthcare") {
-        query = query.or("category.eq.healthcare,title.ilike.%health%,title.ilike.%clinical%");
-      } else {
-        query = query.or(`category.ilike.%${c}%,title.ilike.%${c}%`);
-      }
-    }
-
-    if (remoteOnly) {
-      query = query.eq("remote", true);
-    }
-
-    if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
-      const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
-      if (code) {
-        const orClause = getCountryFilterClause(code);
-        if (orClause) {
-          query = query.or(orClause);
-        } else {
-          query = query.eq("country_code", code);
-        }
-      }
-    }
-
-    if (location && location.trim() && location.toLowerCase() !== "all") {
-      const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
-      if (loc.toLowerCase() === "remote") {
-        query = query.or("remote.eq.true,location.ilike.%remote%");
-      } else if (loc) {
-        query = query.ilike("location", "%" + loc + "%");
+    const isCandidateScan = isMatchSort && Boolean(candidate) && relevanceTerms.length > 0;
+    const answers = answersFromCandidate(candidate, preferences);
+    let queryId = "";
+    let resumed: ScanCursor | null = null;
+    if (isCandidateScan) {
+      // Session epoch: changes on a new sign-in or account switch, not on a token refresh. Never the token itself.
+      const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      queryId = scanQueryId([category, search, remoteOnly, countryCode, location, jobType, level, experience, workModel,
+        effectiveDatePosted, relevanceTerms, answers, isPro, session?.user?.id ?? null, session?.user?.last_sign_in_at ?? null]);
+      if (cursor) {
+        resumed = decodeScanCursor(cursor, queryId);
+        // Never resume another query's (or viewer's, tier's, expired) continuation: the caller restarts at page 1.
+        if (!resumed) return CURSOR_RESET_RESULT;
+        // One instant per continuation: same scores and the same date window on every page.
+        scoredAt = resumed.t;
       }
     }
 
     const jobTypeClause = jobTypeOrClause(jobType);
-    if (jobTypeClause) query = query.or(jobTypeClause);
-
-    if (level && level.trim() && level.toLowerCase() !== "all") {
-      query = applyExperienceLevelQuery(query, level);
-    }
-
-    if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
-      const exp = experience.trim().toLowerCase();
-      if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
-        query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
-      } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
-        query = query
-          .not("title", "ilike", "%senior%")
-          .not("title", "ilike", "%sr.%")
-          .not("title", "ilike", "%staff%")
-          .not("title", "ilike", "%principal%")
-          .not("title", "ilike", "%lead%")
-          .not("title", "ilike", "%junior%")
-          .not("title", "ilike", "%entry%");
-      } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
-        query = query
-          .or(EARLY_CAREER_OR_CLAUSE)
-          .not("title", "ilike", "%senior%")
-          .not("title", "ilike", "%sr.%")
-          .not("title", "ilike", "%staff%")
-          .not("title", "ilike", "%principal%")
-          .not("title", "ilike", "%lead%");
-      } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
-        query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
-      }
-    }
-
     const workModelClause = workModelOrClause(workModel);
-    if (workModelClause) query = query.or(workModelClause);
-
     // 24h / 3d / 7d / 30d. A NULL posted_at (unknown source date) never passes an active window.
-    const postedCutoff = datePostedCutoff(effectiveDatePosted);
-    if (postedCutoff) query = query.gte("posted_at", postedCutoff);
+    const postedCutoff = datePostedCutoff(effectiveDatePosted, scoredAt);
 
-    // Note: company, salaryMin, and sourceType columns are not present in jobs_public view.
-    // They are guarded here and safely resolved via server search (/api/jobs/search).
+    // PostgREST builders mutate in place, so every scan window needs a freshly built query.
+    // Later windows skip the exact count: the scan never reads it, and one count per request is today's cost.
+    const buildQuery = (withCount = true) => {
+      let query = supabase
+        .from("jobs_public")
+        .select(PUBLIC_SELECT_COLUMNS, withCount ? { count: "exact" } : undefined).or(VISIBLE_SOURCE_FILTER)
+        .eq("is_active", true)
+        .eq("status", "active");
 
-    if (search && search.trim()) {
-      const q = search.trim().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
-      const parts = q.split(" ").filter((p) => p.length >= 2);
-      if (parts.length > 1) {
-        for (const p of parts) {
-          query = query.or(`title.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%`);
+      if (category && category !== "all") {
+        const c = category.toLowerCase().trim();
+        if (c === "trending") {
+          query = query.in("category", ["ai", "engineering", "devops"]);
+        } else if (c === "tech") {
+          query = query.in("category", ["engineering", "devops", "ai", "software"]);
+        } else if (c === "ai" || c === "ai-ml" || c === "ai-machine-learning" || c === "machine-learning") {
+          query = query.or("category.eq.ai,category.eq.ai-ml,title.ilike.%machine learning%,title.ilike.%deep learning%,title.ilike.%llm%,title.ilike.%nlp%,title.imatch.\\yAI\\y,title.ilike.ai %,title.ilike.% ai %,title.ilike.% ai,title.ilike.ai");
+        } else if (c === "data" || c === "data-analytics" || c === "data-science") {
+          query = query.or("category.eq.data,category.eq.data-analytics,title.ilike.%data %,title.ilike.%analytics%,title.ilike.%database%");
+        } else if (c === "engineering" || c === "software") {
+          query = query.in("category", ["engineering", "software"]);
+        } else if (c === "internships") {
+          query = query.or("job_type.eq.internship,title.ilike.%internship%,title.ilike.%internships%,title.ilike.% intern %,title.ilike.intern %,title.ilike.% intern,title.ilike.%-intern%,title.ilike.%(intern)%,title.ilike.%co-op%,title.ilike.%coop%");
+        } else if (c === "remote") {
+          query = query.eq("remote", true);
+        } else if (c === "fresher") {
+          query = query.or("title.ilike.%junior%,title.ilike.%entry%,title.ilike.%associate%,title.ilike.%internship%,title.ilike.% intern %,job_type.eq.internship");
+        } else if (c === "operations") {
+          query = query.or("category.eq.operations,title.ilike.%operation%,title.ilike.%ops%");
+        } else if (c === "cyber-security") {
+          query = query.or("category.eq.cyber-security,title.ilike.%security%,title.ilike.%cyber%");
+        } else if (c === "customer-support") {
+          query = query.or("category.eq.customer-support,title.ilike.%support%,title.ilike.%customer%,title.ilike.%success%");
+        } else if (c === "legal") {
+          query = query.or("category.eq.legal,title.ilike.%legal%,title.ilike.%compliance%");
+        } else if (c === "healthcare") {
+          query = query.or("category.eq.healthcare,title.ilike.%health%,title.ilike.%clinical%");
+        } else {
+          query = query.or(`category.ilike.%${c}%,title.ilike.%${c}%`);
         }
-      } else {
-        query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%,category.ilike.%${q}%`);
       }
-    }
+
+      if (remoteOnly) {
+        query = query.eq("remote", true);
+      }
+
+      if (countryCode && countryCode.trim() && countryCode.toLowerCase() !== "all") {
+        const code = countryCode.trim().replace(/[%_(),"'`;\\$*]/g, " ").toUpperCase().trim();
+        if (code) {
+          const orClause = getCountryFilterClause(code);
+          if (orClause) {
+            query = query.or(orClause);
+          } else {
+            query = query.eq("country_code", code);
+          }
+        }
+      }
+
+      if (location && location.trim() && location.toLowerCase() !== "all") {
+        const loc = location.trim().replace(/[%_(),\"'`;\\$*]/g, " ").trim();
+        if (loc.toLowerCase() === "remote") {
+          query = query.or("remote.eq.true,location.ilike.%remote%");
+        } else if (loc) {
+          query = query.ilike("location", "%" + loc + "%");
+        }
+      }
+
+      if (jobTypeClause) query = query.or(jobTypeClause);
+
+      if (level && level.trim() && level.toLowerCase() !== "all") {
+        query = applyExperienceLevelQuery(query, level);
+      }
+
+      if (experience && experience.trim() && experience.toLowerCase() !== "all" && experience.toLowerCase() !== "all experience") {
+        const exp = experience.trim().toLowerCase();
+        if (exp.includes("8") || exp.includes("lead") || exp.includes("staff") || exp.includes("principal")) {
+          query = query.or("title.ilike.%staff%,title.ilike.%principal%,title.ilike.%lead%");
+        } else if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("mid")) {
+          query = query
+            .not("title", "ilike", "%senior%")
+            .not("title", "ilike", "%sr.%")
+            .not("title", "ilike", "%staff%")
+            .not("title", "ilike", "%principal%")
+            .not("title", "ilike", "%lead%")
+            .not("title", "ilike", "%junior%")
+            .not("title", "ilike", "%entry%");
+        } else if (exp.includes("1-3") || exp.includes("1 to 3") || exp.includes("entry") || exp.includes("junior") || exp.includes("intern")) {
+          query = query
+            .or(EARLY_CAREER_OR_CLAUSE)
+            .not("title", "ilike", "%senior%")
+            .not("title", "ilike", "%sr.%")
+            .not("title", "ilike", "%staff%")
+            .not("title", "ilike", "%principal%")
+            .not("title", "ilike", "%lead%");
+        } else if (exp.includes("5") || exp.includes("senior") || exp.includes("sr")) {
+          query = query.or("title.ilike.%senior%,title.ilike.%sr.%");
+        }
+      }
+
+      if (workModelClause) query = query.or(workModelClause);
+
+      if (postedCutoff) query = query.gte("posted_at", postedCutoff);
+
+      // Note: company, salaryMin, and sourceType columns are not present in jobs_public view.
+      // They are guarded here and safely resolved via server search (/api/jobs/search).
+
+      if (search && search.trim()) {
+        const q = search.trim().replace(/[%_(),"'`;\\$*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+        const parts = q.split(" ").filter((p) => p.length >= 2);
+        if (parts.length > 1) {
+          for (const p of parts) {
+            query = query.or(`title.ilike.%${p}%,location.ilike.%${p}%,category.ilike.%${p}%`);
+          }
+        } else {
+          query = query.or(`title.ilike.%${q}%,location.ilike.%${q}%,category.ilike.%${q}%`);
+        }
+      }
+      return query;
+    };
+    let query = buildQuery();
 
     let data: any[] | null = null;
     let count: number | null = null;
+    // Set only by the candidate scan: server-owned continuation instead of page arithmetic over `count`.
+    let scanMeta: { hasNextPage: boolean; nextCursor: string | null; partial: boolean } | null = null;
 
-    if (isMatchSort && candidate && relevanceTerms.length > 0) {
-      // 1. Corpus-wide matching for candidate profile
+    if (isCandidateScan) {
+      // Scan SCAN_WINDOW-row windows in (posted_at desc, id desc) order. Each window is ranked on its own with the
+      // unchanged scorer and per-company cap; pages are cut from the ranked windows in window order.
+      // NOT parity with one rank over the whole corpus beyond one window (owner decision pending, PR #788):
+      // a stronger match in a later (older) window lands after the weaker rows of earlier windows.
       const matchClause = relevanceTerms.map((t) => `title.ilike.%${t}%`).join(",");
-      const matchQuery = query
-        .or(matchClause)
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .range(0, 249);
-
-      const res = await matchQuery;
-      if (res.error && !isLegacyBehavior) {
-        return DEGRADED_JOBS_RESULT;
-      }
-      let candidatePool = res.data || [];
-      count = res.count;
-
-      if (candidatePool.length === 0 && preferences?.categories?.length) {
+      const buildCatQuery = () => {
         let catQuery = supabase
           .from("jobs_public")
-          .select(PUBLIC_SELECT_COLUMNS, { count: "exact" }).or(VISIBLE_SOURCE_FILTER)
+          .select(PUBLIC_SELECT_COLUMNS).or(VISIBLE_SOURCE_FILTER)
           .eq("is_active", true)
           .eq("status", "active")
-          .in("category", preferences.categories);
+          .in("category", preferences?.categories || []);
 
         if (remoteOnly) {
           catQuery = catQuery.eq("remote", true);
@@ -786,19 +866,60 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
             catQuery = catQuery.or("title.ilike.%senior%,title.ilike.%sr.%");
           }
         }
+        return catQuery;
+      };
 
-        catQuery = catQuery
-          .order("posted_at", { ascending: false, nullsFirst: false })
-          .range(0, 249);
-        const catRes = await catQuery;
-        if (catRes.error && !isLegacyBehavior) {
-          return DEGRADED_JOBS_RESULT;
+      let src: ScanSource = resumed?.src ?? "m";
+      let after = resumed?.after ?? null;
+      let skip = resumed ? resumed.skip : from; // no cursor (legacy callers): page arithmetic from the stream start
+      let before = resumed?.before ?? 0;
+      const picked: any[] = [];
+      let windows = 0;
+      let known = before; // eligible rows known up to the scan position; exact only once the end is reached
+      let exhausted = false;
+      let noMatches = false;
+      for (;;) {
+        if (windows === SCAN_WINDOWS_PER_REQUEST) break; // budget spent: partial page, continuation kept
+        if (options.signal?.aborted) return DEGRADED_JOBS_RESULT;
+        // The first window reuses `query` so the unchanged no-match fallback below sends the same request as before.
+        let q: any = src === "c" ? buildCatQuery() : (windows === 0 ? query : buildQuery(false)).or(matchClause);
+        if (after) {
+          q = after.posted_at
+            ? q.or(`posted_at.lt.${after.posted_at},and(posted_at.eq.${after.posted_at},id.lt.${after.id}),posted_at.is.null`)
+            : q.is("posted_at", null).lt("id", after.id);
         }
-        candidatePool = catRes.data || [];
-        count = catRes.count;
+        // One row past the window tells a genuine end from a full window.
+        q = q.order("posted_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(0, SCAN_WINDOW);
+        if (options.signal && typeof q.abortSignal === "function") q = q.abortSignal(options.signal);
+        const res = await q;
+        windows++;
+        if (res.error && !isLegacyBehavior) return DEGRADED_JOBS_RESULT;
+        const raw: any[] = res.data || [];
+        if (raw.length === 0 && !resumed && !after) {
+          if (src === "m" && preferences?.categories?.length) {
+            src = "c";
+            continue;
+          }
+          noMatches = true;
+          break;
+        }
+        const rows = raw.slice(0, SCAN_WINDOW);
+        const ranked = capJobsPerCompany(rankJobsByRecommendation(uniqueById(rows), answers, scoredAt), 3, 30);
+        const take = ranked.slice(skip, skip + pageSize - picked.length);
+        picked.push(...take);
+        skip += take.length;
+        known = before + ranked.length;
+        if (skip < ranked.length) break; // page filled inside this window
+        if (raw.length <= SCAN_WINDOW) { exhausted = true; break; }
+        before = known;
+        skip -= ranked.length;
+        after = { posted_at: rows[rows.length - 1].posted_at ?? null, id: rows[rows.length - 1].id };
+        // Only a validated (UUID, ISO) key may reach the next window's filter or a cursor; otherwise fail closed.
+        if (!encodeScanCursor({ q: queryId, t: scoredAt, src, skip, before, after })) return DEGRADED_JOBS_RESULT;
+        if (picked.length === pageSize) break;
       }
 
-      if (candidatePool.length === 0) {
+      if (noMatches) {
         const fallbackRes = await query
           .order("posted_at", { ascending: false, nullsFirst: false })
           .range(from, to);
@@ -808,12 +929,12 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         data = fallbackRes.data;
         count = fallbackRes.count;
       } else {
-        // Shared recommendation scorer (relevance gate, seniority/location/salary filters, score, order),
-        // with the resume's titles, headline and skills added to the saved preferences.
-        const ranked = rankJobsByRecommendation(candidatePool, answersFromCandidate(candidate, preferences), scoredAt);
-        const cappedPool = capJobsPerCompany(ranked, 3, 30);
-        data = cappedPool.slice(from, to + 1);
-        count = cappedPool.length;
+        const nextCursor = exhausted ? null : encodeScanCursor({ q: queryId, t: scoredAt, src, skip, before, after });
+        // A key that cannot round-trip has no safe continuation: fail closed (retryable), never guess a page offset.
+        if (!exhausted && !nextCursor) return DEGRADED_JOBS_RESULT;
+        data = picked;
+        count = known;
+        scanMeta = { hasNextPage: !exhausted, nextCursor, partial: !exhausted };
       }
     } else if (isMatchSort && (!candidate || relevanceTerms.length === 0)) {
       if (hasOnboardingAnswers(preferences)) {
@@ -865,8 +986,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         return {
           jobs: [],
           totalCount: count ?? 0,
-          nextCursor: null,
-          hasNextPage: false,
+          nextCursor: scanMeta?.nextCursor ?? null,
+          hasNextPage: scanMeta?.hasNextPage ?? false,
+          ...(scanMeta && { totalCountPartial: scanMeta.partial }),
         };
       }
       const mappedJobs: LiveJob[] = data.map((row: any) => {
@@ -1002,8 +1124,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       return {
         jobs: filteredJobs,
         totalCount: count ?? 0,
-        nextCursor: null,
-        hasNextPage: (page * pageSize) < (count ?? 0),
+        nextCursor: scanMeta?.nextCursor ?? null,
+        hasNextPage: scanMeta ? scanMeta.hasNextPage : (page * pageSize) < (count ?? 0),
+        ...(scanMeta && { totalCountPartial: scanMeta.partial }),
       };
     }
   } catch (err) {

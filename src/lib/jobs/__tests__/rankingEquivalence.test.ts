@@ -3,7 +3,7 @@
  * frozen pre-optimization copy (./recommendations.legacy.ts + ./eligibility.legacy.ts) returns, object for object,
  * on the same fixtures. Also counts regex compiles / country-table scans / scorer evaluations on those fixtures.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../experienceLevels", async (importOriginal) => {
   const m = await importOriginal<typeof import("../experienceLevels")>();
@@ -276,5 +276,66 @@ describe("ranking equivalence with the pre-optimization implementation", () => {
     // Without resume signals the base score is reused: one scorer evaluation per job instead of two (+1 filter recheck)
     expect(rows[0].seniorityEvalsAfter as number).toBeLessThanOrEqual(jobs.length);
     console.log("[ranking-call-counts]", JSON.stringify(rows));
+  });
+});
+
+// ---------------------------------------------------------------- windowed continuation vs one single-pass rank
+// For You with a resume (getLiveJobs direct path) scans 250-row windows over a FIXTURE jobs_public. Same scorer,
+// same answers, same scoring instant: compares the continuation's emitted order with one rank over the corpus.
+vi.mock("@/lib/supabase/client", async () => {
+  const { table, getSession } = await import("./fixtures/fakeJobsPublic");
+  return { createClient: () => ({ auth: { getSession }, from: () => table() }) };
+});
+
+import * as F from "./fixtures/fakeJobsPublic";
+import { getLiveJobs, capJobsPerCompany, PUBLIC_SELECT_COLUMNS } from "../service";
+
+describe("windowed continuation vs single-pass rank on the same complete corpus", () => {
+  const SCAN_NOW = new Date("2026-11-25T06:00:00Z").getTime();
+  const singlePass = (rows: any[]) =>
+    capJobsPerCompany(current.rankJobsByRecommendation([...rows].sort(F.cmp), current.answersFromCandidate(F.CANDIDATE, F.PREFS), SCAN_NOW), 3, 30).map((r: any) => r.id);
+  async function windowed() {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    for (let p = 1; p <= 40; p++) {
+      const res = await getLiveJobs({ sortBy: "match", page: p, pageSize: 25, candidate: F.CANDIDATE, preferences: F.PREFS, cursor: cursor ?? undefined });
+      ids.push(...res.jobs.map((j) => j.id));
+      if (!res.hasNextPage) return ids;
+      cursor = res.nextCursor ?? null;
+    }
+    throw new Error("no end");
+  }
+  const MIXED = ["Junior Software Engineer", "Software Engineer", "Junior Software Engineer React TypeScript", "Senior Software Engineer", "Associate Software Engineer", "Junior Engineer Software Support"];
+  beforeEach(() => {
+    F.resetDb();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(SCAN_NOW);
+  });
+  afterAll(() => vi.useRealTimers());
+
+  it("a corpus that fits one window: identical order to the single-pass rank", async () => {
+    F.db.rows = Array.from({ length: 240 }, (_, k) => F.job(k + 1, MIXED[(k * 5) % MIXED.length]));
+    const expected = singlePass(F.db.rows);
+    expect(expected.length).toBeGreaterThan(100);
+    expect(await windowed()).toEqual(expected);
+  });
+
+  it("company caps: jobs_public rows carry no company key, so the cap is the identity and holds globally (no per-window reset effect)", async () => {
+    expect(PUBLIC_SELECT_COLUMNS.split(",").map((c) => c.trim())).not.toEqual(expect.arrayContaining(["company", "company_id", "companyGroupId"]));
+    const keyless = Array.from({ length: 600 }, (_, k) => F.job(k + 1, MIXED[k % MIXED.length]));
+    expect(capJobsPerCompany<any>(keyless, 3, 30)).toEqual(keyless);
+    F.db.rows = keyless;
+    const ids = await windowed();
+    // Global = cap over the whole emitted stream; per-window caps reset every 250 rows. On this row shape they agree.
+    expect(capJobsPerCompany(ids.map((id) => ({ id, company_id: null as string | null })), 3, 30).map((r) => r.id)).toEqual(ids);
+  });
+
+  // KNOWN CONSTRAINT (PR #788, owner decision): bounded windows cannot match one rank over a corpus larger than a
+  // window. Minimal fixture: 250 newer rows scoring 71 and one older row 251 scoring 75. The single-pass rank puts
+  // row 251 first; any bounded scan emits page 1 before it has read row 251. it.fails flips if parity is ever met.
+  it.fails("KNOWN CONSTRAINT: a stronger match in the second window is ranked first by the single-pass rank", async () => {
+    F.db.rows = [...Array.from({ length: 250 }, (_, k) => F.junior(k + 1)), F.job(251, "Junior Software Engineer React TypeScript")];
+    expect(singlePass(F.db.rows)[0]).toBe(F.db.rows[250].id);
+    expect(await windowed()).toEqual(singlePass(F.db.rows));
   });
 });
