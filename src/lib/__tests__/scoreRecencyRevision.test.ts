@@ -177,9 +177,16 @@ describe("routes stamp score and revision from one reference instant", () => {
   it.each(files)("%s", (file) => {
     const lines = readFileSync(file, "utf8").split(/\r?\n/);
     const calls = lines.filter((l) => /\b(scoreInputRevision|sharedDisplayScore|rankJobsByRecommendation)\(/.test(l) && !/^\s*(import|\/\/|\*)/.test(l));
-    expect(calls.some((l) => l.includes("scoreInputRevision("))).toBe(true);
+    // The recommended route formats rows through formatRecommendedRow, which receives this instant as ctx.scoredAt.
+    expect(calls.some((l) => l.includes("scoreInputRevision(")) || lines.some((l) => l.includes("formatRecommendedRow("))).toBe(true);
     // Each call passes the response's one instant as its last argument
     for (const l of calls) expect(l.trim(), l.trim()).toMatch(/,\s*scoredAt\)[,;]?$/);
     expect(lines.filter((l) => /const scoredAt = Date\.now\(\);/.test(l)).length).toBeGreaterThan(0);
+  });
+  it("src/lib/jobs/recommendedShared.ts stamps score and revision from the caller's one instant", () => {
+    const lines = readFileSync("src/lib/jobs/recommendedShared.ts", "utf8").split(/\r?\n/);
+    const calls = lines.filter((l) => /\b(scoreInputRevision|sharedDisplayScore)\(/.test(l) && !/^\s*(import|\/\/|\*)/.test(l));
+    expect(calls.length).toBe(4);
+    for (const l of calls) expect(l.trim(), l.trim()).toMatch(/,\s*ctx\.scoredAt\)[,;]?$/);
   });
 });
