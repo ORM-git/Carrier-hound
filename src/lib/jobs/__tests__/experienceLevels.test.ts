@@ -37,6 +37,16 @@ const CORPUS: Row[] = [
   { title: "Senior Intern Program Lead", job_type: "internship" }, // intern (job_type) wins
   { title: "International Sales Manager", job_type: "full-time" }, // no title-based intern guess
   { title: "SENIOR DEVOPS ENGINEER", job_type: "Full-Time" },
+  { title: "Director of Engineering", job_type: "full-time" },
+  { title: "Senior Director, Product", job_type: "full-time" }, // director wins over senior
+  { title: "Associate Director", job_type: "full-time" }, // director wins over entry
+  { title: "Head of Growth", job_type: null },
+  { title: "VP Sales", job_type: "full-time" },
+  { title: "Vice President, Finance", job_type: "full-time" },
+  { title: "Chief of Staff", job_type: "full-time" }, // director wins over lead (staff)
+  { title: "Directory Services Engineer", job_type: "full-time" }, // not a whole-word director
+  { title: "Headphone Designer", job_type: "full-time" }, // "head of" needs the whole phrase
+  { title: "Director Intern", job_type: "internship" }, // intern (job_type) wins
 ];
 
 const ALL_SUBSETS: CanonicalExperienceLevel[][] = [];
@@ -61,9 +71,10 @@ describe("parseExperienceLevels", () => {
     }
   });
 
-  it("treats empty/all as no filter and drops invalid, unsupported (director) and injected values", () => {
+  it("treats empty/all as no filter and drops invalid and injected values (director is now a level)", () => {
     for (const none of ["", "   ", "all", null, undefined, ","]) expect(parseExperienceLevels(none)).toEqual([]);
-    expect(parseExperienceLevels("entry,director,manager")).toEqual(["entry"]);
+    expect(parseExperienceLevels("entry,director,manager")).toEqual(["entry", "director"]);
+    expect(parseExperienceLevels("Director / Executive,exec")).toEqual(["director"]);
     expect(parseExperienceLevels("senior,title.ilike.%x%)") ).toEqual(["senior"]);
     expect(parseExperienceLevels("'; DROP TABLE jobs;--,or(id.gt.0)")).toEqual([]);
   });
@@ -73,10 +84,12 @@ describe("parseExperienceLevels", () => {
     expect(parseExperienceLevels("senior," + "x,".repeat(5000))).toEqual(["senior"]);
   });
 
-  it("isExperienceLevelFilterActive: 1-4 levels filter; empty/all/all five do not", () => {
+  it("isExperienceLevelFilterActive: 1-5 levels filter; empty/all/all six do not", () => {
     expect(isExperienceLevelFilterActive("entry,senior")).toBe(true);
     expect(isExperienceLevelFilterActive("all")).toBe(false);
-    expect(isExperienceLevelFilterActive("intern,entry,mid,senior,lead")).toBe(false);
+    expect(isExperienceLevelFilterActive("intern,entry,mid,senior,lead,director")).toBe(false);
+    expect(isExperienceLevelFilterActive("intern,entry,mid,senior,lead")).toBe(true); // five of six now excludes directors
+    expect(isExperienceLevelFilterActive("director")).toBe(true);
     expect(formatExperienceLevels(parseExperienceLevels("senior,entry"))).toBe("entry,senior");
   });
 });
@@ -134,8 +147,8 @@ describe("applyExperienceLevelQuery", () => {
     return q;
   };
 
-  it("adds nothing for empty/all/all five; one .or() otherwise (AND-ed with other filters by the caller)", () => {
-    for (const none of ["", "all", "intern,entry,mid,senior,lead", "director"]) {
+  it("adds nothing for empty/all/all six; one .or() otherwise (AND-ed with other filters by the caller)", () => {
+    for (const none of ["", "all", "intern,entry,mid,senior,lead,director"]) {
       const q = mock();
       applyExperienceLevelQuery(q, none);
       expect(q.calls).toEqual([]);
@@ -149,8 +162,8 @@ describe("applyExperienceLevelQuery", () => {
     expect(buildExperienceLevelOrClause("senior,or(id.gt.0),title.ilike.*")).toBe(buildExperienceLevelOrClause("senior"));
     for (const subset of ALL_SUBSETS) {
       const clause = buildExperienceLevelOrClause(subset.join(","));
-      if (clause === null) continue; // all five levels: no filter
-      expect(clause).toMatch(/^[a-z_.%(),]+$/); // only allowlisted constant characters
+      if (clause === null) continue; // all six levels: no filter
+      expect(clause).toMatch(/^[a-z0-9_.%(),\\ "^|\[\]$-]+$/); // only allowlisted constant characters (quoted imatch patterns included)
     }
   });
 });
@@ -212,6 +225,47 @@ describe("isEarlyCareerJob / EARLY_CAREER_OR_CLAUSE (one intern/graduate/fresher
     for (const [title, job_type, expected] of cases) {
       expect(isEarlyCareerJob(title, job_type), title).toBe(expected);
       expect(matchesPostgrestOr(EARLY_CAREER_OR_CLAUSE, { title, job_type }), `sql: ${title}`).toBe(expected);
+    }
+  });
+});
+
+describe("Director / Executive level (owner-approved: director, vp, vice president, head of, chief)", () => {
+  it("classifies whole-word director titles and keeps intern first", () => {
+    for (const t of ["Director of Engineering", "Senior Director, Product", "Associate Director", "Head of Growth", "VP Sales", "Vice President, Finance", "Chief of Staff"]) {
+      expect(classifyJobExperienceLevel(t, "full-time")).toBe("director");
+    }
+    for (const t of ["Directory Services Engineer", "Headphone Designer", "Software Engineer", "Subvp Analyst"]) {
+      expect(classifyJobExperienceLevel(t, "full-time")).not.toBe("director");
+    }
+    expect(classifyJobExperienceLevel("Director Intern", "internship")).toBe("intern");
+  });
+
+  it("moves only director-titled jobs out of their old bucket (before/after examples)", () => {
+    expect(classifyJobExperienceLevel("Senior Director, Product")).toBe("director"); // was senior
+    expect(classifyJobExperienceLevel("Head of Growth")).toBe("director"); // was mid
+    expect(classifyJobExperienceLevel("Associate Director")).toBe("director"); // was entry
+  });
+
+  it("existing five levels are unchanged for every non-director title (parity with the old classifier)", () => {
+    const old = (title: string, jt: string | null) => {
+      if ((jt || "").toLowerCase() === "internship") return "intern";
+      const t = title.toLowerCase();
+      if (["staff", "principal", "lead"].some((w) => t.includes(w))) return "lead";
+      if (["senior", "sr."].some((w) => t.includes(w))) return "senior";
+      if (["junior", "entry", "associate"].some((w) => t.includes(w))) return "entry";
+      return "mid";
+    };
+    const nonDirector = CORPUS.filter((r) => classifyJobExperienceLevel(r.title, r.job_type) !== "director");
+    expect(nonDirector.length).toBeGreaterThan(15);
+    for (const r of nonDirector) expect(classifyJobExperienceLevel(r.title, r.job_type)).toBe(old(r.title!, r.job_type));
+  });
+
+  it("server clause and client predicate agree on the director rows for every subset", () => {
+    for (const subset of ALL_SUBSETS) {
+      const level = subset.join(",");
+      const server = serverSelects(CORPUS, level).map((r) => r.title);
+      const client = CORPUS.filter((r) => matchesExperienceLevelFilter(r, level)).map((r) => r.title);
+      expect(server).toEqual(client);
     }
   });
 });

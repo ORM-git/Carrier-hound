@@ -82,7 +82,7 @@ function run() {
     cardCode.includes("isRecent ?") &&
     jobsPageCode.includes("isPostedUnder24Hours") &&
     cardCode.includes("Early applicant") &&
-    cardCode.includes("className=\"h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] inline-flex items-center\"");
+    cardCode.includes("className=\"h-[22px] px-2 py-0.5 rounded text-[11px] font-medium bg-[#EFF6FF] text-[#1E40AF] border border-[#93C5FD] shadow-[0_0_0_1px_rgba(37,99,235,0.18),0_1px_9px_rgba(37,99,235,0.42)] inline-flex items-center\"");
   if (!hasEarlyPill) {
     failures.push("EARLY APPLICANT FAIL: Card top row must include Early applicant tag in CM-blue family derived strictly from real data posted within 24h.");
   } else {
