@@ -33,7 +33,8 @@ function setup(over: Partial<UserPreferences> = {}, onSave = vi.fn(async () => {
   const utils = render(<PreferencesSheet isOpen ownerId="user-a" onClose={onClose} committed={prefs} onSave={onSave} />);
   return { ...utils, onClose, onSave, prefs };
 }
-const openGroup = (name: string) => fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
+const GROUP_TITLES: Record<string, string> = { Basic: "Basic Job Criteria", Compensation: "Compensation & Sponsorship", Interests: "Areas of Interests", Company: "Company Insights" };
+const openGroup = (name: string) => fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${(GROUP_TITLES[name] ?? name).replace(/[&]/g, "\\$&")}`) }));
 const update = () => fireEvent.click(screen.getByRole("button", { name: /^(Update|Saving…)$/ }));
 const lastSaved = (onSave: any): UserPreferences => onSave.mock.calls.at(-1)[0];
 
@@ -300,6 +301,17 @@ describe("PreferencesSheet", () => {
     expect(pill.className).toContain("text-[11px]");
     expect(pill.className).toContain("px-[5px]");
     expect(pill.className).toContain("py-[3px]");
+  });
+
+  it("collapsed cards use the four reference headings with one-line truncated descriptors; no Update-saves line is visible", () => {
+    setup({});
+    for (const [id, title, sub] of [["basic", "Basic Job Criteria", "Job Function / Job Type / Work Model..."], ["compensation", "Compensation & Sponsorship", "Annual Salary / H1B Sponsorship"], ["interests", "Areas of Interests", "Industry / Skill / Role(IC/Manager)..."], ["company", "Company Insights", "Company Search / Exclude Staffing Agency..."]]) {
+      expect(screen.getByRole("button", { name: new RegExp(`^${title.replace("&", "\\&")}`) })).toBeTruthy();
+      const el = screen.getByTestId(`pref-group-sub-${id}`);
+      expect(el.textContent).toBe(sub);
+      expect(el.className).toContain("truncate");
+    }
+    expect(screen.getByText(/Update saves these/).className).toContain("sr-only");
   });
 
   it("custom role from search, excluded titles de-duplicated, multi work model and job types", async () => {
