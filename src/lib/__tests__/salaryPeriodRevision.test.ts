@@ -97,8 +97,10 @@ describe("salary_period is a paid score input", () => {
     const feed = [live("monthly", oldScore)];
     expect(withFeedScore(live("yearly"), feed).matchScore).toBeUndefined();
     expect(withFeedScore(live("monthly"), feed).matchScore).toBe(oldScore);
-    // A detail fetch after the update drops the stale feed score; an unknown revision is never adopted
-    expect(reconcileFeedWithDetail(feed, live("yearly", 10))[0].matchScore).toBeNull();
+    // A detail fetch after the update replaces the stale feed score with its own, or drops it when it has none;
+    // an unknown revision is never adopted
+    expect(reconcileFeedWithDetail(feed, live("yearly", 10))[0].matchScore).toBe(10);
+    expect(reconcileFeedWithDetail(feed, live("yearly"))[0].matchScore).toBeNull();
     expect(withFeedScore({ id: "j1", scoreRevision: null, matchScore: undefined }, feed).matchScore).toBeUndefined();
   });
 
