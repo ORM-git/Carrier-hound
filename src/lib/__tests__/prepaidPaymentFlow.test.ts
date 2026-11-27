@@ -152,6 +152,8 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
       (fakeOrderReq as any).__testDeps = {
         getSupabaseAdmin: () => mockSupabaseAdmin,
         verifyUserNotBanned: async () => ({ isBlocked: false }),
+        // Rate-limit guard added in this change: allow by default so this test stays on the pricing path
+        checkRateLimit: async () => ({ allowed: true, retryAfter: 0, currentCount: 1, source: "shared" }),
         fetchFn: async (_url: string, init: any) => {
           const payload = JSON.parse(init.body);
           createdOrderAmount = payload.amount;

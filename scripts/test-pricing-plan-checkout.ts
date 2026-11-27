@@ -32,6 +32,9 @@ import { resolveOrderPricing } from "../src/lib/billing/quota";
 import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
 import { createHandler as createNetlifyOrderHandler } from "../netlify/functions/billing-razorpay-order";
 
+// Batch1 strict order rate limiter: default-allow stub keeps this suite on its own path. Deny/store-down behavior is covered by src/lib/__tests__/billingRazorpayOrderRouteRateLimit.test.ts and netlifyBillingRazorpayOrderRateLimit.test.ts.
+const allowOrderRateLimit = async () => ({ allowed: true, retryAfter: 0, currentCount: 1, source: "shared" });
+
 const isNegativeControl = process.argv.includes("--negative-control");
 
 if (isNegativeControl) {
@@ -291,6 +294,7 @@ async function main() {
         body: JSON.stringify({ planCode: "monthly" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -312,6 +316,7 @@ async function main() {
         body: JSON.stringify({ planCode: "quarterly" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -333,6 +338,7 @@ async function main() {
         body: JSON.stringify({ planCode: "weekly" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -353,6 +359,7 @@ async function main() {
           body: JSON.stringify({ planCode: code }),
         });
         (req as any).__testDeps = {
+          checkRateLimit: allowOrderRateLimit,
           getSupabaseAdmin: () => mock.client,
           isProductionHost: false,
           fetchFn: mockRazorpayFetch,
@@ -372,6 +379,7 @@ async function main() {
         userMetadata: { is_blocked: true },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch as any,
@@ -393,6 +401,7 @@ async function main() {
         dbErrorOnBlockedCheck: true,
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch as any,
@@ -413,6 +422,7 @@ async function main() {
       for (const [code, expectedPaise] of [["weekly", 39900], ["monthly", 49900], ["quarterly", 219900]] as const) {
         const mock = createMockSupabaseAdmin();
         const handler = createNetlifyOrderHandler({
+          checkRateLimit: allowOrderRateLimit,
           getSupabaseAdmin: () => mock.client,
           isProductionHost: false,
           fetchFn: mockRazorpayFetch as any,
