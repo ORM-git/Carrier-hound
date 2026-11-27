@@ -467,6 +467,8 @@ export async function updateExistingJobs(
         const sourcePostedAt = normalizeDate(item.posted_at);
         if (sourcePostedAt === null) delete updateItem.posted_at;
         else updateItem.posted_at = sourcePostedAt;
+        // discovered_at is insert-only: the daily digest treats it as "new job" time (dailyDigestCron.ts).
+        delete updateItem.discovered_at;
         const doUpdate = () =>
           supabase
             .from('jobs')
