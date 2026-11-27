@@ -36,7 +36,7 @@ import PreferencesSheet from "@/components/jobs/PreferencesSheet";
 import { activeCount as activePreferenceCount, draftFromPreferences } from "@/lib/preferences/model";
 import JobCardContent from "@/components/jobs/JobCardContent";
 import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, displayMatchScore, toFitInput } from "@/lib/matcher/scoring";
-import { matchScoreSnapshot, recallMatchScore, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
+import { detailJobForEntitlement, matchScoreSnapshot, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { User } from "@supabase/supabase-js";
 import {
   Search,
@@ -56,7 +56,6 @@ import {
   type CanonicalExperienceLevel,
 } from "@/lib/jobs/experienceLevels";
 import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
-import { withFeedScore } from "@/lib/jobs/recommendations";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader, FEED_PAGE_SIZE, isStalledCursor, PREFETCH_PAGES, refillTarget, type PageLoadOutcome } from "@/lib/jobs/pagination";
 import { datePostedCutoff, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
@@ -261,7 +260,9 @@ function getCompanyTagPills(category?: string | null): string[] {
 }
 
 // Card score: the same displayMatchScore contract as the detail header and Match Insights.
-function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null): number | null {
+function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null, isPro: boolean): number | null {
+  // Numeric score is paid-only (owner, 24 Nov): no server, cached or browser-computed number for guest/Free.
+  if (!isPro) return null;
   if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) return displayMatchScore(job, null);
   if (!candidate || !candidate.confirmedAt) return null;
   try {
@@ -1857,13 +1858,8 @@ function JobsPageInner() {
   useEffect(() => {
     if (selectedJob) setLiveJobs((prev) => reconcileFeedWithDetail(prev, selectedJob));
   }, [selectedJob]);
-  const detailJob = useMemo(() => {
-    if (!selectedJob) return null;
-    const job = withFeedScore(selectedJob, liveJobs);
-    if (typeof job.matchScore === "number") return job;
-    const remembered = recallMatchScore(scoreSnap, job);
-    return remembered === null ? job : { ...job, matchScore: remembered };
-  }, [selectedJob, liveJobs, scoreSnap]);
+  // Paid-only score: entitlement is applied before any feed/remembered score reaches the detail (see detailJobForEntitlement).
+  const detailJob = useMemo(() => detailJobForEntitlement(selectedJob, liveJobs, isPro, scoreSnap), [selectedJob, liveJobs, scoreSnap, isPro]);
 
   // The listing view (not detail/loading) uses the desktop two-column grid with the right panel.
   const isListView = !detailLoading && !(detailStatus === "not-found" && !selectedJob) && !selectedJob;
@@ -2383,7 +2379,7 @@ function JobsPageInner() {
                         const isSaved = savedJobIds.includes(job.id);
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
-                        const matchScore = getJobMatchScore(job, candidate);
+                        const matchScore = getJobMatchScore(job, candidate, isPro);
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
