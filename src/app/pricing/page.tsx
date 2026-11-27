@@ -68,15 +68,22 @@ export default function PricingPage() {
     };
 
     checkAuthAndPro();
-    const authSubscription = createClient().auth.onAuthStateChange?.((_event: AuthChangeEvent, session: Session | null) => {
+    let authRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const auth = createClient().auth;
+    let subscription: {unsubscribe: () => void} | undefined;
+    if (auth.onAuthStateChange) {
+    const {data} = auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return;
       ++authVersion;
       setAuthReady(false);
       setUser(session?.user || null);
       setIsPro(false);
       // Do not await Supabase calls inside its auth callback.
-      setTimeout(() => { if (mounted) void checkAuthAndPro(); }, 0);
+      if (authRefreshTimer !== undefined) clearTimeout(authRefreshTimer);
+      authRefreshTimer = setTimeout(() => { if (mounted) void checkAuthAndPro(); }, 0);
     });
+    subscription = data.subscription;
+    }
 
     const handleAuthUpdated = () => { setAuthReady(false);void checkAuthAndPro(); };
     const handleProUpdated = () => {
@@ -87,7 +94,8 @@ export default function PricingPage() {
 
     return () => {
       mounted = false;
-      authSubscription?.data?.subscription?.unsubscribe();
+      subscription?.unsubscribe();
+      if (authRefreshTimer !== undefined) clearTimeout(authRefreshTimer);
       window.removeEventListener("careermonke_pro_updated", handleProUpdated);
       window.removeEventListener("careermonke_auth_updated", handleAuthUpdated);
     };
