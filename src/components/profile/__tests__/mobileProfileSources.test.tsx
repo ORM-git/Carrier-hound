@@ -1,0 +1,39 @@
+// @vitest-environment jsdom
+import React from 'react';
+import {afterEach,describe,it,expect,vi} from 'vitest';
+import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
+import Sources from '../MobileProfileSources';
+const auth=vi.hoisted(()=>vi.fn());
+vi.mock('@/lib/supabase/client',()=>({createClient:()=>({auth:{getSession:auth}})}));
+vi.mock('@/components/resume/ResumeUploadAndConfirm',()=>({default:({selectedFile}:any)=><div data-testid="review-file">{selectedFile.name}</div>}));
+afterEach(()=>{cleanup();vi.unstubAllEnvs();vi.unstubAllGlobals();vi.clearAllMocks()});
+function setup(initialLinkedinUrl=''){vi.stubEnv('NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED','true');auth.mockResolvedValue({data:{session:{access_token:'fixture-token'}}});return render(<Sources email="fixture@example.test" initialLinkedinUrl={initialLinkedinUrl} candidate={null} isPro={false} onProfileConfirmed={vi.fn()}/>)}
+describe('phone Profile reference cards preserve real contracts',()=>{
+ it('keeps the original large icons within compact cards and accessible actions',()=>{
+   setup();
+   const source=screen.getByTestId('mobile-profile-sources');
+   expect(source.classList.contains('space-y-2')).toBe(true);
+   for(const label of ['LinkedIn profile','Resume source']){
+     const card=screen.getByRole('region',{name:label});
+     expect(card.classList.contains('py-2')).toBe(true);
+     const icon=card.querySelector(':scope > div');
+     expect(icon).not.toBeNull();
+     expect(icon!.classList.contains('h-[100px]')).toBe(true);
+     expect(icon!.classList.contains('w-[100px]')).toBe(true);
+     expect(icon!.classList.contains('mb-1')).toBe(true);
+     const glyph=icon!.querySelector('svg');
+     expect(glyph?.classList.contains('h-12')).toBe(true);
+     expect(glyph?.classList.contains('w-12')).toBe(true);
+   }
+   for(const label of ['Save Your LinkedIn URL','Upload Your Resume']){
+     const button=screen.getByRole('button',{name:label});
+     expect(button.classList.contains('min-h-[44px]')).toBe(true);
+   }
+ });
+ it('labels the PC-only resume destination without promising mobile tools',()=>{setup();expect(screen.getByRole('link',{name:'Resume tools on computer'}).getAttribute('href')).toBe('/resume');expect(screen.queryByRole('link',{name:'View and manage your resume'})).toBeNull();});
+ it('normalizes and saves through existing authenticated API, then shows acknowledged state',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({linkedinUrl:'https://www.linkedin.com/in/fixture-user'}),{status:200}));vi.stubGlobal('fetch',fetcher);setup();fireEvent.change(screen.getByLabelText('LinkedIn profile URL'),{target:{value:'linkedin.com/in/fixture-user?x=1'}});fireEvent.click(screen.getByText('Save Your LinkedIn URL'));await waitFor(()=>expect(screen.getByRole('status').textContent).toBe('LinkedIn URL saved'));expect(fetcher).toHaveBeenCalledWith('/api/onboarding/linkedin',expect.objectContaining({headers:expect.objectContaining({Authorization:'Bearer fixture-token'}),body:JSON.stringify({linkedinUrl:'https://www.linkedin.com/in/fixture-user'})}));});
+ it('invalid URL does not send, failed update keeps draft but never reports saved',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify({error:'Fixture unavailable'}),{status:500}));vi.stubGlobal('fetch',fetcher);setup('https://www.linkedin.com/in/old-user');fireEvent.change(screen.getByLabelText('LinkedIn profile URL'),{target:{value:'https://evil.test/in/no'}});fireEvent.click(screen.getByText('Update Your LinkedIn URL'));expect(fetcher).not.toHaveBeenCalled();fireEvent.change(screen.getByLabelText('LinkedIn profile URL'),{target:{value:'https://linkedin.com/in/new-user'}});fireEvent.click(screen.getByText('Update Your LinkedIn URL'));await waitFor(()=>expect(screen.getByRole('alert').textContent).toBe('Fixture unavailable'));expect(screen.queryByRole('status')).toBeNull();});
+ it('honors disabled server-feature surface without fetching',()=>{vi.stubEnv('NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED','false');const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);render(<Sources candidate={null} isPro={false} onProfileConfirmed={vi.fn()}/>);expect((screen.getByText('Save Your LinkedIn URL') as HTMLButtonElement).disabled).toBe(true);expect(fetcher).not.toHaveBeenCalled();});
+ it('expired session fails before request',async()=>{setup();auth.mockResolvedValue({data:{session:null}});const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);fireEvent.change(screen.getByLabelText('LinkedIn profile URL'),{target:{value:'https://linkedin.com/in/fixture-user'}});fireEvent.click(screen.getByText('Save Your LinkedIn URL'));await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('session expired'));expect(fetcher).not.toHaveBeenCalled();});
+ it('valid file enters existing review flow; oversized file is rejected and no fake filename shown',()=>{setup();expect(screen.queryByText(/resume.pdf/)).toBeNull();const input=screen.getByLabelText('Upload profile resume');const bad=new File(['pdf'],'big.pdf',{type:'application/pdf'});Object.defineProperty(bad,'size',{value:11*1024*1024});fireEvent.change(input,{target:{files:[bad]}});expect(screen.getByRole('alert').textContent).toContain('10MB');expect(screen.queryByTestId('review-file')).toBeNull();fireEvent.change(input,{target:{files:[new File(['abc'],'resume.pdf',{type:'application/pdf'})]}});expect(screen.getByTestId('review-file').textContent).toBe('resume.pdf');});
+});
