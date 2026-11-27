@@ -29,6 +29,48 @@ describe("live landing ticker", () => {
     expect(container.querySelector(".ls-logo")?.textContent).toBe("L");
     for (const url of ["javascript:alert(1)", "https://evil.test/company-logos/a.png", "https://fixture.supabase.co/other/a.png"]) expect(safeTickerLogo(url)).toBeNull();
   });
+  it("recovers the same failed URL only on an existing successful refresh and leaves loaded images alone", async () => {
+    const fetcher = vi.fn(async () => ({ ok: true, json: async () => rows("GitLab") }));
+    vi.stubGlobal("fetch", fetcher);
+    render(<LiveLandingTicker />); await flush();
+    const [failedImage, healthyImage] = screen.getAllByAltText("GitLab 0 logo");
+    Object.defineProperty(healthyImage, "naturalWidth", { configurable: true, value: 1620 }); fireEvent.load(healthyImage);
+    const src = failedImage.getAttribute("src"); fireEvent.error(failedImage);
+    expect(screen.getAllByAltText("GitLab 0 logo")).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTime(TICKER_REFRESH_MS - 1)); await flush();
+    expect(screen.getAllByAltText("GitLab 0 logo")).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTime(1)); await flush();
+    const recovered = screen.getAllByAltText("GitLab 0 logo")[0];
+    expect(recovered).not.toBe(failedImage); expect(recovered.getAttribute("src")).toBe(src);
+    expect(screen.getAllByAltText("GitLab 0 logo")[1]).toBe(healthyImage);
+    Object.defineProperty(recovered, "naturalWidth", { configurable: true, value: 1620 }); fireEvent.load(recovered);
+    expect((recovered as HTMLElement).style.opacity).toBe("1");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("visibility bursts do not bypass the five-minute image retry bound", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => rows("GitLab") })));
+    render(<LiveLandingTicker />); await flush();
+    for (const img of screen.getAllByAltText("GitLab 0 logo")) fireEvent.error(img);
+    for (let i=0;i<4;i++) { await act(async () => document.dispatchEvent(new Event("visibilitychange"))); await flush(); }
+    expect(screen.queryAllByAltText("GitLab 0 logo")).toHaveLength(0);
+    await act(async () => vi.advanceTimersByTime(TICKER_REFRESH_MS)); await flush();
+    expect(screen.getAllByAltText("GitLab 0 logo")).toHaveLength(2);
+  });
+  it("caps persistent failures at two refresh retries and never retries in a hidden tab", async () => {
+    const fetcher = vi.fn(async () => ({ ok: true, json: async () => rows("GitLab") })); vi.stubGlobal("fetch", fetcher);
+    const view = render(<LiveLandingTicker />); await flush();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      for (const img of screen.getAllByAltText("GitLab 0 logo")) fireEvent.error(img);
+      expect(screen.queryAllByAltText("GitLab 0 logo")).toHaveLength(0);
+      if (attempt < 2) { await act(async () => vi.advanceTimersByTime(TICKER_REFRESH_MS)); await flush(); }
+    }
+    await act(async () => vi.advanceTimersByTime(TICKER_REFRESH_MS * 3)); await flush();
+    expect(screen.queryAllByAltText("GitLab 0 logo")).toHaveLength(0);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    const count = fetcher.mock.calls.length;
+    await act(async () => vi.advanceTimersByTime(TICKER_REFRESH_MS)); await flush(); expect(fetcher).toHaveBeenCalledTimes(count);
+    view.unmount(); expect(vi.getTimerCount()).toBe(0);
+  });
   it("gives loaded transparent brand images a white backing at every viewport", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => rows("Intercom") })));
     const { container } = render(<LiveLandingTicker />); await flush();
