@@ -357,7 +357,6 @@ export async function POST(req: Request) {
           {
             error: "Order rate limiting is temporarily unavailable. Please try again shortly.",
             code: "RATE_LIMIT_UNAVAILABLE",
-            retryAfter: 30,
           },
           { status: 503, headers: { "Retry-After": "30" } }
         );
@@ -367,7 +366,6 @@ export async function POST(req: Request) {
         {
           error: "Too many order attempts. Please wait before trying again.",
           code: "RATE_LIMITED",
-          retryAfter,
         },
         { status: 429, headers: { "Retry-After": String(retryAfter) } }
       );
