@@ -74,7 +74,8 @@ describe("Pro: listing card and Overview show the same logo", () => {
   it("different job: never inherits the previous job's logo or domain", async () => {
     pro();
     const a = fixtureJob(1, { title: "Fixture Iso A", logoUrl: null, companyDomain: "iso-a.invalid" });
-    const b = fixtureJob(2, { title: "Fixture Iso B", logoUrl: null, companyDomain: null, applyUrl: "https://jobs.lever.co/fx/2" });
+    // B carries its own stored logo: under the #44 hide policy a Pro-feed job with no logo source is not listed at all.
+    const b = fixtureJob(2, { title: "Fixture Iso B", logoUrl: "https://cdn.iso-b.invalid/b.png", companyDomain: null, applyUrl: "https://jobs.lever.co/fx/2" });
     h.transport = async () => page([a, b], false, 2);
     h.byId = async (id) => (id === a.id ? bareDetail(a) : id === b.id ? bareDetail(b) : null);
     await mount();
@@ -85,7 +86,7 @@ describe("Pro: listing card and Overview show the same logo", () => {
     await flush();
     fireEvent.click(screen.getAllByText("Fixture Iso B")[0]);
     await flush();
-    expect(overviewImgSrc()).toBeNull(); // letter tile: B has no logo, no domain and an ATS apply URL
+    expect(overviewImgSrc()).toBe("https://cdn.iso-b.invalid/b.png"); // B's own logo, never A's
     expect(overviewRow().outerHTML).not.toContain("iso-a.invalid");
   });
 
