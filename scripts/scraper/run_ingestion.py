@@ -360,7 +360,8 @@ async def run_master_ingestion(
                     except WorkdayRateLimited as exc:
                         seen["retry_after"] = exc.retry_after
                         raise
-                    finally:
+                    finally:  # wall time, not latency: tenant-start spacing, polite delay, shared cooldown wait,
+                        # per-tenant spacing, limiter wait and retry sleeps are all included, plus transport
                         metrics["elapsed_seconds"] = round(time.monotonic() - t0, 3)
 
                 rep = await run_isolated_source(sid, "workday", fetch, is_full_coverage=False)

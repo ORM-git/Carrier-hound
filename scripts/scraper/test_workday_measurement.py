@@ -94,6 +94,8 @@ class RunnerMeasureTests(Base):
         report, _ = self.ingest({"a": scripted(httpx.ConnectError("boom")), "b": ok_page, "c": ok_page})
         a = by_source(report)["workday:a"]
         self.assertEqual((a["status"], a["network_errors"], a["http_requests"], a["status_counts"]), ("ok", 1, 2, {"200": 1}))
+        # http_requests counts attempts; status_counts only responses received
+        self.assertEqual(sum(a["status_counts"].values()), a["http_requests"] - a["network_errors"])
         self.seed_state_all_ok()  # board a completed moments ago; make it eligible again
         report, _ = self.ingest({s: (lambda r: (_ for _ in ()).throw(httpx.ConnectError("boom"))) for s in BOARDS})
         a = by_source(report)["workday:a"]
@@ -167,7 +169,9 @@ class FetcherMeasureTests(Base):
         m = fetchers.new_workday_metrics()
         with self.assertRaises(fetchers.WorkdayRateLimited):
             self.go(ok_page, m)
-        self.assertEqual((m["trigger_status"], m["error_class"], m["http_requests"]), (None, "cooldown_active", 0))
+        # pages_requested is a logical page attempt, not an HTTP request: 1 page entered, 0 requests sent
+        self.assertEqual((m["trigger_status"], m["error_class"], m["http_requests"], m["pages_requested"]),
+                         (None, "cooldown_active", 0, 1))
 
         fetchers._WORKDAY_COOLDOWN_UNTIL = fetchers._WORKDAY_LAST_TENANT_START = 0.0  # no real tenant-spacing sleep
         fetchers._WORKDAY_TENANT_NEXT["ta.wd5.myworkdayjobs.com"] = fetchers.time.monotonic() + 1000
@@ -177,6 +181,20 @@ class FetcherMeasureTests(Base):
         self.assertEqual((m["trigger_status"], m["error_class"], m["http_requests"], m["pages_requested"]),
                          (None, "page_budget", 0, 1))
 
+    def test_retry_after_only_from_a_present_parseable_header(self):
+        for headers, seen in (({"Retry-After": "2"}, [2.0]), ({}, []), ({"Retry-After": "soon-ish"}, [])):
+            with self.subTest(headers=headers):
+                fetchers._WORKDAY_COOLDOWN_UNTIL = fetchers._WORKDAY_LAST_TENANT_START = 0.0
+                fetchers._WORKDAY_TENANT_NEXT.clear()
+                m = fetchers.new_workday_metrics()
+
+                async def no_sleep(_s):
+                    return None
+                with patch.object(fetchers.asyncio, "sleep", no_sleep):
+                    self.go(scripted(httpx.Response(429, headers=headers)), m)
+                self.assertEqual(m["retry_after_seconds_seen"], seen, "the computed fallback delay is never recorded")
+                self.assertEqual(m["status_counts"], {"429": 1, "200": 1})
+
     def test_malformed_page_is_classified(self):
         m = fetchers.new_workday_metrics()
         with self.assertRaises(RuntimeError):
@@ -184,11 +202,13 @@ class FetcherMeasureTests(Base):
         self.assertEqual((m["trigger_status"], m["error_class"]), (200, "malformed"))
 
     def test_retry_sleep_and_cooldown_identical_with_and_without_collector(self):
-        def outcome(metrics, responses):
-            fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
-            fetchers._WORKDAY_TENANT_NEXT.clear()
-            fetchers._WORKDAY_LAST_TENANT_START = 0.0
+        def outcome(metrics, responses, preset_cooldown=0.0, preset_tenant=0.0, env=None):
             clock = [1000.0]
+            fetchers._WORKDAY_COOLDOWN_UNTIL = clock[0] + preset_cooldown if preset_cooldown else 0.0
+            fetchers._WORKDAY_TENANT_NEXT.clear()
+            if preset_tenant:
+                fetchers._WORKDAY_TENANT_NEXT["ta.wd5.myworkdayjobs.com"] = clock[0] + preset_tenant
+            fetchers._WORKDAY_LAST_TENANT_START = 0.0
             sleeps: list[float] = []
 
             async def fake_sleep(s):
@@ -197,18 +217,31 @@ class FetcherMeasureTests(Base):
 
             with patch.object(fetchers.time, "monotonic", lambda: clock[0]), patch.object(fetchers.asyncio, "sleep", fake_sleep):
                 try:
-                    result = ("ok", [j["source_job_id"] for j in self.go(scripted(*responses), metrics)])
+                    result = ("ok", [j["source_job_id"] for j in self.go(scripted(*responses), metrics, **(env or {}))])
                 except Exception as exc:
                     result = (type(exc).__name__, str(exc), getattr(exc, "retry_after", None))
             return result, sleeps, fetchers._WORKDAY_COOLDOWN_UNTIL - clock[0]
 
-        for responses in ([httpx.Response(429, headers={"Retry-After": "3"}), httpx.Response(503)],
-                          [httpx.Response(503, headers={"Retry-After": "90000"})],
-                          [httpx.ConnectError("x"), httpx.Response(429)],
-                          [httpx.Response(429)] * 5,
-                          [httpx.Response(404)]):
-            with self.subTest(responses=[getattr(r, "status_code", r) for r in responses]):
-                self.assertEqual(outcome(None, list(responses)), outcome(fetchers.new_workday_metrics(), list(responses)))
+        n = fetchers.WORKDAY_MAX_RETRIES + 1
+        cases = {  # every raise path in _workday_post / fetch_workday_cxs, plus recoveries
+            "recovered 429 then 503": ([httpx.Response(429, headers={"Retry-After": "3"}), httpx.Response(503)], {}),
+            "terminal long Retry-After 503": ([httpx.Response(503, headers={"Retry-After": "90000"})], {}),
+            "terminal 429 retries exhausted": ([httpx.Response(429)] * n, {}),
+            "recovered network error": ([httpx.ConnectError("x"), httpx.Response(429)], {}),
+            "terminal network": ([httpx.ConnectError("x")] * n, {}),
+            "cooldown_active": ([], {"preset_cooldown": 1000.0}),
+            "page_budget": ([], {"preset_tenant": 1000.0, "env": {"WORKDAY_PAGE_WAIT_BUDGET_SECONDS": "5"}}),
+            "raise_for_status 404": ([httpx.Response(404)], {}),
+            "raise_for_status 500": ([httpx.Response(500)], {}),
+            "invalid JSON body": ([httpx.Response(200, content=b"not json")], {}),
+            "malformed page": ([httpx.Response(200, json={"total": 0})], {}),
+        }
+        for name, (responses, kw) in cases.items():
+            with self.subTest(name):
+                off = outcome(None, list(responses), **kw)
+                on = outcome(fetchers.new_workday_metrics(), list(responses), **kw)
+                self.assertEqual(off, on)
+                self.assertEqual(off[0][0] == "ok", name.startswith("recovered"), off[0])  # the path was really taken
 
 
 if __name__ == "__main__":

@@ -629,7 +629,16 @@ class WorkdayRateLimited(RuntimeError):
 
 
 def new_workday_metrics() -> dict[str, Any]:
-    """Per-board request observations, filled by fetch_workday_cxs/_workday_post (measurement only, never read back)."""
+    """Per-board request observations, filled by fetch_workday_cxs/_workday_post (measurement only, never read back).
+
+    http_requests: attempts, counted just before client.post, so a network exception still counts; status_counts
+      counts responses received only, so its sum is lower than http_requests by the network errors.
+    pages_requested: logical pages entered, not HTTP requests; a page stopped before any request (cooldown_active,
+      page_budget) shows pages_requested 1 and http_requests 0.
+    retry_after_seconds_seen: values parsed from a Retry-After header that was present and parseable; the fallback
+      delay the code computes when it is missing or unparseable is not recorded.
+    elapsed_seconds: set by the caller; wall time of the whole board, not latency (see run_ingestion).
+    """
     return {"request_host": None, "http_requests": 0, "status_counts": {}, "network_errors": 0,
             "retry_after_seconds_seen": [], "pages_requested": 0, "jobs_fetched": 0, "elapsed_seconds": None,
             "last_status": None, "trigger_status": None, "error_class": None}
@@ -684,7 +693,7 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
             metrics["status_counts"][code] = metrics["status_counts"].get(code, 0) + 1
             metrics["last_status"] = resp.status_code
             seen = parse_retry_after(resp.headers.get("Retry-After"), default_delay=None)  # type: ignore[arg-type]
-            if seen is not None:  # only responses that carried a parseable header
+            if seen is not None:  # only a header that was present and parseable, never the computed fallback
                 metrics["retry_after_seconds_seen"].append(round(seen, 3))
         if resp.status_code == 429 or resp.status_code in (502, 503, 504):
             delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=2.0 * (2 ** attempt))
