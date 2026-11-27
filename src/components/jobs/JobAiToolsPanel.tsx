@@ -33,9 +33,10 @@ export interface JobAiToolsPanelProps {
 }
 
 export default function JobAiToolsPanel({
-  job,
+  job: jobProp,
   candidate,
-  diagnostics,
+  isPro,
+  diagnostics: diagnosticsProp,
   isSaved,
   isApplied = false,
   trackedStage = null,
@@ -48,6 +49,11 @@ export default function JobAiToolsPanel({
 
   const hasConfirmedResume = Boolean(candidate && candidate.confirmedAt);
   // Same contract as the detail header: shared/feed score, else the fit fallback, one clamp.
+  // Paid-only (owner, 24 Nov): Free/guest or a locked row never gets the numeric score, matched/missing skills
+  // or breakdown here, whatever a stale Pro cache or the parent passed in.
+  const canSeeScore = isPro && !jobProp.proUnlockError;
+  const diagnostics = canSeeScore ? diagnosticsProp : null;
+  const job = canSeeScore ? jobProp : { ...jobProp, matchScore: null };
   const matchScore = displayMatchScore(job, diagnostics);
   const matchLabel =
     matchScore !== null
