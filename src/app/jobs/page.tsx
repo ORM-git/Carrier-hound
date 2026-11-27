@@ -1352,34 +1352,52 @@ function JobsPageInner() {
   const [unresolvedLogoIds, setUnresolvedLogoIds] = useState<ReadonlySet<string>>(() => new Set());
   const autoHiddenFetchesRef = useRef(0);
   const [hiddenFetchCapped, setHiddenFetchCapped] = useState(false);
-  const logoUnresolvedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Expiry time per unresolved job, drained by ONE sweep timer (kept in a ref and cleared on reset and unmount).
+  const logoUnresolvedExpiryRef = useRef<Map<string, number>>(new Map());
+  const logoSweepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleLogoSweep = useCallback((delayMs: number) => {
+    if (logoSweepTimerRef.current !== null) clearTimeout(logoSweepTimerRef.current);
+    logoSweepTimerRef.current = setTimeout(() => {
+      logoSweepTimerRef.current = null;
+      const now = Date.now();
+      const expired: string[] = [];
+      let nextAt = Infinity;
+      logoUnresolvedExpiryRef.current.forEach((at, id) => {
+        if (at <= now) expired.push(id);
+        else if (at < nextAt) nextAt = at;
+      });
+      expired.forEach((id) => logoUnresolvedExpiryRef.current.delete(id));
+      if (expired.length) {
+        setUnresolvedLogoIds((prev) => {
+          const next = new Set(prev);
+          expired.forEach((id) => next.delete(id));
+          return next.size === prev.size ? prev : next;
+        });
+      }
+      if (nextAt !== Infinity) scheduleLogoSweep(Math.max(0, nextAt - now));
+    }, delayMs);
+  }, []);
   const markLogoUnresolved = useCallback((id: string) => {
     setUnresolvedLogoIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     // Same memory as CompanyLogo's failed-image cache: after FAILED_LOGO_TTL_MS the job is shown again and its
     // logo is retried (a fresh failure hides it again).
-    if (!logoUnresolvedTimersRef.current.has(id)) {
-      logoUnresolvedTimersRef.current.set(
-        id,
-        setTimeout(() => {
-          logoUnresolvedTimersRef.current.delete(id);
-          setUnresolvedLogoIds((prev) => {
-            if (!prev.has(id)) return prev;
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-          });
-        }, FAILED_LOGO_TTL_MS)
-      );
+    if (!logoUnresolvedExpiryRef.current.has(id)) {
+      logoUnresolvedExpiryRef.current.set(id, Date.now() + FAILED_LOGO_TTL_MS);
+      if (logoSweepTimerRef.current === null) scheduleLogoSweep(FAILED_LOGO_TTL_MS);
     }
-  }, []);
+  }, [scheduleLogoSweep]);
   const resetUnresolvedLogos = useCallback(() => {
-    logoUnresolvedTimersRef.current.forEach((t) => clearTimeout(t));
-    logoUnresolvedTimersRef.current.clear();
+    if (logoSweepTimerRef.current !== null) clearTimeout(logoSweepTimerRef.current);
+    logoSweepTimerRef.current = null;
+    logoUnresolvedExpiryRef.current.clear();
     autoHiddenFetchesRef.current = 0;
     setHiddenFetchCapped(false);
     setUnresolvedLogoIds((prev) => (prev.size ? new Set() : prev));
   }, []);
-  useEffect(() => () => { logoUnresolvedTimersRef.current.forEach((t) => clearTimeout(t)); }, []);
+  useEffect(() => () => {
+    if (logoSweepTimerRef.current !== null) clearTimeout(logoSweepTimerRef.current);
+    logoSweepTimerRef.current = null;
+  }, []);
 
   // Filtered Jobs based on activeTab, client-side secondary filters, and hidden ids
   const filteredJobs = useMemo(() => {
