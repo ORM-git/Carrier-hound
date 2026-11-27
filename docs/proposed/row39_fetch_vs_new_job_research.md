@@ -3,7 +3,13 @@
 Research only. No code, no database reads. Read from `main` @ `71339758`, 27 Nov 2026.
 Labels: **from source** = read in this repo at that commit; **unverified** = not checked against data.
 
-## Status (main `61cd5b6e`)
+## Follow-up after the snapshot (27 Nov 2026)
+
+PR #860 merged as `fffd0d162ed81660712367a87af269bbb12c42ce`. TS updates now omit `discovered_at`. Fully dated legacy batches with the verified-column payload bypass bulk conflict upsert and use the existing identity lookup plus insert/update path, so that path also preserves an existing row's discovery time. New inserts still receive discovery time. Offline payload-model tests cover both paths; no production ingest run, database defaults, constraints or triggers were exercised by those tests.
+
+The digest still reads `discovered_at`. Previously overwritten values have not been reconstructed or backfilled. The separate production `first_seen_at` SQL gate is unchanged. The historical insert-only question below is settled by #860, not a new approval request; repost linking remains separate design work.
+
+## Historical status (main `61cd5b6e`, superseded where noted above)
 
 - **Partial.** Evidence: `first_seen_at` is a DB default only (`supabase/schema.sql:63`; documented as never written by
   ingestion at `src/lib/jobs/service.ts:59`). TS sets `discovered_at` in the payload when the `verified` column exists (`hasVerifiedColumn` branch,
@@ -41,7 +47,7 @@ Labels: **from source** = read in this repo at that commit; **unverified** = not
 - **unverified**: whether the digest actually shows such jobs as new in production data. No data was read.
   `src/lib/jobs/service.ts` reads `first_seen_at`, not `discovered_at`.
 
-## Questions for the owner
+## Historical questions (insert-only question now addressed by #860)
 
 1. Should TS stop sending `discovered_at` on updates (make it insert-only like `first_seen_at`)? That is a small writer
    change in `scripts/ingest.ts`, but it changes stored values, so it's the owner's call.
