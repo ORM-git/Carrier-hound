@@ -7,7 +7,8 @@ Labels: **from source** = read in repo or PR diff; **unverified** = not checked.
 
 - **Missing** (no working path). Evidence: no conditional-request headers anywhere in `scripts/scraper/` or the TS
   adapters. `request_with_backoff` (`scripts/scraper/rate_limiter.py:110`) calls `raise_for_status()`
-  (`rate_limiter.py:129, 138`), which raises on a 304 with the installed httpx 0.28.1.
+  (`rate_limiter.py:129, 138`). With the installed httpx 0.28.1 that raises `HTTPStatusError` on a 304 (checked); the
+  conversion to `RequestHTTPError` is unverified.
 - **Smallest next change:** 304 handling in `rate_limiter.py` that returns an "unchanged" result, plus a test that a
   304 never expires jobs. Only after #842 merges and the owner picks validator storage.
 - **Files vs open PRs:** `rate_limiter.py` is in none of #557, #791, #698, #749. The follow-on fetcher wiring touches
@@ -26,8 +27,9 @@ Labels: **from source** = read in repo or PR diff; **unverified** = not checked.
 - Every Python fetch goes through `request_with_backoff` (`scripts/scraper/rate_limiter.py:110`). It forwards `**kwargs`,
   so request headers (`If-None-Match`, `If-Modified-Since`) can be passed without changing its signature.
 - **A 304 currently fails the board.** `request_with_backoff` calls `response.raise_for_status()`. With httpx 0.28.1
-  (installed), `raise_for_status()` raises on a 304; checked locally with a constructed `httpx.Response(304)`. That
-  becomes a `RequestHTTPError`. So 304 must be handled before `raise_for_status` *and* the caller must treat it as
+  (installed), `raise_for_status()` raises `HTTPStatusError` on a 304; that alone was checked locally, with a
+  constructed `httpx.Response(304)`. That `request_with_backoff` then converts it into a `RequestHTTPError` is
+  **unverified** (read in code, not exercised). So 304 must be handled before `raise_for_status` *and* the caller must treat it as
   "unchanged board", not as an empty board.
 - **An "unchanged" board must not expire jobs.** Expiry and complete-board evidence (rows 78/80) assume a full listing.
   A 304 carries no listing, so the run must reuse the previous complete snapshot's identities for expiry, or skip expiry

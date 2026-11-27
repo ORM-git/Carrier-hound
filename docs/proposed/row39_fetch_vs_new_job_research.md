@@ -6,7 +6,8 @@ Labels: **from source** = read in this repo at that commit; **unverified** = not
 ## Status (main `61cd5b6e`)
 
 - **Partial.** Evidence: `first_seen_at` is a DB default only (`supabase/schema.sql:63`; documented as never written by
-  ingestion at `src/lib/jobs/service.ts:59`). TS sets `discovered_at` in every payload (`scripts/ingest.ts:760`), and
+  ingestion at `src/lib/jobs/service.ts:59`). TS sets `discovered_at` in the payload when the `verified` column exists (`hasVerifiedColumn` branch,
+  `scripts/ingest.ts:756-760`), and
   `updateExistingJobs` (`scripts/ingest.ts:452`) re-sends it on update.
 - **Smallest next change:** make TS `discovered_at` insert-only (omit it from the update payload in `ingest.ts`), with
   a test. It changes stored values, so it needs the owner's go. The production `first_seen_at` gate stays open
@@ -21,7 +22,7 @@ Labels: **from source** = read in this repo at that commit; **unverified** = not
 |---|---|---|---|
 | `posted_at` | `now()` | Both pipelines send the source date. A missing date stays null on insert and is omitted on update (`scripts/ingest.ts` `updateExistingJobs`; Python #761). | Employer's posting date |
 | `first_seen_at` | `now()` | **Nobody.** Neither pipeline sends it (no writer in `scripts/ingest.ts` or `scripts/scraper/*.py`). `src/lib/jobs/service.ts:59` documents it as "DB default now() on insert, never written by ingestion". | When CareerMonke first stored *this row* |
-| `discovered_at` | `now()` | TS sends `j.discovered_at \|\| now()` in every payload (`scripts/ingest.ts:760`). `updateExistingJobs` spreads that payload into the UPDATE, so it is **overwritten on every update**. Python does not send it (not in `engine.py` `db_columns`). | TS rows: last write time, not first discovery. Python rows: insert time. |
+| `discovered_at` | `now()` | TS sends `j.discovered_at \|\| now()` inside the `hasVerifiedColumn` branch (`scripts/ingest.ts:756-760`), not unconditionally. When it is sent, `updateExistingJobs` spreads that payload into the UPDATE, so it is **overwritten on every update**. Python does not send it (not in `engine.py` `db_columns`). | TS rows: last write time, not first discovery. Python rows: insert time. |
 | `last_seen_at` | `now()` | Both pipelines on every fetch that sees the job | Last fetch that saw it |
 
 ## What "new job" means, from source
@@ -33,7 +34,12 @@ Labels: **from source** = read in this repo at that commit; **unverified** = not
 - **from source**: a repost under a new `source_job_id` is a new row, and therefore a "new job", with a fresh
   `first_seen_at`. Nothing links it to the old row. That links to row 35 (repost history).
 - **from source**: `discovered_at` on TS rows cannot be used as "first discovered", because updates overwrite it.
-- **unverified**: which readers, if any, rely on `discovered_at`. `src/lib/jobs/service.ts` reads `first_seen_at`.
+- **from source**: the daily digest reads `discovered_at` as its "new jobs" window and cursor. It filters with
+  `.gte("discovered_at", windowCutoff)`, orders by it, and pages on it (`src/lib/cron/dailyDigestCron.ts:44-55, 67-68`).
+  Because TS overwrites `discovered_at` on update, an *updated* TS job gets a fresh `discovered_at` and can fall inside
+  the digest window again, as if it were new.
+- **unverified**: whether the digest actually shows such jobs as new in production data. No data was read.
+  `src/lib/jobs/service.ts` reads `first_seen_at`, not `discovered_at`.
 
 ## Questions for the owner
 
