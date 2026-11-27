@@ -6,7 +6,10 @@ const page = readFileSync("src/app/jobs/page.tsx", "utf8");
 
 describe("mobile bottom inventory text (item 22)", () => {
   it("normal loading has no button or remaining count at any width", () => {
-    expect(page).toContain("{(isPhone ? !loadingMore : (loadMoreError || autoLoadPaused)) && (");
+    // Desktop: the button shows only for an error, a paused auto-load, or the row 44 cap (hiddenFetchCapped: after
+    // 3 automatic fetches that only found logo-hidden jobs, the user gets a manual Load More). Phone is unchanged.
+    // The behavior of each case is asserted by rendering in jobsLogoHidePolicy.test.tsx.
+    expect(page).toContain("{(isPhone ? !loadingMore : (loadMoreError || autoLoadPaused || hiddenFetchCapped)) && (");
     expect(page).not.toContain("remaining)`");
     expect(page).not.toContain("`Load More Verified Positions (~");
   });
