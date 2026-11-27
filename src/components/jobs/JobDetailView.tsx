@@ -1,5 +1,5 @@
 "use client";
-import { descriptionSections, structuredDescriptionList } from "@/lib/jobs/descriptionSections";
+import { extendedDescriptionSections, structuredDescriptionList } from "@/lib/jobs/descriptionSections";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
@@ -328,7 +328,7 @@ export default function JobDetailView({
       : "";
 
   const sections = useMemo(() => {
-    const derived = descriptionSections(job.description);
+    const derived = extendedDescriptionSections(job.description);
     const source = job as typeof job & Record<string, unknown>;
     for (const key of ["requirements", "responsibilities", "benefits", "preferred"] as const) {
       const explicit = structuredDescriptionList(source[key] || (key === "preferred" ? source.preferred_qualifications : null));
@@ -340,6 +340,10 @@ export default function JobDetailView({
   const preferredList = sections.preferred;
   const responsibilitiesList = sections.responsibilities;
   const benefitsList = sections.benefits;
+  // Derived from the description, which is entitled (Pro) data; the server already returns no description to Free
+  // and guests, and this keeps the new sections closed on the client even if a description were present.
+  const educationList = isUnlocked ? sections.education : [];
+  const languagesList = isUnlocked ? sections.languages : [];
 
   const detailWorkModel = workModelDetailLabel(job);
   const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(job.location, detailWorkModel);
@@ -1149,6 +1153,23 @@ export default function JobDetailView({
                 ))}
               </ul>
             </div>
+          )}
+
+          {/* Education / Languages: only when the description has an explicit headed bullet list; never inferred. */}
+          {([["Education", educationList], ["Languages", languagesList]] as const).map(([title, list]) =>
+            list.length > 0 ? (
+              <div key={title} data-testid={`job-${title.toLowerCase()}-section`} className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none space-y-3">
+                <h2 className="text-[18px] font-bold text-[#0F172A]">{title}</h2>
+                <ul className="space-y-2 max-w-[720px] text-[15px] leading-[24px] text-[#0F172A]">
+                  {list.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <span className="text-[#166534] font-bold select-none">✓</span>
+                      <span className="flex-1 break-words">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null
           )}
 
           {/* 5. Company facts and related listings use the existing card style. */}
