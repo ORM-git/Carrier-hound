@@ -3,6 +3,18 @@
 Research only. No code, no database reads. Read from `main` @ `71339758`, 27 Nov 2026.
 Labels: **from source** = read in this repo at that commit; **unverified** = not checked against data.
 
+## Status (main `61cd5b6e`)
+
+- **Partial.** Evidence: `first_seen_at` is a DB default only (`supabase/schema.sql:63`; documented as never written by
+  ingestion at `src/lib/jobs/service.ts:59`). TS sets `discovered_at` in every payload (`scripts/ingest.ts:760`), and
+  `updateExistingJobs` (`scripts/ingest.ts:452`) re-sends it on update.
+- **Smallest next change:** make TS `discovered_at` insert-only (omit it from the update payload in `ingest.ts`), with
+  a test. It changes stored values, so it needs the owner's go. The production `first_seen_at` gate stays open
+  separately.
+- **Files vs open PRs:** **overlap with #557.** It edits `scripts/ingest.ts` and adds
+  `20261108d_jobs_first_seen_at_immutable.sql` (open since 11 Nov). Any `ingest.ts` change here must be coordinated
+  with #557 first. Open PRs checked (live, 27 Nov): #557 (`ingest.ts`, `sourceHealth.ts`, `check-source-health.ts`, `20261108d_jobs_first_seen_at_immutable.sql`, …), #791 (`sourceHealth.ts` + test), #698 (draft; `engine.py`, `enrichment.py`, `run_ingestion.py`, logo files), #749 (`engine.py`, `persistence.py`, test).
+
 ## Timestamps on `public.jobs` (`supabase/schema.sql:60-64`)
 
 | Column | Default | Who writes it (from source) | Meaning today |

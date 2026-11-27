@@ -3,6 +3,16 @@
 Note only. No code. Read from `main` @ `71339758` and live PR state, 27 Nov 2026.
 Labels: **from source** = read in repo or PR diff; **unverified** = not checked.
 
+## Status (main `61cd5b6e`)
+
+- **Missing** (no working path). Evidence: no conditional-request headers anywhere in `scripts/scraper/` or the TS
+  adapters. `request_with_backoff` (`scripts/scraper/rate_limiter.py:110`) calls `raise_for_status()`
+  (`rate_limiter.py:129, 138`), which raises on a 304 with the installed httpx 0.28.1.
+- **Smallest next change:** 304 handling in `rate_limiter.py` that returns an "unchanged" result, plus a test that a
+  304 never expires jobs. Only after #842 merges and the owner picks validator storage.
+- **Files vs open PRs:** `rate_limiter.py` is in none of #557, #791, #698, #749. The follow-on fetcher wiring touches
+  `fetchers.py` (#842, paused) and `run_ingestion.py` / `engine.py` (#698, #749). Open PRs checked (live, 27 Nov): #557 (`ingest.ts`, `sourceHealth.ts`, `check-source-health.ts`, `20261108d_jobs_first_seen_at_immutable.sql`, …), #791 (`sourceHealth.ts` + test), #698 (draft; `engine.py`, `enrichment.py`, `run_ingestion.py`, logo files), #749 (`engine.py`, `persistence.py`, test).
+
 ## Open lanes it would touch
 
 | PR | State (live, 27 Nov) | Files | Overlap with a conditional-GET change |

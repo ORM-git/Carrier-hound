@@ -4,6 +4,16 @@ Research only. No code, no database reads. Read from `main` @ `71339758`, 27 Nov
 Labels: **from source** means read in this repo's code or schema at that commit; **unverified** means not checked
 against data or provider docs.
 
+## Status (main `61cd5b6e`)
+
+- **Partial.** Evidence: one `remote_eligibility` text value per job (`supabase/schema.sql:39`); TS detector
+  `scripts/utils/sanitizer.ts:1088-1107`; Python `scripts/scraper/fetchers.py:150-156`; worldwide reader
+  `src/lib/geo/cities.ts:370`, `src/lib/jobs/eligibility.ts:192-216`. No allowed-countries list or timezone column.
+- **Smallest next change:** align the TS fallback (`sanitizer.ts:1107`) to return `unknown` like Python, with one
+  test. It changes stored values on the next TS ingest, so it needs the owner's go.
+- **Files vs open PRs:** `scripts/utils/sanitizer.ts` is in none of #557, #791, #698, #749. No overlap.
+  Open PRs checked (live, 27 Nov): #557 (`ingest.ts`, `sourceHealth.ts`, `check-source-health.ts`, `20261108d_jobs_first_seen_at_immutable.sql`, …), #791 (`sourceHealth.ts` + test), #698 (draft; `engine.py`, `enrichment.py`, `run_ingestion.py`, logo files), #749 (`engine.py`, `persistence.py`, test).
+
 ## What exists
 
 - **from source**: `jobs.remote_eligibility` is free `text` in `supabase/schema.sql:39`. The values the writers produce
@@ -15,7 +25,7 @@ against data or provider docs.
 
 ## Two writers disagree on the same input
 
-| Input | TS `detectRemoteEligibility` (`scripts/utils/sanitizer.ts:1087-1107`) | Python `_greenhouse_remote_eligibility` (`scripts/scraper/fetchers.py`) |
+| Input | TS `detectRemoteEligibility` (`scripts/utils/sanitizer.ts:1088-1107`) | Python `_greenhouse_remote_eligibility` (`scripts/scraper/fetchers.py:150-156`) |
 |---|---|---|
 | not remote | `unknown` | `unknown` |
 | remote + "anywhere / worldwide / global / all regions" | `worldwide` | `worldwide` (only if no country evidence) |

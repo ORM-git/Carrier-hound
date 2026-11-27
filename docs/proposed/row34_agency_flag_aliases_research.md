@@ -3,6 +3,17 @@
 Research only. No code, no database reads. Read from `main` @ `71339758`, 27 Nov 2026.
 Labels: **from source** = read in this repo at that commit; **unverified** = not checked against data or docs.
 
+## Status (main `61cd5b6e`)
+
+- **Partial.** Evidence: there is no agency column (`public.companies` and `jobs` in `supabase/schema.sql`). Aliases live
+  in `scripts/scraper/enrichment.py:670` (`COMPANY_ALIASES`), with a prefix fallback at `enrichment.py:792`. The
+  category regex at `enrichment.py:770` is not an agency flag.
+- **Smallest next change:** an offline, file-only collision audit of the prefix fallback against
+  `scripts/scraper/company_seeds.json` (a new test or script; no edit to `enrichment.py`). An agency flag first needs the
+  owner to choose between a curated list and a provider field.
+- **Files vs open PRs:** `enrichment.py` is touched by #698 (draft, logo lane). The audit does not edit it, so there is no
+  overlap. Editing the alias logic later would overlap #698. Open PRs checked (live, 27 Nov): #557 (`ingest.ts`, `sourceHealth.ts`, `check-source-health.ts`, `20261108d_jobs_first_seen_at_immutable.sql`, …), #791 (`sourceHealth.ts` + test), #698 (draft; `engine.py`, `enrichment.py`, `run_ingestion.py`, logo files), #749 (`engine.py`, `persistence.py`, test).
+
 ## Agency flag
 
 - **from source**: there is no agency or staffing flag anywhere. `public.companies` (`supabase/schema.sql`) has
