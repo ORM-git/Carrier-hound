@@ -174,7 +174,7 @@ export class LeverAdapter implements SourceAdapter {
 
           const rawInterval = (j.salaryRange.interval || '').toLowerCase();
           salaryPeriodStated = true; // native interval field; the else branch below is a guess
-          if (rawInterval.includes('hour') || rawInterval.includes('wage')) {
+          if (rawInterval.includes('hour')) { // not 'wage': per-day-wage is daily, never hourly
             salaryPeriod = 'hourly';
           } else if (rawInterval.includes('month')) {
             salaryPeriod = 'monthly';

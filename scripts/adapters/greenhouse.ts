@@ -110,6 +110,7 @@ export class GreenhouseAdapter implements SourceAdapter {
           const context = `${validRange.title || ''} ${validRange.blurb || ''}`;
           if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(context)) {
             salaryPeriod = 'hourly';
+            salaryPeriodStated = true; // the pay range's own title/blurb says hour: source salary text
           } else {
             salaryPeriod = undefined;
           }

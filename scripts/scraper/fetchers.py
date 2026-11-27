@@ -170,7 +170,8 @@ def _greenhouse_salary(item: dict[str, Any]) -> dict[str, Any]:
         )
     ), None) if isinstance(ranges, list) else None
     if not chosen:
-        return {"salary_text": None, "salary_min": None, "salary_max": None, "currency": None, "salary_period": None}
+        return {"salary_text": None, "salary_min": None, "salary_max": None, "currency": None, "salary_period": None,
+                "salary_period_stated": False}
 
     raw_min = _positive_number(chosen.get("min_cents"))
     raw_max = _positive_number(chosen.get("max_cents"))
@@ -192,7 +193,22 @@ def _greenhouse_salary(item: dict[str, Any]) -> dict[str, Any]:
     else:
         amount = salary_min if salary_min is not None else salary_max
         salary_text = f"{prefix}{number(amount or 0)}{suffix}"
-    return {"salary_text": salary_text, "salary_min": salary_min, "salary_max": salary_max, "currency": currency, "salary_period": period}
+    # The pay range's own title/blurb saying "hour" is source salary text, so that period counts as stated.
+    return {"salary_text": salary_text, "salary_min": salary_min, "salary_max": salary_max, "currency": currency, "salary_period": period,
+            "salary_period_stated": period is not None}
+
+
+def _lever_salary_period(interval: Any) -> str | None:
+    """Lever salaryRange.interval (per-year-salary, per-month-salary, per-hour-wage, ...): same rule as scripts/adapters/lever.ts.
+    Anything else (per-day-wage, per-week-salary, one-time) stays None: never relabelled as another period."""
+    raw = interval.lower() if isinstance(interval, str) else ""
+    if "hour" in raw:
+        return "hourly"
+    if "month" in raw:
+        return "monthly"
+    if "year" in raw or "annual" in raw:
+        return "yearly"
+    return None
 
 
 def _detect_remote(title: str, location: str, explicit_remote: bool | None = None) -> bool:
@@ -205,7 +221,7 @@ def _detect_remote(title: str, location: str, explicit_remote: bool | None = Non
 # Mirror of src/lib/jobs/employmentTypeMap.ts (checklist #17): only unambiguous synonyms, else 'other'.
 _CANONICAL_JOB_TYPES = frozenset({"job", "internship", "full-time", "part-time", "contract", "other"})
 _EMPLOYMENT_SYNONYMS = {
-    "full time": "full-time", "fulltime": "full-time", "permanent": "full-time", "part time": "part-time",
+    "full time": "full-time", "fulltime": "full-time", "permanent": "full-time", "part time": "part-time", "parttime": "part-time",
     "contractor": "contract", "freelance": "contract", "intern": "internship", "co-op": "internship",
 }
 
@@ -248,6 +264,7 @@ def build_normalized_job(
     salary_max: float | None = None,
     currency: str | None = "USD",
     salary_period: str | None = None,
+    salary_period_stated: bool = False,
     employment_type: str | None = None,
     country_code_hint: str | None = None,
     infer_country_from_location: bool = True,
@@ -313,6 +330,9 @@ def build_normalized_job(
         "currency": currency,
         # Truthful null when no salary is stated; known aliases (year/month/hour) map to the DB enum.
         "salary_period": normalize_salary_period(salary_period) if (salary_text or salary_min is not None or salary_max is not None) else None,
+        # True only when the fetcher read the period from the source's own field or salary text (checklist #21).
+        "salary_period_stated": bool(salary_period_stated) and salary_period is not None
+        and (salary_text is not None or salary_min is not None or salary_max is not None),
         "description": clean_desc,
         "apply_url": apply_url.strip(),
         "source": source,
@@ -383,6 +403,7 @@ async def fetch_greenhouse(
                 salary_max=salary["salary_max"],
                 currency=salary["currency"],
                 salary_period=salary["salary_period"],
+                salary_period_stated=salary["salary_period_stated"],
                 country_code_hint=country_code,
                 infer_country_from_location=False,
                 country_unknown_as_location=False,
@@ -487,6 +508,7 @@ async def fetch_lever(
         sal_min = salary_range.get("min")
         sal_max = salary_range.get("max")
         sal_curr = salary_range.get("currency") or "USD"
+        sal_period = _lever_salary_period(salary_range.get("interval"))
         desc = f"{item.get('descriptionPlain') or item.get('description') or ''} {item.get('additionalPlain') or ''}"
 
         results.append(
@@ -507,6 +529,8 @@ async def fetch_lever(
                 salary_min=float(sal_min) if isinstance(sal_min, (int, float)) else None,
                 salary_max=float(sal_max) if isinstance(sal_max, (int, float)) else None,
                 currency=sal_curr,
+                salary_period=sal_period,
+                salary_period_stated=sal_period is not None,
                 source_layer="layer1",
                 source_priority=1,
             )
