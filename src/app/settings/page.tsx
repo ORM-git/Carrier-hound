@@ -12,7 +12,7 @@ import { UserPreferences } from "@/lib/auth/types";
 import { categoriesForRoles } from "@/lib/onboarding/roleCategories";
 import { workModelsFromLegacy } from "@/lib/preferences/feedConstraints";
 import { getUserSubscription, cancelAutoRenewSubscription } from "@/lib/billing/subscription";
-import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
+import BillingAccessSummary from "@/components/billing/BillingAccessSummary";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
@@ -92,26 +92,6 @@ function SettingsPageInner() {
       setIsCancellingAutoRenew(false);
     }
   };
-
-  // Derive plan & pricing from central normalized plan ID and real subscription record
-  const normalizedPlan = normalizePlanCode(subscription?.planId);
-  const planDef = normalizedPlan ? PLAN_DEFINITIONS[normalizedPlan] : null;
-
-  const planCurrency = subscription?.currency || "INR";
-  const currencySymbol =
-    planCurrency === "USD" ? "$" : planCurrency === "EUR" ? "€" : planCurrency === "GBP" ? "£" : "₹";
-
-  // When subscriptions.amount is null, do not combine the INR catalog price with a non-INR currency
-  // (USD quarterly must not show $3,999). Hide the price when currency is not INR and amount is unknown.
-  const planPriceNumber = typeof subscription?.amount === "number"
-    ? subscription.amount
-    : (planCurrency === "INR" && planDef ? Math.round(planDef.price_paise / 100) : undefined);
-
-  const planInterval = normalizedPlan === "weekly" ? "week" : normalizedPlan === "quarterly" ? "quarter" : "month";
-
-  const formattedPlanText = typeof planPriceNumber === "number"
-    ? `${currencySymbol}${planPriceNumber.toLocaleString()} / ${planInterval}`
-    : null;
 
   useEffect(() => {
     getAuthUser().then((u) => {
@@ -624,13 +604,7 @@ function SettingsPageInner() {
                   <h3 className="font-bold text-sm text-slate-900">
                     {isPro ? "Career Monke Pro Plan" : "Career Monke Free Tier"}
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    {isPro
-                      ? formattedPlanText
-                        ? `${formattedPlanText}. Full direct apply unlocked.`
-                        : "Career Monke Pro Plan. Full direct apply unlocked."
-                      : "Standard title browsing, 5 tracker slots, 1 ATS resume export."}
-                  </p>
+                  <BillingAccessSummary isPro={isPro} />
                 </div>
 
                 {!isPro && (

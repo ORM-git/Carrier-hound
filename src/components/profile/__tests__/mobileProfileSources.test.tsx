@@ -9,7 +9,7 @@ vi.mock('@/components/resume/ResumeUploadAndConfirm',()=>({default:({selectedFil
 afterEach(()=>{cleanup();vi.unstubAllEnvs();vi.unstubAllGlobals();vi.clearAllMocks()});
 function setup(initialLinkedinUrl=''){vi.stubEnv('NEXT_PUBLIC_ONBOARDING_STEP2_ENABLED','true');auth.mockResolvedValue({data:{session:{access_token:'fixture-token'}}});return render(<Sources email="fixture@example.test" initialLinkedinUrl={initialLinkedinUrl} candidate={null} isPro={false} onProfileConfirmed={vi.fn()}/>)}
 describe('phone Profile reference cards preserve real contracts',()=>{
- it('uses compact phone cards while keeping accessible action heights',()=>{
+ it('keeps the original large icons within compact cards and accessible actions',()=>{
    setup();
    const source=screen.getByTestId('mobile-profile-sources');
    expect(source.classList.contains('space-y-2')).toBe(true);
@@ -18,9 +18,12 @@ describe('phone Profile reference cards preserve real contracts',()=>{
      expect(card.classList.contains('py-2')).toBe(true);
      const icon=card.querySelector(':scope > div');
      expect(icon).not.toBeNull();
-     expect(icon!.classList.contains('h-8')).toBe(true);
-     expect(icon!.classList.contains('w-8')).toBe(true);
-     expect(icon!.classList.contains('h-[100px]')).toBe(false);
+     expect(icon!.classList.contains('h-[100px]')).toBe(true);
+     expect(icon!.classList.contains('w-[100px]')).toBe(true);
+     expect(icon!.classList.contains('mb-1')).toBe(true);
+     const glyph=icon!.querySelector('svg');
+     expect(glyph?.classList.contains('h-12')).toBe(true);
+     expect(glyph?.classList.contains('w-12')).toBe(true);
    }
    for(const label of ['Save Your LinkedIn URL','Upload Your Resume']){
      const button=screen.getByRole('button',{name:label});
