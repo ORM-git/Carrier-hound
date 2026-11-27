@@ -20,6 +20,28 @@ from typing import Any
 
 PER_SOURCE_COLUMNS = ("source", "status", "fetched", "validated", "rejected", "salary_sanitized", "duplicate_skipped",
                       "inserted", "updated", "failed", "expired", "cooldown_reason", "next_eligible_at", "last_success_at")
+# Per-board Workday request observations (run_ingestion) and terminal cause; null means unknown, never zero.
+WORKDAY_MEASURES = ("request_host", "http_requests", "status_counts", "network_errors", "retry_after_seconds_seen",
+                    "pages_requested", "elapsed_seconds", "jobs_fetched", "jobs_persisted", "trigger_status", "error_class")
+WORKDAY_BOARD_COLUMNS = ("source", *WORKDAY_MEASURES, "deferred_reason")
+
+
+def workday_totals(boards: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Totals over boards with a known request count; None when no board was measured (unknown, not zero)."""
+    known = [b for b in boards if isinstance(b.get("http_requests"), int)]
+    if not known:
+        return None
+    statuses: dict[str, int] = {}
+    for b in known:
+        for code, n in (b.get("status_counts") or {}).items():
+            statuses[str(code)] = statuses.get(str(code), 0) + int(n)
+    classes: dict[str, int] = {}
+    for b in boards:
+        if b.get("error_class"):
+            classes[str(b["error_class"])] = classes.get(str(b["error_class"]), 0) + 1
+    return {"boards_measured": len(known), "http_requests": sum(b["http_requests"] for b in known),
+            "network_errors": sum(int(b.get("network_errors") or 0) for b in known),
+            "status_counts": dict(sorted(statuses.items())), "boards_by_error_class": dict(sorted(classes.items()))}
 
 
 def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, cohort: str) -> dict[str, Any]:
@@ -35,6 +57,11 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
     ]
     # A deferred no-op never wrote anything, so it is never ok, whatever exit code the runner reported.
     deferred_noop = str(report.get("guard_block_reason") or "").split(":")[0] == "noop_deferred"
+    wd_boards = [
+        {k: b.get(k) for k in WORKDAY_BOARD_COLUMNS}
+        for b in [*(src for src in (report.get("sources") or []) if isinstance(src, dict) and src.get("source_type") == "workday"),
+                  *(d for d in (report.get("deferred_sources") or []) if isinstance(d, dict))]
+    ]
     return {
         "cohort": cohort,
         # exit 3 or guard noop_deferred = deferred no-op (nothing written): explicitly not ok, so the aggregate is never green on it
@@ -59,6 +86,8 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
         ],
         "failed_writes": int(db.get("failed_writes") or 0),
         "workday": report.get("workday"),
+        "workday_boards": wd_boards,
+        "workday_totals": workday_totals(wd_boards),
         "deferred_sources": [
             {"source": str(d.get("source")), "reason": str(d.get("reason") or "")[:120], "next_eligible_at": d.get("next_eligible_at")}
             for d in (report.get("deferred_sources") or []) if isinstance(d, dict)
@@ -126,6 +155,11 @@ def render_cohort(s: dict[str, Any]) -> str:
         rows.append(("workday selected / attempted / completed / failed / deferred",
                      f"{wd.get('selected')} / {wd.get('attempted')} / {wd.get('completed')} / {wd.get('failed')} / {wd.get('deferred')}"))
         rows.append(("workday cooldown state", f"{wd.get('state_status')} (request cap {wd.get('request_cap')})"))
+        t = s.get("workday_totals")
+        rows.append(("workday requests observed / network errors (boards measured)",
+                     "unknown" if not t else f"{t['http_requests']} / {t['network_errors']} ({t['boards_measured']})"))
+        rows.append(("workday HTTP status counts", "unknown" if not t else json.dumps(t["status_counts"])))
+        rows.append(("workday boards by error class", "unknown" if not t else json.dumps(t["boards_by_error_class"])))
     if s["dry_run"]:
         p = s.get("projected") or {}
         rows.append(("projected insert / update / unchanged", f"{p.get('inserted')} / {p.get('updated')} / {p.get('unchanged')}"))
@@ -154,6 +188,12 @@ def render_cohort(s: dict[str, Any]) -> str:
                   "|" + "---|" * len(PER_SOURCE_COLUMNS)]
         lines += ["| " + " | ".join(str(p.get(k) if p.get(k) is not None else "-") for k in PER_SOURCE_COLUMNS) + " |"
                   for p in s["per_source"]]
+    if s.get("workday_boards"):
+        lines += ["", "**Workday request measures (observed; unknown = not measured, never zero):**", "",
+                  "| " + " | ".join(c.replace("_", " ") for c in WORKDAY_BOARD_COLUMNS) + " |",
+                  "|" + "---|" * len(WORKDAY_BOARD_COLUMNS)]
+        lines += ["| " + " | ".join(("-" if k == "deferred_reason" else "unknown") if b.get(k) is None else json.dumps(b[k]) if isinstance(b[k], (dict, list)) else str(b[k])
+                                    for k in WORKDAY_BOARD_COLUMNS) + " |" for b in s["workday_boards"]]
     if s.get("duplicate_samples"):
         lines += ["", f"**Duplicate apply_url rows skipped ({s.get('duplicate_skipped', 0)}; existing job kept):**", ""]
         lines += [f"- `{r['source_key']}` [{r['stage']}] {r['reason']}" for r in s["duplicate_samples"]]

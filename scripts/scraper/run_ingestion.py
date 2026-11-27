@@ -49,6 +49,7 @@ from .fetch_aggregators_and_india import (
     fetch_jobspy_india,
 )
 from . import fetchers as fetchers_mod, workday_schedule
+from .ingest_report import WORKDAY_MEASURES
 from .fetchers import (
     WorkdayRateLimited,
     fetch_amazon_jobs,
@@ -349,15 +350,26 @@ async def run_master_ingestion(
                     wd_deferred.extend({"source": rest, "reason": "run budget", "next_eligible_at": None} for rest in wd_chosen[i:])
                     break
                 seen: dict[str, Any] = {}
+                metrics = fetchers_mod.new_workday_metrics()
 
-                async def fetch(seed: dict[str, Any] = wd_plan[sid]["seed"], seen: dict[str, Any] = seen) -> Any:
+                async def fetch(seed: dict[str, Any] = wd_plan[sid]["seed"], seen: dict[str, Any] = seen,
+                                metrics: dict[str, Any] = metrics) -> Any:
+                    t0 = time.monotonic()
                     try:
-                        return await fetch_workday_cxs(client, limiter, seed, max_pages=1)
+                        return await fetch_workday_cxs(client, limiter, seed, max_pages=1, metrics=metrics)
                     except WorkdayRateLimited as exc:
                         seen["retry_after"] = exc.retry_after
                         raise
+                    finally:
+                        metrics["elapsed_seconds"] = round(time.monotonic() - t0, 3)
 
                 rep = await run_isolated_source(sid, "workday", fetch, is_full_coverage=False)
+                rep["measures"] = {k: metrics[k] for k in WORKDAY_MEASURES if k in metrics}
+                rep["measures"]["retry_after_seconds_seen"] = metrics["retry_after_seconds_seen"] or None
+                if rep["completed"]:  # a recovered 429/5xx is a completed board: no terminal cause
+                    rep["measures"].update(trigger_status=None, error_class=None)
+                elif rep["measures"]["error_class"] is None:
+                    rep["measures"]["error_class"] = "other"
                 if dry_run:
                     pass  # dry runs never change the durable cooldown/rotation state
                 elif rep["completed"]:
@@ -642,6 +654,8 @@ async def run_master_ingestion(
                        # not persisted for a reason other than rejection/duplicate (stopped writes, withheld writes)
                        failed=(len(keys) - rej - len(dups) - len(persisted)) if writes_attempted else 0,
                        expired=expired_by_source.get(src["source"], 0))
+            if "measures" in rep:  # metric only: never an input to the health condition below
+                src.update(rep["measures"], jobs_persisted=len(persisted) if writes_attempted and not dry_run else None)
             if (src["source_type"] == "workday" and rep["completed"] and writes_attempted and not rej
                     and not db_stats.get("persistence_failed") and (keys - dups) <= key_sets["persisted_source_keys"]):
                 workday_schedule.record_attempt(wd_boards, src["source"], now_dt, wd_lim, ok=True)
@@ -724,7 +738,8 @@ async def run_master_ingestion(
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "selected_sources": [p["id"] for p in selected_plan],
             "completed_sources": [r["source"] for r in source_reports if r["source"] not in failed_ids],
-            "deferred_sources": wd_deferred,
+            # deferred boards made no request this run: measures unknown (null), never zero
+            "deferred_sources": [{**d, **dict.fromkeys(WORKDAY_MEASURES), "deferred_reason": d["reason"]} for d in wd_deferred],
             "workday": None if not wd_plan else {
                 "state_status": wd_state_status,
                 "selected": len(wd_plan),
