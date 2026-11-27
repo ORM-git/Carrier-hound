@@ -140,4 +140,12 @@ Founded in 2012. We have 1,500 employees worldwide.
     expect(detectPayPeriod("unspecified")).toBeNull();
     expect(detectPayPeriod("401(k) matching")).toBeNull();
   });
+
+  it("never relabels a stated daily or weekly rate as hourly or yearly (checklist #21)", () => {
+    for (const t of ["£250 daily rate", "$300 per day", "$450/day", "€1,500 per week", "$2,000 weekly"]) {
+      const r = parseSalary(t, { isExplicitSalaryField: true });
+      expect([r.salary_text, r.salary_min, r.salary_max]).toEqual([null, null, null]);
+    }
+    expect(parseSalary("$50/hr", { isExplicitSalaryField: true }).salary_period).toBe("hourly");
+  });
 });
