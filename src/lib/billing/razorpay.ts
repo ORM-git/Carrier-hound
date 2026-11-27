@@ -26,7 +26,14 @@ export function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+export interface PendingPaymentConfirmation {
+  orderId: string;
+  paymentId: string;
+  retry: () => Promise<void>;
+}
+
 export interface RazorpayCheckoutOptions {
+  userId?: string;
   planCode?: string;
   addonCode?: string;
   authToken?: string;
@@ -35,6 +42,7 @@ export interface RazorpayCheckoutOptions {
   userPhone?: string;
   onSuccess?: (result: { orderId: string; paymentId: string; verified: boolean }) => void;
   onError?: (err: any) => void;
+  onPending?: (payment: PendingPaymentConfirmation) => void;
   onDismiss?: () => void;
 }
 
@@ -116,6 +124,8 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
   }
 
   // 3. Open Razorpay Checkout modal
+  let confirmationStarted = false;
+  let confirmed = false;
   const razorpayOptions = {
     key: orderData.keyId || keyId,
     order_id: orderData.orderId,
@@ -133,42 +143,43 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
       color: "#2563EB",
     },
     handler: async function (response: any) {
-      // 4. Verify payment signature server-side via /api/billing/razorpay/verify
-      try {
-        const verifyRes = await fetch("/api/billing/razorpay/verify", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature,
-            planCode: options.planCode,
-            addonCode: options.addonCode,
-          }),
-        });
-
-        if (!verifyRes.ok) {
-          const verifyErr = await verifyRes.json().catch(() => ({}));
-          options.onError?.(new Error(verifyErr.error || "Payment verification failed"));
-          return;
-        }
-
-        const verifyData = await verifyRes.json();
-        options.onSuccess?.({
-          orderId: response.razorpay_order_id,
-          paymentId: response.razorpay_payment_id,
-          verified: Boolean(verifyData.verified || verifyData.success),
-        });
-      } catch (err: any) {
-        options.onError?.(new Error(err?.message || "Failed to verify payment with server"));
-      }
+      confirmationStarted = true;
+      let checking = false;
+      const pending = (message?: string) => {
+        if (options.onPending) options.onPending({orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id, retry: verify});
+        else options.onError?.(new Error(message || "Payment confirmation pending. Do not pay again. Contact support with your payment reference."));
+      };
+      // Retry verification only. Never creates an order or reopens a charge. Signature stays in memory.
+      const verify = async () => {
+        if (checking || confirmed) return;
+        checking = true;
+        try {
+          const {createClient} = await import("../supabase/client");
+          const {data:{session}} = await createClient().auth.getSession();
+          if (options.userId && session?.user?.id !== options.userId) {pending();return;}
+          const verifyRes = await fetch("/api/billing/razorpay/verify", {
+            method: "POST",
+            headers: {"Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || token}`},
+            body: JSON.stringify({razorpay_order_id: response.razorpay_order_id, razorpay_payment_id: response.razorpay_payment_id, razorpay_signature: response.razorpay_signature, planCode: options.planCode, addonCode: options.addonCode}),
+          });
+          const data = await verifyRes.json().catch(() => ({}));
+          if (!verifyRes.ok || !(data.verified === true || data.success === true)) {pending(data.error);return;}
+          if (options.userId) {
+            const {data:{session: current}} = await createClient().auth.getSession();
+            if (current?.user?.id !== options.userId) {pending();return;}
+          }
+          confirmed = true;
+          options.onSuccess?.({orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id, verified: true});
+        } catch (err: any) {pending(err?.message);}
+        finally {checking = false;}
+      };
+      // Publish non-secret recovery references before the first network await.
+      if (options.onPending) pending();
+      await verify();
     },
     modal: {
       ondismiss: function () {
-        options.onDismiss?.();
+        if (!confirmationStarted) options.onDismiss?.();
       },
     },
   };
@@ -177,6 +188,7 @@ export async function openRazorpayCheckout(options: RazorpayCheckoutOptions = {}
     const rzp = new (window as any).Razorpay(razorpayOptions);
     if (typeof rzp.on === "function") {
       rzp.on("payment.failed", function (resp: any) {
+        if (confirmationStarted) return;
         const errorDesc =
           resp?.error?.description ||
           resp?.error?.reason ||
