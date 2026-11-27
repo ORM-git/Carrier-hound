@@ -43,14 +43,14 @@ async function pop(url: string, state: any) {
   window.history.replaceState(state, "", url);
   await act(async () => window.dispatchEvent(new PopStateEvent("popstate", { state })));
   await flush();
-  await act(async () => await new Promise(r => requestAnimationFrame(r)));
+  await act(async () => await new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
 }
 describe("detail entry scroll belongs to the committed detail identity", () => {
   it.each([false, true])("opens at top after DOM swap and UI Back restores list offset, desktop=%s", async desktop => {
     h.desktop = desktop; await mount(); await open();
     expect(window.history.state.scrollPos).toBe(1100);
     y = 400; fireEvent.click(screen.getByRole("button", { name: "Fixture Back" }));
-    await flush(); await act(async () => await new Promise(r => requestAnimationFrame(r)));
+    await flush(); await act(async () => await new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
     expect(y).toBe(1100); expect(window.location.search).not.toContain("id=");
   });
   it("browser Back restores list position; Forward re-enters detail at top", async () => {
@@ -65,7 +65,7 @@ describe("detail entry scroll belongs to the committed detail identity", () => {
     await act(async () => result.resolve(fixtureJob(9))); await flush();
     expect(y).toBe(0); expect(calls.some(c => c.top === 0 && c.detail === "fx-9")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Fixture Back" }));
-    await flush(); await act(async () => await new Promise(r => requestAnimationFrame(r)));
+    await flush(); await act(async () => await new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
     expect(y).toBe(0);
   });
   it("same-job enrichment keeps reader scroll, another detail identity resets", async () => {
