@@ -14,6 +14,7 @@ export interface JobCardContentProps {
   /** Owner-selected landing-only phone artwork/title overrides. Jobs data stays unchanged. */
   mobilePreviewLogo?: React.ReactNode;
   mobilePreviewTitle?: string;
+  mobilePreviewCompany?: string;
   footerText?: React.ReactNode;
   footerActions?: React.ReactNode;
   job: LiveJob;
@@ -52,7 +53,7 @@ export function cmArrivalAt(job: { firstSeenAt?: unknown } | null | undefined, n
 }
 
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
-export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription, mobilePreviewLogo, mobilePreviewTitle }: JobCardContentProps) {
+export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription, mobilePreviewLogo, mobilePreviewTitle, mobilePreviewCompany }: JobCardContentProps) {
   const mode = workModelLabel(job);
   const canSeeLocation = locationVisible ?? isPro;
   const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
@@ -345,7 +346,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5 text-[14px] text-[#475569] truncate h-5">
                                       <span className={`inline-flex items-center h-5 leading-none ${!isPro ? "filter blur-[4px] select-none font-semibold text-[#0F172A]" : "font-semibold text-[#0F172A]"}`}>
-                                        {(isPro && job.company) || "Verified Employer"}
+                                        {(isPro && (mobilePreviewCompany || job.company)) || "Verified Employer"}
                                       </span>
                                     </div>
                                     {job.category ? (
