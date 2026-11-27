@@ -134,6 +134,99 @@ describe("logo hide policy on the real jobs page (#44)", () => {
     }
   });
 
+  const failLogos = async (id: string) => {
+    const card = screen.getAllByTestId("job-card").find((c) => c.getAttribute("data-job-id") === id)!;
+    for (const img of Array.from(card.querySelectorAll("img"))) fireEvent.error(img);
+    await flush();
+  };
+  const shown = () => screen.getAllByTestId("job-card").map((c) => c.getAttribute("data-job-id"));
+  const logoJob = (i: number, tag: string) => fixtureJob(i, { companyDomain: null, applyUrl: "", companyLogoUrl: `https://cdn.fixture.invalid/${tag}.png` });
+
+  it("each job's failure expires on its own clock: a job that failed later stays hidden after an earlier one is back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      h.isPro = true;
+      h.transport = async () => page([logoJob(1, "stagger-a"), logoJob(2, "stagger-b"), fixtureJob(3)], false, 3);
+      render(<JobsPage />);
+      await flush();
+      await failLogos("fx-1"); // t = 0
+      await act(async () => { vi.advanceTimersByTime(FAILED_LOGO_TTL_MS / 3); });
+      await failLogos("fx-2"); // t = TTL/3
+      expect(shown()).toEqual(["fx-3"]);
+      await act(async () => { vi.advanceTimersByTime((FAILED_LOGO_TTL_MS * 2) / 3 + 1000); }); // fx-1 is due, fx-2 is not
+      await flush();
+      expect(shown()).toContain("fx-1");
+      expect(shown()).not.toContain("fx-2");
+      await act(async () => { vi.advanceTimersByTime(FAILED_LOGO_TTL_MS / 3 + 1000); }); // fx-2 is due too
+      await flush();
+      expect(shown()).toContain("fx-2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Track the expiry timer the page arms (the only setTimeout with exactly the failed-image TTL as its delay).
+  const trackTtlTimers = () => {
+    const armed: unknown[] = [];
+    const cleared = new Set<unknown>();
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+    const setSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: any, ms?: number, ...rest: any[]) => {
+      const id = (realSet as any)(fn, ms, ...rest);
+      if (ms === FAILED_LOGO_TTL_MS) armed.push(id);
+      return id;
+    }) as any);
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((id: any) => {
+      cleared.add(id);
+      return (realClear as any)(id);
+    }) as any);
+    return { armed, cleared, restore: () => { setSpy.mockRestore(); clearSpy.mockRestore(); } };
+  };
+
+  it("unmount with a failure still pending clears the expiry timer", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const t = trackTtlTimers();
+    try {
+      h.isPro = true;
+      h.transport = async () => page([logoJob(1, "unmount-a"), fixtureJob(2)], false, 2);
+      const view = render(<JobsPage />);
+      await flush();
+      await failLogos("fx-1");
+      expect(t.armed.length).toBeGreaterThan(0);
+      expect(t.armed.every((id) => t.cleared.has(id))).toBe(false); // still pending while mounted
+      view.unmount();
+      expect(t.armed.every((id) => t.cleared.has(id))).toBe(true);
+    } finally {
+      t.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("a new query clears the pending expiry timer and drops the previous list's failures", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const t = trackTtlTimers();
+    try {
+      h.isPro = true;
+      let phase = 0;
+      h.transport = async () => (phase === 0 ? page([logoJob(1, "reset-a"), fixtureJob(2)], false, 2) : page([fixtureJob(7), fixtureJob(8)], false, 2));
+      render(<JobsPage />);
+      await flush();
+      await failLogos("fx-1");
+      expect(t.armed.length).toBeGreaterThan(0);
+      expect(t.armed.every((id) => t.cleared.has(id))).toBe(false);
+      phase = 1;
+      fireEvent.change(screen.getAllByPlaceholderText(/search by title or company/i)[0], { target: { value: "designer" } });
+      await act(async () => { vi.advanceTimersByTime(2000); });
+      await flush();
+      await flush();
+      expect(shown()).toEqual(["fx-7", "fx-8"]);
+      expect(t.armed.every((id) => t.cleared.has(id))).toBe(true);
+    } finally {
+      t.restore();
+      vi.useRealTimers();
+    }
+  });
+
   it("the three warmed pages are all hidden and page 4 is not fetched yet: it is requested without any scroll gesture", async () => {
     h.isPro = true;
     const calls: number[] = [];
