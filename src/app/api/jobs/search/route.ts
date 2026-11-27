@@ -265,7 +265,8 @@ async function getHandler(req: Request) {
         ? (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period, { displayCurrency: preferredCurrency }) || jobRow.salary_text || null)
         : originalSalary;
 
-      const singleTopKeywords = Array.isArray(jobRow.top_keywords) && jobRow.top_keywords.length > 0
+      // Stored top_keywords are derived from the locked description: non-Pro gets title-only keywords.
+      const singleTopKeywords = isPro && Array.isArray(jobRow.top_keywords) && jobRow.top_keywords.length > 0
         ? jobRow.top_keywords.slice(0, 8)
         : extractTopKeywords(
             jobRow.title,
@@ -851,7 +852,8 @@ async function getHandler(req: Request) {
         : originalSalary;
       const resolvedRoleCategory =
         row.role_category || detectRoleCategory(row.title, row.category, isPro && hasServiceKey ? row.skills : null);
-      const resolvedTopKeywords = Array.isArray(row.top_keywords) && row.top_keywords.length > 0
+      // Stored top_keywords are derived from the locked description: non-Pro gets title-only keywords.
+      const resolvedTopKeywords = isPro && Array.isArray(row.top_keywords) && row.top_keywords.length > 0
         ? row.top_keywords.slice(0, 8)
         : extractTopKeywords(
             row.title,
