@@ -8,7 +8,7 @@
  *   process-env default remains available when no client is passed).
  * - The check runs after auth and all validation, BEFORE any Razorpay order
  *   creation or payment_orders insert.
- * - Quota denied: 429, code RATE_LIMITED, retryAfter in body + Retry-After header.
+ * - Quota denied: 429, code RATE_LIMITED, canonical error+code body, numeric Retry-After header.
  * - Strict store unavailable: 503, code RATE_LIMIT_UNAVAILABLE, Retry-After 30
  *   (fail closed, never memory fallback).
  * - Both deny paths make ZERO provider-create calls and ZERO payment_orders inserts.
@@ -158,7 +158,7 @@ describe("Netlify billing-razorpay-order rate limiting (parity with Next route)"
     expect(state.admin.calls.paymentOrdersInsert).toBe(1);
   });
 
-  it("quota denied: 429 RATE_LIMITED with retryAfter in body and Retry-After header, zero side effects", async () => {
+  it("quota denied: 429 RATE_LIMITED, canonical error+code body, numeric Retry-After header, zero side effects", async () => {
     state.rateLimit = vi.fn(async () => ({
       allowed: false,
       retryAfter: 42,
@@ -169,8 +169,9 @@ describe("Netlify billing-razorpay-order rate limiting (parity with Next route)"
     const res = await handler(makeEvent());
     expect(res.statusCode).toBe(429);
     const body = JSON.parse(res.body);
+    expect(body.error).toEqual(expect.any(String));
     expect(body.code).toBe("RATE_LIMITED");
-    expect(body.retryAfter).toBe(42);
+    expect(Object.keys(body).sort()).toEqual(["code", "error"]);
     expect((res.headers as Record<string, string>)["Retry-After"]).toBe("42");
     expect(state.fetchFn).not.toHaveBeenCalled();
     expect(state.admin.calls.paymentOrdersInsert).toBe(0);
@@ -187,8 +188,9 @@ describe("Netlify billing-razorpay-order rate limiting (parity with Next route)"
     const res = await handler(makeEvent());
     expect(res.statusCode).toBe(503);
     const body = JSON.parse(res.body);
+    expect(body.error).toEqual(expect.any(String));
     expect(body.code).toBe("RATE_LIMIT_UNAVAILABLE");
-    expect(body.retryAfter).toBe(30);
+    expect(Object.keys(body).sort()).toEqual(["code", "error"]);
     expect((res.headers as Record<string, string>)["Retry-After"]).toBe("30");
     expect(state.fetchFn).not.toHaveBeenCalled();
     expect(state.admin.calls.paymentOrdersInsert).toBe(0);
