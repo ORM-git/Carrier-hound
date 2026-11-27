@@ -1489,6 +1489,12 @@ function JobsPageInner() {
     readerScrolledRef.current = false;
   }, [displayedJobs]);
 
+  // Reset only when entering a detail identity, after React commits the shorter detail DOM.
+  // List offsets remain in scrollPositionRef for Back; same-job enrichment must not jump the reader.
+  useLayoutEffect(() => {
+    if (selectedJob?.id) window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
+  }, [selectedJob?.id]);
+
   // Similar jobs: same category first, country only as fallback; API-fetched if direct link
   const similarJobs = useMemo(() => {
     if (!selectedJob) return [];
