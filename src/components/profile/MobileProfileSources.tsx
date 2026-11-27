@@ -57,7 +57,7 @@ export default function MobileProfileSources({ email, initialLinkedinUrl = "", c
     <h1 className="text-center text-[18px] font-bold text-slate-950">Profile</h1>
     {email && <p className="text-center text-[15px] font-semibold text-slate-950 break-all px-2">{email}</p>}
     <section className="rounded-[20px] bg-white px-4 py-2 text-center" aria-label="LinkedIn profile">
-      <div className="mx-auto mb-1 h-8 w-8 rounded-full bg-[#EAF5FF] flex items-center justify-center"><Linkedin className="h-5 w-5 text-[#2563EB]" aria-hidden="true" /></div>
+      <div className="mx-auto mb-1 h-[100px] w-[100px] rounded-full bg-[#EAF5FF] flex items-center justify-center"><Linkedin className="h-12 w-12 text-[#2563EB]" aria-hidden="true" /></div>
       <form onSubmit={save} className="space-y-1">
         <div className="relative"><label className="sr-only" htmlFor="profile-linkedin-url">LinkedIn profile URL</label><input id="profile-linkedin-url" value={url} onChange={e => {setUrl(e.target.value); setError(null);}} placeholder="Your LinkedIn profile URL" autoComplete="url" disabled={!enabled || saving} className="w-full min-w-0 h-[44px] rounded-[9px] bg-[#F4F5F7] px-3 pr-9 text-[14px] text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-60" />{saved && <Check aria-label="Saved LinkedIn URL" className="absolute right-3 top-3 h-5 w-5 text-blue-600" />}</div>
         <button type="submit" disabled={!enabled || saving} className="w-full min-h-[44px] rounded-[9px] bg-[#2563EB] text-white text-[14px] font-semibold disabled:opacity-50">{saving ? "Saving..." : savedUrl ? "Update Your LinkedIn URL" : "Save Your LinkedIn URL"}</button>
@@ -69,7 +69,7 @@ export default function MobileProfileSources({ email, initialLinkedinUrl = "", c
       {help && <p className="text-xs text-slate-600 text-left">Open your personal profile on LinkedIn, copy its link, then paste it here. We save the URL only. We do not import or scrape your LinkedIn profile.</p>}
     </section>
     <section className="rounded-[20px] bg-white px-4 py-2 text-center" aria-label="Resume source">
-      <div className="mx-auto mb-1 h-8 w-8 rounded-full bg-[#EFF6FF] flex items-center justify-center"><FileCheck2 className="h-5 w-5 text-[#2563EB]" aria-hidden="true" /></div>
+      <div className="mx-auto mb-1 h-[100px] w-[100px] rounded-full bg-[#EFF6FF] flex items-center justify-center"><FileCheck2 className="h-12 w-12 text-[#2563EB]" aria-hidden="true" /></div>
       <h2 className="text-[15px] font-semibold text-slate-950">{candidate?.confirmedAt ? "Your resume profile is saved" : "Add your resume"}</h2>
       <p className="mt-1 mb-2 text-[13px] leading-[18px] text-slate-800">PDF, Word (.docx) or text files.<br />Files must not exceed 10MB.</p>
       <button type="button" onClick={()=>input.current?.click()} className="w-full min-h-[44px] rounded-[9px] bg-[#2563EB] text-white text-[14px] font-semibold flex items-center justify-center gap-2"><Upload className="w-4 h-4" aria-hidden="true" />Upload Your Resume</button>
