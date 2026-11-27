@@ -140,6 +140,10 @@ const mockJobs = [
     date: new Date().toISOString(),
     postedAt: new Date().toISOString(),
     is_active: true,
+    // Legitimate Pro-visible employer: a stored logo that loads from the static server. Row 44 hides logoless jobs
+    // in the Pro feed, so a fixture without this would render an empty list.
+    companyLogoUrl: "/careermonke-logo-v2.png",
+    companyDomain: "example.com",
   },
   {
     id: JOB_2_UUID,
@@ -159,6 +163,10 @@ const mockJobs = [
     date: new Date().toISOString(),
     postedAt: new Date().toISOString(),
     is_active: true,
+    // Legitimate Pro-visible employer: a stored logo that loads from the static server. Row 44 hides logoless jobs
+    // in the Pro feed, so a fixture without this would render an empty list.
+    companyLogoUrl: "/careermonke-logo-v2.png",
+    companyDomain: "example.com",
   },
   {
     id: JOB_3_UUID,
@@ -178,6 +186,10 @@ const mockJobs = [
     date: new Date().toISOString(),
     postedAt: new Date().toISOString(),
     is_active: true,
+    // Legitimate Pro-visible employer: a stored logo that loads from the static server. Row 44 hides logoless jobs
+    // in the Pro feed, so a fixture without this would render an empty list.
+    companyLogoUrl: "/careermonke-logo-v2.png",
+    companyDomain: "example.com",
   },
 ];
 
