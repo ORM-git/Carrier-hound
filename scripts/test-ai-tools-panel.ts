@@ -105,13 +105,19 @@ async function run() {
   const freeUser = { id: "usr_free_123", email: "free@example.com" } as any;
   const free = render({ job: { ...mockJob, proUnlockError: true }, candidate: mockCandidate, user: freeUser, diagnostics });
   noAiCta(free, "free");
-  assert(free.includes("ai-tools-match-breakdown"), "Free user with confirmed profile must see match breakdown");
-  console.log("  [PASS] Free: deterministic match breakdown, no AI tool entry point");
+  // Paid-only score (owner, 24 Nov): a Free/locked user never gets the numeric score, breakdown or skills here.
+  assert(!free.includes("ai-tools-match-breakdown"), "Free user must NOT see the match breakdown");
+  assert(!free.includes("ai-tools-match-badge"), "Free user must NOT see the numeric match badge");
+  assert(!free.includes("ai-tools-matched-skills") && !free.includes("ai-tools-missing-skills"), "Free user must NOT see matched/missing skills");
+  const freeNotLocked = render({ job: { ...mockJob, matchScore: 87 }, candidate: mockCandidate, user: freeUser, isPro: false, diagnostics });
+  assert(!freeNotLocked.includes("ai-tools-match-breakdown") && !freeNotLocked.includes("87%"), "Free (isPro=false) with a stale server score must not render it");
+  console.log("  [PASS] Free: no score, breakdown or skills, no AI tool entry point");
 
   // 3. Pro user: tracker states
   const proUser = { id: "usr_pro_456", email: "pro@example.com" } as any;
   const pro = render({ candidate: mockCandidate, user: proUser, isPro: true, diagnostics, isSaved: true, isApplied: true });
   noAiCta(pro, "pro");
+  assert(pro.includes("ai-tools-match-breakdown"), "Pro user with confirmed profile must see the match breakdown");
   assert(pro.includes("ai-tools-save-button") && pro.includes(">Saved<"), "Save button must reflect saved state");
   assert(pro.includes("ai-tools-applied-button") && pro.includes(">Applied<"), "Applied button must reflect applied state");
   console.log("  [PASS] Pro: tracker Saved/Applied states, no AI tool entry point");
