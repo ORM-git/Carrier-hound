@@ -323,7 +323,8 @@ async function getHandler(req: Request) {
         salary_original: isInactive || !isPro ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
         scoreRevision: scoreInputRevision(jobRow, isPro, scoredAt),
-        matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro, scoredAt),
+        // Numeric score is paid-only (owner, 24 Nov): never sent to guest/Free.
+        matchScore: isPro ? sharedDisplayScore(jobRow, displayAnswers, isPro, scoredAt) : null,
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
         firstSeenAt: jobRow.first_seen_at ?? null,
@@ -941,7 +942,8 @@ async function getHandler(req: Request) {
         description: "",
         skills: [],
         scoreRevision: scoreInputRevision(row, false, scoredAt),
-        matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
+        // Numeric score is paid-only (owner, 24 Nov): never sent to guest/Free.
+        matchScore: isPro ? sharedDisplayScore(row, displayAnswers, isPro, scoredAt) : null,
         postedAt: row.posted_at || row.created_at,
         firstSeenAt: row.first_seen_at ?? null,
         logoUrl: null,
