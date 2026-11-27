@@ -25,6 +25,13 @@ export interface UserPreferences {
   excludedCompanies?: string[];
   /** false when the constraint columns are not migrated yet: those controls are shown unavailable. */
   feedConstraintsAvailable?: boolean;
+  /** Advanced saved filters (migration 20261126b). undefined = not read / not touched by a save. */
+  requiredYearsMin?: number | null;
+  requiredYearsMax?: number | null; // null = no upper bound
+  preferredSkills?: string[];
+  excludedSkills?: string[];
+  /** false when the advanced columns are not migrated yet: those controls are shown unavailable. */
+  advancedPreferencesAvailable?: boolean;
   updatedAt: string;
 }
 

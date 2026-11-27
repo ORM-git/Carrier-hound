@@ -21,6 +21,33 @@ class TestSourceFixes(unittest.TestCase):
         with open(cls.seeds_path, "r", encoding="utf-8") as f:
             cls.seeds_data = json.load(f)
 
+    def setUp(self) -> None:
+        """Test-only isolation for the Workday tenant spacing: no real 60s waits, no state leaking in or out."""
+        from scripts.scraper import fetchers
+
+        saved_cooldown = fetchers._WORKDAY_COOLDOWN_UNTIL
+        saved_last_start = fetchers._WORKDAY_LAST_TENANT_START
+        saved_tenant_next = dict(fetchers._WORKDAY_TENANT_NEXT)
+
+        def _restore_workday_state() -> None:
+            fetchers._WORKDAY_COOLDOWN_UNTIL = saved_cooldown
+            fetchers._WORKDAY_LAST_TENANT_START = saved_last_start
+            fetchers._WORKDAY_TENANT_NEXT.clear()
+            fetchers._WORKDAY_TENANT_NEXT.update(saved_tenant_next)
+
+        # Registered before any mutation; cleanups run LIFO, so the env patch below is undone too.
+        self.addCleanup(_restore_workday_state)
+        env_patch = patch.dict(
+            os.environ,
+            {"WORKDAY_TENANT_SPACING_SECONDS": "0", "WORKDAY_ALLOW_SHORT_SPACING_FOR_TESTS": "1"},
+        )
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
+        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_TENANT_NEXT.clear()
+        fetchers._WORKDAY_LAST_TENANT_START = 0.0
+
     def test_dead_boards_removed_and_corrected(self) -> None:
         """Requirement 1: Verify dead boards are removed/corrected."""
         all_seeds = self.seeds_data.get("layer1_public_ats", [])

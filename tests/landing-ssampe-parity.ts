@@ -123,11 +123,15 @@ const keyframes = (css: string) => Array.from(css.matchAll(/@keyframes\s+([\w-]+
 
 function check(x: Input) {
   // --- split the page into the top fold and the lower page ---
-  const TOP_OPEN = "<div className={`cm-top ${jakarta.variable}`}>";
+  const TOP_OPEN = '<div className="cm-top cm-jakarta-font">';
+  assert.ok(x.page.includes('import "@/styles/jakarta-local.css";'), "local Jakarta CSS must remain imported");
+  for (const n of [2, 3]) assert.ok(x.page.includes(`<link rel="preload" href="/fonts/plus-jakarta-sans/plus-jakarta-sans-${n}.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />`), "local Jakarta subset preloads must remain wired");
   const LOW_OPEN = '<div className="landing-wrapper" ref={lowerRef}>';
   const t0 = x.page.indexOf(TOP_OPEN), l0 = x.page.indexOf(LOW_OPEN), end = x.page.lastIndexOf("</>");
   assert.ok(t0 > 0 && l0 > t0 && end > l0, "page must render .cm-top then .landing-wrapper as siblings");
-  let top = x.page.slice(t0 + TOP_OPEN.length, l0);
+  // Resource hints add no visible content. Assert exact hints above before removing them
+  // from the pinned visible-markup comparison; keep every hero/layout assertion intact.
+  let top = x.page.slice(t0 + TOP_OPEN.length, l0).replace(/<link rel="preload" href="\/fonts\/plus-jakarta-sans\/plus-jakarta-sans-[23]\.woff2" as="font" type="font\/woff2" crossOrigin="anonymous" \/>/g, "");
   let lower = x.page.slice(l0 + LOW_OPEN.length, end);
 
   // --- 1. top fold: unchanged from f21504b (text, classes), only the three hrefs and the header logo ---
@@ -136,6 +140,11 @@ function check(x: Input) {
   // to preserve every unrelated pinned hero/header/CTA assertion and negative control.
   assert.match(top, /<LandingJobsPreview \/>/, "shared Jobs preview must remain mounted");
   const pinnedCards = topSrc.match(/<div class="listings">([\s\S]*?)<\/div>\s*<\/div>\s*<\/section>/)![1];
+  // View Jobs is intentionally auth-first: the CTA uses VIEW_JOBS_AUTH_HREF, whose exact value is pinned here.
+  const AUTH_FIRST_JOBS_HREF = "/signup?next=%2Fjobs";
+  assert.match(read("src/lib/landing/viewJobsHref.ts"), /export const VIEW_JOBS_AUTH_HREF = "\/signup\?next=%2Fjobs";/, "View Jobs auth-first constant must be exactly /signup?next=%2Fjobs");
+  assert.equal((top.match(/href=\{VIEW_JOBS_AUTH_HREF\}/g) || []).length, 1, "top fold must have exactly one View Jobs auth-first CTA");
+  top = top.replace("href={VIEW_JOBS_AUTH_HREF}", `href="${AUTH_FIRST_JOBS_HREF}"`);
   top = top.replace("<LandingJobsPreview />", pinnedCards.replace(/class=/g, "className=").replace(/href="#"/g, 'href="/jobs"'));
   const pinnedPill = '<span className="pill daily-count-pending" aria-hidden="true">\n                  <span className="pill-dot"></span>\n                  <span>Daily jobs count pending verification</span>\n                </span>';
   top = top.replace(/\{dailyCount[\s\S]*?Daily jobs count pending verification[\s\S]*?<\/span>\s*<\/span>\s*\)\}/, pinnedPill);
@@ -162,7 +171,7 @@ function check(x: Input) {
   assert.ok(!top.includes('className="xx"'), "flat gradient XX must be gone");
   assert.deepEqual(words(top), words(topBody.replace("Sign up free", "Sign up for free")), "top fold text must match f21504b word for word");
   assert.deepEqual(attrs(top, "className"), attrs(topBody, "class"), "top fold classes must match f21504b");
-  assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", "/jobs"], "top fold links: Sign in /login, Sign up for free /signup, View Jobs /jobs");
+  assert.deepEqual(attrs(top, "href"), ["#", "/login", "/signup", AUTH_FIRST_JOBS_HREF], "top fold links: Sign in /login, Sign up for free /signup, View Jobs /signup?next=%2Fjobs (auth first)");
   assert.match(top, /<p className="kicker">Skip LinkedIn competition<\/p>/, "mobile kicker line must be present");
   assert.match(
     squash(top),
@@ -202,7 +211,16 @@ function check(x: Input) {
   assert.deepEqual(words(lower), words(want), "lower page copy must match 3386250 except the five CareerMonke Way cells and the live review/founder content");
   assert.deepEqual(attrs(lower, "className"), attrs(want, "class"), "lower page classes must match 3386250");
   const wantHrefs = attrs(want, "href").map((h) => h.replace(/^https:\/\/careermonke\.com\//, "/"));
-  assert.deepEqual(attrs(lower, "href"), wantHrefs, "lower page links must match 3386250 (same-site links made relative)");
+  // Approved auth-first change: exactly three lower-page View Jobs CTAs use VIEW_JOBS_AUTH_HREF. Each must sit where
+  // 3386250 had "/jobs" and must resolve to the exact auth-first target; every other link stays pinned to 3386250.
+  assert.equal((lower.match(/href=\{VIEW_JOBS_AUTH_HREF\}/g) || []).length, 3, "lower page must have exactly three auth-first View Jobs CTAs");
+  const lowerResolved = lower.replace(/href=\{VIEW_JOBS_AUTH_HREF\}/g, `href="${AUTH_FIRST_JOBS_HREF}"`);
+  const lowerHrefs = attrs(lowerResolved, "href");
+  const authIdx = lowerHrefs.flatMap((h, i) => (h === AUTH_FIRST_JOBS_HREF ? [i] : []));
+  assert.equal(authIdx.length, 3, "three auth-first CTAs expected in lower page link order");
+  for (const i of authIdx) assert.equal(wantHrefs[i], "/jobs", "auth-first CTA must replace a 3386250 /jobs link, never another destination");
+  const wantHrefsAuthFirst = wantHrefs.map((h, i) => (authIdx.includes(i) ? AUTH_FIRST_JOBS_HREF : h));
+  assert.deepEqual(lowerHrefs, wantHrefsAuthFirst, "lower page links must match 3386250 (same-site links made relative) except the three auth-first View Jobs CTAs");
   assert.deepEqual(attrs(lower, "id"), attrs(want, "id"), "lower page ids (runtime hooks) must match 3386250");
 
   // --- 3. order, five cells, things that must not come back ---
@@ -390,6 +408,9 @@ const mut = (k: keyof Omit<Input, "asset">, a: string | RegExp, b: string): Inpu
   return { ...real, [k]: next };
 };
 const controls: [string, Input][] = [ // each must fail for its own reason (see WHY below)
+  ["local font class removed", mut("page", "cm-top cm-jakarta-font", "cm-top")],
+  ["local font import removed", mut("page", 'import "@/styles/jakarta-local.css";', '')],
+  ["local font preload removed", mut("page", '/fonts/plus-jakarta-sans/plus-jakarta-sans-2.woff2', '/fonts/missing.woff2')],
   ["live ticker removed", mut("page", "<LiveLandingTicker />", "")],
   ["live ticker wrapper redesigned", mut("page", 'className="ls" aria-label="Companies hiring now"', 'className="new-strip" aria-label="Companies hiring now"')],
   ["hero copy changed", mut("page", "Daily jobs count pending verification", "1,240 new jobs found today")],
@@ -447,6 +468,9 @@ const controls: [string, Input][] = [ // each must fail for its own reason (see 
   ["hero CSS styles the cards", mut("topCss", /$/, "\n.cm-top .card { font-family: serif; }\n")],
 ];
 const WHY: Record<string, RegExp> = {
+  "local font class removed": /page must render/,
+  "local font import removed": /local Jakarta CSS/,
+  "local font preload removed": /local Jakarta subset preloads/,
   "live ticker removed": /live ticker keeps/ ,
   "live ticker wrapper redesigned": /live ticker keeps/ ,
   "hero copy changed": /top fold text/,

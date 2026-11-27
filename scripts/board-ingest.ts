@@ -29,6 +29,7 @@
  *   No new tables/columns, do NOT depend on consecutive_misses migration. Skip closed-job logic in live-write.
  */
 
+import { enqueueBoardCompanyLogo } from '../src/lib/companies/logoQueue';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -1278,6 +1279,11 @@ export async function runBoardIngestion(options: IngestionOptions = {}): Promise
 
       if (fetchSucceeded) {
         stats.companiesSucceeded++;
+        // Shared queue only, never a second image writer. Do not enqueue fixtures or planning runs.
+        if (supabase && isActualLiveWrite && !dryRun && !fixtureMode) {
+          const logoQueue = await enqueueBoardCompanyLogo(supabase, target);
+          console.log(`Company logo queue: ${logoQueue.status}`);
+        }
         if (isDeltaActive && shouldPersistWatermarks) {
           updateBoardWatermark(watermarks, target.ats, target.token, new Date().toISOString(), acceptedForCompany.length);
           saveBoardWatermarks(watermarks, watermarksPath);

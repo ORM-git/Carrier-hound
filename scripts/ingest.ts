@@ -13,6 +13,7 @@ import {
   SourceStats,
 } from './types';
 import {
+  normalizeDate,
   detectCategory,
   detectCompanyCategory,
   detectRoleCategory,
@@ -23,7 +24,7 @@ import {
 import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { assertCanonicalSourceIds, buildSourceId, RequisitionTracker } from '../src/lib/jobs/highVolumeEnrichment';
 import { findExistingJobs, probeJobsColumn } from './utils/canonicalJobWrite';
-import { resolveCompanyLogo } from '../src/lib/companies/logoResolver';
+import { enqueueCompanyLogos } from '../src/lib/companies/logoQueue';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
 const COUNTRY_NAMES: Record<string, string> = {
@@ -243,7 +244,7 @@ function getSupabaseClient(): SupabaseClient | null {
 }
 
 // Detect database capabilities to remain 100% backward compatible before/after migrations
-async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void> {
+export async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void> {
   try {
     const { error: compErr } = await supabase.from('companies').select('id').limit(1);
     hasCompaniesTable = !compErr;
@@ -282,13 +283,20 @@ async function detectSchemaCapabilities(supabase: SupabaseClient): Promise<void>
   console.log(`Schema capabilities: companies=${hasCompaniesTable} (hv=${hasHighVolumeCompanyColumns}), job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}, hv_job_cols=${hasHighVolumeJobColumns}, source_id_col=${hasSourceIdColumn}`);
 }
 
-// Resolve or create company record in companies table with logo resolution
-async function getOrCreateCompany(
+// Companies seen this run whose logo is not an eligible hosted logo. They are enqueued once at the end
+// of the run for the shared logo repair worker (scripts/repair-company-logos.ts); ingestion never
+// resolves, uploads or stores logos itself, so it is never blocked by branding.
+const logoRepairQueue = new Set<string>();
+/** Companies queued for the logo repair worker in this run (read-only view, for tests and summaries). */
+export const pendingLogoRepairIds = (): string[] => Array.from(logoRepairQueue);
+
+// Resolve or create company record in companies table
+export async function getOrCreateCompany(
   supabase: SupabaseClient,
   companyName: string,
   slug: string,
   atsType: string,
-  sampleApplyUrl?: string
+  _sampleApplyUrl?: string // kept for callers; logo resolution moved to the repair worker
 ): Promise<string | null> {
   if (!hasCompaniesTable || !slug) return null;
   const cached = companyCache.get(slug);
@@ -304,50 +312,9 @@ async function getOrCreateCompany(
     if (existing?.id) {
       companyCache.set(slug, existing.id);
 
-      // Backfill missing logo_url at ingestion time if sample URL is present
-      if (!existing.logo_url) {
-        try {
-          const resolved = await resolveCompanyLogo(
-            { id: existing.id, name: companyName, slug, ats_type: atsType, domain: existing.domain },
-            sampleApplyUrl ? [{ apply_url: sampleApplyUrl }] : []
-          );
-          if (resolved?.imageUrl) {
-            await supabase
-              .from('companies')
-              .update({
-                logo_url: resolved.imageUrl,
-                ...(resolved.domain && !existing.domain ? { domain: resolved.domain } : {}),
-                ...(hasHighVolumeCompanyColumns
-                  ? {
-                      ...(resolved.domain ? { canonical_domain: resolved.domain } : {}),
-                      category: detectCompanyCategory(companyName, slug, resolved.domain || existing.domain),
-                    }
-                  : {}),
-              })
-              .eq('id', existing.id);
-          }
-        } catch {
-          // Non-blocking for ingestion
-        }
-      }
+      logoRepairQueue.add(existing.id); // SQL enqueue keeps only companies without an eligible logo
 
       return existing.id;
-    }
-
-    // Resolve logo at insert time for new company
-    let initialLogoUrl: string | null = null;
-    let initialDomain: string | null = null;
-    try {
-      const resolved = await resolveCompanyLogo(
-        { id: 'pending', name: companyName, slug, ats_type: atsType },
-        sampleApplyUrl ? [{ apply_url: sampleApplyUrl }] : []
-      );
-      if (resolved?.imageUrl) {
-        initialLogoUrl = resolved.imageUrl;
-        initialDomain = resolved.domain || null;
-      }
-    } catch {
-      // Non-blocking for ingestion
     }
 
     const { data: inserted } = await supabase
@@ -359,14 +326,7 @@ async function getOrCreateCompany(
           ats_type: atsType,
           enabled: true,
           last_success_at: new Date().toISOString(),
-          ...(initialLogoUrl ? { logo_url: initialLogoUrl } : {}),
-          ...(initialDomain ? { domain: initialDomain } : {}),
-          ...(hasHighVolumeCompanyColumns
-            ? {
-                ...(initialDomain ? { canonical_domain: initialDomain } : {}),
-                category: detectCompanyCategory(companyName, slug, initialDomain),
-              }
-            : {}),
+          ...(hasHighVolumeCompanyColumns ? { category: detectCompanyCategory(companyName, slug, null) } : {}),
         },
       ])
       .select('id')
@@ -374,6 +334,7 @@ async function getOrCreateCompany(
 
     if (inserted?.id) {
       companyCache.set(slug, inserted.id);
+      logoRepairQueue.add(inserted.id);
       return inserted.id;
     }
   } catch {
@@ -501,11 +462,16 @@ export async function updateExistingJobs(
     const chunk = toUpdate.slice(i, i + chunkSize);
     await Promise.all(
       chunk.map(async ({ id, item, original }) => {
+        // An unknown source date must not erase a previously known posting date.
+        const updateItem = { ...item };
+        const sourcePostedAt = normalizeDate(item.posted_at);
+        if (sourcePostedAt === null) delete updateItem.posted_at;
+        else updateItem.posted_at = sourcePostedAt;
         const doUpdate = () =>
           supabase
             .from('jobs')
             .update({
-              ...item,
+              ...updateItem,
               last_seen_at: new Date().toISOString(),
               is_active: true,
               status: 'active',
@@ -775,7 +741,7 @@ async function main() {
                 salary_max: j.salary_max,
                 currency: j.currency || 'USD',
                 category: j.category || detectCategory(j.title),
-                posted_at: j.posted_at || new Date().toISOString(),
+                posted_at: normalizeDate(j.posted_at),
                 last_seen_at: new Date().toISOString(),
                 is_active: true,
                 status: 'active',
@@ -823,14 +789,18 @@ async function main() {
             // partial canonical index cannot be an ON CONFLICT target, so the identity lookup below is the write key.
             let upsertedRows: Array<{ id: string; source_job_id: string }> | null = null;
             let upsertErr: any = null;
-            if (!hasSourceIdColumn) {
+            // A legacy conflict upsert cannot express "keep OLD date when incoming date is unknown".
+            // Route such batches through identity lookup + separate insert/update so inserts send explicit null
+            // while updates omit the date. Fully dated legacy batches retain their existing bulk path.
+            const useLegacyUpsert = !hasSourceIdColumn && jobsPayload.every(item => item.posted_at !== null);
+            if (useLegacyUpsert) {
               ({ data: upsertedRows, error: upsertErr } = await supabase
                 .from('jobs')
                 .upsert(jobsPayload, { onConflict: 'source,source_job_id' })
                 .select('id, source_job_id'));
             }
 
-            if (!hasSourceIdColumn && !upsertErr) {
+            if (useLegacyUpsert && !upsertErr) {
               stats.inserted += jobsPayload.length;
 
               // If job_descriptions table exists, insert/upsert descriptions
@@ -1147,6 +1117,20 @@ async function main() {
     } catch {
       // Ignore
     }
+  }
+
+  // Hand new / ineligible-logo companies to the shared logo repair loop (fail-open until the
+  // 20261122_company_logo_contract migration is applied; never fails ingestion).
+  if (supabase && !isDryRun && logoRepairQueue.size > 0) {
+    const q = await enqueueCompanyLogos(supabase, Array.from(logoRepairQueue));
+    summary.logos = {
+      companiesSeen: logoRepairQueue.size,
+      enqueued: q.status === 'ok' ? q.enqueued : null,
+      status: q.status === 'error' ? `error: ${q.error}` : q.status,
+      affectedIds: Array.from(logoRepairQueue).slice(0, 200),
+      coverage: q.status === 'ok' ? q.coverage : null,
+    };
+    console.log(`Logo repair summary: ${JSON.stringify(summary.logos)}`);
   }
 
   // Refresh planner statistics after the bulk load (Database row #73,

@@ -61,7 +61,7 @@ export interface NormalizedJob {
   is_remote?: boolean;
   source_priority?: 1 | 2;
   country?: string;
-  posted_at?: string; // ISO string
+  posted_at?: string | null; // Source-supplied ISO string; null when missing/invalid
   expires_at?: string | null; // ISO string
   discovered_at?: string; // ISO string
   last_seen_at?: string; // ISO string
@@ -102,4 +102,6 @@ export interface IngestionRunSummary {
     markedExpired: number;
     permanentlyDeleted: number;
   };
+  /** Company-logo contract: companies handed to the repair loop this run and current coverage counts. */
+  logos?: { companiesSeen: number; enqueued: number | null; status: string; affectedIds: string[]; coverage: Record<string, number> | null };
 }

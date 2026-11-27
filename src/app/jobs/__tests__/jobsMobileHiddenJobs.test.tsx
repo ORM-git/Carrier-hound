@@ -67,7 +67,7 @@ describe("phone: Hidden Jobs removed", () => {
     expect(screen.queryByText(/View Hidden Positions|jobs currently hidden|No jobs hidden yet/)).toBeNull();
     expect(screen.queryByRole("button", { name: /hidden jobs filter/i })).toBeNull();
     // Applying the sheet never turns hidden-only mode on
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Filter positions" })).getByRole("button", { name: "Apply" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Filter positions" })).getByRole("button", { name: "Update" }));
     await flush();
     expect(lastUrl()).not.toContain("hidden=true");
   });
