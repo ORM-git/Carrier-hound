@@ -21,6 +21,9 @@ import crypto from "crypto";
 import path from "path";
 import { spawnSync } from "child_process";
 
+// Batch1 strict order rate limiter: default-allow stub keeps this suite on its own path. Deny/store-down behavior is covered by src/lib/__tests__/billingRazorpayOrderRouteRateLimit.test.ts and netlifyBillingRazorpayOrderRateLimit.test.ts.
+const allowOrderRateLimit = async () => ({ allowed: true, retryAfter: 0, currentCount: 1, source: "shared" });
+
 // Handlers for Netlify functions
 import { createHandler as createNetlifyOrderHandler } from "../netlify/functions/billing-razorpay-order";
 import { createHandler as createNetlifyVerifyHandler } from "../netlify/functions/billing-razorpay-verify";
@@ -314,6 +317,7 @@ async function runRazorpayModeIsolationSuite() {
 
   // Handlers for Netlify functions
   const netlifyOrder = createNetlifyOrderHandler({
+    checkRateLimit: allowOrderRateLimit,
     getSupabaseAdmin: mockSupabaseAdmin,
     fetchFn: async () =>
       new Response(JSON.stringify({ id: "order_test_mock_1", amount: 39900, currency: "INR" }), {
@@ -547,6 +551,7 @@ async function runRazorpayModeIsolationSuite() {
       body: JSON.stringify({ planCode: "monthly" }),
     });
     (nextOrderReq2 as any).__testDeps = {
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: async () =>
         new Response(
@@ -1030,6 +1035,7 @@ async function runRazorpayModeIsolationSuite() {
 
     // 9A.1 Netlify order handler with live credentials
     const b2LiveNetlifyHandler = createNetlifyOrderHandler({
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: trackedFetch,
       getServerEntitlement: async () => ({ isPro: false }),
@@ -1058,6 +1064,7 @@ async function runRazorpayModeIsolationSuite() {
       body: JSON.stringify({ planCode: "weekly" }),
     });
     (b2LiveNextReq as any).__testDeps = {
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: trackedFetch,
     };
@@ -1102,6 +1109,7 @@ async function runRazorpayModeIsolationSuite() {
       body: JSON.stringify({ planCode: "weekly" }),
     });
     (b2LiveTestNextReq as any).__testDeps = {
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: trackedFetch,
     };
@@ -1145,6 +1153,7 @@ async function runRazorpayModeIsolationSuite() {
       body: JSON.stringify({ planCode: "weekly" }),
     });
     (b2TestLiveNextReq as any).__testDeps = {
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: trackedFetch,
     };
@@ -1175,6 +1184,7 @@ async function runRazorpayModeIsolationSuite() {
 
       // Netlify
       const invNetlifyHandler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: mockSupabaseAdmin,
         fetchFn: trackedFetch,
       });
@@ -1212,6 +1222,7 @@ async function runRazorpayModeIsolationSuite() {
         body: JSON.stringify({ planCode: "weekly" }),
       });
       (invNextReq as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: mockSupabaseAdmin,
         fetchFn: trackedFetch,
       };
@@ -1237,6 +1248,7 @@ async function runRazorpayModeIsolationSuite() {
     process.env.RAZORPAY_KEY_SECRET = TEST_KEY_SECRET;
 
     const prodHostNetlifyOrder = createNetlifyOrderHandler({
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: trackedFetch,
     });
@@ -1359,6 +1371,7 @@ async function runRazorpayModeIsolationSuite() {
         body: JSON.stringify({ planCode: "weekly" }),
       });
       (prodNextReq as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: mockSupabaseAdmin,
         fetchFn: trackedFetch,
       };
@@ -1447,6 +1460,7 @@ async function runRazorpayModeIsolationSuite() {
       body: JSON.stringify({ planCode: "weekly" }),
     });
     (depsProdNextReq as any).__testDeps = {
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       isProductionHost: true,
       fetchFn: trackedFetch,
@@ -1461,6 +1475,7 @@ async function runRazorpayModeIsolationSuite() {
     assert.strictEqual(rzpApiCallCount, 0);
 
     const depsProdNetlifyOrder = createNetlifyOrderHandler({
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       isProductionHost: true,
       fetchFn: trackedFetch,
@@ -1487,6 +1502,7 @@ async function runRazorpayModeIsolationSuite() {
     process.env.RAZORPAY_KEY_SECRET = LIVE_KEY_SECRET;
 
     const liveProdNetlifyOrder = createNetlifyOrderHandler({
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockSupabaseAdmin,
       fetchFn: trackedFetch,
     });
@@ -1538,6 +1554,7 @@ async function runRazorpayModeIsolationSuite() {
         body: JSON.stringify({ planCode: "weekly" }),
       });
       (liveNextReq as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: mockSupabaseAdmin,
         fetchFn: trackedFetch,
       };
