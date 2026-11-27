@@ -265,7 +265,8 @@ async function getHandler(req: Request) {
         ? (formatSalary(jobRow.salary_min, jobRow.salary_max, jobRow.currency, jobRow.salary_period, { displayCurrency: preferredCurrency }) || jobRow.salary_text || null)
         : originalSalary;
 
-      const singleTopKeywords = Array.isArray(jobRow.top_keywords) && jobRow.top_keywords.length > 0
+      // Stored top_keywords are derived from the locked description: non-Pro gets title-only keywords.
+      const singleTopKeywords = isPro && Array.isArray(jobRow.top_keywords) && jobRow.top_keywords.length > 0
         ? jobRow.top_keywords.slice(0, 8)
         : extractTopKeywords(
             jobRow.title,
@@ -322,7 +323,8 @@ async function getHandler(req: Request) {
         salary_original: isInactive || !isPro ? null : originalSalary,
         description: isInactive || !isPro ? "" : (jobRow.description || ""),
         scoreRevision: scoreInputRevision(jobRow, isPro, scoredAt),
-        matchScore: sharedDisplayScore(jobRow, displayAnswers, isPro, scoredAt),
+        // Numeric score is paid-only (owner, 24 Nov): never sent to guest/Free.
+        matchScore: isPro ? sharedDisplayScore(jobRow, displayAnswers, isPro, scoredAt) : null,
         skills: isPro ? (jobRow.skills || []) : [],
         postedAt: jobRow.posted_at || jobRow.created_at,
         firstSeenAt: jobRow.first_seen_at ?? null,
@@ -851,7 +853,8 @@ async function getHandler(req: Request) {
         : originalSalary;
       const resolvedRoleCategory =
         row.role_category || detectRoleCategory(row.title, row.category, isPro && hasServiceKey ? row.skills : null);
-      const resolvedTopKeywords = Array.isArray(row.top_keywords) && row.top_keywords.length > 0
+      // Stored top_keywords are derived from the locked description: non-Pro gets title-only keywords.
+      const resolvedTopKeywords = isPro && hasServiceKey && Array.isArray(row.top_keywords) && row.top_keywords.length > 0
         ? row.top_keywords.slice(0, 8)
         : extractTopKeywords(
             row.title,
@@ -939,7 +942,8 @@ async function getHandler(req: Request) {
         description: "",
         skills: [],
         scoreRevision: scoreInputRevision(row, false, scoredAt),
-        matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
+        // Numeric score is paid-only (owner, 24 Nov): never sent to guest/Free.
+        matchScore: isPro ? sharedDisplayScore(row, displayAnswers, isPro, scoredAt) : null,
         postedAt: row.posted_at || row.created_at,
         firstSeenAt: row.first_seen_at ?? null,
         logoUrl: null,

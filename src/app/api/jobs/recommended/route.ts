@@ -604,7 +604,8 @@ export async function GET(req: Request) {
         firstSeenAt: row.first_seen_at ?? null,
         logoUrl: null,
         logo_url: null,
-        matchScore: sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt),
+        // Numeric score is paid-only (owner, 24 Nov): never sent to guest/Free.
+        matchScore: isPro ? sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt) : null,
         scoreRevision: scoreInputRevision(row, false, scoredAt),
       };
     });
