@@ -28,6 +28,7 @@ from .fetchers import (
 )
 from .persistence import db_error_diagnostic, is_duplicate_apply_url, prevalidate_jobs, rejection, sanitize_salaries
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
+from .salary_normalization import SALARY_NORMALIZATION_FIELDS, salary_normalization_columns
 
 DEFAULT_SEEDS_PATH = Path(__file__).resolve().parent / "company_seeds.json"
 
@@ -348,6 +349,19 @@ class SupabaseSetDiffWriter:
         self.failed_writes: int = 0
         self.persistence_failed: bool = False
         self.logo_enqueue: dict[str, Any] = {"requested": 0, "enqueued": 0, "status": "skipped", "coverage": None}
+        self._salary_normalization_columns: bool | None = None  # probed once per run
+
+    async def salary_normalization_columns_exist(self, client: httpx.AsyncClient) -> bool:
+        """Best-effort probe for the NOT APPLIED proposal's salary columns, like scripts/ingest.ts: any failure
+        means 'absent' for this run, so a schema without the proposal keeps working unchanged."""
+        if self._salary_normalization_columns is None:
+            try:
+                resp = await client.get(f"{self.base_url}/jobs", headers=self.headers,
+                                        params={"select": ",".join(SALARY_NORMALIZATION_FIELDS), "limit": "1"})
+                self._salary_normalization_columns = resp.status_code == 200
+            except Exception:
+                self._salary_normalization_columns = False
+        return self._salary_normalization_columns
 
     async def sync_companies(
         self,
@@ -702,6 +716,10 @@ class SupabaseSetDiffWriter:
         }
         if years_columns_enabled():
             db_columns.update(YEARS_FIELDS)
+        if await self.salary_normalization_columns_exist(client):
+            db_columns.update(SALARY_NORMALIZATION_FIELDS)
+            for job in jobs:
+                job.update(salary_normalization_columns(job))
 
         # Complete every identity lookup before the first job write. A later batch lookup
         # failure must not leave an earlier batch partially committed by this invocation.

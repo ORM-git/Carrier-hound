@@ -25,6 +25,7 @@ import { dropFeedJobsAlreadyCoveredByAts } from './utils/crossSourceDedupe';
 import { assertCanonicalSourceIds, buildSourceId, RequisitionTracker } from '../src/lib/jobs/highVolumeEnrichment';
 import { findExistingJobs, probeJobsColumn } from './utils/canonicalJobWrite';
 import { enqueueCompanyLogos } from '../src/lib/companies/logoQueue';
+import { ingestNormalizationColumns } from '../src/lib/jobs/ingestNormalization';
 
 // ISO alpha-2 -> display name for the legacy `country` text column (kept in sync with country_code)
 const COUNTRY_NAMES: Record<string, string> = {
@@ -208,6 +209,7 @@ let hasVerifiedColumn = false;
 let hasHighVolumeJobColumns = false;
 let hasCoverageColumn = false;
 let hasSourceIdColumn = false;
+let hasNormalizationColumns = false; // proposal 20261127 (checklist #21, #27), NOT APPLIED until the owner applies it
 
 // Entry-count guard, not a measured performance claim. Evicted companies
 // follow the existing DB lookup path; correctness does not depend on a hit.
@@ -271,6 +273,12 @@ export async function detectSchemaCapabilities(supabase: SupabaseClient): Promis
       .select('role_category, top_keywords, dedupe_hash, is_remote, source_priority')
       .limit(1);
     hasHighVolumeJobColumns = !hvJobErr;
+
+    const { error: normErr } = await supabase
+      .from('jobs')
+      .select('salary_annual_min, salary_annual_max, salary_period_inferred, salary_conversion_assumed, skill_requirements, skill_requirements_version')
+      .limit(1);
+    hasNormalizationColumns = !normErr;
   } catch (err: any) {
     console.warn(`[Schema Detection Warning]: ${err.message}`);
   }
@@ -280,7 +288,7 @@ export async function detectSchemaCapabilities(supabase: SupabaseClient): Promis
   // error is retried and then aborts the run, never falling back to writes without source_id.
   hasSourceIdColumn = await probeJobsColumn(supabase, 'source_id');
 
-  console.log(`Schema capabilities: companies=${hasCompaniesTable} (hv=${hasHighVolumeCompanyColumns}), job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}, hv_job_cols=${hasHighVolumeJobColumns}, source_id_col=${hasSourceIdColumn}`);
+  console.log(`Schema capabilities: companies=${hasCompaniesTable} (hv=${hasHighVolumeCompanyColumns}), job_descriptions=${hasJobDescriptionsTable}, ingest_runs=${hasIngestRunsTable}, coverage_col=${hasCoverageColumn}, verified_col=${hasVerifiedColumn}, hv_job_cols=${hasHighVolumeJobColumns}, normalization_cols=${hasNormalizationColumns}, source_id_col=${hasSourceIdColumn}`);
 }
 
 // Companies seen this run whose logo is not an eligible hosted logo. They are enqueued once at the end
@@ -779,6 +787,8 @@ async function main() {
                 row.is_remote = Boolean(j.is_remote ?? j.remote);
                 row.source_priority = j.source_priority || getSourcePriority(j.source_type, j.source);
               }
+
+              if (hasNormalizationColumns) Object.assign(row, ingestNormalizationColumns(j));
 
               return row;
             });

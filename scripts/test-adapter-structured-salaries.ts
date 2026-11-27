@@ -350,6 +350,14 @@ async function run() {
       },
     },
     {
+      id: 'lever-day-wage',
+      text: 'Event Staff',
+      hostedUrl: 'https://jobs.lever.co/logrocket/lever-day-wage',
+      descriptionPlain: 'Staff our annual conference.',
+      createdAt: 1729000000000,
+      salaryRange: { min: 300, max: 400, currency: 'USD', interval: 'per-day-wage' },
+    },
+    {
       id: 'lever-3',
       text: 'Growth Lead (Regex Fallback)',
       hostedUrl: 'https://jobs.lever.co/logrocket/lever-3',
@@ -629,6 +637,21 @@ async function run() {
     }
     if (!levNoInterval?.salary_text?.includes('$110,000 - $140,000') || !levNoInterval?.salary_text?.includes('/yr')) {
       failures.push(`FAIL: Lever missing interval salary_text unexpected: "${levNoInterval?.salary_text}"`);
+    }
+
+    // Checklist #21: only a native interval (or explicit parsed wording) counts as a stated period.
+    const stated: Array<[string, any, boolean]> = [
+      ['Greenhouse range, no native interval', gh1, false],
+      ['Greenhouse pay-range text says hour', gh2, true],
+      ['Ashby native interval', ash1, true],
+      ['Lever native interval', lev1, true],
+      ['Lever missing interval', levNoInterval, false],
+      ['Lever per-day-wage is never hourly', leverResults.find((j) => j.source_job_id === 'logrocket-lever-day-wage'), false],
+    ];
+    const levDay = leverResults.find((j) => j.source_job_id === 'logrocket-lever-day-wage');
+    if (!levDay || levDay.salary_period === 'hourly') failures.push(`FAIL: Lever per-day-wage relabelled: period=${levDay?.salary_period}`);
+    for (const [name, job, want] of stated) {
+      if (job?.salary_period_stated !== want) failures.push(`FAIL: ${name}: salary_period_stated=${job?.salary_period_stated}, want ${want}`);
     }
 
     console.log('  ✓ Lever native salaryRange validated successfully.');

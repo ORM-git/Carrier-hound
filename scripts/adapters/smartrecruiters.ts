@@ -251,6 +251,7 @@ export class SmartRecruitersAdapter implements SourceAdapter {
       let salaryMax: number | null = null;
       let currency: string | undefined = undefined;
       let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+      let salaryPeriodStated = false;
 
       if (detail?.compensation && typeof detail.compensation === 'object') {
         const rawComp = detail.compensation;
@@ -279,6 +280,7 @@ export class SmartRecruitersAdapter implements SourceAdapter {
           } else {
             salaryPeriod = undefined;
           }
+          salaryPeriodStated = salaryPeriod !== undefined; // native period field only
 
           if (currency) {
             salaryText = formatSalary(salaryMin, salaryMax, currency, salaryPeriod || 'yearly');
@@ -295,6 +297,7 @@ export class SmartRecruitersAdapter implements SourceAdapter {
           salaryMax = fallback.salary_max;
           currency = fallback.currency;
           salaryPeriod = fallback.salary_period;
+          salaryPeriodStated = fallback.salary_period_stated;
         }
       }
 
@@ -320,6 +323,7 @@ export class SmartRecruitersAdapter implements SourceAdapter {
         salary_max: salaryMax,
         currency: (salaryMin != null || salaryMax != null) ? currency : undefined,
         salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
+        salary_period_stated: (salaryMin != null || salaryMax != null) && salaryPeriodStated,
         category,
         posted_at: postedAt,
         discovered_at: nowIso,

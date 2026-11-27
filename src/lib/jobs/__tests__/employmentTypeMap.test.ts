@@ -11,7 +11,7 @@ describe("mapEmploymentType (offline, unwired)", () => {
   it("maps each unambiguous synonym group", () => {
     const groups: Array<[string, string[]]> = [
       ["full-time", ["full time", "fulltime", "permanent"]],
-      ["part-time", ["part time"]],
+      ["part-time", ["part time", "parttime"]],
       ["contract", ["contractor", "freelance"]],
       ["internship", ["intern", "co-op"]],
     ];

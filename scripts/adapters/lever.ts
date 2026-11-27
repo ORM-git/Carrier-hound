@@ -145,6 +145,7 @@ export class LeverAdapter implements SourceAdapter {
         let salaryMax: number | null = null;
         let currency: string | undefined = undefined;
         let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+        let salaryPeriodStated = false;
 
         // Reject empty or zero compensation objects
         if (
@@ -172,13 +173,15 @@ export class LeverAdapter implements SourceAdapter {
           }
 
           const rawInterval = (j.salaryRange.interval || '').toLowerCase();
-          if (rawInterval.includes('hour') || rawInterval.includes('wage')) {
+          salaryPeriodStated = true; // native interval field; the else branch below is a guess
+          if (rawInterval.includes('hour')) { // not 'wage': per-day-wage is daily, never hourly
             salaryPeriod = 'hourly';
           } else if (rawInterval.includes('month')) {
             salaryPeriod = 'monthly';
           } else if (rawInterval.includes('year') || rawInterval.includes('annual')) {
             salaryPeriod = 'yearly';
           } else {
+            salaryPeriodStated = false;
             // Interval is missing or unmapped: infer only if currency is USD and text says hour
             const textContext = `${j.text || ''}`;
             if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(textContext)) {
@@ -202,6 +205,7 @@ export class LeverAdapter implements SourceAdapter {
             salaryMax = fallback.salary_max;
             currency = fallback.currency;
             salaryPeriod = fallback.salary_period;
+            salaryPeriodStated = fallback.salary_period_stated;
           }
         }
 
@@ -235,6 +239,7 @@ export class LeverAdapter implements SourceAdapter {
           salary_max: salaryMax,
           currency: (salaryMin != null || salaryMax != null) ? currency : undefined,
           salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
+          salary_period_stated: (salaryMin != null || salaryMax != null) && salaryPeriodStated,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,
