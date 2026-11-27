@@ -677,13 +677,11 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       expect(json.jobs).toBeDefined();
       expect(json.jobs.length).toBeGreaterThan(0);
 
-      // Assert no returned row has remote=false or matchScore=0
+      // Assert no returned row has remote=false; the numeric score is paid-only, so a Free row carries none
       for (const job of json.jobs) {
         expect(job.remote).not.toBe(false);
         expect(job.remote).toBe(true);
-        expect(job.matchScore).toBeDefined();
-        expect(job.matchScore).not.toBe(0);
-        expect(job.matchScore).toBeGreaterThan(0);
+        expect(job.matchScore).toBeNull();
       }
 
       // Negative assertions: assert incompatible jobs in fixture were strictly excluded
@@ -748,7 +746,7 @@ describe("GET /api/jobs/recommended Handler & Service Integration", () => {
       const body = await res.json();
       expect(body.personalized).toBe(true);
       expect(body.jobs[0].id).toBe("11111111-1111-4111-8111-111111111111");
-      expect(body.jobs[0].matchScore).toBeGreaterThan(60);
+      expect(body.jobs[0].matchScore).toBeNull(); // paid-only score; ranking still applied server-side
     });
 
     it("Handler-level test: job salary 12000 USD period 'year' with minSalary 100000 USD must return empty", async () => {
@@ -1266,7 +1264,9 @@ describe('item 18 real recommended, detail and reload route agreement', () => {
     expect(feedResponse.status).toBe(200);
     const feed = await feedResponse.json();
     const row = feed.jobs[0];
-    expect(typeof row.matchScore).toBe('number');
+    // Paid-only score: Pro gets a number, Free gets null on feed, detail and reload alike.
+    expect(typeof row.matchScore).toBe(token === 'tok-pro-with-answers' ? 'number' : 'object');
+    if (token !== 'tok-pro-with-answers') expect(row.matchScore).toBeNull();
     const url = `http://localhost/api/jobs/search?id=${row.id}`;
     const first = await searchRoute(req(url, token));
     expect(first.status).toBe(200);
@@ -1282,6 +1282,21 @@ describe('item 18 real recommended, detail and reload route agreement', () => {
       expect((await response.json()).job.matchScore).toBe(row.matchScore);
     }
 
+  });
+});
+
+describe('rows 5/10 numeric score is paid-only on every server path', () => {
+  it('Free with saved answers gets null on recommended, search list and search detail; Pro gets numbers', async () => {
+    const searchRoute = (await import('@/app/api/jobs/search/route')).GET;
+    for (const [token, paid] of [['tok-free-with-answers', false], ['tok-pro-with-answers', true]] as const) {
+      const feed = (await (await recommendedRoute(req('http://localhost/api/jobs/recommended?pageSize=25', token))).json()).jobs;
+      const list = (await (await searchRoute(req('http://localhost/api/jobs/search?pageSize=25', token))).json()).jobs;
+      const detail = (await (await searchRoute(req(`http://localhost/api/jobs/search?id=${feed[0].id}`, token))).json()).jobs;
+      const scores = [...feed, ...list, ...detail].map((j: any) => j.matchScore);
+      expect(scores.length).toBeGreaterThan(2);
+      if (paid) expect(scores.some((x) => typeof x === 'number')).toBe(true);
+      else expect(scores.every((x) => x === null)).toBe(true);
+    }
   });
 });
 
@@ -1302,7 +1317,8 @@ describe('item 18 saved profile revision lifecycle', () => {
     expect(matching).toBeTruthy();
     expect(matching.matchScore).toBe(detail.jobs[0].matchScore);
     const oldJobReload=await (await searchRoute(req(`http://localhost/api/jobs/search?id=${id}`,token))).json();
-    expect(oldJobReload.jobs[0].matchScore).not.toBe(oldFeed.jobs[0].matchScore);
+    if (token === 'tok-pro-with-answers') expect(oldJobReload.jobs[0].matchScore).not.toBe(oldFeed.jobs[0].matchScore);
+    else expect([oldJobReload.jobs[0].matchScore, matching.matchScore, detail.jobs[0].matchScore]).toEqual([null, null, null]);
   });
 });
 
