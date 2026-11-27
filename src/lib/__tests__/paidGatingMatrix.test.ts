@@ -105,10 +105,12 @@ const S = {
   salaryMin: 987654,
   salaryMax: 987659,
   applyUrl: "https://apply-sentinel.example/apply/1",
-  description: "DESC-SENTINEL Build distributed Node.js PostgreSQL services.",
+  description: "DESC-SENTINEL Build distributed Node.js PostgreSQL desckwsentinelqx services.",
   skill: "SkillSentinelQx",
+  // Lives only in the locked description and the stored top_keywords derived from it, never in a title.
+  descKeyword: "desckwsentinelqx",
 };
-const SENTINEL_STRINGS = [S.company, S.salaryText, "apply-sentinel.example", "DESC-SENTINEL", S.skill];
+const SENTINEL_STRINGS = [S.company, S.salaryText, "apply-sentinel.example", "DESC-SENTINEL", S.skill, S.descKeyword];
 const SENTINEL_NUMBERS = [S.salaryMin, S.salaryMax];
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -121,7 +123,7 @@ const fullRow = (id: string, hoursAgo: number, paid: Partial<Record<string, unkn
   location: "Remote (Worldwide)", remote: true, is_remote: true, remote_scope: "worldwide", remote_eligibility: "worldwide",
   job_type: "full-time", category: "engineering", country: "United States", country_code: "US", seniority: "mid",
   verified: true, source_type: "greenhouse", status: "active", is_active: true, role_category: "backend",
-  top_keywords: ["backend"], posted_at: iso(hoursAgo), created_at: iso(hoursAgo), first_seen_at: iso(hoursAgo),
+  top_keywords: ["backend", S.descKeyword], posted_at: iso(hoursAgo), created_at: iso(hoursAgo), first_seen_at: iso(hoursAgo),
   discovered_at: iso(hoursAgo), last_seen_at: iso(0), logo_url: null,
   salary_text: S.salaryText, salary_min: S.salaryMin, salary_max: S.salaryMax, currency: "USD", salary_period: "year",
   apply_url: S.applyUrl, description: S.description, skills: [S.skill, "Node.js"],
