@@ -7,6 +7,7 @@
  * version + saved preferences); any snapshot change drops every entry together. No revision => never cached.
  */
 import { MATCH_SCORE_VERSION, fnv1aHex } from "./scoring";
+import { withFeedScore } from "@/lib/jobs/recommendations";
 
 const KEY = "cm_match_scores";
 const MAX_ENTRIES = 500;
@@ -89,4 +90,23 @@ export function reconcileFeedWithDetail<T extends JobLike & { matchScore?: numbe
   const next = [...feed];
   next[i] = { ...detail, matchScore: typeof detail.matchScore === "number" && Number.isFinite(detail.matchScore) ? detail.matchScore : null };
   return next;
+}
+
+/**
+ * Detail job for the current entitlement. Paid-only score (owner, 24 Nov): Free, guest or downgraded sessions never get a
+ * stale Pro detail score, the feed score or a remembered score. Pro: feed score, else remembered score, else unchanged.
+ */
+export function detailJobForEntitlement<T extends { id: string; matchScore?: number | null; scoreRevision?: string | null }>(
+  selected: T | null,
+  feed: readonly { id: string; matchScore?: number | null; scoreRevision?: string | null }[],
+  isPro: boolean,
+  snap: string | null,
+  recall: (snap: string | null, job: T) => number | null = recallMatchScore as any,
+): T | null {
+  if (!selected) return null;
+  if (!isPro) return selected.matchScore == null ? selected : { ...selected, matchScore: null };
+  const job = withFeedScore(selected, feed);
+  if (typeof job.matchScore === "number") return job;
+  const remembered = recall(snap, job);
+  return remembered === null ? job : { ...job, matchScore: remembered };
 }
