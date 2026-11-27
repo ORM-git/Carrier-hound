@@ -40,6 +40,9 @@ export { executeSuiteList };
 
 export const SUITES: SuiteSpec[] = [
   // Pure offline unit & regression suites (always safe to run locally and in CI)
+  { name: "scripts/test-first-seen-provenance.ts", command: "npx tsx scripts/test-first-seen-provenance.ts", classification: "offline" },
+  { name: "scripts/test-source-date-legacy-cli.ts", command: "npx tsx scripts/test-source-date-legacy-cli.ts", classification: "offline" },
+  { name: "scripts/test-employment-type-ingestion.ts", command: "npx tsx scripts/test-employment-type-ingestion.ts", classification: "offline" },
   { name: "scripts/test-country-eligibility-and-currency.ts", command: "npx tsx scripts/test-country-eligibility-and-currency.ts", classification: "offline" },
   { name: "scripts/test-trust-acceptance.ts", command: "npx tsx scripts/test-trust-acceptance.ts", classification: "offline" },
   { name: "scripts/test-salary-parser.ts", command: "npx tsx scripts/test-salary-parser.ts", classification: "offline" },
@@ -135,6 +138,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-addon-verify-and-expiry.ts", command: "npx tsx scripts/test-addon-verify-and-expiry.ts", classification: "offline" },
   { name: "scripts/test-razorpay-mode-isolation.ts", command: "npx tsx scripts/test-razorpay-mode-isolation.ts", classification: "offline" },
   { name: "scripts/test-launch-scope-controls.ts", command: "npx tsx scripts/test-launch-scope-controls.ts", classification: "offline" },
+  { name: "scripts/test-internal-route-audit.ts", command: "npx tsx scripts/test-internal-route-audit.ts", classification: "offline" },
   { name: "scripts/test-resumes-direct-write-block.ts", command: "npx tsx scripts/test-resumes-direct-write-block.ts", classification: "offline" },
   { name: "scripts/test-onboarding-resume-migration.ts", command: "npx tsx scripts/test-onboarding-resume-migration.ts", classification: "offline" },
   { name: "scripts/test-onboarding-resume-profiles-migration.ts", command: "npx tsx scripts/test-onboarding-resume-profiles-migration.ts", classification: "offline" },

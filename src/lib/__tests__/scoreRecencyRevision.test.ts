@@ -153,7 +153,8 @@ describe("cached and feed scores across a boundary", () => {
     const feed = [live(at(23), true)];
     expect(withFeedScore(live(at(24)), feed).matchScore).toBe(45);
     expect(withFeedScore(live(at(24, 1)), feed).matchScore).toBeUndefined();
-    expect(reconcileFeedWithDetail(feed, live(at(25), true))[0].matchScore).toBeNull();
+    expect(reconcileFeedWithDetail(feed, live(at(25), true))[0].matchScore).toBe(43);
+    expect(reconcileFeedWithDetail(feed, live(at(25)))[0].matchScore).toBeNull();
     expect(reconcileFeedWithDetail(feed, live(at(20), true))).toBe(feed);
     expect(withFeedScore({ id: "j1", scoreRevision: null, matchScore: undefined }, feed).matchScore).toBeUndefined();
   });

@@ -1,7 +1,10 @@
 /* Screenshot-grounded mobile Jobs presentation. Desktop and shared landing markup keep their own styles. */
 @media (max-width: 639px) {
   .cm-jobs-reference { background: #f5f5f7; color: #111; }
-  .cm-jobs-reference.cm-mobile-list [data-testid="app-mobile-brand"] { display: none; }
+  /* The shared brand row (wordmark left, profile icon right) sits above the bar; match the page tint, no divider.
+     It is hidden in the mobile job detail, where the bar itself is hidden. */
+  .cm-jobs-reference.cm-mobile-list [data-testid="app-mobile-brand-row"] { background: #f5f5f7; border: 0; }
+  .cm-jobs-reference.cm-mobile-detail [data-testid="app-mobile-brand-row"] { display: none; }
   .cm-jobs-reference.cm-mobile-list [data-testid="app-top-bar"] { background: #f5f5f7; border: 0; }
   .cm-jobs-reference [data-testid="mobile-feed-tabs"] button { font-size: 14px; font-weight: 700; color: #111; gap: 1px; padding: 0 2px; }
   .cm-jobs-reference [data-testid="mobile-feed-tabs"] button::after { background: #111; height: 2px; border-radius: 0; }
@@ -24,7 +27,7 @@
   .cm-jobs-reference [data-testid="mobile-reference-card"] > div:nth-of-type(2) > span svg { display: none; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] > div:nth-of-type(2) > span:last-child { max-width: 100%; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] > div:last-child { margin-top: 6px; padding-top: 0; border-color: transparent; gap: 6px; justify-content: flex-end; }
-  .cm-jobs-reference [data-testid="mobile-reference-card"] > div:last-child > span { display: none; }
+  .cm-jobs-reference [data-testid="mobile-reference-card"] > div:last-child > span { margin-right: auto; font-size: 13px; color: #6b7280; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] button[aria-label="Save job"],
   .cm-jobs-reference [data-testid="mobile-reference-card"] button[aria-label="Unlike job"] { background: transparent; border: 0; color: #111; }
   .cm-jobs-reference [data-testid="mobile-reference-card"] button[aria-label="Save job"] svg,
@@ -60,9 +63,6 @@
   .cm-jobs-reference [data-testid="mobile-sticky-header-strip"] > div button:first-child { color: #777; }
   .cm-jobs-reference [data-testid="mobile-sticky-header-strip"] > div button[aria-pressed="true"] { color: #111; }
   .cm-jobs-reference [data-mobile-early="true"] { order: -1; background: #eff6ff !important; }
-  .cm-jobs-reference [data-testid="mobile-card-score"] stop:first-child { stop-color: #dbeafe; }
-  .cm-jobs-reference [data-testid="mobile-card-score"] stop:nth-child(2) { stop-color: #93c5fd; }
-  .cm-jobs-reference [data-testid="mobile-card-score"] stop:last-child { stop-color: #2563eb; }
   .cm-jobs-reference [data-testid="overview-body"] > div:nth-child(2) > div:first-child > div.md\:hidden > span { border-radius: 6px; background: #eff6ff; color: #111; font-weight: 400; }
 }
 @media (max-width: 359px) {

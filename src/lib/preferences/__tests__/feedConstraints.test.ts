@@ -171,14 +171,14 @@ describe("preferences sheet model", () => {
     expect(activeCount(d, true)).toBe(2);
   });
 
-  it("counts committed dimensions once; groups and top count agree", () => {
+  it("counts every selected value; groups and top count agree", () => {
     const d = draftFromPreferences(
       committed({ roles: ["A", "B", "C"], workModels: ["remote"], excludedCompanies: ["X"], minSalary: 100000, salaryCurrency: "USD", workAuth: "I need visa sponsorship." })
     );
     const g = groupCounts(d, true);
-    // roles, single work model, country = 3; salary = 1; excluded companies = 1; work auth is saved but not counted.
-    expect(g).toEqual({ basic: 3, compensation: 1, interests: 0, company: 1 });
-    expect(activeCount(d, true)).toBe(5);
+    // 3 roles + 1 work model + country = 5; salary = 1; excluded companies = 1; work auth is saved but not counted.
+    expect(g).toEqual({ basic: 5, compensation: 1, interests: 0, company: 1 });
+    expect(activeCount(d, true)).toBe(7);
     // Saved constraints not applied to the feed never count.
     expect(groupCounts(d, false).company).toBe(0);
     expect(summarize(["A", "B", "C"])).toEqual({ shown: ["A", "B"], more: 1 });
@@ -193,10 +193,10 @@ describe("preferences sheet model", () => {
     expect(preferencesFromDraft(committed(), { ...d, minSalary: null }).minSalary).toBeUndefined();
   });
 
-  it("a multi work-model choice is saved but not counted (no ranking/query consumer yet)", () => {
+  it("a multi work-model choice is saved in full and each choice counts", () => {
     const d = draftFromPreferences(committed({ workModels: ["hybrid", "remote"] }));
     expect(d.workModels).toEqual(["hybrid", "remote"]); // full selection preserved
-    expect(groupCounts(d, true).basic).toBe(1); // country only
+    expect(groupCounts(d, true).basic).toBe(3); // 2 work models + country
     expect(preferencesFromDraft(committed(), d).remotePreference).toBe("any"); // never remote-only
   });
 
@@ -218,4 +218,32 @@ describe("preferences sheet model", () => {
     expect(d.roles).not.toEqual(DEFAULT_USER_PREFERENCES.roles);
     expect(activeCount(d, true)).toBe(0);
   });
+
+  it("advanced: skills count one per skill, years range one, all gated; off without advanced storage", () => {
+    const d = { ...draftFromPreferences(committed({ roles: [], workModels: [], countryCode: "", country: "" })), preferredSkills: ["React", "SQL", "Go"], excludedSkills: ["PHP", "Perl"], requiredYearsMin: 2, requiredYearsMax: 5 };
+    expect(groupCounts(d, true, true).interests).toBe(5); // 3 preferred + 2 excluded
+    expect(groupCounts(d, true, true).basic).toBe(1); // the years range counts as one value
+    expect(groupCounts(d, false, true).interests).toBe(3); // excluded skills need the owner gate
+    expect(groupCounts(d, true, false).interests).toBe(0);
+  });
+  it("counts selected canonical levels individually, not the packed string or all-level no-op", () => {
+    const empty = draftFromPreferences(committed({ roles: [], workModels: [], countryCode: "", country: "" }));
+    for (const applied of [false,true]) for (const advanced of [false,true]) {
+      expect(groupCounts({...empty,experienceLevel:"entry,senior"},applied,advanced).basic).toBe(2);
+      expect(groupCounts({...empty,experienceLevel:"entry,entry,senior,junk"},applied,advanced).basic).toBe(2);
+      expect(groupCounts({...empty,experienceLevel:"intern,entry,mid,senior,lead,director"},applied,advanced).basic).toBe(0);
+      expect(groupCounts({...empty,experienceLevel:"junk"},applied,advanced).basic).toBe(0);
+    }
+  });
+  it("top equals group sums across storage/gate combinations, with unique places and advanced counts", () => {
+    const d={...draftFromPreferences(committed({roles:["A","B"],employmentTypes:["full-time","contract"],workModels:["remote","hybrid"],countryCode:"IN",locations:["India","Bengaluru"],experienceLevel:"entry,senior",excludedTitles:["Sales","Support"],includedCompanies:["A","B"],excludedCompanies:["C"],datePosted:"7d",minSalary:100000,salaryCurrency:"USD"})),requiredYearsMin:2,requiredYearsMax:5,preferredSkills:["React","SQL"],excludedSkills:["PHP","Perl"]};
+    for(const c of [false,true])for(const a of [false,true]){
+      const g=groupCounts(d,c,a);
+      expect(g.basic).toBe(10+(c?3:0)+(c&&a?1:0));
+      expect(g.interests).toBe(a?2+(c?2:0):0);
+      expect(g.company).toBe(c?3:0);
+      expect(activeCount(d,c,a)).toBe(g.basic+g.compensation+g.interests+g.company);
+    }
+  });
+
 });

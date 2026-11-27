@@ -2,6 +2,7 @@ import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
 import {
+  normalizeDate,
   cleanText,
   cleanAndTruncateDescription,
   detectRemote,
@@ -84,7 +85,7 @@ export class BambooHRAdapter implements SourceAdapter {
           apply_url: applyUrl,
           source_url: `https://${slug}.bamboohr.com/careers`,
           category: detectCategory(title),
-          posted_at: j.createdDate ? new Date(j.createdDate).toISOString() : nowIso,
+          posted_at: normalizeDate(j.createdDate),
           discovered_at: nowIso,
           last_seen_at: nowIso,
           verified: true,

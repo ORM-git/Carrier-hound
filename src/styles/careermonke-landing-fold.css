@@ -1,0 +1,16 @@
+/* Owner-requested 2026-11-26 (PR #822): compact phone fold spacing.
+   Size the hero to its content instead of filling 100vh and tighten the rhythm so the
+   first phone screen reaches the stats row. Phones only (max-width:640px); desktop unchanged.
+   Loaded after careermonke-landing.css and careermonke-landing-lower.css in app/page.tsx,
+   so these overrides sit last in the cascade, exactly as an append to those files would. */
+@media (max-width: 640px) {
+  .cm-top .fold { min-height: 0; }
+  .cm-top .hero { flex: none; }
+  .cm-top .nav { height: 48px; }
+  .cm-top .hero-inner { flex: none; justify-content: flex-start; padding: 16px 0 20px; }
+  .cm-top .kicker { margin-top: 8px; }
+  .cm-top h1 { margin-top: 6px; }
+  .cm-top .subhead { margin-top: 10px; }
+  .cm-top .cta { margin-top: -40px; padding: 0 16px 8px; }
+  .landing-wrapper section.stats-row { padding-top: 14px; }
+}

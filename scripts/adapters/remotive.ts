@@ -1,10 +1,10 @@
+import { sourceEmploymentType } from '../utils/sourceEmploymentType';
 import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
 import {
   cleanText,
   cleanAndTruncateDescription,
-  detectJobType,
   detectCategory,
   detectSeniority,
   detectCountryCode,
@@ -51,7 +51,7 @@ export class RemotiveAdapter implements SourceAdapter {
         const company = cleanText(j.company_name);
         const location = cleanText(j.candidate_required_location || 'Remote');
         const remote = true; // Remotive is 100% remote
-        const jobType = detectJobType(title, j.job_type || '');
+        const jobType = sourceEmploymentType(title, j.job_type);
         const description = cleanAndTruncateDescription(j.description, 4000);
         const salary = j.salary
           ? parseSalary(j.salary, { title, location, isExplicitSalaryField: true })

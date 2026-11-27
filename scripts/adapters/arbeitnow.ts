@@ -54,9 +54,7 @@ export class ArbeitnowAdapter implements SourceAdapter {
         const jobType = detectJobType(title, (j.job_types || []).join(' '));
         const description = cleanAndTruncateDescription(j.description, 4000);
         const salary = parseSalary(description, { title, location });
-        const postedAt = j.created_at
-          ? new Date(j.created_at * 1000).toISOString()
-          : normalizeDate(null);
+        const postedAt = normalizeDate(j.created_at == null ? null : j.created_at * 1000);
         const category = source.category || detectCategory(title, j.tags || []);
         const seniority = detectSeniority(title);
         const countryCode = detectCountryCode(location);

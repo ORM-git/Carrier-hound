@@ -1,11 +1,12 @@
+import { sourceEmploymentType } from '../utils/sourceEmploymentType';
 import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
 import {
+  normalizeDate,
   cleanText,
   cleanAndTruncateDescription,
   detectRemote,
-  detectJobType,
   detectCategory,
   detectSeniority,
   detectCountryCode,
@@ -74,13 +75,13 @@ export class JoinAdapter implements SourceAdapter {
           remote,
           remote_scope: remote ? 'remote' : 'onsite',
           remote_eligibility: detectRemoteEligibility(location, remote),
-          job_type: detectJobType(title, j.employmentType || ''),
+          job_type: sourceEmploymentType(title, j.employmentType),
           seniority: detectSeniority(title),
           description: cleanAndTruncateDescription(j.description, 1500),
           apply_url: applyUrl,
           source_url: `https://join.com/companies/${slug}`,
           category: detectCategory(title),
-          posted_at: j.publishedAt || j.createdAt || nowIso,
+          posted_at: normalizeDate(j.publishedAt || j.createdAt),
           discovered_at: nowIso,
           last_seen_at: nowIso,
           verified: true,

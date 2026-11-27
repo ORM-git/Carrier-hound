@@ -1,3 +1,4 @@
+import { sourceEmploymentType } from '../utils/sourceEmploymentType';
 import { SourceAdapter } from './types';
 import { NormalizedJob, SourceConfig } from '../types';
 import { politeFetchJson } from '../utils/polite-fetch';
@@ -5,7 +6,6 @@ import {
   cleanText,
   cleanAndTruncateDescription,
   detectRemote,
-  detectJobType,
   detectCategory,
   detectSeniority,
   detectCountryCode,
@@ -216,7 +216,7 @@ export class SmartRecruitersAdapter implements SourceAdapter {
         remoteScope = remote ? 'remote' : 'onsite';
       }
 
-      const jobType = detectJobType(title, j.typeOfEmployment?.label || '');
+      const jobType = sourceEmploymentType(title, j.typeOfEmployment?.label);
       const postedAt = normalizeDate(j.releasedDate);
       const category =
         source.category ||

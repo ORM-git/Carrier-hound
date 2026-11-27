@@ -37,6 +37,119 @@ it("real phone Jobs URL hidden=true opens ordinary sheet without hidden controls
 phone=true;window.history.replaceState(null,"","/jobs?hidden=true");render(<JobsPage/>);await flush();
 fireEvent.click(screen.getByRole("button",{name:"Open filter settings"}));await flush();
 expect(screen.queryByLabelText("View Hidden Positions")).toBeNull();
-fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"Apply"}));await flush();
+fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"Update"}));await flush();
 expect(h.router.replace.mock.calls.at(-1)?.[0]).not.toContain("hidden=true");
+});
+
+it("real phone Update sends multi-facet browse options and resets pagination; discard sends nothing", async () => {
+  phone = true;
+  window.history.replaceState(null, "", "/jobs");
+  render(<JobsPage />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  let dialog = within(screen.getByRole("dialog"));
+  const before = h.calls.length;
+  fireEvent.click(dialog.getByRole("button", { name: /Basic Job Criteria/ }));
+  fireEvent.click(dialog.getByLabelText("Contract"));
+  fireEvent.click(dialog.getByLabelText("Remote"));
+  fireEvent.click(dialog.getByLabelText("Hybrid"));
+  fireEvent.click(dialog.getByLabelText("Entry Level"));
+  fireEvent.click(dialog.getByLabelText("Past week"));
+  await flush();
+  expect(h.calls).toHaveLength(before);
+  fireEvent.click(dialog.getByRole("button", { name: "Update" }));
+  await flush();
+  expect(h.calls.length).toBeGreaterThan(before);
+  expect(h.calls.at(-1)).toMatchObject({
+    jobType: "contract",
+    workModel: "remote, hybrid",
+    remoteOnly: false,
+    level: "entry",
+    datePosted: "7d",
+    page: 1,
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  dialog = within(screen.getByRole("dialog"));
+  fireEvent.click(dialog.getByRole("button", { name: /Basic Job Criteria/ }));
+  fireEvent.click(dialog.getByLabelText("Full-time"));
+  const beforeDiscard = h.calls.length;
+  fireEvent.click(dialog.getByLabelText("Close filter settings"));
+  await flush();
+  expect(h.calls.length).toBe(beforeDiscard);
+});
+
+const SIGNED_IN = { id: "u-1", email: "u@example.com" };
+const PREFS = { roles: ["Business Analyst"], employmentTypes: ["full-time"], updatedAt: "2026-11-01T00:00:00Z" };
+
+it("signed-in phone: no Preferences row; Filters opens the saved-preferences sheet with its count; Active strip hidden", async () => {
+  phone = true;
+  h.user = SIGNED_IN;
+  h.isPro = true;
+  h.prefs = PREFS;
+  render(<JobsPage />);
+  await flush(10);
+  expect(screen.queryByText("Recommended uses your saved preferences")).toBeNull();
+  // Saved roles + employment types: 2 counted preferences on the Filters badge.
+  expect(within(screen.getByTestId("mobile-reference-filters")).getByText("2")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.getAttribute("aria-label")).not.toBe("Filter positions");
+  expect(within(dialog).getByText(/Update saves these to your account/)).toBeTruthy();
+  expect(screen.getByTestId("active-filters-strip").className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "md:flex"]));
+});
+
+it("guest phone: Filters keeps the transient video filter sheet (no saved preferences to edit)", async () => {
+  phone = true;
+  render(<JobsPage />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  expect(screen.getByRole("dialog", { name: "Filter positions" })).toBeTruthy();
+});
+
+it("signed-in desktop: Preferences box and sheet present; the Active strip renders (md:flex) with its chips and Clear all", async () => {
+  h.user = SIGNED_IN;
+  h.isPro = true;
+  h.prefs = PREFS;
+  window.history.replaceState(null, "", "/jobs?jobType=contract");
+  render(<JobsPage />);
+  await flush(10);
+  expect(screen.getByText("Recommended uses your saved preferences")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Preferences/ }));
+  await flush();
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  const strip = screen.getByTestId("active-filters-strip");
+  expect(strip.className).toContain("md:flex");
+  expect(within(strip).getByText("Active:")).toBeTruthy();
+  expect(within(strip).getByRole("button", { name: "Clear all" })).toBeTruthy();
+  // On a phone resize the row goes; Preferences stay reachable through Filters.
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  await act(async () => { phone = true; listeners.forEach((f) => f()); });
+  await flush();
+  expect(screen.queryByText("Recommended uses your saved preferences")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  expect(screen.getAllByRole("dialog").some((d) => d.getAttribute("aria-label") !== "Filter positions")).toBe(true);
+});
+
+it("phone: the Active chips strip is removed below md; filters, the Filters badge and sort stay", async () => {
+  phone = true;
+  render(<JobsPage />);
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Open filter settings" }));
+  await flush();
+  const dialog = within(screen.getByRole("dialog"));
+  fireEvent.click(dialog.getByRole("button", { name: /Basic Job Criteria/ }));
+  fireEvent.click(dialog.getByLabelText("Contract"));
+  fireEvent.click(dialog.getByLabelText("Past week"));
+  fireEvent.click(dialog.getByRole("button", { name: "Update" }));
+  await flush();
+  const strip = screen.getByTestId("active-filters-strip");
+  expect(strip.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "md:flex"]));
+  expect(h.calls.at(-1)).toMatchObject({ jobType: "contract", datePosted: "7d", sortBy: "match" });
+  expect(within(screen.getByTestId("mobile-reference-filters")).getByText("2")).toBeTruthy();
 });

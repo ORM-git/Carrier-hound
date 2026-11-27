@@ -76,6 +76,9 @@ Cross-references: `docs/retention-policy.md` (per-table retention classes),
 | `outbox` | Generic work queue rows (20261107c, not applied). Payload is caller-defined and may contain personal data depending on the topic; keep payloads to ids. Service-role only; no client access. |
 | `jobs_archive` | Archived expired job listings (cold storage, 20261106l). Service-role only; no client access. |
 | `companies` / `company_boards` | Company directory and ATS board config. |
+| `company_logo_runs` | Run log of the company-logo repair loop: trigger, timestamps, cap and counters, plus bounded details JSON. Migration `20261122` is not applied; no personal data. Service-role only; no client access. |
+| `company_logo_reviews` | Owner logo review decisions per company (hold, initials, approved) with reason, reviewer label and timestamps. Migration `20261123` is not applied; internal operational data, no end-user personal data. Service-role only; no client access. |
+| `company_logo_rejected_hashes` | Rejected logo image SHA-256 hashes per company with reason, reviewer label and timestamps. Migration `20261123` is not applied; no end-user personal data. Service-role only; no client access. |
 | `company_profile_facts` | Non-PII facts from verified official company pages with field-level source and retrieval dates. Migration `20261122a` is not applied; raw-table access is service-role only and the `/api/jobs/pro` response is Pro-gated. |
 | `company_profile_leadership` | Public professional names and roles from official company sources, with source and as-of dates. No contact details; migration `20261122a` is not applied; service-role storage and Pro-gated API reads. |
 | `company_profile_news` | Dated official company-news headlines and short supplied excerpts with source links. Migration `20261122a` is not applied; service-role storage and Pro-gated API reads. |
