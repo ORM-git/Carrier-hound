@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Heart, MoreHorizontal } from "lucide-react";
+import CompanyLogo from "@/components/CompanyLogo";
 import JobCardContent from "@/components/jobs/JobCardContent";
 import type { LiveJob } from "@/lib/jobs/service";
 
@@ -37,7 +38,7 @@ export default function LandingJobsPreview() {
     <p id="landing-preview-heading" className="preview-heading hidden sm:block">Preview of the Jobs experience · sample scores</p>
     <div className="space-y-3">
       {LANDING_PREVIEW_JOBS.map((job, index) => <div key={job.id} className={index === 1 ? "peek" : undefined} aria-hidden={index === 1 || undefined} ref={node => { if (node && index === 1) node.setAttribute("inert", ""); }}><article data-testid="landing-job-card" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none min-h-fit">
-        <JobCardContent job={job} index={index} isPro isSaved={false} matchScore={scores[index]} scoreDescription={`Preview score: ${scores[index]}%, not your personal match`} cardZeroSkills={false} isRecent={false} postedRelative={null} companyPills={["Engineering"]} locInfo={{ primary: job.location, extraCount: 0, all: [job.location] }} jobLevel="Staff / Lead" formattedJobType={null} getTagColorClass={() => "bg-blue-50 text-blue-700 border-blue-200"} formatRelativeTime={() => ""} handleHideJob={noop} handleToggleApplied={noop} handleSaveJob={noop} handleSelectJob={noop} handleLockedAction={noop} footerText={<span className="hidden sm:inline">Jobs preview</span>} footerActions={<PreviewActions />} />
+        <JobCardContent job={job} index={index} isPro isSaved={false} matchScore={scores[index]} scoreDescription={`Preview score: ${scores[index]}%, not your personal match`} mobilePreviewCompany={index === 0 ? "Microsoft" : undefined} mobilePreviewTitle={index === 0 ? "Software Engineer" : undefined} mobilePreviewLogo={index === 0 ? <CompanyLogo company="Microsoft" logoUrl="/company-logos-static/microsoft.png" className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white" /> : undefined} cardZeroSkills={false} isRecent={false} postedRelative={null} companyPills={["Engineering"]} locInfo={{ primary: job.location, extraCount: 0, all: [job.location] }} jobLevel="Staff / Lead" formattedJobType={null} getTagColorClass={() => "bg-blue-50 text-blue-700 border-blue-200"} formatRelativeTime={() => ""} handleHideJob={noop} handleToggleApplied={noop} handleSaveJob={noop} handleSelectJob={noop} handleLockedAction={noop} footerText={<span className="hidden sm:inline">Jobs preview</span>} footerActions={<PreviewActions />} />
       </article></div>)}
     </div>
   </section>;

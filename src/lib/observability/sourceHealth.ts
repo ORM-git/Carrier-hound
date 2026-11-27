@@ -332,3 +332,105 @@ export function evaluateSourceHealth(
     lastSuccessAt: new Date(lastSuccessCycle.latestFinishedAt).toISOString(),
   };
 }
+
+// =============================================================================
+// PER-SOURCE FRESHNESS (checklist #46). Separate from evaluateSourceHealth, opt-in via expectedSources.
+//
+// Evidence shape (scripts/ingest.ts, ingest_runs insert): per_source_counts = { [sourceId]: inserted+updated,
+// coverage: {...} }. Every processed source is written, failed ones included (count usually 0), and any
+// source failure turns the row status to "warning"/"failed". So:
+//   - a source key in a status "success" row is successful evidence, even with a count of 0;
+//   - a source key in any other row is ambiguous (0 may be a failure): neither success nor failure;
+//   - a row without per-source keys could hide any source: ambiguous for every expected source.
+// A row's time is finished_at, else started_at; an unparseable time is ambiguous, never fresh.
+// =============================================================================
+
+export interface SourceFreshnessPolicy {
+  expectedSources?: string[] | null;
+  sourceStaleAfterHours: number;
+}
+
+export interface SourceFreshnessResult {
+  status: "not_configured" | "invalid" | "healthy" | "degraded" | "insufficient_evidence";
+  referenceTime: string;
+  staleSources: Array<{ source: string; lastSuccessAt: string }>;
+  neverSeenSources: string[];
+  unknownSources: string[];
+  insufficientEvidenceSources: string[];
+}
+
+const NON_SOURCE_KEYS = new Set(["coverage"]);
+
+function perSourceEntries(run: IngestRunSnapshot): Map<string, unknown> | null {
+  const psc = run?.per_source_counts;
+  if (!psc || typeof psc !== "object" || Array.isArray(psc)) return null;
+  const entries = new Map(Object.entries(psc as Record<string, unknown>).filter(([k]) => !NON_SOURCE_KEYS.has(k)));
+  return entries.size > 0 ? entries : null;
+}
+
+/**
+ * Pure per-source freshness at an explicit referenceTime. A source is stale when its newest successful
+ * evidence is MORE than sourceStaleAfterHours old (exactly at the window is still fresh) and no ambiguous
+ * row could be newer evidence; neverSeen when no row could contain it; insufficient otherwise.
+ * Without expectedSources it returns "not_configured" and judges nothing.
+ */
+export function evaluateSourceFreshness(
+  runs: IngestRunSnapshot[],
+  policy: SourceFreshnessPolicy,
+  referenceTime: string
+): SourceFreshnessResult {
+  const empty = { staleSources: [], neverSeenSources: [], unknownSources: [], insufficientEvidenceSources: [] };
+  const expected = Array.from(new Set((policy.expectedSources || []).filter((s) => typeof s === "string" && s.trim())));
+  if (expected.length === 0) return { status: "not_configured", referenceTime, ...empty };
+  const ref = Date.parse(referenceTime);
+  if (!Number.isFinite(ref) || !Number.isFinite(policy.sourceStaleAfterHours) || policy.sourceStaleAfterHours <= 0) {
+    return { status: "invalid", referenceTime, ...empty };
+  }
+  const windowMs = policy.sourceStaleAfterHours * 3600_000;
+
+  const lastSuccess = new Map<string, number>();
+  const newestAmbiguous = new Map<string, number>(); // Infinity = undated, could be newer than anything
+  const seen = new Set<string>();
+  let blindRowAt = -Infinity; // newest row with no per-source detail (could hide any source)
+  const noteAmbiguous = (s: string, at: number) => newestAmbiguous.set(s, Math.max(newestAmbiguous.get(s) ?? -Infinity, at));
+
+  for (const run of Array.isArray(runs) ? runs : []) {
+    const parsed = Date.parse(run?.finished_at || run?.started_at || "");
+    const at = Number.isFinite(parsed) ? parsed : Infinity;
+    const entries = perSourceEntries(run);
+    if (!entries) {
+      blindRowAt = Math.max(blindRowAt, at);
+      continue;
+    }
+    for (const [source, count] of Array.from(entries)) {
+      seen.add(source);
+      const validCount = typeof count === "number" && Number.isFinite(count) && count >= 0;
+      if (run.status === "success" && validCount && Number.isFinite(at) && at <= ref) {
+        lastSuccess.set(source, Math.max(lastSuccess.get(source) ?? -Infinity, at));
+      } else {
+        noteAmbiguous(source, at);
+      }
+    }
+  }
+
+  const staleSources: SourceFreshnessResult["staleSources"] = [];
+  const neverSeenSources: string[] = [];
+  const insufficientEvidenceSources: string[] = [];
+  for (const source of expected) {
+    const last = lastSuccess.get(source);
+    const ambiguousAt = Math.max(newestAmbiguous.get(source) ?? -Infinity, blindRowAt);
+    if (last !== undefined && ref - last <= windowMs) continue; // fresh
+    if (last !== undefined && ambiguousAt <= last) {
+      staleSources.push({ source, lastSuccessAt: new Date(last).toISOString() });
+    } else if (last === undefined && !seen.has(source) && blindRowAt === -Infinity) {
+      neverSeenSources.push(source);
+    } else {
+      insufficientEvidenceSources.push(source);
+    }
+  }
+  const unknownSources = Array.from(seen).filter((s) => !expected.includes(s)).sort();
+
+  const status: SourceFreshnessResult["status"] =
+    staleSources.length || neverSeenSources.length ? "degraded" : insufficientEvidenceSources.length ? "insufficient_evidence" : "healthy";
+  return { status, referenceTime, staleSources, neverSeenSources, unknownSources, insufficientEvidenceSources };
+}

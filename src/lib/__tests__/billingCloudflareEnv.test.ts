@@ -136,7 +136,11 @@ describe("Cloudflare Pages Runtime Secret Reading for Billing Routes", () => {
       },
       body: JSON.stringify({ planCode: "weekly" }),
     });
-    (req as any).__testDeps = { fetchFn: mockFetch };
+    (req as any).__testDeps = {
+      fetchFn: mockFetch,
+      // Rate-limit guard added in this change: allow by default so this test stays on the cfEnv secret path
+      checkRateLimit: async () => ({ allowed: true, retryAfter: 0, currentCount: 1, source: "shared" }),
+    };
 
     const res = await handleOrder(req);
     const body = await res.json();
