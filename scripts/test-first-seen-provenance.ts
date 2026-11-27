@@ -159,7 +159,7 @@ async function main() {
   }
   await updateExistingJobs(db.client(), [{id: 'job-1', item: {posted_at: '2026-11-02T10:00:00+05:30'}, original: {} as any}], stats(), false, 0);
   check('[payload model] valid refreshed source date updates canonically', db.rows.get('job-1')!.posted_at === '2026-11-02T04:30:00.000Z');
-  check('undated legacy batches bypass conflict upsert for separate insert/update date semantics', /const useLegacyUpsert = !hasSourceIdColumn && jobsPayload\.every\(item => item\.posted_at !== null\)/.test(ingestSrc) && /if \(useLegacyUpsert && !upsertErr\)/.test(ingestSrc));
+  check('undated legacy batches bypass conflict upsert for separate insert/update date semantics', /const useLegacyUpsert = !hasSourceIdColumn && !hasVerifiedColumn && jobsPayload\.every\(item => item\.posted_at !== null\)/.test(ingestSrc) && /if \(useLegacyUpsert && !upsertErr\)/.test(ingestSrc));
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }
