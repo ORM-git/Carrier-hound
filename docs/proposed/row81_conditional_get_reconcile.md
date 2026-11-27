@@ -3,7 +3,13 @@
 Note only. No code. Read from `main` @ `71339758` and live PR state, 27 Nov 2026.
 Labels: **from source** = read in repo or PR diff; **unverified** = not checked.
 
-## Status (main `61cd5b6e`)
+## Follow-up after the snapshot (27 Nov 2026)
+
+This remains a conditional-GET research proposal, not an implemented or enabled feature. The PR states and file-lane inventory below are historical observations from the original review, not a fresh check of those PRs. Recheck the relevant current heads and coordination gates before any follow-on implementation. Validator storage is still an open design choice in this note; no table, SQL, validator write or production request is authorized or applied here.
+
+The checked `httpx.Response(304)` exception behavior and the unexercised wrapper-conversion distinction below remain separate claims. No production conditional-GET or expiry behavior was verified here.
+
+## Historical status (main `61cd5b6e`, superseded where noted above)
 
 - **Missing** (no working path). Evidence: no conditional-request headers anywhere in `scripts/scraper/` or the TS
   adapters. `request_with_backoff` (`scripts/scraper/rate_limiter.py:110`) calls `raise_for_status()`
