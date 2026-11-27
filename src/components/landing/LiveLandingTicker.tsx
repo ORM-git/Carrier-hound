@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { parseTickerResponse, TickerItemParsed } from "@/lib/api/clientSchemas";
 import { isOfficialLogoPath } from "@/lib/companies/officialLogoAssets";
 import { formatRelativeTime } from "@/components/LandingJobsTickerStrip";
@@ -17,11 +17,28 @@ export function safeTickerLogo(raw: string | null): string | null {
   } catch { return null; }
 }
 
-function Logo({ job }: { job: TickerItemParsed }) {
+// At most two retries per logo URL per mounted ticker, on existing successful
+// five-minute refreshes only. No retry timers, cache-busting URLs or request loops.
+export const TICKER_LOGO_MAX_RETRIES = 2;
+function Logo({ job, refreshVersion }: { job: TickerItemParsed; refreshVersion: number }) {
   const src = safeTickerLogo(job.logo_url);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => { setLoaded(false); setFailed(false); }, [src]);
+  const previous = useRef({ src, refreshVersion, retries: 0, lastAttemptAt: Date.now() });
+  useEffect(() => {
+    const prior = previous.current;
+    if (prior.src !== src) {
+      previous.current = { src, refreshVersion, retries: 0, lastAttemptAt: Date.now() };
+      setLoaded(false); setFailed(false);
+    } else if (prior.refreshVersion !== refreshVersion) {
+      prior.refreshVersion = refreshVersion;
+      if (failed && prior.retries < TICKER_LOGO_MAX_RETRIES && Date.now() - prior.lastAttemptAt >= TICKER_REFRESH_MS) {
+        prior.retries += 1;
+        prior.lastAttemptAt = Date.now();
+        setLoaded(false); setFailed(false);
+      }
+    }
+  }, [src, refreshVersion, failed]);
   return <span className="ls-logo" style={{ position: "relative", overflow: "hidden", flexShrink: 0, backgroundColor: loaded ? "#fff" : undefined }}>
     {!loaded && <span>{job.company.trim()[0]?.toUpperCase() || "?"}</span>}
     {/* Stored third-party images need direct load/error signals for the visible letter fallback. */}
@@ -37,6 +54,7 @@ function Logo({ job }: { job: TickerItemParsed }) {
 export default function LiveLandingTicker() {
   const [jobs, setJobs] = useState<TickerItemParsed[]>([]);
   const [, tick] = useState(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   useEffect(() => {
     let stopped = false;
     let pending = false;
@@ -52,7 +70,7 @@ export default function LiveLandingTicker() {
         const rows = parseTickerResponse(await response.json()).filter(job =>
           job.company.trim() && job.title.trim() && Number.isFinite(Date.parse(job.posted_at)) && Date.parse(job.posted_at) <= Date.now() + 300000
         ).slice(0, 20);
-        if (!stopped) setJobs(rows.length >= 5 ? rows : []);
+        if (!stopped) { setJobs(rows.length >= 5 ? rows : []); setRefreshVersion(value => value + 1); }
       } catch {
         // An outage hides stale rows instead of presenting yesterday's jobs as current.
         if (!stopped) setJobs([]);
@@ -72,7 +90,7 @@ export default function LiveLandingTicker() {
   return <div className="ls-track">{[false, true].map(duplicate =>
     <div className="ls-set" key={String(duplicate)} aria-hidden={duplicate || undefined}>
       {jobs.map((job, index) => <a className="ls-card" href="/jobs" key={`${job.company}-${job.title}-${index}`} tabIndex={duplicate ? -1 : undefined}>
-        <Logo job={job} />
+        <Logo job={job} refreshVersion={refreshVersion} />
         <span className="ls-txt"><span className="ls-meta"><b>{job.company}</b> · {formatRelativeTime(job.posted_at)}</span><span className="ls-title">{job.title}</span></span>
       </a>)}
     </div>
