@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { JOB_SENIORITY_LEVELS, mapJobSeniority, parseYearsOfExperience } from "../seniorityMap";
+import { JOB_SENIORITY_LEVELS, mapJobSeniority } from "../seniorityMap";
+import { parseYearsOfExperience } from "../requiredYears";
 import * as fs from "fs";
 
 describe("JOB_SENIORITY_LEVELS", () => {
@@ -14,7 +15,7 @@ describe("JOB_SENIORITY_LEVELS", () => {
 describe("mapJobSeniority", () => {
   it("explicit canonical source field passes through at high confidence", () => {
     expect(mapJobSeniority({ seniority: "senior", title: "Backend Engineer" })).toEqual({
-      level: "senior", years_min: null, years_max: null, source: "source_field", confidence: "high", years_evidence: [],
+      level: "senior", min_experience_years: null, max_experience_years: null, source: "source_field", confidence: "high", years_evidence: [],
     });
   });
 
@@ -30,14 +31,14 @@ describe("mapJobSeniority", () => {
 
   it("description-only: years parsed, level stays unknown at low confidence", () => {
     expect(mapJobSeniority({ description: "You have 5+ years of experience with Go." })).toEqual({
-      level: "unknown", years_min: 5, years_max: null, source: "description", confidence: "low",
+      level: "unknown", min_experience_years: 5, max_experience_years: null, source: "description", confidence: "low",
       years_evidence: [{ text: "You have 5+ years of experience with Go", match: "5+ years", status: "requirement" }],
     });
   });
 
   it("years come from the description alongside an explicit level", () => {
     expect(mapJobSeniority({ seniority: "senior", description: "3-5 years of experience" })).toMatchObject({
-      level: "senior", years_min: 3, years_max: 5, source: "source_field",
+      level: "senior", min_experience_years: 3, max_experience_years: 5, source: "source_field",
     });
   });
 
@@ -48,13 +49,13 @@ describe("mapJobSeniority", () => {
   });
 
   it("absent input: unknown, source none, low", () => {
-    expect(mapJobSeniority({})).toEqual({ level: "unknown", years_min: null, years_max: null, source: "none", confidence: "low", years_evidence: [] });
+    expect(mapJobSeniority({})).toEqual({ level: "unknown", min_experience_years: null, max_experience_years: null, source: "none", confidence: "low", years_evidence: [] });
     expect(mapJobSeniority({ seniority: "unknown", title: "  ", description: null }).source).toBe("source_field");
   });
 
   it("unparseable source value: unknown with source recorded, never a guess", () => {
     expect(mapJobSeniority({ seniority: "Mid-Senior level" })).toEqual({
-      level: "unknown", years_min: null, years_max: null, source: "source_field", confidence: "low", years_evidence: [],
+      level: "unknown", min_experience_years: null, max_experience_years: null, source: "source_field", confidence: "low", years_evidence: [],
     });
   });
 
@@ -89,14 +90,14 @@ describe("mapJobSeniority", () => {
 
 describe("parseYearsOfExperience", () => {
   it.each([
-    ["5+ years experience", { years_min: 5, years_max: null }],
-    ["3-5 years of experience", { years_min: 3, years_max: 5 }],
-    ["3 to 5 yrs of experience", { years_min: 3, years_max: 5 }],
-    ["2–4+ years of experience", { years_min: 2, years_max: 4 }],
-    ["at least 7 years of experience", { years_min: 7, years_max: null }],
-    ["minimum of 2 years experience", { years_min: 2, years_max: null }],
-    ["4 or more years of experience", { years_min: 4, years_max: null }],
-    ["5+ years of experience; ideally 5+ years of experience in Go", { years_min: 5, years_max: null }],
+    ["5+ years experience", { min_experience_years: 5, max_experience_years: null }],
+    ["3-5 years of experience", { min_experience_years: 3, max_experience_years: 5 }],
+    ["3 to 5 yrs of experience", { min_experience_years: 3, max_experience_years: 5 }],
+    ["2–4+ years of experience", { min_experience_years: 2, max_experience_years: 4 }],
+    ["at least 7 years of experience", { min_experience_years: 7, max_experience_years: null }],
+    ["minimum of 2 years experience", { min_experience_years: 2, max_experience_years: null }],
+    ["4 or more years of experience", { min_experience_years: 4, max_experience_years: null }],
+    ["5+ years of experience; ideally 5+ years of experience in Go", { min_experience_years: 5, max_experience_years: null }],
   ])("%s", (text, expected) => {
     expect(parseYearsOfExperience(text)).toEqual(expected);
   });
@@ -119,7 +120,7 @@ describe("parseYearsOfExperience", () => {
 // ---------------------------------------------------------------------------------------------
 // #787 repair: bounds need positive, scoped work-experience evidence; source precedence holds.
 // ---------------------------------------------------------------------------------------------
-import { extractYearsEvidence } from "../seniorityMap";
+import { extractYearsEvidence } from "../requiredYears";
 
 describe("years bounds require scoped work-experience evidence", () => {
   it.each([
@@ -134,27 +135,27 @@ describe("years bounds require scoped work-experience evidence", () => {
   ])("false positive (%s) -> no bounds: %s", (_label, text) => {
     expect(parseYearsOfExperience(text)).toBeNull();
     const r = mapJobSeniority({ description: text });
-    expect(r.years_min).toBeNull();
-    expect(r.years_max).toBeNull();
+    expect(r.min_experience_years).toBeNull();
+    expect(r.max_experience_years).toBeNull();
   });
 
   it("age clause next to a real requirement does not leak: only the experience clause counts", () => {
-    expect(parseYearsOfExperience("Must be at least 18 years old. 3+ years of experience in sales.")).toEqual({ years_min: 3, years_max: null });
-    expect(parseYearsOfExperience("Serving customers for 25 years; you bring 2-4 years of experience.")).toEqual({ years_min: 2, years_max: 4 });
+    expect(parseYearsOfExperience("Must be at least 18 years old. 3+ years of experience in sales.")).toEqual({ min_experience_years: 3, max_experience_years: null });
+    expect(parseYearsOfExperience("Serving customers for 25 years; you bring 2-4 years of experience.")).toEqual({ min_experience_years: 2, max_experience_years: 4 });
   });
 
   it.each([
-    ["5+ years of experience", { years_min: 5, years_max: null }],
-    ["3-5 years of professional experience", { years_min: 3, years_max: 5 }],
-    ["3 to 5 yrs experience", { years_min: 3, years_max: 5 }],
-    ["Experience: 2–4+ years", { years_min: 2, years_max: 4 }],
-    ["At least 7 years of hands-on experience", { years_min: 7, years_max: null }],
-    ["Minimum of 2 years experience required", { years_min: 2, years_max: null }],
-    ["4 or more years of relevant experience", { years_min: 4, years_max: null }],
-    ["You are experienced, with 6+ years building APIs", { years_min: 6, years_max: null }],
-    ["0-2 years of experience", { years_min: 0, years_max: 2 }],
-    ["We are looking for someone with 5+ years of experience", { years_min: 5, years_max: null }],
-    ["Join our team if you have 3+ years of experience", { years_min: 3, years_max: null }],
+    ["5+ years of experience", { min_experience_years: 5, max_experience_years: null }],
+    ["3-5 years of professional experience", { min_experience_years: 3, max_experience_years: 5 }],
+    ["3 to 5 yrs experience", { min_experience_years: 3, max_experience_years: 5 }],
+    ["Experience: 2–4+ years", { min_experience_years: 2, max_experience_years: 4 }],
+    ["At least 7 years of hands-on experience", { min_experience_years: 7, max_experience_years: null }],
+    ["Minimum of 2 years experience required", { min_experience_years: 2, max_experience_years: null }],
+    ["4 or more years of relevant experience", { min_experience_years: 4, max_experience_years: null }],
+    ["You are experienced, with 6+ years building APIs", { min_experience_years: 6, max_experience_years: null }],
+    ["0-2 years of experience", { min_experience_years: 0, max_experience_years: 2 }],
+    ["We are looking for someone with 5+ years of experience", { min_experience_years: 5, max_experience_years: null }],
+    ["Join our team if you have 3+ years of experience", { min_experience_years: 3, max_experience_years: null }],
   ])("real requirement still parses: %s", (text, expected) => {
     expect(parseYearsOfExperience(text)).toEqual(expected);
     expect(mapJobSeniority({ description: text })).toMatchObject({ ...expected, source: "description" });
@@ -171,8 +172,8 @@ describe("years bounds require scoped work-experience evidence", () => {
     expect(ev.bounds).toBeNull();
     expect(ev.evidence.length).toBeGreaterThanOrEqual(1);
     const r = mapJobSeniority({ description: text });
-    expect(r.years_min).toBeNull();
-    expect(r.years_max).toBeNull();
+    expect(r.min_experience_years).toBeNull();
+    expect(r.max_experience_years).toBeNull();
     expect(r.years_evidence).toEqual(ev.evidence);
   });
 
@@ -186,8 +187,8 @@ describe("years bounds require scoped work-experience evidence", () => {
     for (const t of ["5-3 years of experience", "-2 years of experience", "99+ years of experience"]) {
       const b = parseYearsOfExperience(t);
       if (b) {
-        expect(b.years_min).toBeGreaterThanOrEqual(0);
-        if (b.years_max !== null) expect(b.years_min).toBeLessThanOrEqual(b.years_max);
+        expect(b.min_experience_years).toBeGreaterThanOrEqual(0);
+        if (b.max_experience_years !== null) expect(b.min_experience_years).toBeLessThanOrEqual(b.max_experience_years);
       }
     }
     expect(parseYearsOfExperience("5-3 years of experience")).toBeNull();
@@ -212,7 +213,7 @@ describe("source precedence keeps every canonical source value, unknown included
 });
 
 describe("migration 20261126a (static, NOT APPLIED)", () => {
-  const sql = fs.readFileSync("supabase/migrations/20261126a_jobs_years_and_seniority_provenance.sql", "utf8");
+  const sql = fs.readFileSync("supabase/migrations/20261126a_jobs_seniority_provenance.sql", "utf8");
   const code = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
 
   it("stays marked NOT APPLIED, nullable, no backfill, seniority enum untouched", () => {
@@ -231,14 +232,11 @@ describe("migration 20261126a (static, NOT APPLIED)", () => {
     }
   });
 
-  it("validates years bounds: nonnegative and min <= max, NULL allowed", () => {
-    const m = code.match(/ADD CONSTRAINT jobs_years_bounds_check\s+CHECK\s*\(([\s\S]*?)\);/);
-    expect(m).not.toBeNull();
-    const body = m![1].replace(/\s+/g, " ");
-    expect(body).toMatch(/years_min IS NULL OR years_min >= 0/);
-    expect(body).toMatch(/years_max IS NULL OR years_max >= 0/);
-    expect(body).toMatch(/years_min IS NULL OR years_max IS NULL OR years_min <= years_max/);
-    expect(sql).toMatch(/DROP CONSTRAINT IF EXISTS jobs_years_bounds_check/);
+  it("adds only seniority provenance; years use the canonical columns, never a second set", () => {
+    expect(code).not.toMatch(/years_(?:min|max)|_experience_years|experience_years_source/);
+    expect(code).toMatch(/seniority_source IN \('source_field', 'title', 'description', 'none'\)/);
+    expect(code).toMatch(/seniority_confidence IN \('high', 'medium', 'low'\)/);
+    expect(sql).toMatch(/record-migration\.cjs 20261126a_jobs_seniority_provenance/);
   });
 });
 
@@ -254,8 +252,8 @@ describe("upper-bound phrases and negative amounts", () => {
     ["Max 6 years experience", 6],
     ["No more than 3 years of experience", 3],
   ])("inclusive upper bound is kept as a max only: %s", (text, max) => {
-    expect(parseYearsOfExperience(text)).toEqual({ years_min: null, years_max: max });
-    expect(mapJobSeniority({ description: text })).toMatchObject({ years_min: null, years_max: max, source: "description" });
+    expect(parseYearsOfExperience(text)).toEqual({ min_experience_years: null, max_experience_years: max });
+    expect(mapJobSeniority({ description: text })).toMatchObject({ min_experience_years: null, max_experience_years: max, source: "description" });
     expect(extractYearsEvidence(text).evidence.map((e) => e.status)).toEqual(["requirement"]);
   });
 
@@ -269,8 +267,8 @@ describe("upper-bound phrases and negative amounts", () => {
     const ev = extractYearsEvidence(text);
     expect(ev.evidence.map((e) => e.status)).toEqual(["ambiguous"]);
     const r = mapJobSeniority({ description: text });
-    expect(r.years_min).toBeNull();
-    expect(r.years_max).toBeNull();
+    expect(r.min_experience_years).toBeNull();
+    expect(r.max_experience_years).toBeNull();
   });
 
   it.each([
@@ -297,7 +295,7 @@ describe("upper-bound phrases and negative amounts", () => {
       "Maximum 5 years experience", "Under 2 years of experience", "No more than 3 years of experience",
     ]) {
       const b = parseYearsOfExperience(t);
-      expect(b?.years_min ?? null, t).toBeNull();
+      expect(b?.min_experience_years ?? null, t).toBeNull();
     }
   });
 
@@ -306,16 +304,16 @@ describe("upper-bound phrases and negative amounts", () => {
   });
 
   it.each([
-    ["2 years experience", { years_min: 2, years_max: null }],
-    ["3-5 years of experience", { years_min: 3, years_max: 5 }],
-    ["5+ years of experience", { years_min: 5, years_max: null }],
+    ["2 years experience", { min_experience_years: 2, max_experience_years: null }],
+    ["3-5 years of experience", { min_experience_years: 3, max_experience_years: 5 }],
+    ["5+ years of experience", { min_experience_years: 5, max_experience_years: null }],
   ])("valid forms still parse: %s", (text, expected) => {
     expect(parseYearsOfExperience(text)).toEqual(expected);
   });
 
   it("source unknown still wins over the title", () => {
     expect(mapJobSeniority({ seniority: "unknown", title: "Senior Engineer", description: "Up to 3 years of experience" }))
-      .toMatchObject({ level: "unknown", source: "source_field", years_min: null, years_max: 3 });
+      .toMatchObject({ level: "unknown", source: "source_field", min_experience_years: null, max_experience_years: 3 });
   });
 });
 
@@ -326,12 +324,12 @@ describe("upper-bound phrases and negative amounts", () => {
 // ---------------------------------------------------------------------------------------------
 describe("dotted qualifiers and negative ranges", () => {
   it("'Max. 3 years of experience' is a max, never min 3", () => {
-    expect(parseYearsOfExperience("Max. 3 years of experience")).toEqual({ years_min: null, years_max: 3 });
-    expect(parseYearsOfExperience("Requirements: max. 3 years of experience.")).toEqual({ years_min: null, years_max: 3 });
+    expect(parseYearsOfExperience("Max. 3 years of experience")).toEqual({ min_experience_years: null, max_experience_years: 3 });
+    expect(parseYearsOfExperience("Requirements: max. 3 years of experience.")).toEqual({ min_experience_years: null, max_experience_years: 3 });
   });
 
   it("'Min. 3 years of experience' keeps its qualifier too", () => {
-    expect(parseYearsOfExperience("Min. 3 years of experience")).toEqual({ years_min: 3, years_max: null });
+    expect(parseYearsOfExperience("Min. 3 years of experience")).toEqual({ min_experience_years: 3, max_experience_years: null });
   });
 
   it.each(["-2-4 years of experience", "-2 to 4 years of experience", "−2–4 years of experience"])(
@@ -348,12 +346,12 @@ describe("dotted qualifiers and negative ranges", () => {
 
   it.each(upperCases)("invariant, upper qualifier never yields a minimum: %s", (text) => {
     const b = parseYearsOfExperience(text);
-    expect(b?.years_min ?? null).toBeNull();
+    expect(b?.min_experience_years ?? null).toBeNull();
     if (b) {
-      expect(b.years_max).toBe(3); // only an inclusive scalar max may survive
+      expect(b.max_experience_years).toBe(3); // only an inclusive scalar max may survive
       expect(/^(?:Requirements: )?(?:max\.?|maximum(?: of)?|at most|up to|no more than) 3 (?:years|yrs) of/i.test(text)).toBe(true);
     }
-    expect(mapJobSeniority({ description: text }).years_min).toBeNull();
+    expect(mapJobSeniority({ description: text }).min_experience_years).toBeNull();
   });
 
   const NEG = ["-2 years", "-2 yrs", "-2+ years", "-2-4 years", "-2 to 4 years", "-2–4 years", "−2 years", "−2-4 years", "-2 or more years"];
@@ -368,10 +366,10 @@ describe("dotted qualifiers and negative ranges", () => {
   });
 
   it.each([
-    ["2-4 years of experience", { years_min: 2, years_max: 4 }],
-    ["3 - 5 years of experience", { years_min: 3, years_max: 5 }],
-    ["2 years experience", { years_min: 2, years_max: null }],
-    ["At least 3 years of experience. Strong Go skills.", { years_min: 3, years_max: null }],
+    ["2-4 years of experience", { min_experience_years: 2, max_experience_years: 4 }],
+    ["3 - 5 years of experience", { min_experience_years: 3, max_experience_years: 5 }],
+    ["2 years experience", { min_experience_years: 2, max_experience_years: null }],
+    ["At least 3 years of experience. Strong Go skills.", { min_experience_years: 3, max_experience_years: null }],
   ])("unsigned forms unchanged: %s", (text, expected) => {
     expect(parseYearsOfExperience(text)).toEqual(expected);
   });
