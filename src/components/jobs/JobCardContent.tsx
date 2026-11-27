@@ -332,6 +332,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                     company={job.company}
                                     locked={!isPro}
                                     maskSeed={job.id}
+                                    maskedPalette="job-list-preview"
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
