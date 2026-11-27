@@ -157,4 +157,31 @@ def db_error_diagnostic(status: int, body: str) -> tuple[str | None, str]:
     match = _CONSTRAINT.search(message)
     constraint = match.group(1) if match else None
     reason = f"HTTP {status}" + (f" code {code}" if code else "") + (f" constraint {constraint}" if constraint else "")
+    # Only this exact, fixed PostgREST message is labelled; any other PGRST102 body stays generic.
+    if status == 400 and code == "PGRST102" and message == KEY_MISMATCH_MESSAGE:
+        reason += " (all object keys must match)"
     return code, reason
+
+
+# PostgREST's bulk-insert rejection when the objects of one JSON array have different keys.
+KEY_MISMATCH_MESSAGE = "All object keys must match"
+MAX_KEY_SET_GROUPS = 5
+MAX_MISSING_NAMES = 10
+
+
+def key_set_summary(rows: list[dict[str, Any]], allowed: set[str]) -> str:
+    """Batch size and its allowed-column key-set groups (count + columns missing vs the batch union).
+    Only allowed column NAMES appear, never values, ids or other keys; bounded in groups and names."""
+    groups: dict[frozenset[str], int] = {}
+    for row in rows:
+        k = frozenset(c for c in row if c in allowed)
+        groups[k] = groups.get(k, 0) + 1
+    union: frozenset[str] = frozenset().union(*groups) if groups else frozenset()
+    parts = []
+    for k, n in list(groups.items())[:MAX_KEY_SET_GROUPS]:
+        missing = sorted(union - k)
+        names = ", ".join(missing[:MAX_MISSING_NAMES]) + (", ..." if len(missing) > MAX_MISSING_NAMES else "")
+        parts.append(f"{n} rows missing [{names}]" if missing else f"{n} rows missing none")
+    more = len(groups) - MAX_KEY_SET_GROUPS
+    text = f"batch {len(rows)} rows, {len(groups)} key set(s)"
+    return text + (": " + "; ".join(parts) if parts else "") + (f"; +{more} more" if more > 0 else "")
