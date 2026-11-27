@@ -2381,7 +2381,7 @@ function JobsPageInner() {
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
                         const matchScore = getJobMatchScore(job, candidate, isPro);
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
-                        const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job) !== undefined);
+                        const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job));
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;
                         const companyPills = getCompanyTagPills(job.category);
                         const locInfo = parseJobLocation(job.location);
