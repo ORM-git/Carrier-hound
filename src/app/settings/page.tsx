@@ -16,6 +16,7 @@ import { normalizePlanCode, PLAN_DEFINITIONS } from "@/lib/billing/quota";
 import { UserSubscription } from "@/lib/billing/types";
 import { getCandidateProfile, deleteCandidateProfile } from "@/lib/resume/storage";
 import { getTrackedApplications } from "@/lib/tracker/storage";
+import PaymentHistory from "@/components/billing/PaymentHistory";
 import PaywallModal from "@/components/PaywallModal";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -602,7 +603,7 @@ function SettingsPageInner() {
                   Subscription & Billing
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Manage your Career Monke Pro access, invoices, and renewal.
+                  Manage your Career Monke Pro access and payment orders.
                 </p>
               </div>
 
@@ -683,6 +684,7 @@ function SettingsPageInner() {
                 </div>
               )}
             </div>
+            {user?.id && <PaymentHistory userId={user.id} />}
           </div>
         )}
 
