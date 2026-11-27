@@ -853,7 +853,7 @@ async function getHandler(req: Request) {
       const resolvedRoleCategory =
         row.role_category || detectRoleCategory(row.title, row.category, isPro && hasServiceKey ? row.skills : null);
       // Stored top_keywords are derived from the locked description: non-Pro gets title-only keywords.
-      const resolvedTopKeywords = isPro && Array.isArray(row.top_keywords) && row.top_keywords.length > 0
+      const resolvedTopKeywords = isPro && hasServiceKey && Array.isArray(row.top_keywords) && row.top_keywords.length > 0
         ? row.top_keywords.slice(0, 8)
         : extractTopKeywords(
             row.title,
