@@ -8,6 +8,7 @@ import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
 import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
+import { checkSharedRateLimitStrict } from "@/lib/api/sharedRateLimit";
 
 import { reportRequestErrorToSentry } from "@/lib/monitoring/sentryErrorReporter";
 
@@ -338,6 +339,38 @@ export async function POST(req: Request) {
           { status: 403 }
         );
       }
+    }
+
+    // Rate limit NEW order creation only (fail-closed shared store; engineering default
+    // aligned with the existing AI strict per-user limit - not a user-facing policy).
+    // Runs after auth and all validation, BEFORE any Razorpay order creation or
+    // payment_orders insert. No dedupe/idempotency semantics: allowed requests proceed
+    // exactly as before.
+    const rateLimitChecker = deps.checkRateLimit || checkSharedRateLimitStrict;
+    const orderRateLimit = await rateLimitChecker(`billing_order:user:${user.id}`, 10, 60, {
+      env: cfEnv,
+    });
+    if (!orderRateLimit.allowed) {
+      if (orderRateLimit.source === "unavailable") {
+        log.error("Order rate limit store unavailable; failing closed");
+        return NextResponse.json(
+          {
+            error: "Order rate limiting is temporarily unavailable. Please try again shortly.",
+            code: "RATE_LIMIT_UNAVAILABLE",
+            retryAfter: 30,
+          },
+          { status: 503, headers: { "Retry-After": "30" } }
+        );
+      }
+      const retryAfter = Math.max(1, Math.ceil(orderRateLimit.retryAfter || 0));
+      return NextResponse.json(
+        {
+          error: "Too many order attempts. Please wait before trying again.",
+          code: "RATE_LIMITED",
+          retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
     }
 
     const amountInPaise = pricing.amount_paise;
