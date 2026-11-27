@@ -929,13 +929,14 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           hasNextPage: false,
         };
       }
+      // Browser-ranked scores, applied only to rows the server unlocks as Pro (below).
+      const rankedScores = new Map<string, number>(data.filter((r: any) => typeof (r.matchScore ?? r._matchScore) === "number").map((r: any) => [r.id, Math.max(10, Math.min(99, Math.round(r.matchScore ?? r._matchScore)))]));
       const mappedJobs: LiveJob[] = data.map((row: any) => {
         const resolvedLogo = (isPro && row.company && row.company !== "Verified Employer")
           ? (row.logo_url || row.logoUrl || row.companies?.logo_url || null)
           : null;
-        const resolvedKeywords = Array.isArray(row.top_keywords) && row.top_keywords.length > 0
-          ? row.top_keywords.slice(0, 8)
-          : extractTopKeywords(row.title, null, Array.isArray(row.skills) ? row.skills : null, 8);
+        // Masked base rows (isPro here is only a client claim): title-only keywords; a server Pro unlock below restores the full set.
+        const resolvedKeywords = extractTopKeywords(row.title, null, null, 8);
         return {
           id: row.id,
           title: row.title || "Untitled Position",
@@ -965,7 +966,8 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
           scoreRevision: scoreInputRevision(row, isPro, scoredAt),
-          matchScore: typeof row.matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row.matchScore))) : (typeof row._matchScore === "number" ? Math.max(10, Math.min(99, Math.round(row._matchScore))) : null),
+          // Numeric score is paid-only: masked rows carry none; a server Pro unlock below sets it. Order is already ranked.
+          matchScore: null,
         };
       });
 
@@ -1002,7 +1004,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                   mappedJobs.forEach((job) => {
                     const u = unlockedMap.get(job.id);
                     if (u) {
-                      if (typeof u.matchScore === "number") job.matchScore = u.matchScore;
+                      job.matchScore = typeof u.matchScore === "number" ? u.matchScore : rankedScores.get(job.id) ?? null;
                       if (u.scoreRevision) job.scoreRevision = u.scoreRevision;
                       if (u.company) job.company = stripHtmlAndExecutableMarkup(u.company);
                       if (u.companyProfile) job.companyProfile = mapCompanyProfilePayload(u.companyProfile, job.companyId);
