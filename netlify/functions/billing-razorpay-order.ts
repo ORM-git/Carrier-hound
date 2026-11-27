@@ -391,7 +391,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
             body: JSON.stringify({
               error: "Order rate limiting is temporarily unavailable. Please try again shortly.",
               code: "RATE_LIMIT_UNAVAILABLE",
-              retryAfter: 30,
             }),
           };
         }
@@ -402,7 +401,6 @@ export function createHandler(deps: BillingOrderDeps = {}) {
           body: JSON.stringify({
             error: "Too many order attempts. Please wait before trying again.",
             code: "RATE_LIMITED",
-            retryAfter,
           }),
         };
       }
