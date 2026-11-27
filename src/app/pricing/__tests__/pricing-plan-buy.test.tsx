@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 const mockHandleProCheckout = vi.fn();
 const mockGetSession = vi.fn();
+const mockFrom = vi.fn();
 const mockGetProAccessStatus = vi.fn();
 
 vi.mock("@/lib/billing/checkout", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/billing/checkout", () => ({
 
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
+    from: mockFrom,
     auth: {
       getSession: mockGetSession,
     },
@@ -55,6 +57,7 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
   const originalBillingEnv = process.env.NEXT_PUBLIC_BILLING_ENABLED;
 
   beforeEach(() => {
+    sessionStorage.clear();
     mockHandleProCheckout.mockReset();
     mockGetSession.mockReset();
     mockGetProAccessStatus.mockReset().mockResolvedValue({ isPro: true });
@@ -96,6 +99,60 @@ describe("Pricing Page Plan Purchase Flow (NEXT_PUBLIC_BILLING_ENABLED)", () => 
       await Promise.resolve();
     });
   }
+
+  it("keeps prepaid confirmation locked and restores references after refresh without storing signatures", async()=>{
+    process.env.NEXT_PUBLIC_BILLING_ENABLED="true";
+    mockGetSession.mockResolvedValue({data:{session:{user:{id:"recovery-user"}}}});
+    mockHandleProCheckout.mockImplementation(async(opts:any)=>{opts.onPending({orderId:"order_fixture",paymentId:"pay_fixture",retry:async()=>{}})});
+    await mountPage();
+    await act(async()=>{(container!.querySelector("button[data-plan-code='weekly']") as HTMLButtonElement).click()});
+    expect(container!.textContent).toContain("Payment confirmation pending");
+    expect(Array.from(container!.querySelectorAll("button[data-plan-code]")).every(b=>(b as HTMLButtonElement).disabled)).toBe(true);
+    expect(JSON.parse(sessionStorage.getItem("cm_pending_payment:recovery-user")!)).toEqual({orderId:"order_fixture",paymentId:"pay_fixture"});
+    act(()=>root!.unmount());root=null;container!.remove();
+    await mountPage();
+    expect(container!.textContent).toContain("Payment confirmation pending");
+    expect(Array.from(container!.querySelectorAll("button[data-plan-code]")).every(b=>(b as HTMLButtonElement).disabled)).toBe(true);
+    expect(mockHandleProCheckout).toHaveBeenCalledTimes(1);
+    const q:any={select:vi.fn(()=>q),eq:vi.fn(()=>q),maybeSingle:vi.fn(async()=>({data:{status:"paid"}}))};mockFrom.mockReturnValue(q);
+    const previousKey=process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID="rzp_live_fixture";
+    await act(async()=>{(Array.from(container!.querySelectorAll("button")).find(b=>b.textContent==="Check payment status") as HTMLButtonElement).click()});
+    expect(q.eq).toHaveBeenCalledWith("mode","live");expect(q.eq).toHaveBeenCalledWith("user_id","recovery-user");
+    expect(container!.textContent).not.toContain("Payment confirmation pending");expect(sessionStorage.getItem("cm_pending_payment:recovery-user")).toBeNull();
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID=previousKey;
+  });
+
+  it("rebinds recovery on auth identity update and ignores old checkout callbacks",async()=>{
+    process.env.NEXT_PUBLIC_BILLING_ENABLED="true";
+    let opts:any;
+    mockHandleProCheckout.mockImplementation(async(o:any)=>{opts=o});
+    mockGetSession.mockResolvedValue({data:{session:{user:{id:"account-a"}}}});
+    await mountPage();
+    await act(async()=>{(container!.querySelector("button[data-plan-code='weekly']") as HTMLButtonElement).click()});
+    await act(async()=>{opts.onPending({orderId:"order_a",paymentId:"pay_a",retry:async()=>{}})});
+    expect(container!.textContent).toContain("order_a");
+    mockGetSession.mockResolvedValue({data:{session:{user:{id:"account-b"}}}});
+    await act(async()=>{window.dispatchEvent(new Event("careermonke_auth_updated"));await Promise.resolve();await Promise.resolve()});
+    expect(container!.textContent).not.toContain("order_a");
+    await act(async()=>{opts.onPending({orderId:"order_a_stale",paymentId:"pay_a",retry:async()=>{}})});
+    expect(container!.textContent).not.toContain("order_a_stale");
+    expect(sessionStorage.getItem("cm_pending_payment:account-b")).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem("cm_pending_payment:account-a")!).orderId).toBe("order_a");
+  });
+
+  it("does not allow immediate Buy while cold auth/recovery initialization is unresolved",async()=>{
+    process.env.NEXT_PUBLIC_BILLING_ENABLED="true";
+    sessionStorage.setItem("cm_pending_payment:cold-user",JSON.stringify({orderId:"order_cold",paymentId:"pay_cold"}));
+    let finish!: (v:any)=>void;
+    mockGetSession.mockImplementationOnce(()=>new Promise(r=>{finish=r})).mockResolvedValue({data:{session:{user:{id:"cold-user"}}}});
+    await mountPage();
+    const buy=container!.querySelector("button[data-plan-code='weekly']") as HTMLButtonElement;
+    expect(buy.disabled).toBe(true);
+    await act(async()=>{buy.click()});expect(mockHandleProCheckout).not.toHaveBeenCalled();
+    await act(async()=>{finish({data:{session:{user:{id:"cold-user"}}}});await Promise.resolve()});
+    expect(container!.textContent).toContain("order_cold");expect(buy.disabled).toBe(true);
+    expect(mockHandleProCheckout).not.toHaveBeenCalled();
+  });
 
   describe("Flag OFF (Payments strictly OFF)", () => {
     it("keeps plan cards disabled with 'Upgrade' text and a payments-unavailable note when flag is undefined", async () => {

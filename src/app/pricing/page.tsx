@@ -14,9 +14,11 @@ import {
 } from "@/config/plans";
 import { getProAccessStatus } from "@/lib/billing/subscription";
 import { createClient } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import type { User, Session, AuthChangeEvent } from "@supabase/supabase-js";
 import { BreadcrumbJsonLd } from "@/components/seo/BreadcrumbJsonLd";
 import { handleProCheckout, openRazorpaySubscription } from "@/lib/billing/checkout";
+import {getRazorpayKeyMode} from "@/lib/billing/mode";
+import PaymentProcessingNotice, {type PendingPayment} from "@/components/billing/PaymentProcessingNotice";
 import { toast } from "react-toastify";
 
 // Every plan unlocks the same product: full access to job listings.
@@ -37,21 +39,27 @@ const policyLinks = [
 export default function PricingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
+    let authVersion = 0;
     const checkAuthAndPro = async () => {
+      const version = ++authVersion;
       try {
         const supabase = createClient();
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        if (!mounted) return;
+        if (!mounted || version !== authVersion) return;
 
+        setUser(session?.user || null);
+        setAuthReady(true);
+        if (!session?.user) setIsPro(false);
         if (session?.user) {
           setUser(session.user);
           const proStatus = await getProAccessStatus(session.user.id);
-          if (!mounted) return;
+          if (!mounted || version !== authVersion) return;
           setIsPro(proStatus.isPro);
         }
       } catch (err) {
@@ -60,17 +68,36 @@ export default function PricingPage() {
     };
 
     checkAuthAndPro();
+    let authRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const auth = createClient().auth;
+    let subscription: {unsubscribe: () => void} | undefined;
+    if (auth.onAuthStateChange) {
+    const {data} = auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (!mounted) return;
+      ++authVersion;
+      setAuthReady(false);
+      setUser(session?.user || null);
+      setIsPro(false);
+      // Do not await Supabase calls inside its auth callback.
+      if (authRefreshTimer !== undefined) clearTimeout(authRefreshTimer);
+      authRefreshTimer = setTimeout(() => { if (mounted) void checkAuthAndPro(); }, 0);
+    });
+    subscription = data.subscription;
+    }
 
+    const handleAuthUpdated = () => { setAuthReady(false);void checkAuthAndPro(); };
     const handleProUpdated = () => {
-      getProAccessStatus().then((res) => setIsPro(res.isPro));
+      void checkAuthAndPro();
     };
     window.addEventListener("careermonke_pro_updated", handleProUpdated);
-    window.addEventListener("careermonke_auth_updated", handleProUpdated);
+    window.addEventListener("careermonke_auth_updated", handleAuthUpdated);
 
     return () => {
       mounted = false;
+      subscription?.unsubscribe();
+      if (authRefreshTimer !== undefined) clearTimeout(authRefreshTimer);
       window.removeEventListener("careermonke_pro_updated", handleProUpdated);
-      window.removeEventListener("careermonke_auth_updated", handleProUpdated);
+      window.removeEventListener("careermonke_auth_updated", handleAuthUpdated);
     };
   }, []);
 
@@ -83,9 +110,56 @@ export default function PricingPage() {
   // Single synchronous purchase lock shared by all plan buttons
   const checkoutLockRef = useRef<boolean>(false);
   const [loadingCheckout, setLoadingCheckout] = useState<string | null>(null);
-  const isCheckoutLocked = checkoutLockRef.current || loadingCheckout !== null;
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  const [recoveryReadyKey, setRecoveryReadyKey] = useState<string | null | undefined>(undefined);
+  const expectedRecoveryKey = user?.id ? `cm_pending_payment:${user.id}` : null;
+  const recoveryReady = recoveryReadyKey === expectedRecoveryKey;
+  const isCheckoutLocked = !authReady || !recoveryReady || checkoutLockRef.current || loadingCheckout !== null;
+
+  // Keep only non-secret references across refresh, never the payment signature or bearer token.
+  const activeUserRef = useRef<string | null>(null);
+  const ownerGenerationRef = useRef(0);
+  if (activeUserRef.current !== (user?.id || null)) ++ownerGenerationRef.current;
+  activeUserRef.current = user?.id || null;
+  const pendingKey = user?.id ? `cm_pending_payment:${user.id}` : null;
+  const recoveryOwnerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (recoveryOwnerRef.current && recoveryOwnerRef.current !== pendingKey) {
+      setPendingPayment(null);checkoutLockRef.current=false;setLoadingCheckout(null);
+    }
+    recoveryOwnerRef.current = pendingKey;
+    setRecoveryReadyKey(pendingKey);
+    if (!pendingKey || !user?.id) return;
+    const recoveryGeneration = ownerGenerationRef.current;
+    let refs: {orderId:string;paymentId:string};
+    try {
+      const saved = sessionStorage.getItem(pendingKey);
+      if (!saved) return;
+      refs = JSON.parse(saved);
+      if (typeof refs.orderId !== "string" || typeof refs.paymentId !== "string") return;
+    } catch { return; }
+    checkoutLockRef.current = true;
+    setLoadingCheckout("confirmation");
+    setPendingPayment({...refs, retry: async () => {
+      // After a refresh the signature is deliberately gone. Read the owner's recorded order only.
+      let data: {status?:string}|null = null, error: unknown = null;
+      try {
+        const mode=getRazorpayKeyMode(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
+        if(mode==="unknown")return;
+        const result = await createClient().from("payment_orders").select("status").eq("user_id",user.id).eq("provider_order_id",refs.orderId).eq("mode",mode).maybeSingle();
+        data=result.data;error=result.error;
+      } catch {return;}
+      if (activeUserRef.current !== user.id || ownerGenerationRef.current !== recoveryGeneration) return;
+      if (!error && data?.status === "paid") {
+        try {sessionStorage.removeItem(pendingKey)} catch {}
+        setPendingPayment(null);checkoutLockRef.current=false;setLoadingCheckout(null);
+        window.dispatchEvent(new Event("careermonke_pro_updated"));
+      }
+    }});
+  }, [pendingKey, user?.id]);
 
   const handleBuyPlan = async (planCode: string) => {
+    if (!authReady || !recoveryReady) return;
     if (!isBillingEnabled) {
       toast.error("Payments not enabled. Billing is currently disabled.");
       return;
@@ -119,6 +193,20 @@ export default function PricingPage() {
       if (typeof window !== "undefined") {
         window.location.href = loginUrl;
       }
+      return;
+    }
+
+    // Recheck the resolved account, never start a second charge ahead of recovery hydration.
+    try {
+      if (sessionStorage.getItem(`cm_pending_payment:${currentUser.id}`)) {
+        checkoutLockRef.current = true;
+        setLoadingCheckout("confirmation");
+        return;
+      }
+    } catch {
+      // With unreadable recovery storage we cannot establish that another payment is safe.
+      resetLock();
+      toast.error("Could not check pending payments. Please check payment history before trying again.");
       return;
     }
 
@@ -158,18 +246,30 @@ export default function PricingPage() {
       return;
     }
 
+    const checkoutUserId = currentUser.id;
+    const checkoutGeneration = ownerGenerationRef.current;
     try {
       await handleProCheckout({
         planCode,
+        onPending: (payment) => {
+          if (activeUserRef.current !== checkoutUserId || ownerGenerationRef.current !== checkoutGeneration) return;
+          setPendingPayment(payment);
+          if (pendingKey) try {sessionStorage.setItem(pendingKey, JSON.stringify({orderId:payment.orderId,paymentId:payment.paymentId}))} catch {}
+        },
         redirectTarget: "/pricing",
         onError: (errMsg) => {
+          if (activeUserRef.current !== checkoutUserId || ownerGenerationRef.current !== checkoutGeneration) return;
           resetLock();
           toast.error(errMsg || "Payment processing failed. Please try again.");
         },
         onSuccess: () => {
+          if (activeUserRef.current !== checkoutUserId || ownerGenerationRef.current !== checkoutGeneration) return;
+          if (pendingKey) try {sessionStorage.removeItem(pendingKey)} catch {}
+          setPendingPayment(null);
           resetLock();
         },
         onDismiss: () => {
+          if (activeUserRef.current !== checkoutUserId || ownerGenerationRef.current !== checkoutGeneration) return;
           resetLock();
         },
       });
@@ -233,6 +333,8 @@ export default function PricingPage() {
           </span>
         </p>
       </header>
+
+      {pendingPayment && <PaymentProcessingNotice payment={pendingPayment} />}
 
       {/* Mobile (<md): one radio group picks the plan; only the selected card (and its Buy button) shows.
           md+: the three cards side by side, unchanged. */}
