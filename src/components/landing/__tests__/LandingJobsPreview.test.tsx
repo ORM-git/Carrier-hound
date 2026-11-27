@@ -27,7 +27,12 @@ describe("actual-card landing preview", () => {
     const { container } = render(<LandingJobsPreview />);
     expect(container.querySelectorAll('[data-testid="landing-job-card"]')).toHaveLength(2);
     for (const text of ["PlanetScale", "Docker", "Video Production Lead", "Senior Principal Forward Deployed Engineer", "Remote US", "United States", "Staff / Lead"]) expect(container.textContent).toContain(text);
-    expect(container.querySelectorAll('img[src="/landing-companies/planetscale.svg"]')).toHaveLength(2);
+    expect(container.querySelectorAll('img[src="/landing-companies/planetscale.svg"]')).toHaveLength(1);
+    expect(container.querySelectorAll('img[src="/company-logos-static/microsoft.png"]')).toHaveLength(1);
+    const phoneCards = container.querySelectorAll('[data-testid="mobile-reference-card"]');
+    expect(phoneCards[0].textContent).toContain("Software Engineer");
+    expect(phoneCards[0].textContent).not.toContain("Video Production Lead");
+    expect(phoneCards[0].textContent).toContain("PlanetScale"); // Owner explicitly retained all other details.
     expect(container.querySelectorAll('img[src="/landing-companies/docker.svg"]')).toHaveLength(2);
     expect(container.textContent).not.toMatch(/Early applicant|Direct feed|hours ago|Demo|\$\d/);
     expect(container.textContent).toContain("sample scores");

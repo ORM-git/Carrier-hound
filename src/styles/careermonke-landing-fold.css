@@ -14,3 +14,12 @@
   .cm-top .cta { margin-top: -40px; padding: 0 16px 8px; }
   .landing-wrapper section.stats-row { padding-top: 14px; }
 }
+
+/* Nov27 owner: muted blue hero, modestly smaller sample cards on phones only.
+   Keep all hero/text/CTA geometry unchanged; compact only the card interior. */
+@media (max-width: 639px) {
+  .cm-top { --bg-hero: #e1ebf8; }
+  .cm-top .landing-actual-preview [data-testid="landing-job-card"] { padding: 12px; }
+  .cm-top .landing-actual-preview [data-testid="mobile-reference-card"] > :not([hidden]) ~ :not([hidden]) { margin-top: 6px; }
+  .cm-top .landing-actual-preview [data-testid="mobile-reference-card"] > .border-t { padding-top: 6px; }
+}

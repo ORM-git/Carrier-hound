@@ -67,6 +67,14 @@ describe("Company section", () => {
     expect(screen.getByText("Design Engineer")).toBeTruthy();
   });
 
+  it("hides only Other jobs on phones while retaining its desktop content and Similar jobs", () => {
+    const { container } = render(<JobDetailView job={baseJob()} candidate={null} user={null} isPro isSaved={false} onSave={() => {}} onApply={() => {}} onBack={() => {}} similarJobs={[{ ...baseJob(), id: "related-1" }]} />);
+    const other = container.querySelector('[data-testid="company-other-jobs"]');
+    expect(other?.className).toContain("hidden sm:block");
+    expect(other?.textContent).toContain("Design Engineer");
+    expect(screen.getByText("Similar jobs")).toBeTruthy();
+  });
+
   it("distinguishes an empty company-job result from unavailable data and selects its job id", () => {
     const onSelect = vi.fn();
     renderDetail(baseJob(), onSelect);
