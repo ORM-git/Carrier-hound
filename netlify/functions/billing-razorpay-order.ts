@@ -8,6 +8,7 @@ import { getRazorpayKeyMode } from "../../src/lib/billing/mode";
 import { verifyUserNotBanned } from "../../src/lib/admin/auth";
 import { buildCorsHeaders, handleCorsPreflight } from "./_cors";
 import { safeLog } from "./_logger";
+import { checkSharedRateLimitStrict } from "./_sharedRateLimit";
 
 const CORS_OPTIONS = {
   allowedMethods: "POST, OPTIONS",
@@ -21,6 +22,12 @@ export interface BillingOrderDeps {
   checkAddonEligibility?: (userId: string) => Promise<boolean>;
   fetchFn?: typeof fetch;
   isProductionHost?: boolean;
+  checkRateLimit?: (
+    key: string,
+    maxRequests: number,
+    windowSeconds: number,
+    options?: any
+  ) => Promise<any>;
 }
 
 function isProductionHost(event: any, deps?: BillingOrderDeps): boolean {
@@ -362,6 +369,40 @@ export function createHandler(deps: BillingOrderDeps = {}) {
             }),
           };
         }
+      }
+
+      // Rate limit NEW order creation only (fail-closed shared store; engineering default
+      // aligned with the existing AI strict per-user limit - not a user-facing policy).
+      // Runs after auth and all validation, BEFORE any Razorpay order creation or
+      // payment_orders insert. No dedupe/idempotency semantics: allowed requests proceed
+      // exactly as before.
+      const rateLimitChecker = deps.checkRateLimit || checkSharedRateLimitStrict;
+      const orderRateLimit = await rateLimitChecker(`billing_order:user:${user.id}`, 10, 60, {
+        client: supabaseAdmin,
+      });
+      if (!orderRateLimit.allowed) {
+        if (orderRateLimit.source === "unavailable") {
+          safeLog.error(
+            "[Netlify /billing-razorpay-order] Order rate limit store unavailable; failing closed"
+          );
+          return {
+            statusCode: 503,
+            headers: { ...headers, "Retry-After": "30" },
+            body: JSON.stringify({
+              error: "Order rate limiting is temporarily unavailable. Please try again shortly.",
+              code: "RATE_LIMIT_UNAVAILABLE",
+            }),
+          };
+        }
+        const retryAfter = Math.max(1, Math.ceil(orderRateLimit.retryAfter || 0));
+        return {
+          statusCode: 429,
+          headers: { ...headers, "Retry-After": String(retryAfter) },
+          body: JSON.stringify({
+            error: "Too many order attempts. Please wait before trying again.",
+            code: "RATE_LIMITED",
+          }),
+        };
       }
 
       const amountInPaise = pricing.amount_paise;

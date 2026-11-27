@@ -26,6 +26,9 @@ import { createHandler as createOrderHandler } from "../netlify/functions/billin
 import { createHandler as createVerifyHandler } from "../netlify/functions/billing-razorpay-verify";
 import { createHandler as createWebhookHandler } from "../netlify/functions/billing-razorpay-webhook";
 
+// Batch1 strict order rate limiter: default-allow stub keeps this suite on its own path. Deny/store-down behavior is covered by src/lib/__tests__/billingRazorpayOrderRouteRateLimit.test.ts and netlifyBillingRazorpayOrderRateLimit.test.ts.
+const allowOrderRateLimit = async () => ({ allowed: true, retryAfter: 0, currentCount: 1, source: "shared" });
+
 const TEST_SECRET = "rzp_test_secret_key_1234567890";
 const TEST_KEY_ID = "rzp_test_key_1234567890";
 const TEST_WEBHOOK_SECRET = "rzp_webhook_secret_abcdef12345";
@@ -267,6 +270,7 @@ async function runSuite() {
   };
 
   const orderHandler = createOrderHandler({
+    checkRateLimit: allowOrderRateLimit,
     getSupabaseAdmin: mockAdminGetter,
     getServerEntitlement: mockEntitlement,
     fetchFn: mockFetch,
@@ -850,6 +854,7 @@ async function runSuite() {
     };
 
     const b2OrderHandler = createOrderHandler({
+      checkRateLimit: allowOrderRateLimit,
       getSupabaseAdmin: mockAdminGetter,
       getServerEntitlement: mockEntitlement,
       fetchFn: trackedB2Fetch as any,
