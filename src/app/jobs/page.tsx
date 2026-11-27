@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, Suspense, startTransition } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, Suspense, startTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
@@ -35,6 +35,11 @@ import PhoneVideoFilters from "@/components/jobs/PhoneVideoFilters";
 import PreferencesSheet from "@/components/jobs/PreferencesSheet";
 import { activeCount as activePreferenceCount, draftFromPreferences } from "@/lib/preferences/model";
 import JobCardContent from "@/components/jobs/JobCardContent";
+import { applyLogoHidePolicy, welcomeRecommendedCount } from "@/lib/companies/logoDisplayPolicy";
+import { FAILED_LOGO_TTL_MS } from "@/components/CompanyLogo";
+
+/** Extra network pages (one per automatic continuation) allowed per empty-feed incident under the #44 policy. */
+const MAX_AUTO_HIDDEN_FETCHES = 3;
 import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, displayMatchScore, toFitInput } from "@/lib/matcher/scoring";
 import { detailJobForEntitlement, matchScoreSnapshot, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { User } from "@supabase/supabase-js";
@@ -1023,6 +1028,7 @@ function JobsPageInner() {
       .then((res) => {
         if (queryKey === lastQueryKeyRef.current && !firstPage.signal.aborted) {
           liveJobsRef.current = res.jobs;
+          resetUnresolvedLogos(); // new query/source: logo failures from the previous list do not carry over
           setLiveJobs(res.jobs);
           setTotalCount(res.totalCount);
           setHasNextPage(Boolean(res.hasNextPage));
@@ -1342,6 +1348,39 @@ function JobsPageInner() {
     };
   }, [activeTab, savedApps, appliedApps, liveJobs, resolvedJobsMap, isPro]);
 
+  // #44: jobs whose logo has nothing left to show (every candidate failed to load), reported by the rendered cards.
+  const [unresolvedLogoIds, setUnresolvedLogoIds] = useState<ReadonlySet<string>>(() => new Set());
+  const autoHiddenFetchesRef = useRef(0);
+  const [hiddenFetchCapped, setHiddenFetchCapped] = useState(false);
+  const logoUnresolvedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const markLogoUnresolved = useCallback((id: string) => {
+    setUnresolvedLogoIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    // Same memory as CompanyLogo's failed-image cache: after FAILED_LOGO_TTL_MS the job is shown again and its
+    // logo is retried (a fresh failure hides it again).
+    if (!logoUnresolvedTimersRef.current.has(id)) {
+      logoUnresolvedTimersRef.current.set(
+        id,
+        setTimeout(() => {
+          logoUnresolvedTimersRef.current.delete(id);
+          setUnresolvedLogoIds((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }, FAILED_LOGO_TTL_MS)
+      );
+    }
+  }, []);
+  const resetUnresolvedLogos = useCallback(() => {
+    logoUnresolvedTimersRef.current.forEach((t) => clearTimeout(t));
+    logoUnresolvedTimersRef.current.clear();
+    autoHiddenFetchesRef.current = 0;
+    setHiddenFetchCapped(false);
+    setUnresolvedLogoIds((prev) => (prev.size ? new Set() : prev));
+  }, []);
+  useEffect(() => () => { logoUnresolvedTimersRef.current.forEach((t) => clearTimeout(t)); }, []);
+
   // Filtered Jobs based on activeTab, client-side secondary filters, and hidden ids
   const filteredJobs = useMemo(() => {
     let sourceJobs: LiveJob[];
@@ -1372,6 +1411,9 @@ function JobsPageInner() {
     if (activeTab === "external") {
       result = result.filter((job) => Boolean(job.directSource));
     }
+
+    // #44 hide policy: display-only, Pro (employer visible) feed tabs only.
+    result = applyLogoHidePolicy(result, { isPro, activeTab, viewingHidden: Boolean(effectiveViewHiddenJobs), unresolvedIds: unresolvedLogoIds });
 
     if (selectedCountryCode && selectedCountryCode.toLowerCase() !== "all") {
       result = result.filter((job) =>
@@ -1456,6 +1498,8 @@ function JobsPageInner() {
     hiddenJobIds,
     viewHiddenJobs,
     effectiveViewHiddenJobs,
+    isPro,
+    unresolvedLogoIds,
     selectedCountryCode,
     selectedLocation,
     selectedWorkModel,
@@ -1469,6 +1513,41 @@ function JobsPageInner() {
   ]);
 
   const displayedJobs = filteredJobs;
+  // True when the #44 policy removed something from this feed. An empty page then still has more to fetch, so it
+  // must show the continuation tail (sentinel / Retry / Load More), never a false "no jobs" empty state.
+  const logoHidAny = useMemo(() => {
+    const args = { isPro, activeTab, viewingHidden: Boolean(effectiveViewHiddenJobs), unresolvedIds: unresolvedLogoIds };
+    return applyLogoHidePolicy(liveJobs, args).length < liveJobs.length;
+  }, [liveJobs, isPro, activeTab, effectiveViewHiddenJobs, unresolvedLogoIds]);
+  // Every loaded card was hidden by the policy and more pages exist: fetch the next one ourselves. With no cards on
+  // screen there is nothing to scroll, so the sentinel (which needs a fresh scroll gesture) would never fire.
+  // Bounded: at most MAX_AUTO_HIDDEN_FETCHES single-page requests per incident, then the Load More button (desktop and
+  // phone). Only a deliberate click or a new query re-arms the budget; a click fetches the normal refill batch.
+  useEffect(() => {
+    if (displayedJobs.length > 0) {
+      // The budget is NOT reset here: a card that shows briefly and then fails to load must not re-arm it.
+      if (hiddenFetchCapped) setHiddenFetchCapped(false);
+      return;
+    }
+    if (!logoHidAny || !canLoadMore || loadingMore || loadingJobs || loadMoreError || autoLoadPaused || hiddenFetchCapped) return;
+    if (autoHiddenFetchesRef.current >= MAX_AUTO_HIDDEN_FETCHES) {
+      setHiddenFetchCapped(true);
+      return;
+    }
+    autoHiddenFetchesRef.current += 1; // one increment = exactly one network page requested below
+    autoLoadArmedRef.current = false;
+    refillTargetRef.current = loadedPageRef.current + 1;
+    void loadAhead();
+    // handleLoadMore is a fresh closure each render over the same refs; the guards above own re-running.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logoHidAny, displayedJobs.length, canLoadMore, loadingMore, loadingJobs, loadMoreError, autoLoadPaused, hiddenFetchCapped]);
+  const handleLoadMoreClick = () => {
+    // A deliberate click buys exactly one normal refill batch; if every card is still hidden afterwards the
+    // budget is spent again (no new automatic pages) and the button returns. A new query resets the budget.
+    autoHiddenFetchesRef.current = MAX_AUTO_HIDDEN_FETCHES;
+    setHiddenFetchCapped(false);
+    handleLoadMore();
+  };
   // A background page re-ranked into the list must not move the card the reader is looking at: after the
   // DOM updates and before paint, scroll by however far that card moved (a no-op when nothing moved or
   // the browser's own scroll anchoring already held it).
@@ -2310,7 +2389,7 @@ function JobsPageInner() {
                         </button>
                       </div>
                     </div>
-                  ) : displayedJobs.length === 0 && !(canLoadMore && (loadingMore || loadMoreError || autoLoadPaused)) ? (
+                  ) : displayedJobs.length === 0 && !(canLoadMore && (loadingMore || loadMoreError || autoLoadPaused || logoHidAny)) ? (
                     /* With zero cards but a running, failed or paused continuation, the list branch below renders
                        its tail (loading, Retry or Load More) instead of an empty state that would hide recovery. */
                     /* Empty state distinguishing no saved vs filtered vs no applied */
@@ -2431,6 +2510,7 @@ function JobsPageInner() {
                               handleSaveJob={handleSaveJob}
                               handleSelectJob={handleSelectJob}
                               handleLockedAction={handleLockedAction}
+                              onLogoUnresolved={() => markLogoUnresolved(job.id)}
                             />
                           </motion.article>
                         );
@@ -2447,10 +2527,10 @@ function JobsPageInner() {
                             <p className="text-xs text-[#B91C1C] pb-2" role="alert">Couldn&apos;t load more jobs.</p>
                           )}
                           {loadingMore && <p className="text-xs text-[#475569] py-3" role="status">Loading Positions...</p>}
-                          {(isPhone ? !loadingMore : (loadMoreError || autoLoadPaused)) && (
+                          {(isPhone ? !loadingMore : (loadMoreError || autoLoadPaused || hiddenFetchCapped)) && (
                             <button
                               type="button"
-                              onClick={handleLoadMore}
+                              onClick={handleLoadMoreClick}
                               disabled={loadingMore}
                               className="px-6 py-3 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-bold transition shadow-none cursor-pointer disabled:opacity-60 min-h-[44px]"
                             >
@@ -2602,7 +2682,7 @@ function JobsPageInner() {
             isOpen={welcomeOpen}
             onClose={() => finishWelcome(null)}
             onConfirm={(levels) => finishWelcome(levels)}
-            recommendedCount={isDegraded ? null : Math.min(totalCount || liveJobs.length, 30)}
+            recommendedCount={welcomeRecommendedCount({ isDegraded, logoHidAny, totalCount, loaded: liveJobs.length })}
             initialLevels={selectedLevel}
             savedExperienceLevel={preferences?.experienceLevel}
           />
