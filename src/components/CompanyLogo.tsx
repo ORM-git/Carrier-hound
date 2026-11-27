@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 export interface CompanyLogoProps {
   company: string;
@@ -20,6 +20,8 @@ export interface CompanyLogoProps {
   maskSeed?: string | number | null;
   /** Opt-in approved palette for job-list tiles only; other surfaces keep their palette. */
   maskedPalette?: "default" | "job-list-preview";
+  /** Called when no logo candidate is left to show (none supplied, or every one failed to load). */
+  onUnresolved?: () => void;
 }
 
 // Masked-company tile palette. Constants only: the pick depends on the opaque job id, never on the hidden employer.
@@ -113,6 +115,7 @@ export default function CompanyLogo({
   locked = false,
   maskSeed = null,
   maskedPalette = "default",
+  onUnresolved,
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
@@ -145,6 +148,11 @@ export default function CompanyLogo({
     },
     [markFailed, src]
   );
+
+  const unresolved = !locked && !src;
+  useEffect(() => {
+    if (unresolved) onUnresolved?.();
+  }, [unresolved, onUnresolved]);
 
   // Deterministic gradient for fallback
   const gradients = [
