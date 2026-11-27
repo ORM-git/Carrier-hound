@@ -52,6 +52,8 @@ export interface NormalizedJob {
   salary_min?: number | null;
   salary_max?: number | null;
   salary_period?: 'yearly' | 'monthly' | 'hourly';
+  /** True only when the source stated the period (native interval field or explicit wording); see ingestNormalization. */
+  salary_period_stated?: boolean;
   currency?: string;
   category?: string;
   role_category?: 'SDE' | 'AI_ML' | 'CLOUD' | 'DATA' | 'OTHER';

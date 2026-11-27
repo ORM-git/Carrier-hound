@@ -17,6 +17,8 @@ export interface ParsedSalary {
   salary_max: number | null;
   currency: string;
   salary_period: SalaryPeriod;
+  /** True only when the text itself stated this period (not the yearly default, not a scale-check adjustment). */
+  salary_period_stated: boolean;
 }
 
 export interface ParseSalaryOptions {
@@ -434,6 +436,7 @@ export function parseSalary(
     salary_max: null,
     currency: 'USD',
     salary_period: 'yearly',
+    salary_period_stated: false,
   };
 
   if (!rawSalary || !rawSalary.trim()) {
@@ -513,5 +516,6 @@ export function parseSalary(
     salary_max: max,
     currency,
     salary_period: adjustedPeriod,
+    salary_period_stated: explicitPeriod !== null && adjustedPeriod === explicitPeriod,
   };
 }

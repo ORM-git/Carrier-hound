@@ -148,4 +148,11 @@ Founded in 2012. We have 1,500 employees worldwide.
     }
     expect(parseSalary("$50/hr", { isExplicitSalaryField: true }).salary_period).toBe("hourly");
   });
+
+  it("reports salary_period_stated only for a period the text itself states", () => {
+    expect(parseSalary("$120k-$160k per year").salary_period_stated).toBe(true);
+    expect(parseSalary("$50/hr", { isExplicitSalaryField: true }).salary_period_stated).toBe(true);
+    expect(parseSalary("Salary: $120,000 - $160,000").salary_period_stated).toBe(false); // yearly is the default
+    expect(parseSalary("").salary_period_stated).toBe(false);
+  });
 });
