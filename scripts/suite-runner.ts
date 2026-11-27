@@ -43,6 +43,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-first-seen-provenance.ts", command: "npx tsx scripts/test-first-seen-provenance.ts", classification: "offline" },
   { name: "scripts/test-source-date-legacy-cli.ts", command: "npx tsx scripts/test-source-date-legacy-cli.ts", classification: "offline" },
   { name: "scripts/test-employment-type-ingestion.ts", command: "npx tsx scripts/test-employment-type-ingestion.ts", classification: "offline" },
+  { name: "scripts/test-remote-eligibility-fallback.ts", command: "npx tsx scripts/test-remote-eligibility-fallback.ts", classification: "offline" },
   { name: "scripts/test-country-eligibility-and-currency.ts", command: "npx tsx scripts/test-country-eligibility-and-currency.ts", classification: "offline" },
   { name: "scripts/test-trust-acceptance.ts", command: "npx tsx scripts/test-trust-acceptance.ts", classification: "offline" },
   { name: "scripts/test-salary-parser.ts", command: "npx tsx scripts/test-salary-parser.ts", classification: "offline" },
