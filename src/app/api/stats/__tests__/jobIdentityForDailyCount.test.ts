@@ -1,4 +1,6 @@
-// What the "new job records added today" count can and cannot guarantee, on real Postgres (PGlite) with the
+// Historical visible-listing identity model, NOT the current /api/stats retained-row metric.
+// Current metric integration: retainedMetricIdentityContract.test.ts. This suite retains identity DDL coverage.
+// What a visible-listing day count can guarantee, on real Postgres (PGlite) with the
 // REAL identity DDL from the migrations and the REAL write-column lists of both active ingestion paths.
 //
 // Proven here:
@@ -8,7 +10,7 @@
 // Qualified here (NOT proven as canonical dedupe):
 //  - jobs_public is a plain projection (no DISTINCT) and dedupe_hash is advisory (#643): the same role
 //    posted on two boards with different apply URLs is two rows and counts twice; a role re-posted under a
-//    new board id counts again. The metric is "new visible listings first seen today".
+//    new board id counts again. This local model is "visible listings created during the UTC date".
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -48,8 +50,8 @@ async function insert(row: Record<string, unknown>) {
     cols.map((c) => row[c])
   );
 }
-/** The route's daily count, in SQL: jobs_public, VISIBLE_SOURCE_FILTER, active, created_at in [today, tomorrow). */
-async function dailyCount(day = TODAY) {
+/** Historical visible-listing model only: not the current route, timezone or retained-row semantics. */
+async function visibleIdentityCount(day = TODAY) {
   const r = await db.query<{ n: number }>(
     `select count(*)::int as n from public.jobs_public
      where (source_type is null or source_type <> $1) and is_active = true and status = 'active'
@@ -80,7 +82,7 @@ afterEach(async () => {
   await db?.close();
 });
 
-describe("daily count identity guarantees (real DDL, real write columns)", () => {
+describe("historical visible-listing identity guarantees (real DDL, real write columns)", () => {
   it("neither active ingestion path writes created_at", () => {
     expect(PY_DB_COLUMNS.length).toBeGreaterThan(20);
     expect(PY_DB_COLUMNS).not.toContain("created_at");
@@ -100,33 +102,33 @@ describe("daily count identity guarantees (real DDL, real write columns)", () =>
     await db.query("update public.jobs set title = $1, last_seen_at = $2 where id = $3", [patch.title, patch.last_seen_at, before.id]);
     const after = (await db.query<any>("select created_at from public.jobs where id = $1", [before.id])).rows[0];
     expect(new Date(after.created_at).toISOString()).toBe(new Date(before.created_at).toISOString());
-    expect(await dailyCount()).toBe(0);
+    expect(await visibleIdentityCount()).toBe(0);
   });
 
   it("re-sending the same board id or apply_url cannot add a second row", async () => {
     await insert({ title: "Engineer", company: "Acme", apply_url: "https://a.example/1", source_type: "greenhouse", source_id: "gh:acme", source_job_id: "1", created_at: "2026-11-25T08:00:00Z" });
     await expect(insert({ title: "Engineer", company: "Acme", apply_url: "https://a.example/other", source_type: "greenhouse", source_id: "gh:acme", source_job_id: "1", created_at: "2026-11-25T09:00:00Z" })).rejects.toThrow(/duplicate key/);
     await expect(insert({ title: "Engineer", company: "Acme", apply_url: "https://a.example/1", source_type: "lever", source_id: "lv:acme", source_job_id: "x9", created_at: "2026-11-25T09:00:00Z" })).rejects.toThrow(/duplicate key/);
-    expect(await dailyCount()).toBe(1);
+    expect(await visibleIdentityCount()).toBe(1);
   });
 
   it("QUALIFICATION: the same role on two boards (different apply URLs) is two rows and counts twice", async () => {
     const role = { title: "Engineer", company: "Acme", dedupe_hash: "same-role", created_at: "2026-11-25T08:00:00Z" };
     await insert({ ...role, apply_url: "https://boards.greenhouse.io/acme/1", source_type: "greenhouse", source_id: "gh:acme", source_job_id: "1" });
     await insert({ ...role, apply_url: "https://jobs.lever.co/acme/abc", source_type: "lever", source_id: "lv:acme", source_job_id: "abc" });
-    expect(await dailyCount()).toBe(2); // dedupe_hash is advisory; jobs_public has no DISTINCT
+    expect(await visibleIdentityCount()).toBe(2); // dedupe_hash is advisory; jobs_public has no DISTINCT
   });
 
   it("QUALIFICATION: a role re-posted under a new board id is a new row first seen today", async () => {
     await insert({ title: "Engineer", company: "Acme", apply_url: "https://a.example/1", source_type: "greenhouse", source_id: "gh:acme", source_job_id: "1", created_at: "2026-11-20T08:00:00Z", is_active: false, status: "expired" });
     await insert({ title: "Engineer", company: "Acme", apply_url: "https://a.example/2", source_type: "greenhouse", source_id: "gh:acme", source_job_id: "2", created_at: "2026-11-25T08:00:00Z" });
-    expect(await dailyCount()).toBe(1);
+    expect(await visibleIdentityCount()).toBe(1);
   });
 
   it("hidden-source rows and inactive rows are excluded; NULL source_type is kept", async () => {
     await insert({ title: "A", company: "X", apply_url: "https://x/1", source_type: null, created_at: "2026-11-25T01:00:00Z" });
     await insert({ title: "B", company: "X", apply_url: "https://x/2", source_type: HIDDEN_SOURCE_TYPE, created_at: "2026-11-25T01:00:00Z" });
     await insert({ title: "C", company: "X", apply_url: "https://x/3", source_type: "ats", is_active: false, status: "expired", created_at: "2026-11-25T01:00:00Z" });
-    expect(await dailyCount()).toBe(1);
+    expect(await visibleIdentityCount()).toBe(1);
   });
 });
