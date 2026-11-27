@@ -180,7 +180,7 @@ describe("routes stamp score and revision from one reference instant", () => {
     const calls = lines.filter((l) => /\b(scoreInputRevision|sharedDisplayScore|rankJobsByRecommendation)\(/.test(l) && !/^\s*(import|\/\/|\*)/.test(l));
     expect(calls.some((l) => l.includes("scoreInputRevision("))).toBe(true);
     // Each call passes the response's one instant as its last argument
-    for (const l of calls) expect(l.trim(), l.trim()).toMatch(/,\s*scoredAt\)[,;]?$/);
+    for (const l of calls) expect(l.trim(), l.trim()).toMatch(/,\s*scoredAt\)( : null)?[,;]?$/);
     expect(lines.filter((l) => /const scoredAt = Date\.now\(\);/.test(l)).length).toBeGreaterThan(0);
   });
 });

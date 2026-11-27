@@ -80,6 +80,7 @@ function run() {
       const jsFn = fnMatch[0]
         .replace(/:\s*LiveJob/g, "")
         .replace(/:\s*CandidateProfile\s*\|\s*null/g, "")
+        .replace(/:\s*boolean/g, "")
         .replace(/\):\s*number\s*\|\s*null/g, ")");
 
       const harness = `
@@ -130,8 +131,16 @@ function run() {
         console.log("  [PASS] Case D (empty string confirmedAt): score is null, zero percentage rendered");
       }
 
-      // Case E: Candidate profile exists WITH confirmedAt
-      const scoreConfirmed = fn(testJob, { confirmedAt: "2026-10-20T10:00:00Z", skills: ["TypeScript"] });
+      // Case E2: confirmed resume but not Pro: numeric score is paid-only (owner, 24 Nov)
+      const scoreFreeConfirmed = fn(testJob, { confirmedAt: "2026-10-20T10:00:00Z", skills: ["TypeScript"] }, false);
+      if (scoreFreeConfirmed !== null) {
+        failures.push(`LEAK: Free user with a confirmed resume received score ${scoreFreeConfirmed}% (expected null).`);
+      } else {
+        console.log("  [PASS] Case E2 (Free, confirmed resume): score is null, paid-only");
+      }
+
+      // Case E: Pro candidate profile exists WITH confirmedAt
+      const scoreConfirmed = fn(testJob, { confirmedAt: "2026-10-20T10:00:00Z", skills: ["TypeScript"] }, true);
       if (typeof scoreConfirmed !== "number" || scoreConfirmed < 10 || scoreConfirmed > 99) {
         failures.push(`ACCURACY FAIL: Candidate with confirmedAt received invalid score ${scoreConfirmed}.`);
       } else {
