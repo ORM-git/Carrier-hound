@@ -657,7 +657,7 @@ export default function JobDetailView({
         candidate={candidate}
         user={user}
         isPro={isPro}
-        diagnostics={diagnostics}
+        diagnostics={isUnlocked ? diagnostics : null}
         isSaved={isSaved}
         isApplied={isApplied}
         trackedStage={trackedStage}
@@ -922,9 +922,10 @@ export default function JobDetailView({
                   </div>
                   <span
                     className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
-                      matchScore > 70
+                      // Locked: neutral colour, so the badge never reveals the paid score band.
+                      isUnlocked && matchScore > 70
                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                        : matchScore >= 50
+                        : isUnlocked && matchScore >= 50
                         ? "bg-blue-50 text-blue-700 border border-blue-200"
                         : "bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
