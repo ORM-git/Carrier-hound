@@ -1,8 +1,13 @@
 # Row 82: alert metric/event contract (SPEC ONLY)
 
 **Status: Partial, spec only.** No code, helper, workflow or migration exists or is proposed to be built from this file
-yet. Read from `main` @ `71339758`, 27 Nov 2026. Labels: **from source (file:line)** = read at that commit;
-**unverified** = not checked; **observed** = counted from downloaded CI artifacts (section 8).
+yet. Read from `main` @ `71339758`; line numbers re-checked on `61cd5b6e`, 27 Nov 2026.
+
+**No alert can fire yet.** No metric here is qualified: thresholds are not established for any of them, including
+`workday_freshness_lag` (section 5), and the collision-rate denominator is unqualified (3.1). The only open items are
+thresholds, delivery, and that denominator (section 7). Labels: **from source (file:line)** = read at that commit;
+**unverified** = not checked; **agent-read, unverified by keeper** = counted by Agent A from downloaded CI artifacts
+(section 8), not independently checked.
 
 The ledger goal (row 82) is an audit target. No owner message approving it as a requirement was found.
 
@@ -32,23 +37,35 @@ The ledger goal (row 82) is an audit target. No owner message approving it as a 
 
 ## 3. Metrics
 
-### 3.1 `apply_url_collision_rate`: UNDEFINED (denominator field: none today)
+### 3.1 `apply_url_collision_rate`: UNDEFINED (denominator not qualified)
 
-- Numerator, from source: per-source `duplicate_skipped` and run-level `duplicate_skipped_count`
-  (`run_ingestion.py:640, 749-750`).
+- Numerator, from source: per-source `duplicate_skipped` (`run_ingestion.py:640`) and run-level
+  `duplicate_skipped_count` (`run_ingestion.py:750`).
   - It counts only apply-URL collisions at persist time: the prelookup finds the URL owned by another job, or the
     insert or update returns a unique violation (`engine.py:625, 771, 837, 875`).
   - It is **not** a duplicate-job rate.
-- Denominator wanted: attempted persist writes. **Denominator field: none today.**
-  - from source: `persisted_counts` holds successful `inserted` / `updated` / `unchanged`, and is null on dry runs
-    (`run_ingestion.py:753-757`).
-  - from source: `projected_counts` is the plan from `partition_set_diff(all_jobs, [])`, computed against an empty
-    existing set (`run_ingestion.py:453-454`), not attempts.
-  - from source: per-source `failed` is derived, `len(keys) - rej - len(dups) - len(persisted)`, and only when
-    `writes_attempted` (`run_ingestion.py:643`).
-  - None of these is "attempted writes".
-- `fetched` is **not** a substitute: it is the raw count before dedupe and validation (`run_ingestion.py:129`).
-- The metric stays undefined until a report field counts attempted writes. Adding one is a later, separate change.
+- `fetched` is **not** a denominator: it is the raw count before dedupe and validation (`run_ingestion.py:129, 417`).
+- **`validated` is a CANDIDATE denominator, not qualified.** Per source, `validated = len(keys) - rej`
+  (`run_ingestion.py:638`). Open points:
+  1. **Stage.** `keys` comes from `rep["jobs"]` (`run_ingestion.py:633`), and `rep["jobs"]` is the raw fetch list
+     (`run_ingestion.py:129`). So `keys` is taken **before** salary sanitizing, prevalidation, in-run dedupe and the
+     row cap (`run_ingestion.py:418-422`).
+     - Rows dropped by in-run dedupe (`select_unique_jobs`, `:421`) or by the cap (`:422`) are neither rejected, nor
+       `duplicate_skipped`, nor persisted. The code folds them into per-source `failed` when writes were attempted
+       (`:643`).
+     - `keys` is also a set, so repeated source keys within one source collapse.
+  2. **Mixed rejections.** `rejected` holds prevalidation rejections (`:419`, before dedupe) plus DB-stage rejections
+     appended later (`:498`). The per-source `rej` matches both (`:626, 635`).
+  3. **Withheld writes.** `writes_attempted` (`:469`) is a local variable and is not in the report JSON.
+     - `persisted_counts` being present (`:753`) only means "not a dry run". It does not prove writes were attempted.
+     - When writes are withheld (`guard_block_reason` "write_withheld", `:697, 701`), nothing reaches persistence, so
+       `duplicate_skipped` is 0.
+     - `guard_block_reason` is a top-level report key (seen in one real report, section 8). It may be usable as a
+       withheld/dry-run marker. Its use is **unverified**.
+- **apply_url_collision_rate stays UNDEFINED until the owner of run_ingestion.py confirms the stage, or the report
+  exposes an attempted-write count.**
+- **Zero / invalid rule (for when it is defined):** a missing, null, non-numeric or 0 denominator gives `no_data`,
+  never 0%. A dry-run report or a withheld-write run gives `no_data`.
 
 ### 3.2 `workday_freshness_lag`: Workday sources only
 
@@ -65,8 +82,9 @@ The ledger goal (row 82) is an audit target. No owner message approving it as a 
   - from source: `percentile()` itself does not drop NaN or negative values, and throws `RangeError` for p outside
     (0,100].
   - An empty sample list gives `percentile() = null`, so the status is `no_data`.
-- `sampled_at`: the report's own run time. Which report field carries it is **unverified**. Pin it before code, and
-  never use the evaluator's wall clock.
+- `sampled_at`: the report's top-level `finished_at` (from source: `run_ingestion.py:724`, written once when the report
+  is built; `started_at` is `:723`). Both keys are present in one real report's key list (section 8). Never use the
+  evaluator's wall clock. A missing or unparseable `finished_at` makes the report `invalid` for this metric.
 
 ### 3.3 Deferred sources (cooldown)
 
@@ -105,6 +123,7 @@ The ledger goal (row 82) is an audit target. No owner message approving it as a 
   `MAX_FAILURES_IN_WINDOW = 1`, `STALE_AFTER_HOURS = 12` by default, overridable by `SOURCE_HEALTH_STALE_HOURS`
   (from source: `scripts/check-source-health.ts:7-8`).
 - The section 8 observations are context only. **They do not set thresholds.**
+- Without thresholds no metric is qualified, `workday_freshness_lag` included, so **no alert can fire yet**.
 
 ## 6. Event shape (proposed; no alert-event type exists today)
 
@@ -115,22 +134,26 @@ The ledger goal (row 82) is an audit target. No owner message approving it as a 
 ```
 
 - `alert_id` is deterministic, so a later dedupe layer can key on it.
-- Only `workday_freshness_lag` can produce events today. The other metrics are undefined (3.1, 3.4, 3.5).
+- No metric can produce events yet. `workday_freshness_lag` is defined but has no threshold (section 5); the others are
+  undefined (3.1, 3.4, 3.5).
 
 ## 7. Open items (owner decisions, nothing to build yet)
 
-1. **Delivery.** Both options use existing channels; no recommendation to build either.
+Only these three are open:
+
+1. **Thresholds.** None are established for any metric. They need measured data from owner-run baselines.
+2. **Delivery.** Both options use existing channels; no recommendation to build either.
    - (a) The evaluator runs in the aggregate step and fails it. `workflow-failure-alert.yml` already opens an issue for
      "Python Job Ingestion (every 4 hours)" (from source: lines 5-18). Cost: a metric alert looks like a broken ingest run.
    - (b) The evaluator writes its result into the summary and does not change the exit code. A separate step or workflow
      raises the alert later. Cost: a CI-config change, out of scope now.
-2. **A report field for attempted writes**, to define 3.1.
-3. **`last_success_at` for non-Workday sources**, if freshness lag should cover them. Today it is Workday-only by data.
-4. **The `sampled_at` field** (3.2).
-5. **Thresholds** from measured data (owner-run).
-6. **Live baselines and real delivery checks** need production access and are owner-run.
+3. **Collision-rate denominator qualification** (3.1). Either the owner of `run_ingestion.py` confirms the stage of
+   `validated`, or the report exposes an attempted-write count.
 
-## 8. Observed counts (bounded read-only research)
+Recorded, not open: freshness lag is Workday-only by data (3.2). Covering other sources would need `last_success_at`
+for them, which is a separate change.
+
+## 8. Observed counts (agent-read, unverified by keeper)
 
 - Read: **12 report JSONs** from the **6 most recent `python-ingest.yml` runs** (all `schedule`), each with a
   `non-workday` and a `workday` cohort report.
@@ -149,3 +172,6 @@ The ledger goal (row 82) is an audit target. No owner message approving it as a 
   - non-Workday reports: 0 in the earliest run, then **472-477** in each of the other 5;
   - the largest single source: 351-352; non-zero sources per report: 6-8.
 - Not interpreted and not used for thresholds. Why the earliest run shows 0 is **unverified**.
+- Key-list check (Prompt 7): one more download of run `45910126572`'s non-Workday report (2026-11-26 23:18 UTC), deleted
+  after reading. Its top-level keys include `started_at`, `finished_at` and `guard_block_reason` (null in that run).
+  Agent-read, unverified by keeper.
