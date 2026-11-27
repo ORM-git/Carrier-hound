@@ -4,7 +4,13 @@ Research only. No code, no database reads. Read from `main` @ `71339758`, 27 Nov
 Labels: **from source** means read in this repo's code or schema at that commit; **unverified** means not checked
 against data or provider docs.
 
-## Status (main `61cd5b6e`)
+## Follow-up after the snapshot (27 Nov 2026)
+
+PR #857 merged as `03fbda717f35327afaa35a0e6ff45ad63aebc1c3`. The TS no-geography fallback now returns `unknown`, with offline detector and eligibility tests. This corrects classification on later TS ingest/re-ingest writes; it does not backfill existing rows. No production ingest run or changed production counts were verified here. Explicit worldwide text and country-coded radar placement retain their existing behavior. The change aligns this fallback, not every TS/Python detector branch.
+
+The allowed-countries list and timezone-window design below remain unbuilt. The historical fallback-change option is no longer an outstanding owner question.
+
+## Historical status (main `61cd5b6e`, superseded where noted above)
 
 - **Partial.** Evidence: one `remote_eligibility` text value per job (`supabase/schema.sql:39`); TS detector
   `scripts/utils/sanitizer.ts:1088-1107`; Python `scripts/scraper/fetchers.py:150-156`; worldwide reader
@@ -40,7 +46,7 @@ against data or provider docs.
 - **from source**: Python also reports `country_restricted` when the location names a single country, but stores only
   one `country_code`. A posting listing "US, Canada, UK" keeps at most one of them.
 
-## Options for the owner (not decided here)
+## Historical options (fallback option now addressed by #857)
 
 1. Align TS with Python: a remote job with no signal is `unknown`, not `worldwide`. This is small, but it changes
    eligibility for existing TS sources on their next ingest, so the scope is the owner's call.
