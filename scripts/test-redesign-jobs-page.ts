@@ -170,6 +170,7 @@ function run() {
       const jsFn = fnMatch[0]
         .replace(/:\s*LiveJob/g, "")
         .replace(/:\s*CandidateProfile\s*\|\s*null/g, "")
+        .replace(/:\s*boolean/g, "")
         .replace(/\):\s*number\s*\|\s*null/g, ")");
 
       const scoringCode = `
@@ -190,7 +191,12 @@ function run() {
       const unauthScore = fn(dummyJob, null);
       const unconfirmedScore = fn(dummyJob, { confirmedAt: null, skills: ["React"] });
       const emptyConfirmedScore = fn(dummyJob, { confirmedAt: "", skills: ["React"] });
-      const confirmedScore = fn(dummyJob, { confirmedAt: "2026-10-01T00:00:00Z", skills: ["React"] });
+      const confirmedScore = fn(dummyJob, { confirmedAt: "2026-10-01T00:00:00Z", skills: ["React"] }, true);
+      // Numeric score is paid-only (owner, 24 Nov): a Free user with a confirmed resume gets none.
+      const freeConfirmedScore = fn(dummyJob, { confirmedAt: "2026-10-01T00:00:00Z", skills: ["React"] }, false);
+      if (freeConfirmedScore !== null) {
+        failures.push(`SCORE LEAK: Free user with confirmed resume got score ${freeConfirmedScore}% instead of null.`);
+      }
 
       if (unauthScore !== null) {
         failures.push(`SCORE LEAK: User without candidate profile got score ${unauthScore}% instead of null.`);

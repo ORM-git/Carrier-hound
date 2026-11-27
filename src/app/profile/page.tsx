@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import type { User } from "@supabase/supabase-js";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
+import MobileProfileSources from "@/components/profile/MobileProfileSources";
 import ProfileDrawers, { ProfileSection } from "@/components/profile/ProfileDrawers";
 import { getCandidateProfile, saveConfirmedCandidateProfile } from "@/lib/resume/storage";
 import { CandidateProfile } from "@/lib/resume/types";
@@ -207,7 +208,10 @@ export default function ProfilePage() {
       user={user}
       isPro={isPro}
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-5 space-y-6 sm:space-y-4">
+      <div className="sm:hidden bg-[#F4F5F7] px-3 py-6">
+        {user && <MobileProfileSources key={user.id} email={user.email} initialLinkedinUrl={typeof user.user_metadata?.linkedin_url === "string" ? user.user_metadata.linkedin_url : ""} candidate={candidate} isPro={isPro} onProfileConfirmed={profile => {setCandidate(profile);}} />}
+      </div>
+      <div data-testid="desktop-profile-details" className="hidden sm:block max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-5 space-y-6 sm:space-y-4">
         {/* ================================================================= */}
         {/* 1. STICKY SECTION TABS WITH SCROLL-SPY                            */}
         {/* ================================================================= */}
