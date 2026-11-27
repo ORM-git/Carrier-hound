@@ -18,6 +18,8 @@ export interface CompanyLogoProps {
   /** Locked tiles only: an opaque job id that picks one of the fixed masked gradients so a feed is not one flat
    * colour. Never pass company-derived text. Without it the tile uses the first gradient. */
   maskSeed?: string | number | null;
+  /** Opt-in approved palette for job-list tiles only; other surfaces keep their palette. */
+  maskedPalette?: "default" | "job-list-preview";
 }
 
 // Masked-company tile palette. Constants only: the pick depends on the opaque job id, never on the hidden employer.
@@ -30,11 +32,14 @@ export const MASKED_TILE_GRADIENTS = [
   "from-emerald-500 to-teal-600",
 ];
 
-export function maskedTileIndex(seed: string | number | null | undefined): number {
+// Exact .t1 through .t8 backgrounds from the approved company preview. No fog/letters added.
+export const JOB_LIST_MASKED_GRADIENTS = ["linear-gradient(160deg,#8ec5fc,#4a7de0)", "linear-gradient(160deg,#f6d365,#e0653a)", "linear-gradient(160deg,#a8e063,#3f9d4f)", "linear-gradient(160deg,#fbc2eb,#a64ac9)", "linear-gradient(160deg,#89f7fe,#3a8fd9)", "linear-gradient(160deg,#fda085,#d4456f)", "linear-gradient(160deg,#cfd9ff,#5d6ee0)", "linear-gradient(160deg,#ffe29f,#e08a2e)"] as const;
+
+export function maskedTileIndex(seed: string | number | null | undefined, count = MASKED_TILE_GRADIENTS.length): number {
   const text = seed === null || seed === undefined ? "" : String(seed);
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-  return h % MASKED_TILE_GRADIENTS.length;
+  return h % count;
 }
 
 const ATS_HOSTS = [
@@ -107,6 +112,7 @@ export default function CompanyLogo({
   className = "w-10 h-10",
   locked = false,
   maskSeed = null,
+  maskedPalette = "default",
 }: CompanyLogoProps) {
   const cleanCompany = (company || "").trim();
   const initial = cleanCompany ? cleanCompany.charAt(0).toUpperCase() : "?";
@@ -156,6 +162,7 @@ export default function CompanyLogo({
       <div
         data-testid="company-logo-locked"
         aria-hidden="true"
+        style={maskedPalette === "job-list-preview" ? { backgroundImage: JOB_LIST_MASKED_GRADIENTS[maskedTileIndex(maskSeed, JOB_LIST_MASKED_GRADIENTS.length)] } : undefined}
         className={`rounded-xl bg-gradient-to-br ${MASKED_TILE_GRADIENTS[maskedTileIndex(maskSeed)]} shrink-0 select-none ${className}`}
       />
     );
