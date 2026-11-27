@@ -244,6 +244,33 @@ describe("logo hide policy on the real jobs page (#44)", () => {
     expect(screen.queryByText(/^No positions/i)).toBeNull();
   });
 
+  it("normal loading on desktop (logos fine, more pages exist): no Load More button and no remaining-count text", async () => {
+    h.isPro = true;
+    h.desktop = true;
+    h.transport = async (opts: any) => {
+      const pg = Number(opts?.page ?? 1);
+      return page([fixtureJob(pg * 10 + 1), fixtureJob(pg * 10 + 2)], true, 1000);
+    };
+    render(<JobsPage />);
+    for (let i = 0; i < 6; i++) await flush();
+    expect(screen.getAllByTestId("job-card").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Load More Verified Positions/i })).toBeNull();
+    expect(document.body.textContent || "").not.toMatch(/remaining\)|Verified Positions \(~/);
+  });
+
+  it("desktop: after the automatic budget is spent on hidden jobs, the manual Load More button appears (the cap exception)", async () => {
+    h.isPro = true;
+    h.desktop = true;
+    h.transport = async (opts: any) => {
+      const pg = Number(opts?.page ?? 1);
+      return page([fixtureJob(pg * 10 + 1, { companyDomain: null, applyUrl: "" }), fixtureJob(pg * 10 + 2, { companyDomain: null, applyUrl: "" })], true, 1000);
+    };
+    render(<JobsPage />);
+    for (let i = 0; i < 22; i++) await flush();
+    expect(screen.queryAllByTestId("job-card")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: /Load More Verified Positions/i })).toBeTruthy();
+  });
+
   it("always hidden with an endless hasMore: at most 3 extra pages are requested automatically, then a visible Load More button; a click resumes", async () => {
     h.isPro = true;
     const pagesAsked: number[] = [];
