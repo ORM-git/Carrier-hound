@@ -1,5 +1,6 @@
 "use client";
 
+import { VIEW_JOBS_AUTH_HREF } from "@/lib/landing/viewJobsHref";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { ArrowRight, Compass, Play, RotateCcw } from "lucide-react";
@@ -784,7 +785,7 @@ export default function LandingGlobeFeatureSection() {
       {/* 4. Dark Pill CTA Button + Descriptive Caption */}
       <div className="mt-5 sm:mt-7 flex flex-col items-center justify-center gap-2 sm:gap-2.5">
         <Link
-          href="/jobs"
+          href={VIEW_JOBS_AUTH_HREF}
           className="inline-flex items-center justify-center gap-2 bg-[#090E34] hover:bg-[#1E293B] text-white font-semibold text-sm sm:text-base px-7 py-3 sm:px-8 sm:py-3.5 rounded-full shadow-md hover:shadow-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
         >
           <span>View jobs</span>

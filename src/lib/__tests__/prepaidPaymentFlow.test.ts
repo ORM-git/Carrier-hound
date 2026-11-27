@@ -374,9 +374,30 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
 
   describe("Real PostgreSQL fulfil_payment_order Integration (PGlite - Full Migration Chain)", () => {
     let pg: PGlite;
+    // Every instance is tracked the moment it exists so afterEach can close it even
+    // when bootstrap SQL, a migration or a test assertion throws (vitest still runs afterEach).
+    const openInstances: PGlite[] = [];
+    // Test-only fault injection + close log, driven by prepaidPgliteLifecycle.test.ts in a child run.
+    const FAULT = process.env.PREPAID_PGLITE_FAULT;
+    const LIFECYCLE_LOG = process.env.PREPAID_PGLITE_LIFECYCLE_LOG;
+
+    afterEach(async () => {
+      for (const instance of openInstances.splice(0)) {
+        await instance.close();
+        if (LIFECYCLE_LOG) fs.appendFileSync(LIFECYCLE_LOG, `closed=${instance.closed}\n`);
+      }
+    });
+
+    if (FAULT === "assert") {
+      it("lifecycle fault injection: failing assertion", () => {
+        expect(pg.closed).toBe(true);
+      });
+    }
 
     beforeEach(async () => {
       pg = new PGlite();
+      openInstances.push(pg);
+      if (LIFECYCLE_LOG) fs.appendFileSync(LIFECYCLE_LOG, "opened\n");
 
       // Bootstrap base roles and tables before migrations
       await pg.exec(`
@@ -480,6 +501,7 @@ describe("Prepaid Razorpay Payment Flow & Pricing Engine", () => {
           processed_at TIMESTAMPTZ DEFAULT NOW()
         );
       `);
+      if (FAULT === "setup") throw new Error("lifecycle fault injection: setup failure");
 
       // Load FULL current migration chain:
       // 1. 20261104b_payment_order_mode_isolation.sql (payment-mode)

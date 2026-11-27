@@ -23,9 +23,11 @@ describe("workModelLabel", () => {
     const card = readFileSync("src/components/jobs/JobCardContent.tsx", "utf8");
     const detail = readFileSync("src/components/jobs/JobDetailView.tsx", "utf8");
     const mobileCard = card.slice(card.indexOf("MOBILE VIEW (under sm"), card.indexOf("function CircularMatchRing("));
-    expect(mobileCard).toContain("{workModelLabel(job)}");
+    expect(card).toContain("const mode = workModelLabel(job)");
+    expect(mobileCard).toContain("{mode}");
     expect(mobileCard).not.toContain('{job.remote ? "Remote" : "On-site"}');
-    expect(detail).toContain("{workModelLabel(job)}");
+    expect(detail).toContain("const detailWorkModel = workModelDetailLabel(job)");
+    expect(detail).toContain("{detailWorkModel}");
     expect(detail).not.toContain('{job.remote ? "Remote" : "On-site"}');
   });
 });

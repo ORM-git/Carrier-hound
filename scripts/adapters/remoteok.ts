@@ -61,7 +61,7 @@ export class RemoteOKAdapter implements SourceAdapter {
           salaryText = `From $${(salaryMin / 1000).toFixed(0)}k`;
         }
 
-        const postedAt = j.date ? normalizeDate(j.date) : j.epoch ? new Date(j.epoch * 1000).toISOString() : normalizeDate(null);
+        const postedAt = normalizeDate(j.date ?? (j.epoch == null ? null : j.epoch * 1000));
         const category = source.category || detectCategory(title, j.tags || []);
         const seniority = detectSeniority(title);
         const countryCode = detectCountryCode(location);

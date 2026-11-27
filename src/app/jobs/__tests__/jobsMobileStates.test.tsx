@@ -75,13 +75,13 @@ describe("mobile jobs states (item 12)", () => {
     for (const c of counts) expect(c.className).toContain("hidden sm:inline");
   });
 
-  it("short results: 3 cards, no sentinel, no load-more, no end banner (single page)", async () => {
+  it("short results: 3 cards, scoped end line, no sentinel or load-more (single page)", async () => {
     h.transport = async () => page([1, 2, 3].map((i) => fixtureJob(i)), false, 3);
     await mount();
     expect(titlesShown()).toHaveLength(3);
     expect(screen.queryByTestId("jobs-load-more-sentinel")).toBeNull();
     expect(screen.queryByRole("button", { name: /Load More/ })).toBeNull();
-    expect(screen.queryByTestId("jobs-list-end")).toBeNull();
+    expect(screen.getByTestId("jobs-list-end").textContent).toContain("this recommended list for your current search and filters");
   });
 
   it("filter with zero results: specific empty copy and a 44px Reset that clears the filter and refetches", async () => {
@@ -137,7 +137,7 @@ describe("mobile jobs states (item 12)", () => {
     await mount();
     await act(async () => io.enter());
     await flush();
-    expect(screen.getByTestId("jobs-list-end").textContent).toBe("You've reached the end of this list.");
+    expect(screen.getByTestId("jobs-list-end").textContent).toBe("You've reached the end of this recommended list for your current search and filters.");
     expect(screen.queryByTestId("jobs-load-more-sentinel")).toBeNull();
   });
 });

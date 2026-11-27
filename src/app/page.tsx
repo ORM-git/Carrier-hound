@@ -3,25 +3,19 @@
 
 // Home page: top fold = ORM-git/ssampe index.html @ f21504b (scoped .cm-top);
 // lower page = ORM-git/ssampe @ 3386250 stats row .. footer + sticky bar (scoped .landing-wrapper).
+import { VIEW_JOBS_AUTH_HREF } from "@/lib/landing/viewJobsHref";
 import React, { useEffect, useRef } from "react";
 import LiveLandingTicker from "@/components/landing/LiveLandingTicker";
 import dynamic from "next/dynamic";
 const LandingJobsPreview = dynamic(() => import("@/components/landing/LandingJobsPreview"));
-import { Plus_Jakarta_Sans } from "next/font/google";
+import "@/styles/jakarta-local.css";
 import "@/styles/careermonke-landing.css";
 import "@/styles/careermonke-landing-lower.css";
+import "@/styles/careermonke-landing-fold.css";
 import "@/styles/mobile-ticker.css";
 import { initCareerMonkeLanding } from "@/components/landing/careermonke-landing-runtime";
 import { initCareerMonkeLandingLower } from "@/components/landing/careermonke-landing-lower-runtime";
 import { useDailyJobsCount } from "@/lib/api/stats";
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500", "600", "700", "800"],
-  display: "swap",
-  variable: "--font-cm-jakarta",
-  adjustFontFallback: false, // glyphs Jakarta lacks (→ ✓) must fall back to system-ui, as in the source
-});
 
 export default function HomePage() {
   const lowerRef = useRef<HTMLDivElement>(null);
@@ -37,7 +31,9 @@ export default function HomePage() {
 
   return (
     <>
-      <div className={`cm-top ${jakarta.variable}`}>
+      <div className="cm-top cm-jakarta-font">
+        <link rel="preload" href="/fonts/plus-jakarta-sans/plus-jakarta-sans-2.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/plus-jakarta-sans/plus-jakarta-sans-3.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <main className="fold">
           <header className="hero">
             <div className="container">
@@ -116,7 +112,7 @@ export default function HomePage() {
           </section>
 
           <section className="cta">
-            <a href="/jobs" className="btn-cta">
+            <a href={VIEW_JOBS_AUTH_HREF} className="btn-cta">
               View Jobs <span aria-hidden="true">→</span>
             </a>
             <span className="cta-note">Free preview</span>
@@ -642,7 +638,7 @@ export default function HomePage() {
                 </ul>
                 <figcaption className="fc-foot">Illustration · sample data</figcaption>
               </figure>
-              <a className="btn btn-ghost fbtn" href="/jobs">
+              <a className="btn btn-ghost fbtn" href={VIEW_JOBS_AUTH_HREF}>
                 Explore jobs
               </a>
             </li>
@@ -2100,7 +2096,7 @@ export default function HomePage() {
               No commitment. Just window shopping for your dream job. Job maxxing starts here.
             </p>
             <div className="fp-row">
-              <a className="fp-btn fp-btn-white" href="/jobs">
+              <a className="fp-btn fp-btn-white" href={VIEW_JOBS_AUTH_HREF}>
                 View Jobs <span aria-hidden="true">→</span>
               </a>
               <a className="fp-btn fp-btn-outline" href="/signup">
@@ -2153,7 +2149,7 @@ export default function HomePage() {
             <b>Career Monke</b>
             <span>Verified jobs, direct from employers</span>
           </p>
-          <a href="/jobs">
+          <a href={VIEW_JOBS_AUTH_HREF}>
             View Jobs <span aria-hidden="true">→</span>
           </a>
         </aside>

@@ -5,7 +5,7 @@
  * 2. Every curated browser-fetch third-party origin is preconnected in the
  *    root layout head (server-to-server and outbound-href origins excluded
  *    by design - preconnect does nothing for them).
- * 3. next/font in use (automatic font preloading).
+ * 3. Same-origin Inter CSS, class, and valid WOFF2 preload stay wired.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -56,7 +56,27 @@ for (const origin of CLIENT_FETCH_ORIGINS) {
     `client-fetch origin ${origin} is in the connection-hints list`
   );
 }
-check(/next\/font\/(google|local)/.test(layout), "root layout uses next/font (automatic font preload)");
+const interCss = fs.readFileSync(path.join(ROOT, "src/styles/inter-local.css"), "utf8");
+const fontPath = "/fonts/inter/inter-6.woff2";
+const font = fs.readFileSync(path.join(ROOT, "public", fontPath));
+function hasLocalFontPreload(source: string, css: string, bytes: Buffer): boolean {
+  return source.includes('import "@/styles/inter-local.css";') &&
+    /<html\s+lang="en"\s+className="cm-inter-font scroll-smooth">/.test(source) &&
+    source.includes(`<link rel="preload" href="${fontPath}" as="font" type="font/woff2" crossOrigin="anonymous" />`) &&
+    css.includes(`src: url(${fontPath}) format('woff2');`) &&
+    css.includes(".cm-inter-font{--font-inter:'Inter','Inter Fallback';}") &&
+    css.includes("font-display: swap;") && bytes.subarray(0, 4).toString() === "wOF2";
+}
+check(hasLocalFontPreload(layout, interCss, font), "root layout wires bundled Inter CSS/class and valid same-origin cross-origin font preload");
+for (const [label, source, css, bytes] of [
+  ["CSS import removed", layout.replace('import "@/styles/inter-local.css";', ''), interCss, font],
+  ["font class removed", layout.replace('cm-inter-font scroll-smooth', 'scroll-smooth'), interCss, font],
+  ["preload removed", layout.replace('rel="preload"', 'rel="stylesheet"'), interCss, font],
+  ["wrong preload URL", layout.replace(fontPath, '/fonts/missing.woff2'), interCss, font],
+  ["crossOrigin removed", layout.replace('crossOrigin="anonymous"', ''), interCss, font],
+  ["CSS source removed", layout, interCss.replaceAll(fontPath, '/fonts/missing.woff2'), font],
+  ["invalid font bytes", layout, interCss, Buffer.from('not a font')],
+] as const) check(!hasLocalFontPreload(source, css, bytes), `negative control rejects ${label}`);
 
 console.log(`\nprefetch-strategy: ${passed} PASS, ${failed} FAIL`);
 process.exit(failed === 0 ? 0 : 1);

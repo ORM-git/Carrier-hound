@@ -2,12 +2,14 @@
 
 import React, { useEffect, useState } from "react";
 import { parseTickerResponse, TickerItemParsed } from "@/lib/api/clientSchemas";
+import { isOfficialLogoPath } from "@/lib/companies/officialLogoAssets";
 import { formatRelativeTime } from "@/components/LandingJobsTickerStrip";
 
 export const TICKER_REFRESH_MS = 5 * 60 * 1000;
 
 export function safeTickerLogo(raw: string | null): string | null {
   if (!raw) return null;
+  if (isOfficialLogoPath(raw)) return raw;
   try {
     const url = new URL(raw);
     return url.protocol === "https:" && url.hostname.endsWith(".supabase.co") &&

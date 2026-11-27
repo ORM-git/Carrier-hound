@@ -33,10 +33,13 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
         {"source": str(f.get("source")), "error": str(f.get("error") or "")[:300].replace("\n", " ")}
         for f in (report.get("failed_sources") or []) if isinstance(f, dict)
     ]
+    # A deferred no-op never wrote anything, so it is never ok, whatever exit code the runner reported.
+    deferred_noop = str(report.get("guard_block_reason") or "").split(":")[0] == "noop_deferred"
     return {
         "cohort": cohort,
-        # exit 3 = deferred no-op (nothing written): explicitly not ok, so the aggregate is never green on it
-        "status": "ok" if code == "0" else ("deferred_noop" if code == "3" else "failed"),
+        # exit 3 or guard noop_deferred = deferred no-op (nothing written): explicitly not ok, so the aggregate is never green on it
+        "status": ("deferred_noop" if code == "3" or (code == "0" and deferred_noop)
+                   else "ok" if code == "0" else "failed"),
         "exit_code": code,
         "dry_run": dry_run,
         "git_sha": report.get("git_sha"),
@@ -93,6 +96,17 @@ def cohort_summary(report: dict[str, Any] | None, exit_code: str | int | None, c
     }
 
 
+# Failure heading per guard_block_reason prefix (set by run_ingestion), so it states what actually happened.
+FAILED_HEADINGS = {
+    "write_withheld": "Failed sources (this cohort's writes and expiry withheld)",
+    "workday_isolated": ("Failed Workday boards (isolated): these boards saved nothing; "
+                         "completed boards may have saved; Workday never expires jobs"),
+    "persistence_failed": "Failed sources (these saved nothing; writes stopped on a persistence failure, expiry vetoed)",
+    "dry_run": "Failed sources (dry run: nothing was written or expired)",
+}
+NOOP_BANNER = "**No-op: every selected Workday board was deferred; nothing was written. Not a successful run.**"
+
+
 def render_cohort(s: dict[str, Any]) -> str:
     title = f"### Python ingestion [{s['cohort']}]: {s['status'].upper()} (exit {s['exit_code']})"
     if s["status"] == "no_report":
@@ -128,9 +142,12 @@ def render_cohort(s: dict[str, Any]) -> str:
         ("company logos requested / enqueued / status", f"{logo.get('requested', 0)} / {logo.get('enqueued', 0)} / {logo.get('status', 'skipped')}"),
         ("company logo coverage", cov_str),
     ]
-    lines = [title, "", "| metric | value |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows]
+    guard = str(s.get("guard_block_reason") or "").split(":")[0]
+    lines = [title, ""] + ([NOOP_BANNER, ""] if guard == "noop_deferred" else [])
+    lines += ["| metric | value |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows]
     if s["failed_sources"]:
-        lines += ["", "**Failed sources (this cohort's writes and expiry withheld):**", ""]
+        heading = FAILED_HEADINGS.get(guard, "Failed sources (these saved nothing; see guard for the rest of the cohort)")
+        lines += ["", f"**{heading}:**", ""]
         lines += [f"- `{f['source']}`: {f['error']}" for f in s["failed_sources"]]
     if s.get("per_source"):
         lines += ["", "| " + " | ".join(c.replace("_", " ") for c in PER_SOURCE_COLUMNS) + " |",

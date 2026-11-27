@@ -18,10 +18,11 @@
 
 
 import { isJobEligible, normalizeUserCountries, type NormalizedUserCountries } from "./eligibility";
-import { isEarlyCareerJob } from "./experienceLevels";
+import { isEarlyCareerJob, isDirectorTitle, parseExperienceLevels, CANONICAL_EXPERIENCE_LEVELS, type CanonicalExperienceLevel } from "./experienceLevels";
 import { detectPayPeriod, parseSalary } from "../salary/parser";
 import { convertCurrency } from "../salary/fx";
 import type { CandidateProfile } from "../resume/types";
+import { skillKey } from "./skillKey";
 
 export interface OnboardingAnswers {
   roles?: string[];
@@ -39,6 +40,11 @@ export interface OnboardingAnswers {
    * (public.onboarding_resume_profiles). Soft ranking boost only: never a hard filter.
    */
   resumeProfile?: ResumeRankingSignals | null;
+  /**
+   * Saved preferred skills. Ranking only, never a filter and never a qualifier: a small bounded bonus for exact
+   * (skillKey) matches against the job's listed skills. Empty/absent scores exactly as before.
+   */
+  preferredSkills?: string[];
 }
 
 export interface ResumeRankingSignals {
@@ -56,6 +62,23 @@ export interface JobScoreBreakdown {
   recencyScore: number;
   /** 0 - 15 pts from the parsed resume (absent when the user has none). */
   resumeScore?: number;
+  /** 0 - PREFERRED_SKILLS_MAX pts, only when preferred skills are saved. */
+  preferredSkillsScore?: number;
+}
+
+export const PREFERRED_SKILL_POINTS = 2;
+export const PREFERRED_SKILLS_MAX = 6;
+
+/** Bounded bonus: PREFERRED_SKILL_POINTS per distinct preferred key found among the job's skills, capped. */
+export function scorePreferredSkills(jobSkills: unknown, preferredKeys: ReadonlySet<string>): number {
+  if (preferredKeys.size === 0 || !Array.isArray(jobSkills)) return 0;
+  const hit = new Set<string>();
+  for (const s of jobSkills) {
+    if (typeof s !== "string") continue;
+    const k = skillKey(s);
+    if (k && preferredKeys.has(k)) hit.add(k);
+  }
+  return Math.min(PREFERRED_SKILLS_MAX, hit.size * PREFERRED_SKILL_POINTS);
 }
 
 export const RESUME_TITLE_MAX = 8;
@@ -516,6 +539,8 @@ interface PreparedAnswers {
   answers: OnboardingAnswers;
   userRemote: string;
   userExp: string;
+  /** Two or more saved levels (e.g. "entry,senior"): a job scores as its best-fitting selected level. */
+  userExpLevels: CanonicalExperienceLevel[];
   /** [as typed (for reasons), lowercased+trimmed] */
   userLocations: [string, string][];
   countries: NormalizedUserCountries;
@@ -525,6 +550,18 @@ interface PreparedAnswers {
   userJobTypes: string[];
   relevance: PreparedRelevance;
   resume: PreparedResume | null;
+  preferredKeys: ReadonlySet<string>;
+}
+
+/** Resolves the saved experience level through the shared parser (see below). */
+function resolveUserExperience(raw?: string | null): { userExp: string; userExpLevels: CanonicalExperienceLevel[] } {
+  // Every saved value goes through the shared parser, so an alias ("junior", "entry level") scores exactly
+  // like its canonical level. A value the parser does not know keeps the legacy lowercase string.
+  const levels = parseExperienceLevels(raw);
+  if (levels.length === 0) return { userExp: (raw || "").toLowerCase().trim(), userExpLevels: [] };
+  if (levels.length === CANONICAL_EXPERIENCE_LEVELS.length) return { userExp: "", userExpLevels: [] };
+  if (levels.length === 1) return { userExp: levels[0], userExpLevels: [] };
+  return { userExp: "", userExpLevels: levels };
 }
 
 function prepareAnswers(answers: OnboardingAnswers): PreparedAnswers {
@@ -537,7 +574,7 @@ function prepareAnswers(answers: OnboardingAnswers): PreparedAnswers {
   return {
     answers,
     userRemote: (answers.remotePreference || "").toLowerCase().trim(),
-    userExp: (answers.experienceLevel || "").toLowerCase().trim(),
+    ...resolveUserExperience(answers.experienceLevel),
     userLocations: userLocations.map((l) => [l, l.toLowerCase().trim()]),
     countries: normalizeUserCountries(userLocations),
     userRoles: userRoles.map((r) => [r, r.toLowerCase().trim()]),
@@ -546,6 +583,12 @@ function prepareAnswers(answers: OnboardingAnswers): PreparedAnswers {
     userJobTypes: (answers.employmentTypes || []).map((t) => t.toLowerCase().trim()).filter(Boolean),
     relevance: prepareRelevance(answers),
     resume: prepareResume(answers.resumeProfile),
+    preferredKeys: new Set(
+      (Array.isArray(answers.preferredSkills) ? answers.preferredSkills : [])
+        .filter((s): s is string => typeof s === "string")
+        .map(skillKey)
+        .filter(Boolean)
+    ),
   };
 }
 
@@ -578,6 +621,18 @@ export function scoreJobRecommendation(
 }
 
 function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers, now: number): ScoredJobResult {
+  if (p.userExpLevels.length < 2) return scorePreparedForLevel(job, p, now);
+  // Several selected levels: any match counts. The job gets the result of its best-fitting level
+  // (first level wins a tie, in canonical order), so card, detail and unlock scores stay equal.
+  let best: ScoredJobResult | null = null;
+  for (const level of p.userExpLevels) {
+    const r = scorePreparedForLevel(job, { ...p, userExp: level, userExpLevels: [] }, now);
+    if (!best || r.score > best.score) best = r;
+  }
+  return best as ScoredJobResult;
+}
+
+function scorePreparedForLevel(job: JobScoringCandidate, p: PreparedAnswers, now: number): ScoredJobResult {
   const { answers, userRemote, userExp, userLocations } = p;
   const reasons: string[] = [];
   const title = (job.title || "").toLowerCase();
@@ -628,6 +683,21 @@ function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers, now: number
         recencyScore: 0,
       },
       reasons: ["Seniority mismatch: Entry/Junior/Intern role for senior/lead seeker"],
+    };
+  }
+
+  if (userExp === "director" && isJuniorOrEntry && !isDirectorTitle(job.title)) {
+    return {
+      job,
+      score: 0,
+      breakdown: {
+        roleScore: 0,
+        locationScore: 0,
+        experienceScore: 0,
+        jobTypeScore: 0,
+        recencyScore: 0,
+      },
+      reasons: ["Seniority mismatch: Entry/Junior/Intern role for director/executive seeker"],
     };
   }
 
@@ -894,6 +964,17 @@ function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers, now: number
       } else {
         experienceScore = 0;
       }
+    } else if (userExp === "director") {
+      if (isDirectorTitle(job.title)) {
+        experienceScore = 20;
+        reasons.push("Director/Executive role match");
+      } else if (isLeadOrPrincipal || isSenior) {
+        experienceScore = 12;
+      } else if (!isJuniorOrEntry) {
+        experienceScore = 6;
+      } else {
+        experienceScore = 0;
+      }
     } else if (userExp === "lead") {
       if (isLeadOrPrincipal) {
         experienceScore = 20;
@@ -928,12 +1009,16 @@ function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers, now: number
   const resume = scorePreparedResume(job, p.resume);
   reasons.push(...resume.reasons);
 
+  // 7. PREFERRED SKILLS (0 - PREFERRED_SKILLS_MAX pts). Ranking only: added after eligibility is decided on the base answers.
+  const preferredSkillsScore = scorePreferredSkills(job.skills, p.preferredKeys);
+  if (preferredSkillsScore > 0) reasons.push("Matches your preferred skills");
+
   // Seniority factor: the 100 cap swallows the small experience penalty, so titles far above a mid
   // seeker are scaled after the cap (entry seekers are already hard-filtered above).
   const seniorityFactor = userExp === "mid" ? seniorityFactorForMid(title) : 1;
   if (seniorityFactor < 1) reasons.push("Seniority well above preferred level");
   const totalScore =
-    Math.min(100, roleScore + locationScore + experienceScore + jobTypeScore + recencyScore + resume.score) * seniorityFactor;
+    Math.min(100, roleScore + locationScore + experienceScore + jobTypeScore + recencyScore + resume.score + preferredSkillsScore) * seniorityFactor;
 
   return {
     job,
@@ -945,6 +1030,7 @@ function scorePrepared(job: JobScoringCandidate, p: PreparedAnswers, now: number
       jobTypeScore,
       recencyScore,
       ...(p.resume ? { resumeScore: resume.score } : {}),
+      ...(p.preferredKeys.size ? { preferredSkillsScore } : {}),
     },
     reasons,
   };
@@ -1006,9 +1092,9 @@ export function rankJobsByRecommendation<T extends JobScoringCandidate = JobScor
   }
 
   // Determine eligibility solely from base onboarding answers (resume is a soft score boost only)
-  const base = prepareAnswers({ ...answers!, resumeProfile: undefined });
+  const base = prepareAnswers({ ...answers!, resumeProfile: undefined, preferredSkills: undefined });
   // Without resume signals the full answers score exactly like the base answers, so the base result is reused.
-  const full = hasResumeSignals(answers!.resumeProfile) ? prepareAnswers(answers!) : null;
+  const full = hasResumeSignals(answers!.resumeProfile) || (answers!.preferredSkills?.length ?? 0) > 0 ? prepareAnswers(answers!) : null;
 
   const qualifyingScored: ScoredJobResult[] = [];
   for (const job of jobs) {

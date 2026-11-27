@@ -246,6 +246,13 @@ paths:
       responses:
         "200": { description: Ready }
         "503": { description: Not ready }
+  /api/jobs/capabilities:
+    get:
+      tags: [jobs]
+      summary: Which saved-filter features the server applies right now
+      description: Returns booleans only (no env values, no account data). Edge route, no-store, never cached.
+      responses:
+        "200": { description: Capability flags }
   /api/jobs/pro:
     get:
       tags: [jobs]

@@ -11,3 +11,15 @@ export function workModelLabel(job: { remote?: boolean; remoteScope?: string | n
   if (job.remote || scope === "remote" || scope === "worldwide") return "Remote";
   return "On-site";
 }
+
+/** Compare only visible labels. Never discard a city, regional restriction or additional locations. */
+export function isDuplicateWorkModelLocation(location: string | null | undefined, mode: string, extraLocations = 0): boolean {
+  const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
+  return extraLocations === 0 && !!location?.trim() && normalize(location) === normalize(mode);
+}
+
+export function workModelDetailLabel(job: { remote?: boolean; remoteScope?: string | null; location?: string | null }): string {
+  const mode = workModelLabel(job);
+  const scope = job.remoteScope?.trim();
+  return scope && !["remote", "hybrid", "onsite", "on-site", "on_site", "any"].includes(scope.toLowerCase()) ? `${mode} (${scope})` : mode;
+}
