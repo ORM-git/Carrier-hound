@@ -38,6 +38,8 @@ export interface JobCardContentProps {
   handleSaveJob: (job: LiveJob) => void;
   handleSelectJob: (job: LiveJob) => void;
   handleLockedAction: (event: React.MouseEvent<HTMLElement>) => void;
+  /** Pro list only: called when this card's company logo has nothing left to show (none or all failed). */
+  onLogoUnresolved?: () => void;
 }
 
 /**
@@ -53,7 +55,7 @@ export function cmArrivalAt(job: { firstSeenAt?: unknown } | null | undefined, n
 }
 
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
-export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription, mobilePreviewLogo, mobilePreviewTitle, mobilePreviewCompany }: JobCardContentProps) {
+export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription, mobilePreviewLogo, mobilePreviewTitle, mobilePreviewCompany, onLogoUnresolved }: JobCardContentProps) {
   const mode = workModelLabel(job);
   const canSeeLocation = locationVisible ?? isPro;
   const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
@@ -73,6 +75,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
+                                    onUnresolved={isPro ? onLogoUnresolved : undefined}
                                     domain={job.companyDomain}
                                     className="w-[56px] h-[56px] sm:w-[72px] sm:h-[72px] rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
                                   />
@@ -340,6 +343,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                     applyUrl={job.applyUrl}
                                     logoUrl={job.logoUrl}
                                     companyLogoUrl={job.companyLogoUrl}
+                                    onUnresolved={isPro ? onLogoUnresolved : undefined}
                                     domain={job.companyDomain}
                                     className="w-8 h-8 rounded-lg shrink-0 object-contain p-0.5 border border-[#E2E8F0] bg-white"
                                   />}
