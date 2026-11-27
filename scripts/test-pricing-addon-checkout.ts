@@ -36,6 +36,9 @@ import { POST as orderPost } from "../src/app/api/billing/razorpay/order/route";
 import { POST as verifyPost } from "../src/app/api/billing/razorpay/verify/route";
 import { createHandler as createNetlifyOrderHandler } from "../netlify/functions/billing-razorpay-order";
 
+// Batch1 strict order rate limiter: default-allow stub keeps this suite on its own path. Deny/store-down behavior is covered by src/lib/__tests__/billingRazorpayOrderRouteRateLimit.test.ts and netlifyBillingRazorpayOrderRateLimit.test.ts.
+const allowOrderRateLimit = async () => ({ allowed: true, retryAfter: 0, currentCount: 1, source: "shared" });
+
 const isNegativeControl = process.argv.includes("--negative-control");
 
 if (isNegativeControl) {
@@ -389,6 +392,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: false }),
         isProductionHost: false,
@@ -411,6 +415,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: true, inGracePeriod: true, status: "in_grace_period" }),
         isProductionHost: false,
@@ -433,6 +438,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: null }),
         isProductionHost: false,
@@ -455,6 +461,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: pastPeriodEnd }),
         isProductionHost: false,
@@ -478,6 +485,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -500,6 +508,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -522,6 +531,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -543,6 +553,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_30" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch,
@@ -570,6 +581,7 @@ async function runSuite() {
         body: JSON.stringify({ addonCode: "addon_10" }),
       });
       (req as any).__testDeps = {
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: async () => ({
@@ -599,6 +611,7 @@ async function runSuite() {
     await check("Netlify handler rejects non-Pro user (no subscription) with 403 PRO_REQUIRED", async () => {
       const mock = createMockSupabaseAdmin({ subscription: null });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: false }),
         isProductionHost: false,
@@ -621,6 +634,7 @@ async function runSuite() {
         subscription: { status: "in_grace_period", current_period_end: pastPeriodEnd },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: true, inGracePeriod: true, status: "in_grace_period" }),
         isProductionHost: false,
@@ -643,6 +657,7 @@ async function runSuite() {
         subscription: { status: "active", current_period_end: null },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: null }),
         isProductionHost: false,
@@ -665,6 +680,7 @@ async function runSuite() {
         subscription: { status: "active", current_period_end: pastPeriodEnd },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         getServerEntitlement: async () => ({ isPro: true, status: "active", expirationDate: pastPeriodEnd }),
         isProductionHost: false,
@@ -688,6 +704,7 @@ async function runSuite() {
         subscription: { status: "active", current_period_end: futurePeriodEnd },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch as any,
@@ -710,6 +727,7 @@ async function runSuite() {
         subscription: { status: "active", current_period_end: futurePeriodEnd },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch as any,
@@ -731,6 +749,7 @@ async function runSuite() {
         subscription: { status: "active", current_period_end: futurePeriodEnd },
       });
       const handler = createNetlifyOrderHandler({
+        checkRateLimit: allowOrderRateLimit,
         getSupabaseAdmin: () => mock.client,
         isProductionHost: false,
         fetchFn: mockRazorpayFetch as any,

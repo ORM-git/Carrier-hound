@@ -1104,7 +1104,8 @@ export function detectRemoteEligibility(
   if (country) {
     return 'country_restricted';
   }
-  return 'worldwide';
+  // No geography stated is not worldwide (same as scripts/scraper/fetchers.py _greenhouse_remote_eligibility).
+  return 'unknown';
 }
 
 /**

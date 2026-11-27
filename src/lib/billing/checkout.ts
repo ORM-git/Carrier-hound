@@ -1,5 +1,6 @@
 import { createClient } from "../supabase/client";
 import { openRazorpayCheckout, openRazorpaySubscription as openRazorpaySubscriptionGateway } from "./razorpay";
+import type { PendingPaymentConfirmation } from "./razorpay";
 import type { AutoRenewConsent } from "./types";
 
 export interface CheckoutResult {
@@ -24,6 +25,7 @@ export async function handleProCheckout(
     onStart?: () => void;
     onError?: (errorMsg: string) => void;
     onSuccess?: () => void;
+    onPending?: (payment: PendingPaymentConfirmation) => void;
     onDismiss?: () => void;
   } = {}
 ) {
@@ -34,6 +36,7 @@ export async function handleProCheckout(
     onStart,
     onError,
     onSuccess,
+    onPending,
     onDismiss,
   } = options;
 
@@ -59,6 +62,7 @@ export async function handleProCheckout(
 
   // 2. Open Razorpay checkout modal
   await openRazorpayCheckout({
+    userId: user.id,
     planCode,
     addonCode,
     authToken: session?.access_token,
@@ -73,6 +77,7 @@ export async function handleProCheckout(
     onError: (err: any) => {
       onError?.(err?.message || "Payment processing failed. Please try again.");
     },
+    onPending,
     onDismiss: () => {
       onDismiss?.();
     },
