@@ -188,6 +188,7 @@ export function fixtureJob(i: number, over: Partial<LiveJob> = {}): LiveJob {
     type: "full-time",
     directSource: true,
     applyUrl: `https://careers.fixture-${i}.invalid/apply`,
+    companyDomain: `fixture-${i}.invalid`,
     description: "FIXTURE description.",
     skills: ["SQL"],
     ...over,
