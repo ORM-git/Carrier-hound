@@ -3,7 +3,13 @@
 Research only. No code, no database reads. Read from `main` @ `71339758`, 27 Nov 2026.
 Labels: **from source** = read in this repo at that commit; **unverified** = not checked against data or docs.
 
-## Status (main `61cd5b6e`)
+## Follow-up after the snapshot (27 Nov 2026)
+
+Audit-only PR #856, reviewed at `ebfb08906dd0e8fee1d759096ab00d217972499f`, adds a file-only audit and tests without changing `enrichment.py`. Independent execution checked 560 distinct names from seeds (names and slugs) and named ATS-candidate rows. It found two prefix-only matches, Palantir Technologies and Bosch Group, each mapping to the same company. No false match was found in those inputs. See the candidate's `docs/proposed/row34_alias_audit_result.md` for input limits.
+
+This is candidate review evidence, not a merge, deployment or production-data claim. Runtime aggregator names and unnamed board tokens were not audited. The broader collision question remains unverified, as does provider agency evidence. No agency flag or alias-logic change was made. The historical offline-audit next step below has a reviewed candidate; it should not be treated as work that has not started.
+
+## Historical status (main `61cd5b6e`, superseded where noted above)
 
 - **Partial.** Evidence: there is no agency column (`public.companies` and `jobs` in `supabase/schema.sql`). Aliases live
   in `scripts/scraper/enrichment.py:670` (`COMPANY_ALIASES`), with a prefix fallback at `enrichment.py:792`. The
@@ -42,7 +48,7 @@ evidence per entry) or a provider field. Which one is the owner's decision.
 - **from source**: the TS path has no equivalent alias table. Company identity there is the source's name plus
   `slugify` (`scripts/utils/sanitizer.ts`), so one employer can appear under two spellings across pipelines.
 
-## Suggested next steps (owner to scope)
+## Historical next steps (audit candidate now available)
 
 1. An offline collision audit of the prefix match against repo seeds and fixtures (read-only, file-based).
 2. If an agency flag is wanted: decide curated list vs provider field first; then a NOT APPLIED column proposal.
