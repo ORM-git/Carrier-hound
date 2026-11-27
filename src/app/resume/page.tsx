@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import LoggedInAppShell from "@/components/shell/LoggedInAppShell";
+import MobileResumeDesktopNotice from "@/components/resume/MobileResumeDesktopNotice";
 import ResumeUploadAndConfirm from "@/components/resume/ResumeUploadAndConfirm";
 import {
   getCandidateProfile,
@@ -38,6 +39,8 @@ import {
 function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }) {
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
+      <MobileResumeDesktopNotice />
+      <div className="hidden sm:contents" data-testid="desktop-resume-tools">
       <div className="max-w-[1176px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
           <div className="h-8 w-36 bg-[#E2E8F0] animate-pulse rounded-full" />
@@ -45,7 +48,8 @@ function ResumeSkeleton({ user, isPro }: { user?: User | null; isPro?: boolean }
         </div>
         <div className="h-28 w-full bg-white rounded-[16px] ring-1 ring-[#E2E8F0] animate-pulse" />
       </div>
-          </LoggedInAppShell>
+      </div>
+    </LoggedInAppShell>
   );
 }
 
@@ -222,6 +226,8 @@ export default function ResumePage() {
 
   return (
     <LoggedInAppShell pageLabel="RESUME" user={user} isPro={isPro}>
+      <MobileResumeDesktopNotice />
+      <div className="hidden sm:contents" data-testid="desktop-resume-tools">
       <div className="w-full max-w-[1176px] mx-auto px-4 lg:px-0 py-6 sm:py-8 space-y-6">
         {/* ================================================================= */}
         {/* PAGE HEADER: "RESUME" bold 24px                                   */}
@@ -677,6 +683,7 @@ export default function ResumePage() {
         <ResumeUploadAndConfirm key={`${selectedFile.name}-${selectedFile.lastModified}-${selectedFile.size}`} reviewOnly selectedFile={selectedFile} isPro={isPro} onProfileConfirmed={handleProfileConfirmed} />
       </section>}
 
+      </div>
     </LoggedInAppShell>
   );
 }
