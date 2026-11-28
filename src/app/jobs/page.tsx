@@ -264,9 +264,15 @@ function getCompanyTagPills(category?: string | null): string[] {
 }
 
 // Card score: the same displayMatchScore contract as the detail header and Match Insights.
-function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null, isPro: boolean): number | null {
-  // Numeric score is paid-only (owner, 24 Nov): no server, cached or browser-computed number for guest/Free.
-  if (!isPro) return null;
+function getJobMatchScore(job: LiveJob, candidate: CandidateProfile | null, isPro: boolean, signedIn = true): number | null {
+  // Free (owner, 28 Nov 09:12-09:13): only the server's non-paid-input score (revision tag ".f."), never a browser-computed
+  // fit score and never a stale Pro score. Guests get null from the server, so they show none.
+  if (!isPro) {
+    if (!signedIn) return null;
+    return typeof job.matchScore === "number" && !isNaN(job.matchScore) && typeof job.scoreRevision === "string" && job.scoreRevision.includes(".f.")
+      ? displayMatchScore(job, null)
+      : null;
+  }
   if (typeof job.matchScore === "number" && !isNaN(job.matchScore)) return displayMatchScore(job, null);
   if (!candidate || !candidate.confirmedAt) return null;
   try {
@@ -2451,7 +2457,7 @@ function JobsPageInner() {
                         const isSaved = savedJobIds.includes(job.id);
                         const staggerDelay = Math.min(index * 0.03, 0.3);
                         const diagnostics = cardDiagnosticsMap.get(job.id) ?? getJobDiagnostics(job, candidate);
-                        const matchScore = getJobMatchScore(job, candidate, isPro);
+                        const matchScore = getJobMatchScore(job, candidate, isPro, Boolean(user));
                         const cardZeroSkills = Boolean(diagnostics && diagnostics.matchedSkills && diagnostics.matchedSkills.length === 0);
                         const isRecent = Boolean(job.postedAt && isPostedUnder24Hours(job.postedAt) && isEarlyApplicant(job));
                         const postedRelative = job.postedAt ? formatDesktopPillTime(job.postedAt) : null;

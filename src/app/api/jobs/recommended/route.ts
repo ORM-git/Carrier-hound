@@ -134,6 +134,7 @@ export async function GET(req: Request) {
 
     // Check optional Pro entitlement and user preferences via Bearer token
     let isPro = false;
+    let isSignedIn = false;
     let dbAnswers: OnboardingAnswers = {};
     let displayAnswers: OnboardingAnswers | null = null;
 
@@ -143,6 +144,7 @@ export async function GET(req: Request) {
       try {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token);
         if (user) {
+          isSignedIn = true;
           const entitlement = await getServerEntitlement(user.id);
           isPro = Boolean(entitlement.isPro);
           displayAnswers = await loadDisplayScoreAnswers(supabaseAdmin, user.id, cfEnv);
@@ -604,8 +606,9 @@ export async function GET(req: Request) {
         firstSeenAt: row.first_seen_at ?? null,
         logoUrl: null,
         logo_url: null,
-        // Numeric score is paid-only (owner, 24 Nov): never sent to guest/Free.
-        matchScore: isPro ? sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt) : null,
+        // Signed-in Free gets the onboarding/filter-based score from NON-paid inputs only (owner, 28 Nov 09:12-09:13, phone and laptop);
+        // sharedDisplayScore(..., includePaidInputs=false) never reads description, skills or salary. Guests stay null.
+        matchScore: (isPro || isSignedIn) ? sharedDisplayScore(row, displayAnswers || (isPersonalized || hasResumeSignals(answers.resumeProfile) ? answers : null), isPro, scoredAt) : null,
         scoreRevision: scoreInputRevision(row, false, scoredAt),
       };
     });

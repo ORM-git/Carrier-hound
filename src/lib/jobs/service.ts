@@ -4,7 +4,7 @@ import { normalizeSkillList } from "./skillKey";
 import { isRequiredYearsRangeActive, normalizeRequiredYearsRange } from "./requiredYears";
 import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted, type SavedFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
-import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision } from "../matcher/scoring";
+import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision, clampMatchScore } from "../matcher/scoring";
 import { formatSalary } from "@/lib/salary/parser";
 import type { UserPreferences } from "@/lib/auth/types";
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/jobs/highVolumeEnrichment";
 import {
   rankJobsByRecommendation,
+  scoreJobRecommendation,
   hasOnboardingAnswers,
   buildRelevancePrefilter,
   answersFromCandidate,
@@ -931,6 +932,20 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       }
       // Browser-ranked scores, applied only to rows the server unlocks as Pro (below).
       const rankedScores = new Map<string, number>(data.filter((r: any) => typeof (r.matchScore ?? r._matchScore) === "number").map((r: any) => [r.id, Math.max(10, Math.min(99, Math.round(r.matchScore ?? r._matchScore)))]));
+      // Free score needs a real signed-in session; a guest (or a client-only claim) never gets one.
+      let signedInSession = false;
+      if (!isPro) {
+        try { signedInSession = Boolean((await supabase.auth.getSession())?.data?.session?.access_token); } catch { signedInSession = false; }
+      }
+      const freeCardScore = (row: any): number | null => {
+        if (!signedInSession) return null;
+        const ranked = rankedScores.get(row.id);
+        if (typeof ranked === "number") return ranked;
+        if (!preferences || !hasOnboardingAnswers(preferences as any)) return null;
+        const masked = { ...row, description: undefined, skills: undefined, salary_text: undefined, salary_min: undefined, salary_max: undefined, currency: undefined };
+        const r = scoreJobRecommendation(masked, preferences as any, scoredAt);
+        return typeof r?.score === "number" && Number.isFinite(r.score) ? clampMatchScore(r.score) : null;
+      };
       const mappedJobs: LiveJob[] = data.map((row: any) => {
         const resolvedLogo = (isPro && row.company && row.company !== "Verified Employer")
           ? (row.logo_url || row.logoUrl || row.companies?.logo_url || null)
@@ -966,8 +981,9 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           logoUrl: resolvedLogo,
           logo_url: resolvedLogo,
           scoreRevision: scoreInputRevision(row, isPro, scoredAt),
-          // Numeric score is paid-only: masked rows carry none; a server Pro unlock below sets it. Order is already ranked.
-          matchScore: null,
+          // Pro: set by the server unlock below. Free (owner, 28 Nov): the onboarding/filter score from the same shared scorer
+          // on these masked rows (no description, skills or salary), clamped like the server. Never a browser fit/resume score.
+          matchScore: isPro ? null : freeCardScore(row),
         };
       });
 

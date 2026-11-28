@@ -131,11 +131,24 @@ describe("honest states: never a percentage", () => {
 });
 
 describe("masking", () => {
-  it("Free with a confirmed resume: tiles are masked, no real percentage or match label", () => {
+  it("Free with a confirmed resume but no server Free score: tiles are masked, no real percentage or match label", () => {
     show({ isPro: false });
+    const section = screen.queryByTestId("mobile-match-score");
+    // No Free-tier server number: the breakdown never renders real digits.
+    if (section) expect(section.textContent).not.toMatch(/\d/);
+  });
+
+  it("Free with a server Free-tier score (.f.): overall number and label show, breakdown stays masked", () => {
+    show({ isPro: false, candidate: null, job: { ...job, matchScore: 62, scoreRevision: "v.f.abc" } });
     const section = screen.getByTestId("mobile-match-score");
-    expect(tileTexts(section)).toEqual(["••% Pro Match", "••% Experience Level", "••% Skill", "••% Role Match"]);
-    expect(section.textContent).not.toMatch(/\d/);
+    expect(tileTexts(section)).toEqual(["62% Good match", "••% Experience Level", "••% Skill", "••% Role Match"]);
+  });
+
+  it("Free never shows a stale Pro-tier (.p.) score or a browser fit fallback", () => {
+    show({ isPro: false, job: { ...job, matchScore: 91, scoreRevision: "v.p.abc" } });
+    expect(document.body.textContent).not.toContain("91%");
+    const section = screen.queryByTestId("mobile-match-score");
+    if (section) expect(section.textContent).not.toMatch(/\d/);
   });
 
   it("guest (no candidate): upload prompt only", () => {

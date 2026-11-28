@@ -104,7 +104,8 @@ export function detailJobForEntitlement<T extends { id: string; matchScore?: num
   recall: (snap: string | null, job: T) => number | null = recallMatchScore as any,
 ): T | null {
   if (!selected) return null;
-  if (!isPro) return selected.matchScore == null ? selected : { ...selected, matchScore: null };
+  // Free/guest/downgraded: keep only the server's Free-tier number (revision ".f.", non-paid inputs); drop any Pro, feed-remembered or unversioned score.
+  if (!isPro) return selected.matchScore == null || (typeof selected.scoreRevision === "string" && selected.scoreRevision.includes(".f.")) ? selected : { ...selected, matchScore: null };
   const job = withFeedScore(selected, feed);
   if (typeof job.matchScore === "number") return job;
   const remembered = recall(snap, job);

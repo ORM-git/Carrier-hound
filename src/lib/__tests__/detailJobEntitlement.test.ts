@@ -12,6 +12,11 @@ const feed = [{ id: "j1", matchScore: 91, scoreRevision: "r1" }];
 beforeEach(() => { localStorage.clear(); });
 
 describe("detailJobForEntitlement", () => {
+  it("Free keeps only a Free-tier (.f.) server score and drops Pro-tier or unversioned ones", () => {
+    expect(detailJobForEntitlement({ id: "f1", title: "T", matchScore: 55, scoreRevision: "v.f.x" }, [], false, null)!.matchScore).toBe(55);
+    expect(detailJobForEntitlement({ id: "f2", title: "T", matchScore: 90, scoreRevision: "v.p.x" }, [], false, null)!.matchScore).toBeNull();
+    expect(detailJobForEntitlement({ id: "f3", title: "T", matchScore: 90 }, [], false, null)!.matchScore).toBeNull();
+  });
   it("Free/guest: stale selected-job score is nulled", () => {
     expect(detailJobForEntitlement(sel, [], false, snap)!.matchScore).toBeNull();
   });
