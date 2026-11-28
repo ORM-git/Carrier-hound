@@ -1,3 +1,5 @@
+import { experienceBucketsFor } from "@/lib/jobs/leanList";
+import { extractDescriptionSkills } from "@/lib/matcher/scoring";
 import { createClient } from "../supabase/client";
 import { wireJobType } from "@/lib/jobs/formatJobType";
 import { appendExcludedSkillParams, appendRequiredYearsParams } from "@/lib/preferences/advancedFilters";
@@ -56,6 +58,12 @@ export interface LiveJob {
   directSource: boolean;
   applyUrl: string;
   description?: string;
+  /** Pro list row served without its description (see leanList.ts): the full record comes from getLiveJobById on open. Never true on a detail. */
+  lean?: boolean;
+  /** Experience buckets this row matches, derived server-side from the full text; only on lean rows. */
+  experienceBuckets?: string[];
+  /** Skills evidenced in the description, derived server-side for lean rows (card fit diagnostics input). */
+  descriptionSkills?: string[];
   skills?: string[];
   postedAt?: string;
   /** CM arrival: jobs.first_seen_at (DB default now() on insert, never written by ingestion). Not the employer date. */
@@ -1007,7 +1015,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ ids: mappedJobs.map((j) => j.id) }),
+                body: JSON.stringify({ ids: mappedJobs.map((j) => j.id), lean: true }),
               });
             } catch (netErr: any) {
               log.error(`[API /jobs/pro error]: Network failure during batch Pro unlock (${netErr?.message || "fetch failed"})`);
@@ -1036,7 +1044,19 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                         job.salary_original = u.salary_original || null;
                       }
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
-                      if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
+                      // Lean batch (requested above): the server omits the description and sends the Experience buckets.
+                      // An older server that still sends it is handled the same way: buckets derived here, description dropped.
+                      if (u.lean === true && Array.isArray(u.experienceBuckets)) {
+                        job.experienceBuckets = u.experienceBuckets;
+                        if (Array.isArray(u.descriptionSkills)) job.descriptionSkills = u.descriptionSkills;
+                        job.lean = true;
+                        job.description = "";
+                      } else if (u.description || u.skills) {
+                        job.experienceBuckets = experienceBucketsFor({ title: job.title, description: u.description, skills: u.skills || job.skills });
+                        job.descriptionSkills = extractDescriptionSkills(u.description, job.category);
+                        job.lean = true;
+                        job.description = "";
+                      }
                       if (u.skills) job.skills = u.skills;
                       if (Array.isArray(u.top_keywords) && u.top_keywords.length > 0) {
                         job.top_keywords = u.top_keywords.slice(0, 8);
@@ -1125,7 +1145,21 @@ export function keepSameJobLogoIdentity(detail: LiveJob, listing: LiveJob | null
   };
 }
 
+const detailInFlight = new Map<string, Promise<LiveJob | null>>();
+
+/** Concurrent detail requests for the same job and tier share one network round trip (select + refresh effect). */
 export async function getLiveJobById(jobId: string, isPro: boolean = false): Promise<LiveJob | null> {
+  const key = `${isPro ? "pro" : "free"}:${(jobId || "").trim()}`;
+  let pending = detailInFlight.get(key);
+  if (!pending) {
+    pending = loadLiveJobById(jobId, isPro).finally(() => { detailInFlight.delete(key); });
+    detailInFlight.set(key, pending);
+  }
+  const job = await pending;
+  return job ? { ...job } : job;
+}
+
+async function loadLiveJobById(jobId: string, isPro: boolean = false): Promise<LiveJob | null> {
   // One reference instant per response: every score and revision below is computed at it.
   const scoredAt = Date.now();
   if (!jobId || !jobId.trim()) return null;

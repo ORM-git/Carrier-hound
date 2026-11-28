@@ -39,6 +39,7 @@ import { FAILED_LOGO_TTL_MS } from "@/components/CompanyLogo";
 
 /** Extra network pages (one per automatic continuation) allowed per empty-feed incident under the #44 policy. */
 const MAX_AUTO_HIDDEN_FETCHES = 3;
+import { jobMatchesExperience } from "@/lib/jobs/leanList";
 import { computeFitDiagnostics, FitDiagnosticsResult, compareByRecommendedRanking, shouldApplyRecommendedRanking, displayMatchScore, toFitInput } from "@/lib/matcher/scoring";
 import { detailJobForEntitlement, matchScoreSnapshot, reconcileFeedWithDetail, rememberMatchScores } from "@/lib/matcher/scoreCache";
 import type { User } from "@supabase/supabase-js";
@@ -758,6 +759,11 @@ function JobsPageInner() {
       const qSort = params.get("sort") || params.get("sortBy");
       const qId = params.get("id") || params.get("jobId");
 
+      // Every history step starts a new selection: a detail still loading for an earlier step must not land on this one.
+      const popToken = jobSelectionGateRef.current!.begin();
+      const popStillCurrent = () => jobSelectionGateRef.current!.isCurrent(popToken)
+        && (new URLSearchParams(window.location.search).get("id") || new URLSearchParams(window.location.search).get("jobId")) === qId;
+
       yearsEpoch.current++;
       setSelectedYears(yearsFromUrlParam(params.get("years")));
       setSearch(qSearch);
@@ -789,7 +795,8 @@ function JobsPageInner() {
 
       if (qId) {
         pendingJobIdRef.current = qId;
-        const found = liveJobs.find((j) => j.id === qId);
+        // A lean list row is not a detail: Back/Forward onto it loads the full record like a row that is not on the page.
+        const found = liveJobs.find((j) => j.id === qId && !j.lean);
         if (found) {
           pendingJobIdRef.current = null;
           setDetailLoading(false);
@@ -800,6 +807,7 @@ function JobsPageInner() {
           setDetailStatus(null);
           getLiveJobById(qId, isPro)
             .then((job) => {
+              if (!popStillCurrent()) return;
               pendingJobIdRef.current = null;
               setDetailLoading(false);
               if (job) {
@@ -812,6 +820,7 @@ function JobsPageInner() {
               }
             })
             .catch(() => {
+              if (!popStillCurrent()) return;
               pendingJobIdRef.current = null;
               setDetailLoading(false);
               setDetailStatus("not-found");
@@ -832,6 +841,12 @@ function JobsPageInner() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [liveJobs, isPro]);
+
+  // Leaving the page cancels any selection still loading, so a late detail never lands on an unmounted page.
+  useEffect(() => {
+    const gate = jobSelectionGateRef.current!;
+    return () => gate.cancel();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1520,20 +1535,8 @@ function JobsPageInner() {
 
     if (selectedExperience) {
       result = result.filter((job) => {
-        const text = `${job.title} ${job.description || ""} ${(job.skills || []).join(" ")}`.toLowerCase();
-        if (selectedExperience === "1-3 Years") {
-          return text.includes("1-3") || text.includes("1 to 3") || text.includes("entry") || text.includes("junior");
-        }
-        if (selectedExperience === "3-5 Years") {
-          return text.includes("3-5") || text.includes("3 to 5") || text.includes("mid") || !text.includes("senior");
-        }
-        if (selectedExperience === "5+ Years") {
-          return text.includes("5+") || text.includes("5 years") || text.includes("senior") || text.includes("lead");
-        }
-        if (selectedExperience === "8+ Years") {
-          return text.includes("8+") || text.includes("8 years") || text.includes("staff") || text.includes("principal");
-        }
-        return true;
+        // Same rules as before; a lean Pro row carries the server-derived buckets instead of the description.
+        return jobMatchesExperience(job, selectedExperience);
       });
     }
 
@@ -1899,14 +1902,14 @@ function JobsPageInner() {
       );
     }
     // Fetch full job record with description if missing, short, or has unlock error
-    if (!job.description || job.description.length < 50 || job.proUnlockError) {
+    if (job.lean || !job.description || job.description.length < 50 || job.proUnlockError) {
       try {
         const fullJob = await getLiveJobById(job.id, isPro);
         if (fullJob && jobSelectionGateRef.current!.isCurrent(selectionToken)) {
           if (typeof job.matchScore === "number" && fullJob.scoreRevision && fullJob.scoreRevision === job.scoreRevision) {
             fullJob.matchScore = job.matchScore;
           }
-          setSelectedJob(keepSameJobLogoIdentity(fullJob, job));
+          setSelectedJob(keepSameJobLogoIdentity({ ...fullJob, lean: false, experienceBuckets: undefined }, job));
         }
       } catch {}
     }
@@ -1994,7 +1997,7 @@ function JobsPageInner() {
     let cancelled = false;
     getLiveJobById(id, isPro).then((fresh) => {
       if (cancelled || !fresh) return;
-      setSelectedJob((current) => current?.id === id ? keepSameJobLogoIdentity({ ...current, ...fresh }, current) : current);
+      setSelectedJob((current) => current?.id === id ? keepSameJobLogoIdentity({ ...current, ...fresh, lean: false, experienceBuckets: undefined }, current) : current);
     }).catch((error) => console.warn("Failed to refresh selected job score:", error));
     return () => { cancelled = true; };
     // selectedJob identity, rather than the full object, avoids a refresh loop after the result is set.

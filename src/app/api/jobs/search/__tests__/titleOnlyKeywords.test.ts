@@ -103,3 +103,30 @@ describe("search route keywords: non-Pro is title-only", () => {
     }
   });
 });
+
+describe("row 72: Pro search list is lean, the single-job detail stays complete", () => {
+  it("Pro list row: empty description, lean flag, derived buckets, skills/applyUrl/score kept; detail carries the full description", async () => {
+    const list = await (await search(req("http://localhost/api/jobs/search", "tok-pro"))).json();
+    const row = list.jobs.find((j: any) => j.id === ID);
+    expect(row.description).toBe("");
+    expect(row.lean).toBe(true);
+    expect(row.experienceBuckets).toContain("5+ Years");
+    expect(row.skills).toEqual(["TypeScript"]);
+    expect(row.applyUrl).toBe(JOB.apply_url);
+    expect(typeof row.scoreRevision).toBe("string");
+    const detail = await (await search(req(`http://localhost/api/jobs/search?id=${ID}`, "tok-pro"))).json();
+    const d = detail.jobs?.[0] ?? detail.job ?? detail;
+    expect(d.description).toBe(JOB.description);
+    expect(d.lean).toBeUndefined();
+    expect(d.scoreRevision).toBe(row.scoreRevision);
+  });
+  it("guest and Free list rows carry no lean fields", async () => {
+    for (const token of [undefined, "tok-free"]) {
+      const list = await (await search(req("http://localhost/api/jobs/search", token))).json();
+      const row = list.jobs.find((j: any) => j.id === ID);
+      expect(row.lean).toBeUndefined();
+      expect(row.experienceBuckets).toBeUndefined();
+      expect(row.description).toBe("");
+    }
+  });
+});

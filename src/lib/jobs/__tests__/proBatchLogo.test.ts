@@ -157,3 +157,41 @@ describe("For You resume pagination metadata", () => {
     expect(res.nextCursor).toBeNull();
   });
 });
+
+describe("row 72: the Pro batch unlock is lean on the wire (feed) and still full by default", () => {
+  const LONG = "Senior role. Build Kotlin and Android apps with 5+ years of experience, working across mobile, design and backend teams every single day.";
+  beforeEach(() => { db.jobs = db.jobs.map((j) => ({ ...j, description: LONG })); });
+
+  it("the feed asks for lean and the response body carries no description (real POST handler)", async () => {
+    let raw = "";
+    const inner = proResponder;
+    proResponder = async (req) => {
+      const sent = JSON.parse(await req.clone().text());
+      expect(sent.lean).toBe(true);
+      const res = await inner(req);
+      raw = await res.clone().text();
+      return res;
+    };
+    const { jobs } = await forYou();
+    expect(raw).not.toContain("Build Kotlin and Android apps");
+    for (const j of jobs) {
+      expect(j.description).toBe("");
+      expect(j.lean).toBe(true);
+      expect(j.experienceBuckets).toContain("5+ Years");
+      expect(j.descriptionSkills).toEqual(expect.arrayContaining(["Kotlin"]));
+      expect(j.applyUrl).toBeTruthy();
+      expect(typeof j.scoreRevision).toBe("string");
+    }
+  });
+
+  it("without the lean flag the same handler still returns the full description (default unchanged)", async () => {
+    const res = await POST(new Request("http://localhost/api/jobs/pro", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer fixture-token" },
+      body: JSON.stringify({ ids: [QONTO_JOB.id] }),
+    }));
+    const body = await res.json();
+    expect(body.jobs[0].description).toBe(LONG);
+    expect(body.jobs[0].lean).toBeUndefined();
+  });
+});
