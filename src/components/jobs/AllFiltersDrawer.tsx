@@ -69,8 +69,11 @@ export default function AllFiltersDrawer({
     };
     measure();
     const panel = panelRef.current;
-    const ro = typeof ResizeObserver !== "undefined" && panel ? new ResizeObserver(measure) : null;
-    if (ro && panel) ro.observe(panel);
+    let ro: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== "undefined" && panel) {
+      ro = new ResizeObserver(measure);
+      ro.observe(panel);
+    }
     window.addEventListener("resize", measure);
     return () => { ro?.disconnect(); window.removeEventListener("resize", measure); };
   }, [isOpen]);
@@ -296,7 +299,7 @@ export default function AllFiltersDrawer({
   return (
     <>
       {/* Dimmed backdrop */}
-      <div className="fixed inset-0 bg-[#0F172A]/50 z-[70] backdrop-blur-xs transition-opacity" onClick={onClose} aria-hidden="true" />
+      <div className="fixed inset-0 bg-[#0F172A]/50 z-[70] backdrop-blur-xs transition-opacity" onClick={onClose} role="presentation" aria-hidden="true" />
 
       {/* Drawer container (872px on wide desktop) */}
       <div
