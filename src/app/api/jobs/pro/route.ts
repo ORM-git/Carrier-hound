@@ -1,3 +1,4 @@
+import { classifyApplyDestination } from "@/lib/jobs/applyDestination";
 import { leanProListFields } from "@/lib/jobs/leanList";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
@@ -251,6 +252,7 @@ export async function GET(req: Request) {
           const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
           return {
             ...j,
+            applyDestination: classifyApplyDestination(j.apply_url),
             companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
             description: resolvedDesc,
             scoreRevision: scoreInputRevision(j, true, scoredAt),
@@ -314,6 +316,7 @@ export async function GET(req: Request) {
       is_expired: isInactive,
       status: isInactive ? "expired" : (row.status || "active"),
       apply_url: isInactive ? "" : job.apply_url,
+      applyDestination: classifyApplyDestination(isInactive ? "" : job.apply_url),
     };
 
     return NextResponse.json({ job: formattedJob, isPro: true });
@@ -401,6 +404,7 @@ export async function POST(req: Request) {
       const resolvedDesc = resolveDescription(j.description, descMap.get(j.id));
       return {
         ...j,
+        applyDestination: classifyApplyDestination(j.apply_url),
       companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
         ...(leanBatch
           ? leanProListFields({ title: j.title, description: resolvedDesc, skills: j.skills, category: j.category })
