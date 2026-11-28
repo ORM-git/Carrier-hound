@@ -1,4 +1,5 @@
 import { createClient } from "../supabase/client";
+import { wireJobType } from "@/lib/jobs/formatJobType";
 import { appendExcludedSkillParams, appendRequiredYearsParams } from "@/lib/preferences/advancedFilters";
 import { normalizeSkillList } from "./skillKey";
 import { isRequiredYearsRangeActive, normalizeRequiredYearsRange } from "./requiredYears";
@@ -971,7 +972,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
-          type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
+          type: wireJobType(row.job_type),
           directSource: Boolean(row.verified),
           applyUrl: "",
           description: "",
@@ -1170,7 +1171,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
                 remoteScope: job.remote_scope || undefined,
                 remoteEligibility: job.remote_eligibility || undefined,
                 country: job.country || job.country_code || "",
-                type: job.job_type === "internship" ? "Internship" : "Full-time",
+                type: wireJobType(job.job_type),
                 directSource: Boolean(job.verified ?? true),
                 applyUrl: isInactive ? "" : (sanitizeExternalUrl(job.apply_url) || ""),
                 description: stripHtmlAndExecutableMarkup(job.description || ""),
@@ -1292,7 +1293,7 @@ export async function getLiveJobById(jobId: string, isPro: boolean = false): Pro
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : "Full-time",
+        type: wireJobType(row.job_type),
         directSource: Boolean(row.verified),
         applyUrl: "",
         description: "",
@@ -1380,7 +1381,7 @@ async function loadAllActiveJobs(): Promise<LiveJob[]> {
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : "Full-time",
+        type: wireJobType(row.job_type),
         directSource: Boolean(row.verified),
         applyUrl: "",
         description: "",
