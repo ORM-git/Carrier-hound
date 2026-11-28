@@ -68,6 +68,7 @@ function createMockSupabaseClient(db: MockDb) {
       let filterRecipientEmail: string | null = null;
       let filterGteSentAt: string | null = null;
       let filterGtCreatedAt: string | null = null;
+      let neqFilters: Array<[string, string]> = [];
       let isCountHead: boolean = false;
       let limitCount: number = 100;
       let orderCol: string | null = null;
@@ -95,6 +96,10 @@ function createMockSupabaseClient(db: MockDb) {
         },
         in: (col: string, vals: any[]) => {
           if (col === "source") filterSources = vals.map(String);
+          return queryBuilder;
+        },
+        neq: (col: string, val: any) => {
+          neqFilters.push([col, String(val)]);
           return queryBuilder;
         },
         gt: (col: string, val: any) => {
@@ -127,6 +132,7 @@ function createMockSupabaseClient(db: MockDb) {
               if (filterId && item.id !== filterId) continue;
               if (filterSource && item.source !== filterSource) continue;
               if (filterSources && !filterSources.includes(item.source)) continue;
+              if (neqFilters.some(([c, v]) => String((item as any)[c]) === v)) continue;
               if (filterEventId && item.event_id !== filterEventId) continue;
               if (filterStatus && item.status !== filterStatus) continue;
               return { data: { ...item }, error: null };
@@ -244,6 +250,7 @@ function createMockSupabaseClient(db: MockDb) {
             }
             if (filterEventId) list = list.filter((i) => i.event_id === filterEventId);
             if (filterLteRetry) list = list.filter((i) => i.next_retry_at <= filterLteRetry!);
+            for (const [c, v] of neqFilters) list = list.filter((i) => String((i as any)[c]) !== v);
             list = list.slice(0, limitCount);
             return Promise.resolve({ data: list, error: null }).then(resolve, reject);
           }

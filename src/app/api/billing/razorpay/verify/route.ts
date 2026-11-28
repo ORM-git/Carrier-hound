@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRazorpayKeyMode } from "@/lib/billing/mode";
+import { recordFailedEvent } from "@/lib/events/failedEvents";
 import { rpcWithRetry } from "@/lib/db/rpcRetry";
 import { getRuntimeEnv } from "@/lib/ai/serviceHandler";
 
@@ -413,6 +414,23 @@ export async function POST(req: Request) {
 
     if (fulfilErr) {
       log.error("Payment fulfillment RPC error", { error: fulfilErr.message });
+      // Record-only incident: a captured payment whose fulfilment RPC threw must not be lost.
+      // Recorder failure NEVER changes this response (same shape as the webhook handler).
+      try {
+        await recordFailedEvent({
+          source: "razorpay_verify",
+          eventId: `verify:${serverMode}:${paymentId}`,
+          payload: {
+            order_id: orderId,
+            user_id: user.id,
+            mode: serverMode,
+            plan_code: orderRow.plan_code,
+            addon_code: orderRow.addon_code,
+          },
+          error: fulfilErr,
+          supabaseClient: supabaseAdmin,
+        });
+      } catch (_) {}
       return NextResponse.json(
         { error: "Payment fulfillment failed", code: "FULFILLMENT_FAILED" },
         { status: 500 }
@@ -420,6 +438,29 @@ export async function POST(req: Request) {
     }
 
     if (!fulfilRes || !fulfilRes.success) {
+      // Genuinely-paid short-circuit: never recorded. already_paid is an idempotent success,
+      // and ORDER_INVALID_STATE with the in-scope order row already "paid" means a sibling
+      // path (webhook) fulfilled first - not an incident.
+      const genuinelyPaid =
+        Boolean(fulfilRes?.already_paid) ||
+        (fulfilRes?.code === "ORDER_INVALID_STATE" && orderRow.status === "paid");
+      if (!genuinelyPaid) {
+        try {
+          await recordFailedEvent({
+            source: "razorpay_verify",
+            eventId: `verify:${serverMode}:${paymentId}`,
+            payload: {
+              order_id: orderId,
+              user_id: user.id,
+              mode: serverMode,
+              plan_code: orderRow.plan_code,
+              addon_code: orderRow.addon_code,
+            },
+            error: fulfilRes?.error || "fulfil_payment_order returned unsuccessful",
+            supabaseClient: supabaseAdmin,
+          });
+        } catch (_) {}
+      }
       return NextResponse.json(
         { error: fulfilRes?.error || "Payment fulfillment failed", code: fulfilRes?.code || "FULFILLMENT_FAILED" },
         { status: fulfilRes?.code === "PRO_REQUIRED" ? 403 : 400 }

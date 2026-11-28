@@ -31,7 +31,7 @@ const ALLOWLIST = new Set([
   "src/lib/resume/storage.ts:155",
   "src/lib/tracker/storage.ts:133",
   "src/lib/cron/digestStorage.ts:61",
-  "src/lib/events/failedEvents.ts:626",
+  "src/lib/events/failedEvents.ts:662",
 ]);
 
 const STAR_RE = /\.select\(\s*(["'`])\*\1\s*\)/g;
