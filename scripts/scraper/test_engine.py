@@ -711,6 +711,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         calls: list[tuple[str, str]] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
+            if "salary_annual_min" in str(request.url):
+                return httpx.Response(400, json={})  # salary-normalization column probe: columns absent
             calls.append((request.method, request.url.path))
             if request.method == "GET" and len([c for c in calls if c[0] == "GET"]) == 2:
                 return httpx.Response(503, json={"error": "lookup unavailable"})
@@ -737,6 +739,8 @@ class HighVolumeIngestionEngineTests(unittest.TestCase):
         calls: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
+            if "salary_annual_min" in str(request.url):
+                return httpx.Response(400, json={})  # salary-normalization column probe: columns absent
             calls.append(request.method)
             if request.method == "GET":
                 return httpx.Response(200, json=[])
