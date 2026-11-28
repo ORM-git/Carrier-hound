@@ -2165,7 +2165,7 @@ function JobsPageInner() {
           className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 pb-4 md:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
           {detailLoading ? (
-            <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">
+            <div data-testid="job-detail-skeleton" className="max-w-[880px] lg:max-w-[1240px] w-full mx-auto space-y-4 animate-pulse">
               <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-slate-200" />
@@ -2210,7 +2210,7 @@ function JobsPageInner() {
             </div>
           ) : selectedJob ? (
             /* In-place job detail swap inside the same shell */
-            <div className="max-w-[880px] w-full mx-auto">
+            <div className="max-w-[880px] lg:max-w-[1240px] w-full mx-auto">
               <JobDetailView
                 job={detailJob ?? selectedJob}
                 candidate={candidate}

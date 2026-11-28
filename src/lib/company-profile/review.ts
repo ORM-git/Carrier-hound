@@ -36,6 +36,7 @@ function companySection(plan: CanaryPlan, company: CanaryCompanyPlan): string[] 
     `- Enabled ATS boards: ${company.ats_boards.length ? company.ats_boards.map((b) => `${cell(b.ats_type)}:${cell(b.slug)} (\`${b.id}\`)`).join(", ") : "none"}`,
     `- Freshness before: ${company.freshness.status}${company.freshness.should_refresh ? " (refresh due)" : ""}`,
     `- Outcome: **${company.outcome}**. ${OUTCOME[company.outcome]}${company.error ? ` Error (redacted): \`${cell(company.error)}\`` : ""}`,
+    ...(company.wikidata ? [`- Wikidata: **${company.wikidata.outcome}**${company.wikidata.entity_id ? ` (https://www.wikidata.org/wiki/${company.wikidata.entity_id}; identity = official website P856 equals the stored domain; fills only keys no official source covers)` : company.wikidata.outcome === "ambiguous" ? " (more than one entity claims this domain; nothing used)" : company.wikidata.outcome === "no_match" ? " (no entity whose official website is this domain; nothing used)" : ""}${company.wikidata.error ? ` Error (redacted): \`${cell(company.wikidata.error)}\`` : ""}`] : []),
     `- Current rows: ${company.current.company_profile_facts.length} facts, ${company.current.company_profile_leadership.length} leaders, ${company.current.company_profile_news.length} news, ${company.current.company_profile_refresh_state.length} refresh state`,
     "",
     `### Sources fetched (${sources.length})`,
