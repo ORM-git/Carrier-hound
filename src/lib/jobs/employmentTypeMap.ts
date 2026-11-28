@@ -15,6 +15,7 @@ const SYNONYMS: Record<string, CanonicalJobType> = {
   fulltime: "full-time",
   permanent: "full-time",
   "part time": "part-time",
+  parttime: "part-time", // Ashby employmentType "PartTime" (documented enum)
   contractor: "contract",
   freelance: "contract",
   intern: "internship",
