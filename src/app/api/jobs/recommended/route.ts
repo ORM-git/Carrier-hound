@@ -1,3 +1,4 @@
+import { classifyApplyDestination } from "@/lib/jobs/applyDestination";
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
 import { wireJobType } from "@/lib/jobs/formatJobType";
 import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
@@ -571,6 +572,7 @@ export async function GET(req: Request) {
           type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
+          applyDestination: classifyApplyDestination(row.apply_url || ""),
           // Derived from the FULL row BEFORE the lean strip (the client used to compute these from the row's own skills/description).
           role_category: row.role_category || detectRoleCategory(row.title || "Untitled Position", row.category || "engineering", row.skills),
           top_keywords: Array.isArray(row.top_keywords) && row.top_keywords.length > 0
@@ -608,6 +610,7 @@ export async function GET(req: Request) {
         type: wireJobType(row.job_type),
         directSource: Boolean(row.verified ?? true),
         applyUrl: "",
+        applyDestination: classifyApplyDestination(""),
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
