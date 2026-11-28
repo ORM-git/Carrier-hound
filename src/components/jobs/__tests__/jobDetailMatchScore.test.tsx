@@ -151,6 +151,27 @@ describe("masking", () => {
     if (section) expect(section.textContent).not.toMatch(/\d/);
   });
 
+  it("desktop: Free with a server Free-tier score (.f.) shows the overall number and label, sub-scores stay masked", () => {
+    show({ isPro: false, candidate: null, job: { ...job, matchScore: 62, scoreRevision: "v.f.abc" } });
+    const desktop = screen.getByTestId("desktop-match-score");
+    expect(desktop.textContent).toContain("62%");
+    expect(desktop.textContent).toContain("Good match");
+    for (const label of ["Experience Level", "Skill", "Role Match"]) {
+      const row = within(desktop).getByText(label).parentElement as HTMLElement;
+      expect(row.textContent).toContain("••%");
+      expect(row.textContent).not.toMatch(/\d/);
+    }
+  });
+
+  it("desktop: Free never shows a stale Pro-tier (.p.) server score, and with no server score there is no card", () => {
+    show({ isPro: false, candidate: null, job: { ...job, matchScore: 91, scoreRevision: "v.p.abc" } });
+    expect(document.body.textContent).not.toContain("91%");
+    expect(screen.queryByTestId("desktop-match-score")).toBeNull();
+    cleanup();
+    show({ isPro: false, candidate: null, job: { ...job, matchScore: null } });
+    expect(screen.queryByTestId("desktop-match-score")).toBeNull();
+  });
+
   it("guest (no candidate): upload prompt only", () => {
     show({ candidate: null, isPro: false });
     expect(screen.queryByTestId("mobile-match-score")).toBeNull();
