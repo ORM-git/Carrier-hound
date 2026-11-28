@@ -35,5 +35,13 @@ check(
   (SUITES as { name: string }[]).some((s) => s.name.startsWith("scripts/test-rpc-retry.ts"))
 );
 
+// 4. The apply-link checker suite is registered and classified offline (runs under deny-network).
+check(
+  "apply-link checker suite registered as offline",
+  (SUITES as { name: string; classification?: string }[]).some(
+    (s) => s.name === "scripts/test-apply-link-checker.ts" && s.classification === "offline"
+  )
+);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

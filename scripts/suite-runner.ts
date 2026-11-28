@@ -154,6 +154,7 @@ export const SUITES: SuiteSpec[] = [
   { name: "scripts/test-backfill-company-logos.ts", command: "npx tsx scripts/test-backfill-company-logos.ts", classification: "offline" },
   { name: "scripts/test-company-logos-and-caps.ts", command: "npx tsx scripts/test-company-logos-and-caps.ts", classification: "offline" },
   { name: "scripts/test-logo-resolver-ssrf.ts", command: "npx tsx scripts/test-logo-resolver-ssrf.ts", classification: "offline" },
+  { name: "scripts/test-apply-link-checker.ts", command: "npx tsx scripts/test-apply-link-checker.ts", classification: "offline" },
   { name: "scripts/test-ai-fallback-and-cover-letter.ts", command: "npx tsx scripts/test-ai-fallback-and-cover-letter.ts", classification: "offline" },
   { name: "scripts/test-ai-idempotency-replay.ts", command: "npx tsx scripts/test-ai-idempotency-replay.ts", classification: "offline" },
   { name: "scripts/test-global-ai-budget.ts", command: "npx tsx scripts/test-global-ai-budget.ts", classification: "offline" },

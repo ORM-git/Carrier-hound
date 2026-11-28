@@ -1,285 +1,168 @@
 /**
- * CareerMonke Read-Only Apply Links Checker
- * Run with: npx tsx scripts/check-apply-links.ts
+ * CareerMonke read-only Apply-link TRANSPORT checker.
+ *
+ *   npx tsx scripts/check-apply-links.ts --fixture <file.json> [--seed <int>]   (fully offline)
+ *   npx tsx scripts/check-apply-links.ts --db [--seed <int>]                    (opt-in, SELECT-only)
+ *
+ * "Reachable" means the final hop answered HTTP 2xx. It is not proof that the job is open,
+ * that the page is the right posting, or that the company matches.
+ *
+ * Exit codes (see EXIT in scripts/lib/apply-link-checker.ts):
+ *   0 all sampled links transport-reachable · 1 failed findings (404/410, other 4xx, unsafe URL,
+ *   redirect loop/limit) · 2 no failures but indeterminate results (401/403/429/challenge, 5xx,
+ *   timeout, transport error) · 3 not run / evidence unavailable. Nothing but 0 prints a reachable verdict.
+ *
+ * Fixture file: { "jobs": ApplyJob[], "dns": { host: address }, "responses": { "HEAD https://x/y": { "status": 200,
+ *   "headers": { "location": "..." } } } }. Fixture mode never touches the network or the database.
  */
 
-import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
+import * as fs from "fs";
+import {
+  checkJobs,
+  exitCodeFor,
+  sampleJobs,
+  EXIT,
+  OUTCOME,
+  type ApplyJob,
+  type CheckResult,
+  type CheckerDeps,
+  type FetchFn,
+} from "./lib/apply-link-checker";
 
-import { createClient } from "@supabase/supabase-js";
+const SAMPLE_SIZE = 100;
+// shortcut: DB universe is a bounded window ordered by id, not the whole table; widen only with a reviewed, indexed query.
+const DB_WINDOW = 100;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.log("NOT RUN: Supabase URL or Key not configured in environment.");
-  process.exit(0);
+interface Input {
+  universe: ApplyJob[];
+  universeLabel: string;
+  deps: Pick<CheckerDeps, "fetch" | "lookup">;
 }
 
-const client = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-interface CheckResult {
-  id: string;
-  title: string;
-  company: string;
-  url: string;
-  status: number | null;
-  category: "2xx" | "3xx_final_2xx" | "4xx" | "5xx" | "timeout" | "error";
-  durationMs: number;
-  error?: string;
-  redirected?: boolean;
+class NotRun extends Error {}
+function notRun(reason: string): never {
+  throw new NotRun(reason);
 }
 
-// Concurrency control: max 5 parallel
-const MAX_CONCURRENCY = 5;
-// 1s delay per host
-const hostLastRequestMap = new Map<string, number>();
-
-async function throttleHost(urlStr: string): Promise<void> {
+function loadFixture(path: string): Input {
+  let fx: {
+    jobs?: ApplyJob[];
+    dns?: Record<string, string>;
+    responses?: Record<string, { status: number; headers?: Record<string, string> }>;
+  };
   try {
-    const parsed = new URL(urlStr);
-    const host = parsed.hostname;
-    const now = Date.now();
-    const last = hostLastRequestMap.get(host) || 0;
-    const elapsed = now - last;
-    if (elapsed < 1000) {
-      await new Promise((r) => setTimeout(r, 1000 - elapsed));
-    }
-    hostLastRequestMap.set(host, Date.now());
-  } catch (_) {}
-}
-
-async function checkUrl(job: { id: string; title: string; company: string; apply_url: string }): Promise<CheckResult> {
-  const url = job.apply_url;
-  const startTime = Date.now();
-
-  await throttleHost(url);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    // 1. Try HEAD request
-    let resp: Response;
-    let redirected = false;
-
-    try {
-      resp = await fetch(url, {
-        method: "HEAD",
-        redirect: "follow",
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-      });
-      redirected = resp.redirected;
-    } catch (err: any) {
-      if (err.name === "AbortError") {
-        clearTimeout(timeoutId);
-        return {
-          id: job.id,
-          title: job.title,
-          company: job.company,
-          url,
-          status: null,
-          category: "timeout",
-          durationMs: Date.now() - startTime,
-          error: "Request timed out after 10000ms",
-        };
-      }
-      throw err;
-    }
-
-    // 2. Fallback to GET on 405 Method Not Allowed or 400 Bad Request
-    if (resp.status === 405 || resp.status === 400) {
-      const getController = new AbortController();
-      const getTimeout = setTimeout(() => getController.abort(), 10000);
-      try {
-        resp = await fetch(url, {
-          method: "GET",
-          redirect: "follow",
-          signal: getController.signal,
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-        });
-        redirected = resp.redirected;
-      } finally {
-        clearTimeout(getTimeout);
-      }
-    }
-
-    clearTimeout(timeoutId);
-    const durationMs = Date.now() - startTime;
-    const status = resp.status;
-
-    if (status >= 200 && status < 300) {
-      return {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        url,
-        status,
-        category: redirected ? "3xx_final_2xx" : "2xx",
-        durationMs,
-        redirected,
-      };
-    } else if (status >= 400 && status < 500) {
-      return {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        url,
-        status,
-        category: "4xx",
-        durationMs,
-      };
-    } else if (status >= 500) {
-      return {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        url,
-        status,
-        category: "5xx",
-        durationMs,
-      };
-    } else {
-      return {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        url,
-        status,
-        category: "error",
-        durationMs,
-      };
-    }
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    const durationMs = Date.now() - startTime;
-    if (err.name === "AbortError") {
-      return {
-        id: job.id,
-        title: job.title,
-        company: job.company,
-        url,
-        status: null,
-        category: "timeout",
-        durationMs,
-        error: "Request timed out after 10000ms",
-      };
-    }
-    return {
-      id: job.id,
-      title: job.title,
-      company: job.company,
-      url,
-      status: null,
-      category: "error",
-      durationMs,
-      error: err.message || String(err),
-    };
+    fx = JSON.parse(fs.readFileSync(path, "utf8"));
+  } catch (e) {
+    notRun(`cannot read fixture ${path}: ${(e as Error).message}`);
   }
+  if (!Array.isArray(fx.jobs)) notRun(`fixture ${path} has no "jobs" array`);
+  const dns = fx.dns ?? {};
+  const responses = fx.responses ?? {};
+  const fetch: FetchFn = async (url, init) => {
+    const r = responses[`${init.method} ${url}`];
+    if (!r) throw new TypeError(`fixture has no response for ${init.method} ${url}`);
+    return new Response(null, { status: r.status, headers: r.headers });
+  };
+  const lookup = async (host: string) => {
+    if (!dns[host]) throw new Error(`fixture DNS: ENOTFOUND ${host}`);
+    return [{ address: dns[host], family: dns[host].includes(":") ? 6 : 4 }];
+  };
+  return { universe: fx.jobs, universeLabel: `all ${fx.jobs.length} jobs in fixture ${path}`, deps: { fetch, lookup } };
 }
 
-async function runPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = [];
-  let index = 0;
-
-  async function worker() {
-    while (index < items.length) {
-      const curIndex = index++;
-      results[curIndex] = await fn(items[curIndex]);
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
-async function main() {
-  console.log("===============================================================");
-  console.log("        CAREERMONKE READ-ONLY APPLY URL LINK CHECKER          ");
-  console.log("===============================================================\n");
-
-  const seed = Date.now();
-  console.log(`Sample Seed: ${seed}`);
-  console.log("Querying 100 random active job listings (SELECT-only)...");
-
-  // Query 100 active jobs with non-null apply_url
-  const { data: jobs, error } = await client
+async function loadDb(): Promise<Input> {
+  const dotenv = await import("dotenv");
+  dotenv.config({ path: ".env.local" });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) notRun("Supabase URL or key not configured.");
+  const { createClient } = await import("@supabase/supabase-js");
+  const { data, error } = await createClient(url, key)
     .from("jobs")
     .select("id, title, company, apply_url")
     .eq("status", "active")
     .not("apply_url", "is", null)
-    .limit(100);
-
-  if (error || !jobs || jobs.length === 0) {
-    console.error(`Failed to fetch jobs from database: ${error?.message || "No jobs returned"}`);
-    process.exit(1);
-  }
-
-  console.log(`Fetched ${jobs.length} jobs. Testing links with max 5 parallel & 10s timeout...\n`);
-
-  const results = await runPool(jobs, MAX_CONCURRENCY, checkUrl);
-
-  const counts = {
-    "2xx": 0,
-    "3xx_final_2xx": 0,
-    "4xx": 0,
-    "5xx": 0,
-    timeout: 0,
-    error: 0,
+    .order("id")
+    .limit(DB_WINDOW);
+  if (error) notRun(`database query failed: ${error.message}`);
+  const { fetch } = await import("undici");
+  return {
+    universe: (data ?? []) as ApplyJob[],
+    universeLabel: `first ${DB_WINDOW} active jobs with apply_url ordered by id (bounded window, NOT a random sample of the table)`,
+    deps: { fetch: fetch as unknown as FetchFn },
   };
+}
 
-  const failing: CheckResult[] = [];
+function parseArgs(argv: string[]) {
+  const get = (flag: string) => {
+    const i = argv.indexOf(flag);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
+  const seedRaw = get("--seed");
+  const seed = seedRaw === undefined ? null : Number(seedRaw);
+  if (seed !== null && !Number.isSafeInteger(seed)) notRun(`--seed must be an integer, got ${seedRaw}`);
+  return { fixture: get("--fixture"), db: argv.includes("--db"), seed };
+}
 
-  for (const r of results) {
-    counts[r.category]++;
-    if (r.category !== "2xx" && r.category !== "3xx_final_2xx") {
-      failing.push(r);
-    }
-  }
+function printResult(r: CheckResult) {
+  const chain = r.hops.map((h) => `${h.method} ${h.status ?? "-"} ${h.url}`).join(" -> ");
+  console.log(`[${OUTCOME[r.category]}/${r.category}] ${r.company} - ${r.title}`);
+  console.log(`    original: ${r.originalUrl}`);
+  console.log(`    hops:     ${chain || "(no request sent)"}`);
+  if (r.error) console.log(`    error:    ${r.error}`);
+}
 
-  const successfulCount = counts["2xx"] + counts["3xx_final_2xx"];
-  const totalChecked = results.length;
-  const percentOk = ((successfulCount / totalChecked) * 100).toFixed(1);
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.fixture && args.db) notRun("choose one of --fixture or --db, not both.");
+  if (!args.fixture && !args.db) notRun("no input mode. Pass --fixture <file.json> (offline) or --db (SELECT-only, opt-in).");
+  const input = args.fixture ? loadFixture(args.fixture) : await loadDb();
+  if (input.universe.length === 0) notRun("selection universe is empty.");
 
-  console.log("===============================================================");
-  console.log("                     STATUS COUNTS SUMMARY                     ");
-  console.log("===============================================================");
-  console.log(`2xx Direct OK:        ${counts["2xx"]}`);
-  console.log(`3xx -> Final 2xx OK:  ${counts["3xx_final_2xx"]}`);
-  console.log(`4xx Client Error:     ${counts["4xx"]}`);
-  console.log(`5xx Server Error:     ${counts["5xx"]}`);
-  console.log(`Timeout (>=10s):      ${counts.timeout}`);
-  console.log(`Other Network Errors: ${counts.error}`);
-  console.log(`Total Checked:        ${totalChecked}`);
-  console.log(`Percent OK:           ${percentOk}% (${successfulCount}/${totalChecked})`);
-  console.log("===============================================================\n");
+  const sample = sampleJobs(input.universe, SAMPLE_SIZE, args.seed);
+  console.log("CAREERMONKE READ-ONLY APPLY-LINK TRANSPORT CHECK");
+  console.log(`Universe:  ${input.universeLabel}`);
+  console.log(
+    args.seed === null
+      ? `Sample:    first ${sample.length} of universe, in universe order (unseeded, not random)`
+      : `Sample:    ${sample.length} of ${input.universe.length}, seeded shuffle, seed=${args.seed} (reproducible for the same universe)`,
+  );
+  console.log("");
 
-  if (failing.length > 0) {
-    console.log("---------------------------------------------------------------");
-    console.log(`FAILING URLS (${failing.length}):`);
-    console.log("---------------------------------------------------------------");
-    failing.forEach((f, i) => {
-      console.log(`[${i + 1}] Status: ${f.status || f.category} | ${f.company} - ${f.title}`);
-      console.log(`    URL: ${f.url}`);
-      if (f.error) console.log(`    Error: ${f.error}`);
-    });
-    console.log("---------------------------------------------------------------\n");
-  } else {
-    console.log("All sampled URLs returned healthy 2xx responses!\n");
-  }
+  const results = await checkJobs(sample, {
+    ...input.deps,
+    now: Date.now,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    onResult: (r) => {
+      if (r.category !== "reachable") printResult(r);
+    },
+  });
 
-  console.log("Execution finished without any database modifications (SELECT-only).");
+  const counts = new Map<string, number>();
+  for (const r of results) counts.set(r.category, (counts.get(r.category) ?? 0) + 1);
+  console.log("");
+  console.log("Counts by category:");
+  for (const [cat, n] of Array.from(counts).sort()) console.log(`  ${cat.padEnd(22)} ${String(n).padStart(4)}  (${OUTCOME[cat as CheckResult["category"]]})`);
+  console.log(`  ${"total".padEnd(22)} ${String(results.length).padStart(4)}`);
+
+  const code = exitCodeFor(results);
+  const verdict = {
+    [EXIT.ALL_REACHABLE]: "ALL REACHABLE (HTTP 2xx transport only; job openness and company match not verified)",
+    [EXIT.FAILED_FINDINGS]: "FAILED FINDINGS present",
+    [EXIT.INDETERMINATE]: "INDETERMINATE: no confirmed failures, but some links could not be judged",
+    [EXIT.NOT_RUN]: "NOT RUN",
+  }[code];
+  console.log(`\nVerdict: ${verdict} (exit ${code})`);
+  if (args.db) console.log("Read-only: one SELECT, no database writes.");
+  process.exitCode = code; // no process.exit: lets stdout drain, and a leaked timer/socket would show as a hang
 }
 
 main().catch((err) => {
-  console.error("Fatal error during apply links check:", err);
-  process.exit(1);
+  if (err instanceof NotRun) {
+    console.log(`NOT RUN: ${err.message}`);
+    console.log("No links were checked. This is not a healthy verdict.");
+  } else {
+    console.error("Fatal error during apply-link check (NOT RUN):", err);
+  }
+  process.exitCode = EXIT.NOT_RUN;
 });
