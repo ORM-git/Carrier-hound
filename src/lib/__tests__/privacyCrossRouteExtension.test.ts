@@ -183,11 +183,14 @@ describe("X3 radar reads only the masked view", () => {
   it("never queries the raw jobs table and never leaks its sentinel company", async () => {
     const res = await radarGET(new Request("https://careermonke.com/api/radar"));
     expect(res.status).toBe(200);
-    const text = JSON.stringify(await res.json());
+    const body = await res.json();
+    const text = JSON.stringify(body);
+    expect(body.header.totalActive).toBe(2);
+    expect(body.header.totalVerified).toBe(1);
     expect(h.tablesQueried).toContain("jobs_public");
     expect(h.tablesQueried).not.toContain("jobs");
     expect(text).not.toContain(h.REAL_CORP);
-    expect(text).toContain("Verified Employer"); // masked names pass through
+    expect(text).not.toContain("Verified Employer"); // masked placeholder is not a company (899)
   });
 });
 
