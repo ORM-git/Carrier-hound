@@ -49,7 +49,7 @@ acceptable: they are plpgsql row variables, not wire payloads.
 | Site | Table | Note |
 | --- | --- | --- |
 | `src/lib/cron/digestStorage.ts:61` | daily_digests | Single latest digest row per user. |
-| `src/lib/events/failedEvents.ts:626` | failed_events | Replay batch read (bounded batch, see rank 46 doc); the replay needs the full payload column set. |
+| `src/lib/events/failedEvents.ts:662` | failed_events | Replay batch read (bounded batch, see rank 46 doc); the replay needs the full payload column set. |
 
 ## Guard
 
