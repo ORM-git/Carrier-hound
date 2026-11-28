@@ -142,12 +142,21 @@ describe("service.getLiveJobs masked fallback: title-only keywords, no numeric s
     expect(JSON.stringify(res)).not.toContain(SENTINEL);
   });
 
-  it("client-claimed isPro with a Free session: unlock refused, still no score or keyword", async () => {
+  it("client-claimed isPro with a Free session: unlock refused, no keyword; the Free-tier score (non-paid inputs) is not carried because isPro was claimed", async () => {
     db.sessionToken = "tok-free";
     const { getLiveJobs } = await import("@/lib/jobs/service");
     const res = await getLiveJobs({ ...ranked(), isPro: true });
     expect(res.jobs.map((j) => j.id)).toEqual([ID]);
     expect(res.jobs[0].matchScore).toBeNull();
+    expect(JSON.stringify(res)).not.toContain(SENTINEL);
+  });
+
+  it("signed-in Free: masked rows carry a Free-tier score (.f. revision) and still no description keyword", async () => {
+    db.sessionToken = "tok-free";
+    const { getLiveJobs } = await import("@/lib/jobs/service");
+    const res = await getLiveJobs(ranked());
+    expect(typeof res.jobs[0].matchScore).toBe("number");
+    expect(String(res.jobs[0].scoreRevision)).toContain(".f.");
     expect(JSON.stringify(res)).not.toContain(SENTINEL);
   });
 
