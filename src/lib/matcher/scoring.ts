@@ -189,6 +189,11 @@ export interface StandardJobScoringInput {
   remoteScope?: string;
   category?: string;
   skills?: string[];
+  /**
+   * Taxonomy skills evidenced in the description, derived server-side for lean list rows that no longer carry the
+   * description (see extractDescriptionSkills). Only used while the description itself is absent or too short.
+   */
+  descriptionSkills?: string[];
   salary_text?: string;
   salary?: string;
   apply_url?: string;
@@ -235,6 +240,23 @@ export const CATEGORY_LEVEL_WORDS = new Set([
  * so they are never classified as missing skills.
  * Handles missing/short description stubs identically across all surfaces.
  */
+/** Step 2 of extractSkillsFromJob on its own: taxonomy skills evidenced in a substantive (60+ chars) description. */
+export function extractDescriptionSkills(description: string | null | undefined, category?: string | null): string[] {
+  const found: string[] = [];
+  const cleanDesc = (description || "").trim();
+  if (cleanDesc.length < 60) return found;
+  const descLower = cleanDesc.toLowerCase();
+  const cat = category ? category.trim().toLowerCase() : "";
+  for (const skill of SKILLS_TAXONOMY) {
+    const lowerSkill = skill.toLowerCase();
+    if (CATEGORY_LEVEL_WORDS.has(lowerSkill) || (cat && lowerSkill === cat)) continue;
+    const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(?:^|[\\s,;/|])${escaped}(?:$|[\\s,;/|])`, "i");
+    if (regex.test(descLower)) found.push(skill);
+  }
+  return found;
+}
+
 export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   const evidenced = new Set<string>();
 
@@ -255,18 +277,12 @@ export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   }
 
   // 2. Search substantive description for evidenced skills (requires minimum 60 chars)
+  // A lean list row has no description: its server-derived description skills stand in for this step.
   const cleanDesc = (job.description || "").trim();
   if (cleanDesc.length >= 60) {
-    const descLower = cleanDesc.toLowerCase();
-    for (const skill of SKILLS_TAXONOMY) {
-      if (isCategoryWord(skill)) continue;
-      const lowerSkill = skill.toLowerCase();
-      const escaped = lowerSkill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(`(?:^|[\\s,;/|])${escaped}(?:$|[\\s,;/|])`, "i");
-      if (regex.test(descLower)) {
-        evidenced.add(skill);
-      }
-    }
+    extractDescriptionSkills(cleanDesc, job.category).forEach((skill) => evidenced.add(skill));
+  } else if (Array.isArray(job.descriptionSkills)) {
+    job.descriptionSkills.forEach((skill) => { if (skill && !isCategoryWord(skill)) evidenced.add(skill); });
   }
 
   // 3. Also check if title explicitly names a specific technology (e.g. "React Developer", "Python Engineer")
@@ -400,6 +416,7 @@ export function computeFitDiagnostics(
     remote_scope: job.remote_scope || job.remoteScope || (job.remote ? "worldwide" : undefined),
     category: job.category || "",
     skills: Array.isArray(job.skills) ? job.skills : [],
+    descriptionSkills: Array.isArray(job.descriptionSkills) ? job.descriptionSkills : undefined,
     salary_text: job.salary_text || job.salary || "",
   };
 
@@ -751,6 +768,7 @@ export function toFitInput(job: {
   category?: string;
   skills?: string[];
   description?: string;
+  descriptionSkills?: string[];
   salary?: string;
   applyUrl?: string;
 }): StandardJobScoringInput {
@@ -764,6 +782,7 @@ export function toFitInput(job: {
     category: job.category,
     skills: job.skills,
     description: job.description,
+    descriptionSkills: job.descriptionSkills,
     salary_text: job.salary,
     apply_url: job.applyUrl,
   };
