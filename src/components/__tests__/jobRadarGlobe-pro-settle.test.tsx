@@ -3,6 +3,8 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
+  rendererSizes: [] as Array<[number, number]>, resizeCallbacks: [] as Array<() => void>,
+  resizeDisconnect: vi.fn(), observedContainer: null as HTMLElement | null,
   publicResult: null as null | (() => Promise<any>),
   resolve: null as null | ((value: { isPro: boolean }) => void),
   query: vi.fn(), unlock: vi.fn(), params: new URLSearchParams(),
@@ -32,7 +34,7 @@ vi.mock("three", async importOriginal => {
   return { ...real, WebGLRenderer: class {
     domElement = document.createElement("canvas");
     capabilities = { getMaxAnisotropy: () => 1 };
-    setPixelRatio() {} setSize() {} render() {} dispose() {} forceContextLoss() {}
+    setPixelRatio() {} setSize(w: number, height: number) { h.rendererSizes.push([w, height]); } render() {} dispose() {} forceContextLoss() {}
   } };
 });
 vi.mock("three/examples/jsm/controls/OrbitControls.js", () => ({ OrbitControls: class {
@@ -41,6 +43,8 @@ vi.mock("three/examples/jsm/controls/OrbitControls.js", () => ({ OrbitControls: 
 import Radar from "../JobRadarGlobe";
 const city = { id: "bangalore", name: "Bangalore", countryCode: "IN", region: "asia_pac", coordinates: [77.59, 12.97], totalCount: 1, verifiedCount: 1, topCompanies: ["Fixture"] };
 beforeEach(() => {
+  h.rendererSizes = []; h.resizeCallbacks = []; h.observedContainer = null; h.resizeDisconnect.mockReset();
+  vi.stubGlobal("ResizeObserver", class { constructor(cb: () => void) { h.resizeCallbacks.push(cb); } observe(el: HTMLElement) { h.observedContainer = el; } disconnect() { h.resizeDisconnect(); } });
   h.publicResult = null; h.resolve = null; h.params = new URLSearchParams(); h.query.mockReset(); h.unlock.mockReset();
   vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
   vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
@@ -192,4 +196,36 @@ it("discards old filter response after Verified Only changes", async () => {
   await screen.findByText("Current verified role");
   await act(async () => oldRelease({ data: [{ id: "old", title: "Obsolete unfiltered role" }], count: 20, error: null }));
   expect(screen.queryByText("Obsolete unfiltered role")).toBeNull();
+});
+
+it("resizes the renderer when container width settles after the viewport event", async () => {
+  vi.stubGlobal("WebGLRenderingContext", function () {});
+  const previousContext = vi
+    .mocked(HTMLCanvasElement.prototype.getContext)
+    .getMockImplementation()!;
+  vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(function (
+    this: HTMLCanvasElement,
+    type: any,
+    ...args: any[]
+  ) {
+    return type === "webgl" ? ({} as any) : previousContext.call(this, type, ...args);
+  });
+  const view = render(<Radar />);
+  const container = h.observedContainer!;
+  Object.defineProperty(container, "clientWidth", { configurable: true, value: 308 });
+  Object.defineProperty(container, "clientHeight", { configurable: true, value: 677 });
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(h.rendererSizes.at(-1)).toEqual([308, 677]);
+  Object.defineProperty(container, "clientWidth", { configurable: true, value: 380 });
+  expect(h.resizeCallbacks.length).toBeGreaterThan(0);
+  await act(async () => h.resizeCallbacks.forEach((cb) => cb()));
+  expect(h.rendererSizes.at(-1)).toEqual([380, 677]);
+  Object.defineProperty(container, "clientWidth", { configurable: true, value: 0 });
+  const before = h.rendererSizes.length;
+  await act(async () => h.resizeCallbacks.forEach((cb) => cb()));
+  expect(h.rendererSizes.length).toBe(before);
+  view.unmount();
+  expect(h.resizeDisconnect).toHaveBeenCalled();
+  await act(async () => h.resizeCallbacks.forEach((cb) => cb()));
+  expect(h.rendererSizes.length).toBe(before);
 });
