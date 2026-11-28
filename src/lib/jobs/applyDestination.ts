@@ -71,3 +71,9 @@ export function classifyApplyDestination(applyUrl: string | null | undefined): A
   }
   return { kind: "unknown", domain: host };
 }
+
+/** Honest display of the INITIAL URL only. Never proof of employer ownership or the final redirect. */
+export function applyDestinationLabel(applyUrl: string | null | undefined): string {
+  const { kind } = classifyApplyDestination(applyUrl);
+  return kind === "employer_board" ? "Registered ATS link" : kind === "aggregator_platform" ? "Aggregator link" : "Unverified apply link";
+}

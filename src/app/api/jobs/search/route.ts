@@ -1,3 +1,4 @@
+import { classifyApplyDestination } from "@/lib/jobs/applyDestination";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { wireJobType } from "@/lib/jobs/formatJobType";
 import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
@@ -320,6 +321,7 @@ async function getHandler(req: Request) {
         type: wireJobType(jobRow.job_type),
         directSource: Boolean(jobRow.verified),
         applyUrl: isInactive || !isPro ? "" : (jobRow.apply_url || ""),
+        applyDestination: classifyApplyDestination(isInactive || !isPro ? "" : (jobRow.apply_url || "")),
         salary: isInactive || !isPro ? "" : (displaySalary || originalSalary || ""),
         salary_display: isInactive || !isPro ? null : displaySalary,
         salary_original: isInactive || !isPro ? null : originalSalary,
@@ -906,6 +908,7 @@ async function getHandler(req: Request) {
           type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
+          applyDestination: classifyApplyDestination(row.apply_url || ""),
           // Lean list row: description stays server-side; the single-job branch above stays complete.
           ...leanProListFields(row),
           scoreRevision: scoreInputRevision(row, true, scoredAt),
@@ -942,6 +945,7 @@ async function getHandler(req: Request) {
         type: wireJobType(row.job_type),
         directSource: Boolean(row.verified),
         applyUrl: "",
+        applyDestination: classifyApplyDestination(""),
         description: "",
         skills: [],
         scoreRevision: scoreInputRevision(row, false, scoredAt),

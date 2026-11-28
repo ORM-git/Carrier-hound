@@ -1,4 +1,5 @@
 "use client";
+import { applyDestinationLabel } from "@/lib/jobs/applyDestination";
 import { extendedDescriptionSections, structuredDescriptionList } from "@/lib/jobs/descriptionSections";
 
 import { copyTextToClipboard } from "@/lib/clipboard";
@@ -526,6 +527,7 @@ export default function JobDetailView({
               </button>
             ) : isUnlocked && job.applyUrl ? (
               <a
+                title={`${applyDestinationLabel(job.applyUrl)}. Initial URL only; ownership and redirects not verified.`}
                 href={job.applyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -686,13 +688,14 @@ export default function JobDetailView({
 
                   {isUnlocked && job.applyUrl && (
                     <a
+                      title={`${applyDestinationLabel(job.applyUrl)}. Initial URL only; ownership and redirects not verified.`}
                       href={job.applyUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[#475569] hover:text-[#2563EB] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 min-h-[36px]"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Original Job Post</span>
+                      <span>Linked Job Post</span>
                     </a>
                   )}
                 </div>
@@ -744,7 +747,8 @@ export default function JobDetailView({
             </button>
           ) : isUnlocked && job.applyUrl ? (
             <a
-              href={job.applyUrl}
+              title={`${applyDestinationLabel(job.applyUrl)}. Initial URL only; ownership and redirects not verified.`}
+                href={job.applyUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={onApply}
@@ -808,6 +812,8 @@ export default function JobDetailView({
             <h1 className="text-[28px] md:text-[22px] font-bold md:font-semibold text-[#0F172A] leading-tight md:leading-snug break-words">
               {job.title}
             </h1>
+
+            {isUnlocked && job.applyUrl && <p data-testid="detail-apply-destination" className="text-xs text-[#64748B] break-words">{applyDestinationLabel(job.applyUrl)}. Initial URL only; employer ownership and redirects are not verified.</p>}
 
             {/* Mobile meta line: company / skill - skill - ... grey tags, single line, real data only */}
             {(job.company || (job.skills && job.skills.length > 0)) && (
@@ -1065,7 +1071,7 @@ export default function JobDetailView({
               </div>
             ) : (
               <p className="text-[#475569] text-[15px] leading-[24px]">
-                Apply directly on the employer&apos;s site to view the complete posting and application instructions.
+                Open the linked posting to view the complete job details and application instructions.
               </p>
             )}
 

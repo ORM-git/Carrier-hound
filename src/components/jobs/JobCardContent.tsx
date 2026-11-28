@@ -1,5 +1,6 @@
 "use client";
 
+import { applyDestinationLabel } from "@/lib/jobs/applyDestination";
 import React, { useId } from "react";
 import Link from "next/link";
 import { ArrowRight, Briefcase, Clock, DollarSign, EyeOff, Heart, Laptop, Lock, MapPin, Sparkles, TrendingUp } from "lucide-react";
@@ -57,6 +58,7 @@ export function cmArrivalAt(job: { firstSeenAt?: unknown } | null | undefined, n
 /** Unchanged Jobs desktop/mobile presentation. Caller owns data, entitlement, scores and actions. */
 export default function JobCardContent({ job, index, isPro, locationVisible, isSaved, matchScore, cardZeroSkills, isRecent, postedRelative, companyPills, locInfo, jobLevel, formattedJobType, getTagColorClass, formatRelativeTime, handleHideJob, handleToggleApplied, handleSaveJob, handleSelectJob, handleLockedAction, footerText, footerActions, scoreDescription, mobilePreviewLogo, mobilePreviewTitle, mobilePreviewCompany, onLogoUnresolved }: JobCardContentProps) {
   const mode = workModelLabel(job);
+  const destinationLabel = applyDestinationLabel(isPro ? job.applyUrl : "");
   const canSeeLocation = locationVisible ?? isPro;
   const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(locInfo.primary, mode, locInfo.extraCount);
   const arrivalAt = cmArrivalAt(job);
@@ -297,15 +299,16 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                     </div>
                                   </div>
 
+                                  {isPro && job.applyUrl && <div data-testid="desktop-apply-destination" className="text-[10px] text-slate-300" title="Initial apply URL only. Employer ownership and redirects have not been verified.">{destinationLabel}</div>}
                                   <div className="w-full pt-2 border-t border-white/10 mt-2">
                                     <div className="space-y-1 text-[11px] text-slate-300 text-left w-full pl-2">
                                       <div className="flex items-center gap-1.5 text-slate-300">
                                         <span className="text-blue-300 font-bold">✓</span>
-                                        <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
+                                        <span className="truncate">{job.remote ? "Remote Eligible" : mode}</span>
                                       </div>
                                       <div className="flex items-center gap-1.5 text-slate-300">
                                         <span className="text-blue-300 font-bold">✓</span>
-                                        <span className="truncate">{scoreDescription ? "Sample score" : (job.directSource ? "Direct Feed" : "Active Feed")}</span>
+                                        <span className="truncate">{scoreDescription ? "Sample score" : (job.directSource ? "Source Feed" : "Active Feed")}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -393,6 +396,8 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                               <h2 className="text-[16px] font-bold text-[#0F172A] leading-snug line-clamp-2 mt-1">
                                 {mobilePreviewTitle || job.title}
                               </h2>
+
+                              {isPro && job.applyUrl && <p data-testid="mobile-apply-destination" className="text-[11px] text-[#64748B]" title="Initial apply URL only. Employer ownership and redirects have not been verified.">{destinationLabel}</p>}
 
                               {/* Title and metadata remain one uninterrupted group. */}
 

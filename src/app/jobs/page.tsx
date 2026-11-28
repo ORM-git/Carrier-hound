@@ -2757,7 +2757,7 @@ function JobsPageInner() {
         open={isPaywallOpen}
         onOpenChange={setIsPaywallOpen}
         user={user}
-        featureTitle="Unlock Verified Company Names & Direct Employer Apply"
+        featureTitle="Unlock Company Names & Application Links"
       />
 
       {isDesktop && (
