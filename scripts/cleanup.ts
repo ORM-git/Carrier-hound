@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { extractRunCoverage } from '../src/lib/observability/sourceHealth';
+import { extractRunCoverage, pythonRunMeta } from '../src/lib/observability/sourceHealth';
 
 export interface UnseenCleanupSafetyCheckParams {
   isScheduled: boolean;
@@ -44,14 +44,20 @@ export function shouldPerformUnseenCleanup(params: UnseenCleanupSafetyCheckParam
   if (!params.runs || params.runs.length === 0) {
     return { allowed: false, reason: "Incomplete run: no ingest_runs recorded for cycle." };
   }
+  // Python health rows (scripts/scraper/health_record.py) are never TypeScript shards. Without a cycleId a
+  // coverage-less Python success row would otherwise count as shard 0 and replace a failed TypeScript shard 0.
+  const tsRuns = params.runs.filter((r) => !pythonRunMeta(r));
+  if (tsRuns.length === 0) {
+    return { allowed: false, reason: "Incomplete run: no TypeScript ingest_runs recorded for cycle." };
+  }
 
   // Filter runs for the given cycleId if specified
   const cycleRuns = params.cycleId
-    ? params.runs.filter((r) => {
+    ? tsRuns.filter((r) => {
         const cov = extractRunCoverage(r);
         return cov?.cycle_id === params.cycleId;
       })
-    : params.runs;
+    : tsRuns;
 
   const shardMap = new Map<number, any>();
   for (const r of cycleRuns) {

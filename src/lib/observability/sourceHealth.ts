@@ -359,7 +359,8 @@ export interface SourceFreshnessResult {
   insufficientEvidenceSources: string[];
 }
 
-const NON_SOURCE_KEYS = new Set(["coverage"]);
+// "python_run" is the Python pipeline's run metadata (scripts/scraper/health_record.py), never a source.
+const NON_SOURCE_KEYS = new Set(["coverage", "python_run"]);
 
 function perSourceEntries(run: IngestRunSnapshot): Map<string, unknown> | null {
   const psc = run?.per_source_counts;
@@ -433,4 +434,271 @@ export function evaluateSourceFreshness(
   const status: SourceFreshnessResult["status"] =
     staleSources.length || neverSeenSources.length ? "degraded" : insufficientEvidenceSources.length ? "insufficient_evidence" : "healthy";
   return { status, referenceTime, staleSources, neverSeenSources, unknownSources, insufficientEvidenceSources };
+}
+
+// =============================================================================
+// PIPELINE-AWARE MONITORING (rows 46/78): TypeScript shard cycles + per-source freshness, and Python cohorts.
+//
+// Python rows (scripts/scraper/health_record.py) carry per_source_counts.python_run = { pipeline: "python",
+// cohort, outcome, sources: { [id]: { state } }, deferred: { [id]: { reason } } } and no "coverage", so they are
+// kept out of the TypeScript cycle logic entirely and judged per cohort here. Pure: rows and time are inputs.
+// =============================================================================
+
+export const PYTHON_RUN_KEY = "python_run";
+
+export interface PythonRunMeta {
+  pipeline: "python";
+  cohort: string;
+  outcome?: string | null;
+  exit_code?: string | null;
+  sources?: Record<string, { state?: string | null } | null> | null;
+  deferred?: Record<string, { reason?: string | null; next_eligible_at?: string | null } | null> | null;
+}
+
+export function pythonRunMeta(run: IngestRunSnapshot): PythonRunMeta | null {
+  const psc = run?.per_source_counts;
+  if (!psc || typeof psc !== "object" || Array.isArray(psc)) return null;
+  const meta = (psc as Record<string, unknown>)[PYTHON_RUN_KEY];
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+  const m = meta as Record<string, unknown>;
+  return m.pipeline === "python" && typeof m.cohort === "string" && m.cohort ? (m as unknown as PythonRunMeta) : null;
+}
+
+export function partitionRunsByPipeline(runs: readonly IngestRunSnapshot[]): {
+  typescript: IngestRunSnapshot[];
+  python: IngestRunSnapshot[];
+} {
+  const typescript: IngestRunSnapshot[] = [];
+  const python: IngestRunSnapshot[] = [];
+  for (const run of Array.isArray(runs) ? runs : []) (pythonRunMeta(run) ? python : typescript).push(run);
+  return { typescript, python };
+}
+
+export type MonitoringSeverity = "ok" | "degraded" | "unavailable";
+
+export interface CohortExpectation {
+  expectedSources: string[];
+  sourceStaleAfterHours: number;
+  overdueAfterHours: number;
+}
+
+export type PythonSourceState =
+  | "healthy" | "stale" | "never_seen" | "failed" | "incomplete" | "deferred" | "insufficient_evidence";
+
+const SOURCE_STATE_SEVERITY: Record<PythonSourceState, MonitoringSeverity> = {
+  healthy: "ok",
+  stale: "degraded",
+  never_seen: "degraded",
+  failed: "degraded",
+  incomplete: "unavailable", // fetched, but one page of a larger board: partial evidence, never success
+  deferred: "unavailable", // deliberate cooldown/budget: not a failure, not fresh evidence either
+  insufficient_evidence: "unavailable",
+};
+
+export interface PythonCohortResult {
+  cohort: string;
+  state: "ok" | "not_configured" | "missing" | "overdue" | "failed" | "deferred_noop";
+  severity: MonitoringSeverity;
+  reason: string;
+  latestRunAt?: string;
+  latestOutcome?: string | null;
+  sources: Record<PythonSourceState, string[]>;
+  unknownSources: string[];
+}
+
+function rowTime(run: IngestRunSnapshot): number {
+  const t = Date.parse(String(run?.finished_at || run?.started_at || ""));
+  return Number.isFinite(t) ? t : -Infinity;
+}
+
+function worst(a: MonitoringSeverity, b: MonitoringSeverity): MonitoringSeverity {
+  if (a === "degraded" || b === "degraded") return "degraded";
+  return a === "unavailable" || b === "unavailable" ? "unavailable" : "ok";
+}
+
+function emptyPythonSources(): Record<PythonSourceState, string[]> {
+  return { healthy: [], stale: [], never_seen: [], failed: [], incomplete: [], deferred: [], insufficient_evidence: [] };
+}
+
+export function evaluatePythonCohort(
+  cohort: string,
+  pythonRuns: readonly IngestRunSnapshot[],
+  expectation: CohortExpectation | null | undefined,
+  nowIso: string
+): PythonCohortResult {
+  const sources = emptyPythonSources();
+  const expected = Array.from(new Set((expectation?.expectedSources || []).filter((s) => typeof s === "string" && s.trim())));
+  if (!expectation || expected.length === 0) {
+    return { cohort, state: "not_configured", severity: "unavailable", reason: `No expected sources configured for Python cohort ${cohort}.`, sources, unknownSources: [] };
+  }
+  const now = Date.parse(nowIso);
+  const rows = pythonRuns.filter((r) => pythonRunMeta(r)?.cohort === cohort).sort((a, b) => rowTime(b) - rowTime(a));
+  if (rows.length === 0) {
+    sources.insufficient_evidence.push(...expected.slice().sort());
+    return { cohort, state: "missing", severity: "degraded", reason: `No Python ${cohort} run is recorded in the lookback window.`, sources, unknownSources: [] };
+  }
+  const latest = rows[0];
+  const latestAt = rowTime(latest);
+  const meta = pythonRunMeta(latest)!;
+  let state: PythonCohortResult["state"] = "ok";
+  let severity: MonitoringSeverity = "ok";
+  let reason = `Latest Python ${cohort} run outcome: ${meta.outcome ?? "unknown"}.`;
+  if (!Number.isFinite(latestAt) || !Number.isFinite(now) || now - latestAt > expectation.overdueAfterHours * 3600_000) {
+    state = "overdue";
+    severity = "degraded";
+    reason = `Latest Python ${cohort} run is older than ${expectation.overdueAfterHours}h (or undated).`;
+  } else if (meta.outcome !== "ok" && meta.outcome !== "deferred_noop") {
+    state = "failed";
+    severity = "degraded";
+    reason = `Latest Python ${cohort} run did not succeed (outcome ${meta.outcome ?? "unknown"}, exit ${meta.exit_code ?? "n/a"}).`;
+  } else if (meta.outcome === "deferred_noop") {
+    state = "deferred_noop"; // deliberate: every board on cooldown/budget; per-source freshness decides below
+    reason = `Latest Python ${cohort} run deferred every board (cooldown/budget); nothing was written.`;
+  }
+
+  const freshness = evaluateSourceFreshness(rows, { expectedSources: expected, sourceStaleAfterHours: expectation.sourceStaleAfterHours }, nowIso);
+  const stale = new Set(freshness.staleSources.map((s) => s.source));
+  const never = new Set(freshness.neverSeenSources);
+  const insufficient = new Set(freshness.insufficientEvidenceSources);
+  const metas = rows.map((r) => pythonRunMeta(r)!);
+  for (const s of expected) {
+    if (!stale.has(s) && !never.has(s) && !insufficient.has(s)) {
+      sources.healthy.push(s);
+      continue;
+    }
+    const mention = metas.find((m) => (m.sources && m.sources[s]) || (m.deferred && m.deferred[s]));
+    const st = mention?.sources?.[s]?.state;
+    const bucket: PythonSourceState =
+      st === "failed" ? "failed"
+        : st === "incomplete" ? "incomplete"
+          : mention?.deferred?.[s] ? "deferred"
+            : stale.has(s) ? "stale"
+              : never.has(s) ? "never_seen"
+                : "insufficient_evidence";
+    sources[bucket].push(s);
+  }
+  for (const [bucket, list] of Object.entries(sources) as Array<[PythonSourceState, string[]]>) {
+    list.sort();
+    if (list.length) severity = worst(severity, SOURCE_STATE_SEVERITY[bucket]);
+  }
+  return {
+    cohort, state, severity, reason,
+    latestRunAt: Number.isFinite(latestAt) ? new Date(latestAt).toISOString() : undefined,
+    latestOutcome: meta.outcome ?? null, sources, unknownSources: freshness.unknownSources,
+  };
+}
+
+/**
+ * The one PY_HEALTH_RECORD gate policy, matching the workflow condition `vars.PY_HEALTH_RECORD == 'true'`:
+ * GitHub Actions string == is case-insensitive, so true/TRUE/True are on; nothing is trimmed, so " true" is off.
+ */
+export function pythonHealthRecordingEnabled(value: string | null | undefined): boolean {
+  return (value ?? "").toLowerCase() === "true";
+}
+
+export interface MonitoringConfig {
+  typescript: { health: SourceHealthPolicy; expectedSources: string[]; sourceStaleAfterHours: number; cycleRowWindow: number } | null;
+  python: Record<string, CohortExpectation> | null;
+  /** Python is judged only when this is exactly true (the writer is enabled); undefined/false = not monitored. */
+  pythonRecording?: boolean;
+  evidenceTruncated?: boolean;
+}
+
+export interface MonitoringCheck {
+  pipeline: "typescript" | "python" | "evidence";
+  scope: string;
+  state: string;
+  severity: MonitoringSeverity;
+  reason: string;
+  sources?: Record<string, string[]>;
+}
+
+export interface MonitoringResult {
+  status: "healthy" | "degraded" | "unavailable";
+  exitCode: 0 | 1 | 2; // 0 healthy, 1 degraded (act), 2 evidence missing/insufficient/not configured
+  referenceTime: string;
+  checks: MonitoringCheck[];
+  python: PythonCohortResult[];
+  notMonitored: Array<"python">; // pipelines deliberately not judged; never part of a "healthy" claim
+}
+
+/** Both pipelines, one verdict. Degraded wins over unavailable; nothing missing is ever reported healthy. */
+export function evaluateIngestionMonitoring(runs: readonly IngestRunSnapshot[], config: MonitoringConfig, nowIso: string): MonitoringResult {
+  const { typescript: tsRows, python: pyRows } = partitionRunsByPipeline(runs);
+  const checks: MonitoringCheck[] = [];
+  if (config.evidenceTruncated) {
+    checks.push({ pipeline: "evidence", scope: "ingest_runs", state: "truncated", severity: "unavailable",
+      reason: "Row cap reached before the lookback window was covered; older evidence was not read." });
+  }
+
+  if (!config.typescript) {
+    checks.push({ pipeline: "typescript", scope: "pipeline", state: "not_configured", severity: "unavailable", reason: "No TypeScript expectations configured." });
+  } else {
+    const ts = config.typescript;
+    // Same rows the cycle gate always saw (newest N TS rows), so its verdict is unchanged by Python rows.
+    const cycle = evaluateSourceHealth(tsRows.slice(0, ts.cycleRowWindow), ts.health, nowIso);
+    checks.push({ pipeline: "typescript", scope: "cycles", state: cycle.status,
+      severity: cycle.status === "healthy" ? "ok" : cycle.status === "degraded" ? "degraded" : "unavailable",
+      reason: cycle.reason || `TypeScript shard cycles: ${cycle.status}.` });
+    const fresh = evaluateSourceFreshness(tsRows, { expectedSources: ts.expectedSources, sourceStaleAfterHours: ts.sourceStaleAfterHours }, nowIso);
+    checks.push({ pipeline: "typescript", scope: "sources", state: fresh.status,
+      severity: fresh.status === "healthy" ? "ok" : fresh.status === "degraded" ? "degraded" : "unavailable",
+      reason: `TypeScript per-source freshness (${ts.sourceStaleAfterHours}h): ${fresh.status}.`,
+      sources: { stale: fresh.staleSources.map((s) => s.source), never_seen: fresh.neverSeenSources,
+        insufficient_evidence: fresh.insufficientEvidenceSources, unknown: fresh.unknownSources } });
+  }
+
+  const python: PythonCohortResult[] = [];
+  const notMonitored: MonitoringResult["notMonitored"] = [];
+  const pythonOn = config.pythonRecording === true;
+  const cohorts = pythonOn && config.python ? Object.keys(config.python).sort() : [];
+  if (!pythonOn) {
+    notMonitored.push("python");
+    checks.push({ pipeline: "python", scope: "pipeline", state: "not_monitored", severity: "ok",
+      reason: "Python health recording is off (PY_HEALTH_RECORD is not true): Python cohorts are NOT MONITORED." });
+  } else if (cohorts.length === 0) {
+    checks.push({ pipeline: "python", scope: "pipeline", state: "not_configured", severity: "unavailable", reason: "No Python cohorts configured." });
+  }
+  for (const cohort of cohorts) {
+    const r = evaluatePythonCohort(cohort, pyRows, config.python![cohort], nowIso);
+    python.push(r);
+    const { healthy: _healthy, ...problems } = r.sources;
+    checks.push({ pipeline: "python", scope: `cohort:${cohort}`, state: r.state, severity: r.severity, reason: r.reason,
+      sources: { ...problems, unknown: r.unknownSources } });
+  }
+  // Python rows for a cohort nobody expects are reported, never silently counted (only while Python is monitored).
+  const known = new Set(cohorts);
+  const strays = pythonOn ? Array.from(new Set(pyRows.map((r) => pythonRunMeta(r)!.cohort).filter((c) => !known.has(c)))).sort() : [];
+  if (strays.length) {
+    checks.push({ pipeline: "python", scope: "cohorts", state: "unexpected_cohort", severity: "unavailable",
+      reason: `Rows for unconfigured Python cohort(s): ${strays.join(", ")}.` });
+  }
+
+  const severity = checks.reduce<MonitoringSeverity>((acc, c) => worst(acc, c.severity), "ok");
+  return {
+    status: severity === "ok" ? "healthy" : severity,
+    exitCode: severity === "ok" ? 0 : severity === "degraded" ? 1 : 2,
+    referenceTime: nowIso, checks, python, notMonitored,
+  };
+}
+
+/** Readable per-pipeline/cohort summary: source IDs and states only, never URLs or credentials. */
+export function renderMonitoringSummary(result: MonitoringResult, maxIdsPerState = 15): string {
+  const scope = result.notMonitored.includes("python")
+    ? (result.status === "healthy" ? " - TypeScript only, python NOT MONITORED" : " - python NOT MONITORED")
+    : "";
+  const lines = [`## Source health: ${result.status.toUpperCase()}${scope} (exit ${result.exitCode})`, "",
+    `Reference time ${result.referenceTime}.`, "", "| pipeline | scope | state | severity | detail |", "|---|---|---|---|---|"];
+  for (const c of result.checks) {
+    lines.push(`| ${c.pipeline} | ${c.scope} | ${c.state} | ${c.severity} | ${c.reason.replace(/\|/g, "/")} |`);
+  }
+  for (const c of result.checks) {
+    for (const [state, ids] of Object.entries(c.sources || {})) {
+      if (!ids.length) continue;
+      const shown = ids.slice(0, maxIdsPerState).join(", ");
+      lines.push("", `- ${c.pipeline} ${c.scope} **${state}** (${ids.length}): ${shown}${ids.length > maxIdsPerState ? ", ..." : ""}`);
+    }
+  }
+  lines.push("", "A failed run of this workflow is routed by workflow-failure-alert.yml; that is not proof anyone received an alert.");
+  return lines.join("\n");
 }

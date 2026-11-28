@@ -300,6 +300,36 @@ async function runTests() {
     'Unseen cleanup PERMITTED for complete 6-shard scheduled corpus run'
   );
 
+  // Python health rows (per_source_counts.python_run, no coverage) must never stand in for a TypeScript shard.
+  const pythonSuccessRow = {
+    status: 'success',
+    started_at: null,
+    finished_at: '2099-01-01T00:00:00Z', // newer than every TypeScript row
+    per_source_counts: { 'greenhouse:acme': 1, python_run: { pipeline: 'python', cohort: 'non-workday', outcome: 'ok' } },
+  };
+  const scheduledParams = { isScheduled: true, isSeed: false, sourceFilter: null, capArgPresent: false, capValue: 50000 };
+  const failedShard0 = [0, 1, 2, 3, 4, 5].map((shard_id) => ({
+    status: shard_id === 0 ? 'failed' : 'success',
+    coverage: { cycle_id: 'cycle-x', shard_id, expected_shards: 6 },
+  }));
+
+  assert(
+    shouldPerformUnseenCleanup({ ...scheduledParams, runs: [pythonSuccessRow, ...failedShard0], cycleId: null }).allowed === false,
+    'Unseen cleanup BLOCKED: null cycleId + failed TypeScript shard 0 + newer Python success row (Python row is not shard 0)'
+  );
+
+  assert(
+    shouldPerformUnseenCleanup({ ...scheduledParams, runs: [pythonSuccessRow, ...fullRuns], cycleId: null }).allowed === true &&
+      shouldPerformUnseenCleanup({ ...scheduledParams, runs: [pythonSuccessRow, ...fullRuns], cycleId: 'cycle-clean' }).allowed === true,
+    'Unseen cleanup PERMITTED: complete TypeScript cycle alongside a Python health row'
+  );
+
+  const pythonOnly = shouldPerformUnseenCleanup({ ...scheduledParams, runs: [pythonSuccessRow], cycleId: null });
+  assert(
+    pythonOnly.allowed === false && pythonOnly.reason.includes('no TypeScript ingest_runs'),
+    'Unseen cleanup BLOCKED: Python-only runs (no TypeScript rows left)'
+  );
+
   // ---------------------------------------------------------------------------
   // TEST 5: Dry-Run Cleanup Execution
   // ---------------------------------------------------------------------------

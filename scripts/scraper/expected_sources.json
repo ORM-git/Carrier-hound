@@ -1,0 +1,50 @@
+{
+  "generated_by": "python -m scripts.scraper.health_record expected-sources --write",
+  "source": "scripts/scraper/company_seeds.json via run_ingestion.plan_sources/select_sources",
+  "cohorts": {
+    "non-workday": [
+      "adzuna:in",
+      "amazon",
+      "arbeitnow",
+      "ashby:anyscale",
+      "ashby:elevenlabs",
+      "ashby:linear",
+      "ashby:mistral",
+      "ashby:notion",
+      "ashby:openai",
+      "ashby:perplexity",
+      "ashby:plaid",
+      "ashby:posthog",
+      "ashby:ramp",
+      "ashby:supabase",
+      "ashby:weaviate",
+      "greenhouse:airbnb",
+      "greenhouse:anthropic",
+      "greenhouse:brex",
+      "greenhouse:cloudflare",
+      "greenhouse:datadog",
+      "greenhouse:figma",
+      "greenhouse:gitlab",
+      "greenhouse:gusto",
+      "greenhouse:scaleai",
+      "greenhouse:stripe",
+      "greenhouse:vercel",
+      "lever:palantir",
+      "microsoft",
+      "smartrecruiters:bosch",
+      "smartrecruiters:celonis",
+      "smartrecruiters:nagarro",
+      "smartrecruiters:visa",
+      "smartrecruiters:wise"
+    ],
+    "workday": [
+      "workday:adobe",
+      "workday:cisco",
+      "workday:deloitte",
+      "workday:mastercard",
+      "workday:nvidia",
+      "workday:salesforce",
+      "workday:walmart"
+    ]
+  }
+}

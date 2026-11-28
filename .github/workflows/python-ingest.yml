@@ -232,6 +232,26 @@ jobs:
           python -m scripts.scraper.ingest_report cohort --cohort "$COHORT" --exit-code "$EXIT_CODE" \
             --report "reports/python-ingest-$COHORT.json" --out "reports/python-ingest-summary-$COHORT.json"
 
+      # Rows 46/78: one ingest_runs row per write-mode cohort run (existing columns, existing service-role secrets),
+      # read by scripts/check-source-health.ts. Dry runs never write. A failed write is an ::error annotation and a
+      # step-summary line, but continue-on-error keeps this job's result equal to the ingestion result; the missing
+      # row then surfaces as a missing/overdue cohort in the next source-health check.
+      # Off by default: runs only when the owner sets repo variable PY_HEALTH_RECORD=true (== is case-insensitive
+      # in Actions, so TRUE/True also match; the TypeScript reader pythonHealthRecordingEnabled applies the same rule).
+      - name: Record run health
+        if: always() && needs.plan.outputs.mode == 'write-production-expire' && vars.PY_HEALTH_RECORD == 'true'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          COHORT: ${{ matrix.cohort }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          EXIT_CODE: ${{ steps.run.outputs.exit_code }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python -m scripts.scraper.health_record record --cohort "$COHORT" --mode "$MODE" --exit-code "$EXIT_CODE" \
+            --report "reports/python-ingest-$COHORT.json" --summary "reports/python-ingest-summary-$COHORT.json"
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4

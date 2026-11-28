@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import { radarJsonResponse } from "@/lib/api/radarResponse";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { fetchLatestTypescriptRunMeta } from "@/lib/observability/radarRunMeta";
 
 const baseLog = createLogger({ context: { route: "/api/radar" } });
 
@@ -61,13 +62,8 @@ async function fetchJobsChunks(
 }
 
 async function computeRadarPayload(supabase: any, now: number): Promise<any> {
-    // 1. Fetch metadata from latest ingest_run
-    const { data: latestRun } = await supabase
-      .from('ingest_runs')
-      .select('finished_at, total_active, total_verified')
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // 1. Data-as-of: the latest TypeScript ingest run (Python health rows excluded; see radarRunMeta.ts)
+    const latestRun = await fetchLatestTypescriptRunMeta(supabase);
 
     // 2. Fetch active jobs in parallel chunks (bypassing PostgREST 1000 row cap)
     const { count: totalActive } = await supabase

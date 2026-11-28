@@ -118,6 +118,6 @@ describe("singleFlight adoption on the shared TTL-miss paths", () => {
       src.indexOf("export async function GET")
     );
     expect(compute).toContain("memoryCache = {");
-    expect(compute).toContain("from('ingest_runs')");
+    expect(compute).toContain("fetchLatestTypescriptRunMeta(supabase)"); // ingest_runs read moved to radarRunMeta.ts
   });
 });
