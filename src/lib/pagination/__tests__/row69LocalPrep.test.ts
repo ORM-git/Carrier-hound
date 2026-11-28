@@ -6,7 +6,7 @@ import { applyBaseVisibility, applySearchFilters, type SearchFilterCtx } from "@
 import { recorder, type FilterNode } from "@/lib/jobs/captureFilters";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { callLogBuilder, teeQuery } from "../readScan";
-import { captureOrder, GUEST_OWNER, MAX_PAGE_SIZE, MAX_REFILL_WINDOWS, nextPage, RECOMMENDED_POOL_LIMIT, SnapshotBindingError, verifySnapshot, type Snapshot, type SnapshotBinding } from "../snapshotReplay";
+import { captureOrder, MAX_PAGE_SIZE, MAX_REFILL_WINDOWS, nextPage, RECOMMENDED_POOL_LIMIT, SnapshotBindingError, verifySnapshot, type Snapshot, type SnapshotBinding } from "../snapshotReplay";
 import { captureMultiword, MULTIWORD_POOL_LIMIT, rankMultiword } from "../multiwordRelevance";
 import { isStable, liveFallback, snapshotPage, UNSTABLE_NOTICE } from "../stabilityFallback";
 
@@ -271,9 +271,18 @@ describe("snapshot binding enforced at the paging entry point (pure data check, 
     await rejects(s, { ...B, owner: "u-2" }, "owner_mismatch");
     await rejects(s, { ...B, tier: "pro" }, "tier_mismatch");
     await rejects(s, { ...B, queryHash: "q-2" }, "query_mismatch");
-    await rejects(s, { ...B, owner: GUEST_OWNER }, "owner_mismatch");                            // guest vs user
-    await rejects(snapOf(12, { ...B, owner: GUEST_OWNER }), B, "owner_mismatch");                // user vs guest
-    expect((await nextPage(snapOf(12, { ...B, owner: GUEST_OWNER }), { ...B, owner: GUEST_OWNER }, 0, 5, f)).rows).toHaveLength(5);
+    const GS = "guest:9f2c7d1e-session";                                                    // a server-verified guest-session id
+    await rejects(s, { ...B, owner: GS }, "owner_mismatch");                                     // guest session vs user
+    await rejects(snapOf(12, { ...B, owner: GS }), B, "owner_mismatch");                         // user vs guest session
+    await rejects(snapOf(12, { ...B, owner: GS }), { ...B, owner: "guest:another-session" }, "owner_mismatch"); // guest vs guest
+    expect((await nextPage(snapOf(12, { ...B, owner: GS }), { ...B, owner: GS }, 0, 5, f)).rows).toHaveLength(5);
+  });
+  it("the bare shared-guest literal is refused at capture and at paging, in any spelling", async () => {
+    for (const shared of ["guest", "Guest", " GUEST ", "guest:", "guest: "]) {
+      expect(() => snapOf(3, { ...B, owner: shared })).toThrow(SnapshotBindingError);
+      await rejects(snapOf(12), { ...B, owner: shared }, "shared_guest_owner");
+    }
+    expect(verifySnapshot(snapOf(3), { ...B, owner: "guest" })).toEqual({ ok: false, reason: "shared_guest_owner" });
   });
   it("an unbound snapshot never pages; empty, partial or blank expectations throw", async () => {
     await rejects(snapOf(12, null), B, "unbound_snapshot");

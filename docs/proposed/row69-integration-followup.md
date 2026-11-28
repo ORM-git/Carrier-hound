@@ -38,7 +38,8 @@ The PROPOSED-NOT-EXECUTED SQL fixture is only a candidate for the owner to revie
 ### `nextPage` rules
 
 - **The binding is enforced at the entry point, with no fail-open path.**
-  - `expect` must hold all three parts: `owner` (a user id, or exactly `"guest"`), `tier` and `queryHash`, none empty.
+  - `expect` must hold all three parts: `owner`, `tier` and `queryHash`, none empty.
+  - `owner` is a verified user id, or a server-verified guest-**session** id (for example `guest:<id>`). The bare literal `guest` is refused at capture and at paging (`shared_guest_owner`), because one shared owner would let every guest read every other guest's snapshot. A guest without a verified session id gets `liveFallback`, never a snapshot.
   - The snapshot must carry the same full binding, and every part must be equal. Otherwise `SnapshotBindingError` is thrown, with one of `invalid_expectation`, `unbound_snapshot`, `owner_mismatch`, `tier_mismatch` or `query_mismatch`.
   - An unbound snapshot never pages. `captureOrder` refuses a partial binding.
   - No paging function without the check is exported.
@@ -73,7 +74,7 @@ The PROPOSED-NOT-EXECUTED SQL fixture is only a candidate for the owner to revie
 - `src/app/api/jobs/recommended/route.ts`: freeze the existing ranked, capped pool (at most 1000) with `captureOrder`, then serve with `nextPage`.
 - `src/lib/jobs/service.ts` (`getLiveJobs`): carry the continuation in a header and read the stability flag; the existing degraded and 403/503 handling is kept.
 - `src/app/jobs/page.tsx`: hold the continuation for the current query, and reset on rejection.
-- **Every handler:** call `nextPage` with the request's own owner (user id or `"guest"`), tier and query hash; it rejects any other. Use `liveFallback(..., reason)` whenever no snapshot is available, so it never claims stability.
+- **Every handler:** call `nextPage` with the request's own server-derived owner (verified user id, or a verified guest-session id; never the literal `guest`), tier and query hash; it rejects any other. Use `liveFallback(..., reason)` whenever no snapshot is available, so it never claims stability.
 
 **2. Netlify search (static export + functions)**
 - `netlify/functions/jobs-search.ts`: its own copy of the visibility and filter block and its own `(posted_at, id)` cursor today. It needs the same `searchFilters` import, `teeQuery` and `nextPage` as the Pages route, with behaviour kept equivalent.

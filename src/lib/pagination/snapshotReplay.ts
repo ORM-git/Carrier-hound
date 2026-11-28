@@ -4,7 +4,8 @@
 // never a page number.
 //
 // nextPage() is the ONLY way to page, and it enforces the binding first: the caller must state the full expectation
-// (owner = a user id or the literal "guest", tier, queryHash; none empty), the snapshot must carry the same full
+// (owner = a verified user id, or a server-verified guest-session id such as "guest:<id>"; tier; queryHash; none empty),
+// the snapshot must carry the same full
 // binding, and every part must be equal. Missing/empty parts or an unbound snapshot throw (SnapshotBindingError).
 // There is no fail-open path: no paging function without the check is exported.
 //
@@ -18,7 +19,12 @@
 // that, it only guarantees it never returns a row the callback did not return for a requested id.
 // Fixture/source-compiled proof only; persistence and transport of a snapshot or cursor are not part of this module.
 
-/** What a snapshot is bound to. owner is a user id, or exactly "guest". All three parts are required. */
+/**
+ * What a snapshot is bound to. All three parts are required. owner is a verified user id, or a server-verified
+ * guest-SESSION id (e.g. "guest:<id>"). The bare literal "guest" is refused everywhere: it would be one owner shared
+ * by every guest, so any guest could page any other guest's snapshot. A guest without a verified session id must get
+ * stabilityFallback.liveFallback instead of a snapshot.
+ */
 export interface SnapshotBinding {
   owner: string;
   tier: string;
@@ -39,9 +45,8 @@ export const RECOMMENDED_POOL_LIMIT = 1000;
 export const MAX_PAGE_SIZE = 100;
 /** Id windows one nextPage() call may read (each of pageSize ids) before it returns a short page. */
 export const MAX_REFILL_WINDOWS = 8;
-export const GUEST_OWNER = "guest";
 
-export type BindingFailure = "invalid_expectation" | "unbound_snapshot" | "owner_mismatch" | "tier_mismatch" | "query_mismatch";
+export type BindingFailure = "invalid_expectation" | "shared_guest_owner" | "unbound_snapshot" | "owner_mismatch" | "tier_mismatch" | "query_mismatch";
 
 export class SnapshotBindingError extends Error {
   constructor(readonly reason: BindingFailure) {
@@ -51,6 +56,8 @@ export class SnapshotBindingError extends Error {
 }
 
 const isPart = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+/** The shared-guest literal ("guest", any case/spacing) or an empty "guest:" prefix: never a valid owner. */
+const isSharedGuest = (v: unknown): boolean => typeof v === "string" && /^\s*guest\s*(:\s*)?$/i.test(v);
 const isFullBinding = (b: unknown): b is SnapshotBinding =>
   !!b && typeof b === "object" && isPart((b as SnapshotBinding).owner) && isPart((b as SnapshotBinding).tier) && isPart((b as SnapshotBinding).queryHash);
 
@@ -61,6 +68,7 @@ export function captureOrder(rankedRows: ReadonlyArray<{ id: string }>, limit: n
   const ids = rankedRows.map((r) => r.id);
   if (ids.some((id) => typeof id !== "string" || id.length === 0)) throw new Error("every row needs a string id");
   if (new Set(ids).size !== ids.length) throw new Error("snapshot ids must be unique");
+  if (binding !== undefined && isSharedGuest(binding.owner)) throw new SnapshotBindingError("shared_guest_owner");
   if (binding !== undefined && !isFullBinding(binding)) throw new SnapshotBindingError("invalid_expectation");
   const snap: Snapshot = { ids: Object.freeze(ids.slice()), limit, ...(binding ? { binding: Object.freeze({ owner: binding.owner, tier: binding.tier, queryHash: binding.queryHash }) } : {}) };
   return Object.freeze(snap);
@@ -71,9 +79,10 @@ export function captureOrder(rankedRows: ReadonlyArray<{ id: string }>, limit: n
  * empty), the snapshot must carry a complete binding, and all three parts must be equal.
  */
 export function verifySnapshot(s: Snapshot, expect: SnapshotBinding): { ok: true } | { ok: false; reason: BindingFailure } {
+  if (expect && typeof expect === "object" && isSharedGuest(expect.owner)) return { ok: false, reason: "shared_guest_owner" };
   if (!isFullBinding(expect)) return { ok: false, reason: "invalid_expectation" };
   const b = s.binding;
-  if (!isFullBinding(b)) return { ok: false, reason: "unbound_snapshot" };
+  if (!isFullBinding(b) || isSharedGuest(b.owner)) return { ok: false, reason: "unbound_snapshot" };
   if (b.owner !== expect.owner) return { ok: false, reason: "owner_mismatch" };
   if (b.tier !== expect.tier) return { ok: false, reason: "tier_mismatch" };
   if (b.queryHash !== expect.queryHash) return { ok: false, reason: "query_mismatch" };
