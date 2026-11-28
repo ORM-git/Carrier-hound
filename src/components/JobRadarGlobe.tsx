@@ -7,7 +7,6 @@ import {
   RadarCityAggregate,
   RadarTelemetryPayload,
   RadarJobCard,
-  CountryRegion,
   RADAR_REGIONS,
   getMarkerRadius,
 } from "@/data/radarCities";
@@ -25,9 +24,7 @@ import {
   X,
   ChevronRight,
   ShieldCheck,
-  Radio,
   CheckCircle2,
-  Compass,
   Globe2,
   Filter,
   Layers,
@@ -35,7 +32,6 @@ import {
   Search,
   ChevronDown,
   Loader2,
-  Sparkles,
   Lock,
   GraduationCap,
   SlidersHorizontal,
@@ -48,6 +44,9 @@ import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { toast } from "react-toastify";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { searchRadarCities, radarMarkerSize } from "@/lib/jobs/radarView";
+import "./radar-reference.css";
+import RadarFlatMap from "./RadarFlatMap";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
 
 // Convert latitude and longitude to 3D Cartesian coordinates on sphere
@@ -128,7 +127,7 @@ function checkWebGLSupport(): boolean {
     const canvas = document.createElement("canvas");
     return Boolean(
       window.WebGLRenderingContext &&
-        (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
     );
   } catch {
     return false;
@@ -148,15 +147,15 @@ interface ActiveSelection {
 type GlobeMapStyle = "dots" | "night" | "satellite" | "minimal";
 
 const GLOBE_MAP_TEXTURES: Record<GlobeMapStyle, string> = {
-  // Dotted style tints the dark map as a base; its pure-black land pixels double as the dot mask.
-  dots: "/globe/earth-dark.jpg",
+  // Light geography is rendered from the repository Natural Earth land polygons.
+  dots: "/globe/earth-radar-light.jpg",
   night: "/globe/earth-night.jpg",
   satellite: "/globe/earth-blue-marble.jpg",
   minimal: "/globe/earth-dark.jpg",
 };
 
 const GLOBE_MAP_LABELS: Record<GlobeMapStyle, string> = {
-  dots: "Dotted",
+  dots: "Light globe",
   night: "Night",
   satellite: "Satellite",
   minimal: "Minimal Dark",
@@ -168,7 +167,7 @@ const MARKER_COLOR_CSS = "#22d3ee";
 const MARKER_GLOW_CSS = "rgba(34, 211, 238, 0.55)";
 // Dotted style: land dots + the tint multiplied into the dark base map
 const LAND_DOT_COLOR_HEX = 0x5eead4;
-const DOTS_BASE_TINT = 0x7aa7e0;
+const DOTS_BASE_TINT = 0xffffff;
 
 const NAV_HINT_STORAGE_KEY = "cm_radar_nav_hint_dismissed";
 
@@ -202,7 +201,7 @@ export function fibonacciLandDots(
   for (let i = 0; i < samples; i++) {
     const y = 1 - (2 * (i + 0.5)) / samples;
     const lat = (Math.asin(y) * 180) / Math.PI;
-    const lng = ((((i * golden * 180) / Math.PI) % 360) + 360) % 360 - 180;
+    const lng = (((((i * golden * 180) / Math.PI) % 360) + 360) % 360) - 180;
     if (!isLand(lat, lng)) continue;
     const p = latLngToVector3(lat, lng, radius);
     out.push(p.x, p.y, p.z);
@@ -260,6 +259,13 @@ export default function JobRadarGlobe() {
   // Direct DOM references for 60 FPS HTML marker transforms (ZERO React re-renders)
   const markerElementsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [listView, setListView] = useState(false);
+  const [flatView, setFlatView] = useState(false);
+  const [flatZoom, setFlatZoom] = useState(1);
+  const searchQueryRef = useRef("");
+  searchQueryRef.current = searchQuery;
+
   // State
   const [webglSupported, setWebglSupported] = useState<boolean>(true);
   const [telemetry, setTelemetry] = useState<RadarTelemetryPayload | null>(null);
@@ -272,14 +278,15 @@ export default function JobRadarGlobe() {
 
   // Respect prefers-reduced-motion: no auto-rotate, no pulse animations
   const [prefersReducedMotion] = useState<boolean>(
-    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    () =>
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
 
   // Map style layer switcher: night lights / satellite (day) / minimal dark
   const [mapStyle, setMapStyle] = useState<GlobeMapStyle>("dots");
 
   // "How to navigate" card: collapsible, auto-hides after first interaction, remembered in localStorage
-  const [showNavHint, setShowNavHint] = useState<boolean>(true);
+  const [showNavHint, setShowNavHint] = useState<boolean>(false);
 
   // Mobile filter bottom sheet
   const [showMobileFilterSheet, setShowMobileFilterSheet] = useState<boolean>(false);
@@ -305,7 +312,7 @@ export default function JobRadarGlobe() {
 
   // Selection & UI State
   const [selectedCity, setSelectedCity] = useState<ActiveSelection | null>(null);
-  const [isSpinning, setIsSpinning] = useState<boolean>(true);
+  const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
 
   // Drawer jobs state
@@ -467,12 +474,7 @@ export default function JobRadarGlobe() {
 
   // 4. Update URL params whenever filters change
   const updateUrlFilters = useCallback(
-    (updates: {
-      country?: string;
-      cat?: string;
-      remote?: boolean;
-      internship?: boolean;
-    }) => {
+    (updates: { country?: string; cat?: string; remote?: boolean; internship?: boolean }) => {
       const c = updates.country !== undefined ? updates.country : countryFilter;
       const cat = updates.cat !== undefined ? updates.cat : categoryFilter;
       const rem = updates.remote !== undefined ? updates.remote : remoteFilter;
@@ -526,7 +528,8 @@ export default function JobRadarGlobe() {
           .select(
             "id, title, company, location, country_code, remote_scope, remote_eligibility, job_type, salary_text, verified, source_type, apply_url, posted_at, discovered_at, last_seen_at, seniority, category",
             { count: "exact" }
-          ).or(VISIBLE_SOURCE_FILTER)
+          )
+          .or(VISIBLE_SOURCE_FILTER)
           .eq("status", "active");
 
         // Target: City or Worldwide Remote
@@ -551,12 +554,16 @@ export default function JobRadarGlobe() {
 
         // Filter 3: Remote Only
         if (remoteFilter) {
-          query = query.or("remote_scope.eq.worldwide,remote_scope.eq.remote,location.ilike.%remote%");
+          query = query.or(
+            "remote_scope.eq.worldwide,remote_scope.eq.remote,location.ilike.%remote%"
+          );
         }
 
         // Filter 4: Internships Only
         if (internshipFilter) {
-          query = query.or("job_type.eq.internship,title.ilike.%internship%,title.ilike.%internships%,title.ilike.% intern %,title.ilike.intern %,title.ilike.% intern,title.ilike.%-intern%,title.ilike.%(intern)%,title.ilike.%co-op%,title.ilike.%coop%");
+          query = query.or(
+            "job_type.eq.internship,title.ilike.%internship%,title.ilike.%internships%,title.ilike.% intern %,title.ilike.intern %,title.ilike.% intern,title.ilike.%-intern%,title.ilike.%(intern)%,title.ilike.%co-op%,title.ilike.%coop%"
+          );
         }
 
         // Verified Only Toggle
@@ -592,7 +599,9 @@ export default function JobRadarGlobe() {
         // For verified Pro members, unlock full details from server
         if (isPro && cards.length > 0) {
           try {
-            const { data: { session } } = await supabase.auth.getSession();
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
             const token = session?.access_token;
             if (token) {
               const proRes = await fetch("/api/jobs/pro", {
@@ -620,9 +629,13 @@ export default function JobRadarGlobe() {
                 }
                 setRadarProUnlockError(false);
               } else {
-                console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failed with status ${proRes.status}`);
+                console.error(
+                  `[API /jobs/pro error]: Radar drawer Pro unlock failed with status ${proRes.status}`
+                );
                 if (proRes.status === 401) {
-                  const { data: { session: currentSession } } = await supabase.auth.getSession();
+                  const {
+                    data: { session: currentSession },
+                  } = await supabase.auth.getSession();
                   if (!currentSession && typeof window !== "undefined") {
                     const returnTo = window.location.pathname + window.location.search;
                     window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
@@ -632,7 +645,9 @@ export default function JobRadarGlobe() {
               }
             }
           } catch (proErr: any) {
-            console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failure (${proErr?.message || "fetch failed"})`);
+            console.error(
+              `[API /jobs/pro error]: Radar drawer Pro unlock failure (${proErr?.message || "fetch failed"})`
+            );
             setRadarProUnlockError(true);
           }
         }
@@ -708,7 +723,7 @@ export default function JobRadarGlobe() {
   // no-ops on initial mount (earthMaterialRef/rendererRef aren't set yet) and reacts once mapStyle
   // actually changes, by which point the main effect has already run and populated those refs.
   useEffect(() => {
-    if (landDotsRef.current) landDotsRef.current.visible = mapStyle === "dots";
+    if (landDotsRef.current) landDotsRef.current.visible = false;
     const earthMat = earthMaterialRef.current;
     const renderer = rendererRef.current;
     if (!earthMat || !renderer) return;
@@ -826,7 +841,7 @@ export default function JobRadarGlobe() {
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, isMobile ? 1.8 : 4.8, isMobile ? 18 : 17);
+    camera.position.set(0, isMobile ? 1.8 : 4.8, isMobile ? 22 : 10.6);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
@@ -852,7 +867,7 @@ export default function JobRadarGlobe() {
     controls.minDistance = 6.8;
     controls.maxDistance = 32;
     controls.autoRotate = !prefersReducedMotion && isSpinningRef.current;
-    controls.autoRotateSpeed = 0.75;
+    controls.autoRotateSpeed = 0.25;
     controlsRef.current = controls;
 
     controls.addEventListener("start", () => {
@@ -873,11 +888,11 @@ export default function JobRadarGlobe() {
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0x7dd3fc, 1.6);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
     sunLight.position.set(12, 8, 14);
     scene.add(sunLight);
 
-    const backLight = new THREE.DirectionalLight(0x0284c7, 0.8);
+    const backLight = new THREE.DirectionalLight(0xffffff, 1.4);
     backLight.position.set(-10, -5, -10);
     scene.add(backLight);
 
@@ -914,12 +929,13 @@ export default function JobRadarGlobe() {
     bgCanvas.height = 256;
     const bgCtx = bgCanvas.getContext("2d")!;
     const bgGradient = bgCtx.createLinearGradient(0, 0, 0, 256);
-    bgGradient.addColorStop(0, "#0a1230");
-    bgGradient.addColorStop(0.55, "#040816");
-    bgGradient.addColorStop(1, "#000005");
+    bgGradient.addColorStop(0, "#031a2c");
+    bgGradient.addColorStop(0.55, "#031829");
+    bgGradient.addColorStop(1, "#031727");
     bgCtx.fillStyle = bgGradient;
     bgCtx.fillRect(0, 0, 2, 256);
     const bgTexture = new THREE.CanvasTexture(bgCanvas);
+    bgTexture.colorSpace = THREE.SRGBColorSpace;
     scene.background = bgTexture;
     disposablesRef.current.push(bgTexture);
 
@@ -966,59 +982,63 @@ export default function JobRadarGlobe() {
     scene.add(fallbackMesh);
     disposablesRef.current.push(fallbackMat);
 
-    loadStyleTexture(mapStyle, (texture) => {
-      if (isCancelled) return;
-      if (fallbackMesh.parent) scene.remove(fallbackMesh);
+    loadStyleTexture(
+      mapStyle,
+      (texture) => {
+        if (isCancelled) return;
+        if (fallbackMesh.parent) scene.remove(fallbackMesh);
 
-      const earthMat = new THREE.MeshStandardMaterial({
-        map: texture,
-        color: mapStyle === "dots" ? DOTS_BASE_TINT : 0xffffff,
-        roughness: 0.65,
-        metalness: 0.15,
-      });
-      earthMaterialRef.current = earthMat;
-      const earthMesh = new THREE.Mesh(earthGeo, earthMat);
-      scene.add(earthMesh);
-      disposablesRef.current.push(earthMat);
-      setTextureLoaded(true);
+        const earthMat = new THREE.MeshStandardMaterial({
+          map: texture,
+          color: mapStyle === "dots" ? DOTS_BASE_TINT : 0xffffff,
+          roughness: 0.65,
+          metalness: 0.15,
+        });
+        earthMaterialRef.current = earthMat;
+        const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+        scene.add(earthMesh);
+        disposablesRef.current.push(earthMat);
+        setTextureLoaded(true);
 
-      // Subtle surface relief from the topology map (loaded once, reused across styles)
-      if (bumpTextureRef.current) {
-        earthMat.bumpMap = bumpTextureRef.current;
-        earthMat.bumpScale = 0.035;
-        earthMat.needsUpdate = true;
-      } else {
-        textureLoader.load(
-          "/globe/earth-topology.png",
-          (bumpTex) => {
-            if (isCancelled) {
-              bumpTex.dispose();
-              return;
-            }
-            bumpTextureRef.current = bumpTex;
-            disposablesRef.current.push(bumpTex);
-            if (earthMaterialRef.current) {
-              earthMaterialRef.current.bumpMap = bumpTex;
-              earthMaterialRef.current.bumpScale = 0.035;
-              earthMaterialRef.current.needsUpdate = true;
-            }
-          },
-          undefined,
-          () => {}
-        );
+        // Subtle surface relief from the topology map (loaded once, reused across styles)
+        if (bumpTextureRef.current) {
+          earthMat.bumpMap = bumpTextureRef.current;
+          earthMat.bumpScale = 0.035;
+          earthMat.needsUpdate = true;
+        } else {
+          textureLoader.load(
+            "/globe/earth-topology.png",
+            (bumpTex) => {
+              if (isCancelled) {
+                bumpTex.dispose();
+                return;
+              }
+              bumpTextureRef.current = bumpTex;
+              disposablesRef.current.push(bumpTex);
+              if (earthMaterialRef.current) {
+                earthMaterialRef.current.bumpMap = bumpTex;
+                earthMaterialRef.current.bumpScale = 0.035;
+                earthMaterialRef.current.needsUpdate = true;
+              }
+            },
+            undefined,
+            () => {}
+          );
+        }
+      },
+      () => {
+        // Texture failed to load: settle the loading state so the overlay clears and the
+        // fallback wireframe globe (already in the scene) is shown instead of waiting forever.
+        setTextureLoaded(true);
+        setTextureLoadFailed(true);
       }
-    }, () => {
-      // Texture failed to load: settle the loading state so the overlay clears and the
-      // fallback wireframe globe (already in the scene) is shown instead of waiting forever.
-      setTextureLoaded(true);
-      setTextureLoadFailed(true);
-    });
+    );
 
     // Fresnel atmosphere glow: soft cyan rim, replaces the old flat backside-sphere halo
-    const atmosGeo = new THREE.SphereGeometry(5.75, isMobile ? 32 : 64, isMobile ? 32 : 64);
+    const atmosGeo = new THREE.SphereGeometry(5.1, isMobile ? 32 : 64, isMobile ? 32 : 64);
     const atmosMat = new THREE.ShaderMaterial({
       uniforms: {
-        glowColor: { value: new THREE.Color(0x67e8f9) },
+        glowColor: { value: new THREE.Color(0xffffff) },
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -1039,7 +1059,7 @@ export default function JobRadarGlobe() {
           // so the glow fades smoothly outward instead of drawing a hard ring.
           float d = clamp(-dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0);
           float glow = pow(smoothstep(0.0, 0.5, d), 1.6);
-          gl_FragColor = vec4(glowColor, glow * 0.32);
+          gl_FragColor = vec4(glowColor, glow * 0.18);
         }
       `,
       transparent: true,
@@ -1057,7 +1077,11 @@ export default function JobRadarGlobe() {
       GLOBE_MAP_TEXTURES.dots,
       (image) => {
         if (isCancelled) return;
-        const positions = fibonacciLandDots(isMobile ? 24000 : 60000, 5.02, landMaskFromImage(image));
+        const positions = fibonacciLandDots(
+          isMobile ? 24000 : 60000,
+          5.02,
+          landMaskFromImage(image)
+        );
         const dotsGeo = new THREE.BufferGeometry();
         dotsGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
         const dotsMat = new THREE.PointsMaterial({
@@ -1070,7 +1094,7 @@ export default function JobRadarGlobe() {
           sizeAttenuation: true,
         });
         const dots = new THREE.Points(dotsGeo, dotsMat);
-        dots.visible = mapStyle === "dots";
+        dots.visible = false;
         scene.add(dots);
         landDotsRef.current = dots;
         disposablesRef.current.push(dotsGeo, dotsMat);
@@ -1081,11 +1105,13 @@ export default function JobRadarGlobe() {
 
     // Group for dynamic 3D marker meshes
     const markersGroup = new THREE.Group();
+    markersGroup.visible = false; // City discs are the single marker representation.
     scene.add(markersGroup);
     markersGroupRef.current = markersGroup;
 
     // Group for Worldwide Remote connection arcs (populated by a separate effect)
     const arcsGroup = new THREE.Group();
+    arcsGroup.visible = false; // Job totals do not imply connections between cities.
     scene.add(arcsGroup);
     arcsGroupRef.current = arcsGroup;
 
@@ -1163,7 +1189,7 @@ export default function JobRadarGlobe() {
         }
       } else {
         controls.autoRotate = isSpinningRef.current && !selectedCityRef.current;
-        const targetSpeed = controls.autoRotate ? (isHovering ? 0.15 : 0.75) : 0;
+        const targetSpeed = controls.autoRotate ? (isHovering ? 0.08 : 0.25) : 0;
         controls.autoRotateSpeed += (targetSpeed - controls.autoRotateSpeed) * 0.04;
         controls.update();
       }
@@ -1195,7 +1221,9 @@ export default function JobRadarGlobe() {
           scratchWorldPos.set(x, y, z);
           scratchMarkerDir.copy(scratchWorldPos).normalize();
           const dot = camPos.dot(scratchMarkerDir);
-          const isMatch = matchesFilters(city, cFilter, rFilter);
+          const isMatch =
+            matchesFilters(city, cFilter, rFilter) &&
+            searchRadarCities([city], searchQueryRef.current).length > 0;
 
           // Fully cull well past the horizon (saves layout cost). Nearer the horizon, or when
           // filtered out, the marker stays mounted and fades via CSS transition instead of
@@ -1205,6 +1233,30 @@ export default function JobRadarGlobe() {
             if (scratchScreenVec.z < 1) {
               const screenX = (scratchScreenVec.x * 0.5 + 0.5) * cWidth;
               const screenY = (-scratchScreenVec.y * 0.5 + 0.5) * cHeight;
+              // Hide the whole marker at the viewport edge, never show partial counts or labels.
+              const insetX = Math.max(
+                radarMarkerSize(city.totalCount) / 2 + 5,
+                city.name.length * 3.4 + 8
+              );
+              const insetY = radarMarkerSize(city.totalCount) / 2 + 22;
+              const markerRadius = radarMarkerSize(city.totalCount) / 2 + 10;
+              if (
+                (screenX + markerRadius > cWidth - 60 && screenY - markerRadius < 170) ||
+                (screenX - markerRadius < 175 && screenY - markerRadius < 65) ||
+                (screenX - markerRadius < 120 && screenY + markerRadius > cHeight - 65)
+              ) {
+                el.style.display = "none";
+                continue;
+              }
+              if (
+                screenX < insetX ||
+                screenX > cWidth - insetX ||
+                screenY < insetY ||
+                screenY > cHeight - insetY
+              ) {
+                el.style.display = "none";
+                continue;
+              }
               el.style.transform = `translate3d(${screenX}px, ${screenY}px, 0) translate(-50%, -50%)`;
               el.style.display = "flex";
               // dot in [0.15, -0.08] maps to edge fade [1, 0]; filtered-out markers fade to 0
@@ -1232,7 +1284,14 @@ export default function JobRadarGlobe() {
         // Collision avoidance + lightweight clustering: nearby labels merge into the
         // surviving (higher-count) one; it splits back out once they're no longer close
         // (zooming in increases on-screen distance between cities).
-        const placed: { x: number; y: number; badgeEl: HTMLElement; extraCount: number; extraJobs: number }[] = [];
+        const placed: {
+          x: number;
+          y: number;
+          radius: number;
+          badgeEl: HTMLElement;
+          extraCount: number;
+          extraJobs: number;
+        }[] = [];
         for (const marker of visibleMarkers) {
           const badgeEl = marker.el.querySelector(".city-tag-badge") as HTMLElement | null;
           const lineEl = marker.el.querySelector(".city-leader-line") as HTMLElement | null;
@@ -1242,14 +1301,21 @@ export default function JobRadarGlobe() {
           if (marker.isSelected) {
             badgeEl.style.opacity = "1";
             badgeEl.style.pointerEvents = "auto";
-            placed.push({ x: marker.screenX, y: marker.screenY, badgeEl, extraCount: 0, extraJobs: 0 });
+            placed.push({
+              x: marker.screenX,
+              y: marker.screenY,
+              radius: radarMarkerSize(marker.city.totalCount) / 2,
+              badgeEl,
+              extraCount: 0,
+              extraJobs: 0,
+            });
             continue;
           }
 
           let mergedInto: (typeof placed)[number] | null = null;
           for (const p of placed) {
             const dist = Math.hypot(marker.screenX - p.x, marker.screenY - p.y);
-            if (dist < 55) {
+            if (dist < p.radius + radarMarkerSize(marker.city.totalCount) / 2 + 10) {
               mergedInto = p;
               break;
             }
@@ -1257,6 +1323,8 @@ export default function JobRadarGlobe() {
 
           if (mergedInto) {
             // Merge into the surviving (closer in sort order = higher priority) label
+            marker.el.style.opacity = "0";
+            marker.el.style.pointerEvents = "none";
             mergedInto.extraCount += 1;
             mergedInto.extraJobs += marker.city.totalCount || 0;
             badgeEl.style.opacity = "0";
@@ -1265,7 +1333,14 @@ export default function JobRadarGlobe() {
             const visible = marker.edgeFade > 0.4;
             badgeEl.style.opacity = visible ? "1" : "0";
             badgeEl.style.pointerEvents = visible ? "auto" : "none";
-            placed.push({ x: marker.screenX, y: marker.screenY, badgeEl, extraCount: 0, extraJobs: 0 });
+            placed.push({
+              x: marker.screenX,
+              y: marker.screenY,
+              radius: radarMarkerSize(marker.city.totalCount) / 2,
+              badgeEl,
+              extraCount: 0,
+              extraJobs: 0,
+            });
           }
         }
 
@@ -1274,7 +1349,7 @@ export default function JobRadarGlobe() {
           const extraEl = p.badgeEl.querySelector(".cluster-extra") as HTMLElement | null;
           if (!extraEl) continue;
           if (p.extraCount > 0) {
-            extraEl.textContent = `+${p.extraCount} (${p.extraJobs})`;
+            extraEl.textContent = "";
             extraEl.style.display = "inline";
           } else {
             extraEl.style.display = "none";
@@ -1461,7 +1536,7 @@ export default function JobRadarGlobe() {
     if (!region || region.id === "all") {
       setIsSpinning(true);
       const isMobile = window.innerWidth < 640;
-      targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.8 : 4.8, isMobile ? 18 : 17);
+      targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.8 : 4.8, isMobile ? 22 : 10.6);
       targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
       isTransitioningRef.current = true;
     } else {
@@ -1527,7 +1602,7 @@ export default function JobRadarGlobe() {
 
     if (!cameraRef.current || !controlsRef.current) return;
     const isMobile = window.innerWidth < 640;
-    targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.8 : 4.8, isMobile ? 18 : 17);
+    targetCameraPosRef.current = new THREE.Vector3(0, isMobile ? 1.8 : 4.8, isMobile ? 22 : 10.6);
     targetLookAtRef.current = new THREE.Vector3(0, 0, 0);
     isTransitioningRef.current = true;
   };
@@ -1568,14 +1643,18 @@ export default function JobRadarGlobe() {
           break;
         case "ArrowUp": {
           e.preventDefault();
-          const axis = new THREE.Vector3().crossVectors(camera.position, new THREE.Vector3(0, 1, 0)).normalize();
+          const axis = new THREE.Vector3()
+            .crossVectors(camera.position, new THREE.Vector3(0, 1, 0))
+            .normalize();
           camera.position.applyAxisAngle(axis, rotateStep);
           controls.update();
           break;
         }
         case "ArrowDown": {
           e.preventDefault();
-          const axis = new THREE.Vector3().crossVectors(camera.position, new THREE.Vector3(0, 1, 0)).normalize();
+          const axis = new THREE.Vector3()
+            .crossVectors(camera.position, new THREE.Vector3(0, 1, 0))
+            .normalize();
           camera.position.applyAxisAngle(axis, -rotateStep);
           controls.update();
           break;
@@ -1626,8 +1705,8 @@ export default function JobRadarGlobe() {
   }, [selectedCity, countryFilter, categoryFilter, remoteFilter, internshipFilter]);
 
   // Telemetry numbers
-  const activeCountDisplay = telemetry?.header?.totalActive != null ? telemetry.header.totalActive.toLocaleString() : "...";
-  const verifiedCountDisplay = telemetry?.header?.totalVerified != null ? telemetry.header.totalVerified.toLocaleString() : "...";
+  const activeCountDisplay =
+    telemetry?.header?.totalActive != null ? telemetry.header.totalActive.toLocaleString() : "...";
 
   // List of real countries sorted by job count
   const realCountriesList = useMemo(() => {
@@ -1641,8 +1720,26 @@ export default function JobRadarGlobe() {
       .sort((a, b) => b.total - a.total);
   }, [telemetry]);
 
+  const zoomRadar = (step: number) => {
+    if (flatView) {
+      setFlatZoom((z) => Math.max(1, Math.min(4, z + Math.sign(step) * 0.3)));
+      return;
+    }
+    const camera = cameraRef.current,
+      controls = controlsRef.current;
+    if (!camera || !controls) return;
+    setIsSpinning(false);
+    camera.position.setLength(
+      Math.max(
+        controls.minDistance,
+        Math.min(controls.maxDistance, camera.position.length() - step)
+      )
+    );
+    controls.update();
+  };
+
   return (
-    <div className="relative w-full flex-1 h-full min-h-[580px] bg-[#040610] text-white overflow-hidden select-none font-sans">
+    <div className="radar-reference relative w-full flex-1 h-full min-h-[580px] bg-[#031727] text-white overflow-hidden select-none font-sans">
       {/* 3D WebGL Canvas Container */}
       {webglSupported ? (
         <div
@@ -1650,7 +1747,7 @@ export default function JobRadarGlobe() {
           onClick={() => {
             if (selectedCity) handleCloseDrawer();
           }}
-          className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
+          className={`absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing ${flatView ? "invisible" : ""}`}
         />
       ) : (
         /* Accessible No-WebGL Fallback UI */
@@ -1679,8 +1776,86 @@ export default function JobRadarGlobe() {
         </div>
       )}
 
-      {/* Cyber Radial Overlay */}
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-slate-950/10 to-slate-950/75" />
+      <div className="radar-reference-toolbar">
+        <div className="radar-search">
+          <Search size={17} />
+          <input
+            aria-label="Search cities, countries or listed companies"
+            placeholder="Search cities, country codes or top companies"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="radar-stat-pills">
+          <span>
+            Jobs <b>{activeCountDisplay}</b>
+          </span>
+          <span>
+            Countries <b>{telemetry ? Object.keys(telemetry.countries).length : "…"}</b>
+          </span>
+          <span>
+            Cities <b>{telemetry?.cities.length ?? "…"}</b>
+          </span>
+        </div>
+      </div>
+      <div className="radar-view-switch">
+        <button aria-pressed={listView} onClick={() => setListView(true)}>
+          ☷ List
+        </button>
+        <button aria-pressed={!listView} onClick={() => setListView(false)}>
+          ◉ Map
+        </button>
+      </div>
+      <div className="radar-map-controls">
+        <button aria-label="Zoom in" onClick={() => zoomRadar(0.8)}>
+          +
+        </button>
+        <button aria-label="Zoom out" onClick={() => zoomRadar(-0.8)}>
+          −
+        </button>
+        <button
+          aria-label={flatView ? "Switch to globe" : "Switch to flat map"}
+          aria-pressed={flatView}
+          onClick={() => {
+            setFlatView((v) => !v);
+            setListView(false);
+          }}
+        >
+          ◎
+        </button>
+      </div>
+      {flatView && (
+        <RadarFlatMap
+          cities={searchRadarCities(telemetry?.cities ?? [], searchQuery).filter((c) =>
+            matchesFilters(c, countryFilter, regionFilter)
+          )}
+          zoom={flatZoom}
+          onSelect={handleCitySelect}
+        />
+      )}
+      {listView && (
+        <section className="radar-city-list" aria-label="Cities with active jobs">
+          <h2>Explore job locations</h2>
+          {searchRadarCities(telemetry?.cities ?? [], searchQuery)
+            .filter((c) => matchesFilters(c, countryFilter, regionFilter))
+            .map((city) => (
+              <button key={city.id} onClick={() => handleCitySelect(city)}>
+                <span>
+                  {city.name}
+                  <small>
+                    {city.countryCode} · {city.topCompanies.slice(0, 2).join(", ")}
+                  </small>
+                </span>
+                <strong>
+                  {city.totalCount.toLocaleString()} <small>jobs</small>
+                </strong>
+              </button>
+            ))}
+          {searchRadarCities(telemetry?.cities ?? [], searchQuery).filter((c) =>
+            matchesFilters(c, countryFilter, regionFilter)
+          ).length === 0 && <p>No matching job locations.</p>}
+        </section>
+      )}
 
       {/* Loading Skeleton: shown until the globe texture and telemetry are both ready */}
       {webglSupported && (!textureLoaded || (isLoadingTelemetry && !telemetry)) && (
@@ -1727,7 +1902,7 @@ export default function JobRadarGlobe() {
       {/* ========================================================================= */}
       {/* 3D PROJECTED HTML CITY MARKERS (Zero React Re-render Animation Loop)      */}
       {/* ========================================================================= */}
-      {webglSupported && telemetry && (
+      {webglSupported && telemetry && !flatView && !listView && (
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
           {telemetry.cities.map((city) => {
             const isSelected = selectedCity?.id === city.id;
@@ -1766,56 +1941,18 @@ export default function JobRadarGlobe() {
                   setHoveredPos(null);
                 }}
               >
-                {/* Concentric Radar Ping Rings (disabled under prefers-reduced-motion) */}
-                {!prefersReducedMotion && (
-                  <>
-                    <div
-                      className="absolute -top-3.5 -left-3.5 w-11 h-11 rounded-full animate-radar-ping pointer-events-none opacity-40"
-                      style={{ backgroundColor: MARKER_COLOR_CSS }}
-                    />
-                    <div
-                      className="absolute -top-3.5 -left-3.5 w-11 h-11 rounded-full animate-radar-ping-delay pointer-events-none opacity-30"
-                      style={{ backgroundColor: MARKER_COLOR_CSS }}
-                    />
-                  </>
-                )}
-
-                {/* Core Diode with Selected Glowing Ring */}
                 <div
-                  className={`relative w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
-                    isSelected
-                      ? "ring-4 ring-white ring-offset-2 ring-offset-slate-950 scale-130 border-white shadow-[0_0_20px_#ffffff]"
-                      : "border-white/80 group-hover:scale-115"
-                  }`}
+                  className={`city-tag-badge radar-count-disc ${city.totalCount < 50 ? "radar-count-small" : ""} ${isSelected ? "radar-count-selected" : ""}`}
                   style={{
-                    backgroundColor: MARKER_COLOR_CSS,
-                    boxShadow: isSelected ? "0 0 20px #ffffff" : `0 0 12px ${MARKER_GLOW_CSS}`,
+                    width: radarMarkerSize(city.totalCount),
+                    height: radarMarkerSize(city.totalCount),
                   }}
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                  <span className="radar-count-number">{city.totalCount.toLocaleString()}</span>
+                  <span className="radar-count-label">JOBS</span>
+                  <span className="cluster-extra" style={{ display: "none" }} />
                 </div>
-
-                {/* Leader line connecting the dot to its label pill */}
-                <div className="city-leader-line w-px h-2 bg-cyan-300/40 transition-opacity duration-200" />
-
-                {/* City Tag Badge (glass pill) */}
-                <div
-                  className={`city-tag-badge px-2.5 py-0.5 rounded-full border text-[11px] font-semibold shadow-[0_4px_14px_rgba(0,0,0,0.85)] backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap transition-opacity duration-200 group-hover:opacity-100! group-hover:pointer-events-auto! ${
-                    isSelected
-                      ? "bg-slate-950/80 border-white text-white ring-2 ring-white/50"
-                      : "bg-slate-950/70 border-slate-700/80 text-slate-200 group-hover:border-cyan-400 group-hover:text-white"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${prefersReducedMotion ? "" : "animate-pulse"}`}
-                    style={{ backgroundColor: MARKER_COLOR_CSS }}
-                  />
-                  <span>{city.name}</span>
-                  <span className="font-mono font-normal opacity-85" style={{ color: MARKER_COLOR_CSS }}>
-                    ({city.totalCount})
-                  </span>
-                  <span className="cluster-extra font-mono font-normal text-slate-400" style={{ display: "none" }} />
-                </div>
+                <span className="radar-city-name">{city.name}</span>
               </button>
             );
           })}
@@ -1826,13 +1963,20 @@ export default function JobRadarGlobe() {
       {hoveredCity && hoveredPos && (
         <div
           className="absolute z-40 pointer-events-none -translate-x-1/2 px-3.5 py-2.5 rounded-xl bg-slate-950/95 border border-cyan-500/40 backdrop-blur-xl shadow-2xl text-xs text-slate-200 min-w-[180px] animate-fadeIn"
-          style={{ left: hoveredPos.x, top: hoveredPos.y - 14, transform: "translate(-50%, -100%)" }}
+          style={{
+            left: hoveredPos.x,
+            top: hoveredPos.y - 14,
+            transform: "translate(-50%, -100%)",
+          }}
         >
           <p className="font-bold text-white text-sm">{hoveredCity.name}</p>
           <div className="flex items-center gap-3 mt-1 text-[11px]">
-            <span className="text-cyan-300 font-semibold">{hoveredCity.totalCount.toLocaleString()} jobs</span>
+            <span className="text-cyan-300 font-semibold">
+              {hoveredCity.totalCount.toLocaleString()} jobs
+            </span>
             <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> {hoveredCity.verifiedCount.toLocaleString()} verified
+              <ShieldCheck className="w-3 h-3" /> {hoveredCity.verifiedCount.toLocaleString()}{" "}
+              verified
             </span>
           </div>
           {hoveredCity.topCompanies && hoveredCity.topCompanies.length > 0 && (
@@ -1843,249 +1987,20 @@ export default function JobRadarGlobe() {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* TOP FLOATING CONTROLS: Row 1 (Telemetry & Regions) + Row 2 (4 Light Filters) */}
-      {/* ========================================================================= */}
-      <div className="absolute top-3 left-0 right-0 z-30 flex flex-col gap-2 px-3 sm:px-6 pointer-events-none">
-        {/* Row 1: Telemetry Badge, Region Pills, Orbit Controls */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-2">
-          {/* Left: Telemetry Live Status Badge */}
-          <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/85 border border-cyan-500/30 backdrop-blur-md shadow-lg shadow-cyan-950/30 text-xs">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-            </span>
-            <div className="flex items-center gap-1.5 font-semibold text-cyan-200">
-              <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span className="uppercase font-mono tracking-wider">RADAR</span>
-              <span className="text-slate-500">•</span>
-              <span className="text-slate-200 font-bold">{activeCountDisplay}</span>
-              <span className="text-slate-400 font-normal hidden sm:inline">Active Direct Jobs</span>
-              <span className="text-slate-500 hidden sm:inline">•</span>
-              <span className="text-emerald-400 font-semibold hidden sm:inline">
-                {verifiedCountDisplay} Verified
-              </span>
-            </div>
-          </div>
+      <button
+        type="button"
+        onClick={() => setShowMobileFilterSheet(true)}
+        aria-expanded={showMobileFilterSheet}
+        className="radar-filter-trigger"
+      >
+        <SlidersHorizontal size={15} /> Filters{" "}
+        {hasActiveFilters && <span aria-label="Filters active">•</span>}
+      </button>
 
-          {/* Center: Region Pills & Worldwide Remote */}
-          <div className="pointer-events-auto flex items-center gap-1 p-1 rounded-full bg-slate-950/85 border border-slate-700/60 backdrop-blur-md shadow-xl max-w-full overflow-x-auto no-scrollbar">
-            {RADAR_REGIONS.map((region) => {
-              const isActive =
-                regionFilter === region.id &&
-                countryFilter === "all" &&
-                !selectedCity?.isWorldwideRemote;
-              return (
-                <button
-                  key={region.id}
-                  type="button"
-                  onClick={() => handleRegionPillClick(region.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-full text-xs font-semibold transition-all duration-200 whitespace-nowrap ${
-                    isActive
-                      ? "bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] font-bold scale-102"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                  }`}
-                >
-                  <span>{region.flag}</span>
-                  <span>{region.label}</span>
-                </button>
-              );
-            })}
-
-            {/* Dedicated Worldwide Remote Button */}
-            {telemetry && (
-              <button
-                type="button"
-                onClick={handleWorldwideRemoteClick}
-                title="View all Worldwide Remote roles"
-                className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-full text-xs font-semibold transition-all duration-200 whitespace-nowrap border ${
-                  selectedCity?.isWorldwideRemote
-                    ? "bg-emerald-500 text-slate-950 border-emerald-400 font-bold shadow-[0_0_15px_rgba(16,185,129,0.5)]"
-                    : "bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/50"
-                }`}
-              >
-                <Globe2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Worldwide Remote ({telemetry.worldwideRemote.totalCount.toLocaleString()})</span>
-              </button>
-            )}
-          </div>
-
-          {/* Right: Quick Controls */}
-          <div className="pointer-events-auto flex items-center gap-2">
-            {/* Reset Orbit */}
-            <button
-              type="button"
-              onClick={handleResetOrbit}
-              title="Reset to Global Orbit"
-              className="flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-full bg-slate-950/80 border border-slate-700 text-xs font-medium text-slate-200 hover:text-white hover:border-cyan-400 transition-all backdrop-blur-md"
-            >
-              <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="hidden sm:inline">Orbit</span>
-            </button>
-
-            {/* Auto-Spin Toggle */}
-            <button
-              type="button"
-              onClick={() => setIsSpinning((prev) => !prev)}
-              title={isSpinning ? "Pause Auto-Rotation" : "Resume Auto-Rotation"}
-              className={`p-2 min-w-[38px] min-h-[38px] flex items-center justify-center rounded-full border text-xs font-medium transition-all backdrop-blur-md ${
-                isSpinning
-                  ? "bg-cyan-950/60 border-cyan-500/50 text-cyan-300"
-                  : "bg-slate-950/80 border-slate-700 text-slate-400 hover:text-white"
-              }`}
-            >
-              <Compass
-                className={`w-4 h-4 ${isSpinning ? "animate-spin text-cyan-400" : ""}`}
-                style={{ animationDuration: "14s" }}
-              />
-            </button>
-
-            {/* Layers Toggle: night / satellite / minimal dark map style */}
-            <button
-              type="button"
-              onClick={() => setShowLayersPanel((prev) => !prev)}
-              title="Switch map style (Night / Satellite / Minimal Dark)"
-              aria-label="Switch map style"
-              aria-expanded={showLayersPanel}
-              className={`p-2 min-w-[38px] min-h-[38px] flex items-center justify-center rounded-full border text-xs font-medium transition-all backdrop-blur-md ${
-                showLayersPanel
-                  ? "bg-cyan-950/80 border-cyan-500 text-cyan-300"
-                  : "bg-slate-950/80 border-slate-700 text-slate-400 hover:text-white"
-              }`}
-            >
-              <Layers className="w-4 h-4 text-cyan-400" />
-            </button>
-          </div>
-        </div>
-
-        {/* ===================================================================== */}
-        {/* Row 2 (desktop/tablet): THE 4 LIGHT FILTERS, inline glass toolbar     */}
-        {/* ===================================================================== */}
-        <div className="pointer-events-auto hidden sm:flex items-center justify-center gap-1.5 p-1.5 rounded-2xl bg-slate-950/90 border border-slate-800/90 backdrop-blur-xl shadow-2xl max-w-full overflow-x-auto no-scrollbar mx-auto px-2">
-          {/* Filter 1: Real Countries Dropdown */}
-          <div className="relative flex items-center shrink-0">
-            <select
-              value={countryFilter}
-              onChange={(e) => handleCountryFilterChange(e.target.value)}
-              aria-label="Filter by Country"
-              className="appearance-none bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-cyan-500/60 rounded-xl px-3 py-2 pr-7 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-400 transition-all cursor-pointer min-h-[44px]"
-            >
-              <option value="all">🌍 All Countries</option>
-              {realCountriesList.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name} ({c.total})
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
-          </div>
-
-          {/* Filter 2: Category Dropdown */}
-          <div className="relative flex items-center shrink-0">
-            <select
-              value={categoryFilter}
-              onChange={(e) => {
-                setCategoryFilter(e.target.value);
-                updateUrlFilters({ cat: e.target.value });
-              }}
-              aria-label="Filter by Category"
-              className="appearance-none bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-cyan-500/60 rounded-xl px-3 py-2 pr-7 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-cyan-400 transition-all cursor-pointer min-h-[44px]"
-            >
-              <option value="all">💼 All Categories</option>
-              {CANONICAL_CATEGORIES.map((cat) => (
-                <option key={cat.slug} value={cat.slug}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
-          </div>
-
-          {/* Filter 3: Remote Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !remoteFilter;
-              setRemoteFilter(next);
-              updateUrlFilters({ remote: next });
-            }}
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl text-xs font-semibold transition-all border ${
-              remoteFilter
-                ? "bg-[#2563EB] text-white border-[#2563EB] shadow-[0_0_12px_rgba(37,99,235,0.4)]"
-                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80 hover:border-slate-600"
-            }`}
-          >
-            <Globe2 className="w-3.5 h-3.5" />
-            <span>Remote</span>
-          </button>
-
-          {/* Filter 4: Internships Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !internshipFilter;
-              setInternshipFilter(next);
-              updateUrlFilters({ internship: next });
-            }}
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl text-xs font-semibold transition-all border ${
-              internshipFilter
-                ? "bg-[#2563EB] text-white border-[#2563EB] shadow-[0_0_12px_rgba(37,99,235,0.4)]"
-                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80 hover:border-slate-600"
-            }`}
-          >
-            <GraduationCap className="w-3.5 h-3.5" />
-            <span>Internships</span>
-          </button>
-
-          {/* Verified Only Filter Toggle */}
-          <button
-            type="button"
-            onClick={() => setVerifiedOnly((prev) => !prev)}
-            title="Toggle Verified roles only"
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl text-xs font-semibold transition-all border ${
-              verifiedOnly
-                ? "bg-emerald-950/80 border-emerald-400 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
-                : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80"
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">Verified Only</span>
-          </button>
-
-          {/* Reset All Filters Button */}
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={handleResetAllFilters}
-              title="Reset all 4 filters"
-              className="shrink-0 flex items-center gap-1 px-3 py-2 min-h-[44px] rounded-xl bg-slate-800 hover:bg-red-950/60 text-slate-300 hover:text-red-300 border border-slate-700 hover:border-red-500/50 text-xs font-medium transition-all"
-            >
-              <RotateCcw className="w-3 h-3 text-red-400" />
-              <span>Reset</span>
-            </button>
-          )}
-        </div>
-
-        {/* Row 2 (mobile): single Filters button opening a bottom sheet */}
-        <button
-          type="button"
-          onClick={() => setShowMobileFilterSheet(true)}
-          className={`pointer-events-auto sm:hidden mx-auto flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-full text-xs font-semibold transition-all border ${
-            hasActiveFilters
-              ? "bg-cyan-950/80 border-cyan-500 text-cyan-300"
-              : "bg-slate-950/90 border-slate-700/80 text-slate-200"
-          }`}
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5" />
-          <span>Filters</span>
-          {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
-        </button>
-      </div>
-
-      {/* Mobile Filters Bottom Sheet */}
+      {/* Shared desktop popover and mobile filter sheet */}
       {showMobileFilterSheet && (
         <div
-          className="fixed inset-0 z-50 sm:hidden flex items-end bg-slate-950/70 backdrop-blur-sm"
+          className="radar-filter-backdrop fixed inset-0 z-50 flex items-end bg-slate-950/70 backdrop-blur-sm"
           onClick={() => setShowMobileFilterSheet(false)}
         >
           <div
@@ -2106,6 +2021,32 @@ export default function JobRadarGlobe() {
               </button>
             </div>
 
+            <p className="radar-filter-note">
+              Location counts are all active jobs. Category, remote and internship filters apply
+              when opening a city's jobs.
+            </p>
+            <div className="radar-filter-actions">
+              <button onClick={handleResetOrbit}>Reset globe</button>
+              <button onClick={() => setIsSpinning((v) => !v)}>
+                {isSpinning ? "Pause rotation" : "Rotate globe"}
+              </button>
+              <button
+                onClick={() => {
+                  handleWorldwideRemoteClick();
+                  setShowMobileFilterSheet(false);
+                }}
+              >
+                Worldwide remote ({telemetry?.worldwideRemote.totalCount.toLocaleString() ?? "…"})
+              </button>
+              <button
+                onClick={() => {
+                  setShowLayersPanel(true);
+                  setShowMobileFilterSheet(false);
+                }}
+              >
+                Map styles
+              </button>
+            </div>
             <div className="relative">
               <select
                 value={countryFilter}
@@ -2152,7 +2093,9 @@ export default function JobRadarGlobe() {
                   updateUrlFilters({ remote: next });
                 }}
                 className={`flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl text-sm font-semibold border ${
-                  remoteFilter ? "bg-[#2563EB] text-white border-[#2563EB]" : "bg-slate-900 text-slate-300 border-slate-700/80"
+                  remoteFilter
+                    ? "bg-[#2563EB] text-white border-[#2563EB]"
+                    : "bg-slate-900 text-slate-300 border-slate-700/80"
                 }`}
               >
                 <Globe2 className="w-4 h-4" /> Remote
@@ -2165,7 +2108,9 @@ export default function JobRadarGlobe() {
                   updateUrlFilters({ internship: next });
                 }}
                 className={`flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl text-sm font-semibold border ${
-                  internshipFilter ? "bg-[#2563EB] text-white border-[#2563EB]" : "bg-slate-900 text-slate-300 border-slate-700/80"
+                  internshipFilter
+                    ? "bg-[#2563EB] text-white border-[#2563EB]"
+                    : "bg-slate-900 text-slate-300 border-slate-700/80"
                 }`}
               >
                 <GraduationCap className="w-4 h-4" /> Internships
@@ -2176,7 +2121,9 @@ export default function JobRadarGlobe() {
               type="button"
               onClick={() => setVerifiedOnly((prev) => !prev)}
               className={`w-full flex items-center justify-center gap-1.5 px-3 py-3 min-h-[44px] rounded-xl text-sm font-semibold border ${
-                verifiedOnly ? "bg-emerald-950/80 border-emerald-400 text-emerald-300" : "bg-slate-900 text-slate-300 border-slate-700/80"
+                verifiedOnly
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-300"
+                  : "bg-slate-900 text-slate-300 border-slate-700/80"
               }`}
             >
               <ShieldCheck className="w-4 h-4 text-emerald-400" /> Verified Only
@@ -2243,7 +2190,8 @@ export default function JobRadarGlobe() {
                 {selectedCity.coordinates && (
                   <>
                     <span className="font-mono text-cyan-300/80 text-[11px]">
-                      {selectedCity.coordinates[1].toFixed(2)}°, {selectedCity.coordinates[0].toFixed(2)}°
+                      {selectedCity.coordinates[1].toFixed(2)}°,{" "}
+                      {selectedCity.coordinates[0].toFixed(2)}°
                     </span>
                     <span>•</span>
                   </>
@@ -2253,7 +2201,8 @@ export default function JobRadarGlobe() {
                 </span>
                 <span>•</span>
                 <span className="text-slate-400 font-medium">
-                  {(jobsTotal > 0 ? jobsTotal : selectedCity.verifiedCount).toLocaleString()} Verified
+                  {(jobsTotal > 0 ? jobsTotal : selectedCity.verifiedCount).toLocaleString()}{" "}
+                  Verified
                 </span>
               </div>
             </div>
@@ -2285,7 +2234,7 @@ export default function JobRadarGlobe() {
             {radarProUnlockError && (
               <div
                 data-testid="radar-pro-unlock-error-banner"
-              role="alert"
+                role="alert"
                 className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-3 text-xs text-slate-300"
               >
                 <div className="flex items-center gap-2">
@@ -2310,7 +2259,10 @@ export default function JobRadarGlobe() {
               /* Loading Skeletons */
               <div className="space-y-3 py-6">
                 {[1, 2, 3].map((n) => (
-                  <div key={n} className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 animate-pulse space-y-2.5">
+                  <div
+                    key={n}
+                    className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 animate-pulse space-y-2.5"
+                  >
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-slate-800" />
                       <div className="space-y-1.5 flex-1">
@@ -2335,7 +2287,6 @@ export default function JobRadarGlobe() {
             ) : (
               drawerJobs.map((job, idx) => {
                 const isApplied = appliedJobs[job.id];
-                const gradient = getCompanyGradient(job.company);
 
                 return (
                   <div
@@ -2378,7 +2329,9 @@ export default function JobRadarGlobe() {
 
                           {/* Company Name (Visible to all) */}
                           <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5 mt-0.5">
-                            <span className="text-slate-300 font-semibold">{job.company || "Verified Company"}</span>
+                            <span className="text-slate-300 font-semibold">
+                              {job.company || "Verified Company"}
+                            </span>
                             <span>•</span>
                           </div>
                         </div>
@@ -2419,7 +2372,7 @@ export default function JobRadarGlobe() {
                           className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#2563EB]/10 border border-[#2563EB]/30 text-xs font-mono cursor-pointer hover:bg-[#2563EB]/20 transition-all text-blue-300"
                         >
                           <span className="filter blur-[3.5px] select-none text-blue-200">
-                            {job.salaryText || "••••••••••••••••"}
+                            ••••••••••••••••
                           </span>
                           <Lock className="w-3 h-3 text-[#2563EB]" />
                         </button>
@@ -2601,7 +2554,10 @@ export default function JobRadarGlobe() {
             <div className="flex items-center gap-1.5">
               <span
                 className="w-3 h-3 rounded-full shrink-0 border border-white/60"
-                style={{ backgroundColor: MARKER_COLOR_CSS, boxShadow: `0 0 8px ${MARKER_GLOW_CSS}` }}
+                style={{
+                  backgroundColor: MARKER_COLOR_CSS,
+                  boxShadow: `0 0 8px ${MARKER_GLOW_CSS}`,
+                }}
               />
               <span>City marker: size scales with job count</span>
             </div>
@@ -2617,21 +2573,6 @@ export default function JobRadarGlobe() {
         </div>
       )}
 
-      {/* Mobile Floating Layers Toggle Button (visible when drawer closed) */}
-      {!selectedCity && !showLayersPanel && (
-        <div className="absolute bottom-4 right-4 z-20 lg:hidden pointer-events-auto">
-          <button
-            type="button"
-            onClick={() => setShowLayersPanel(true)}
-            aria-label="Switch map style"
-            className="flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-full bg-slate-950/90 border border-slate-700/80 text-xs font-semibold text-cyan-300 shadow-lg backdrop-blur-md cursor-pointer"
-          >
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <span>Layers</span>
-          </button>
-        </div>
-      )}
-
       {/* ========================================================================= */}
       {/* BOTTOM-LEFT HUD: Radar Navigation Guide (collapsible, auto-hides on first  */}
       {/* interaction, dismissal remembered in localStorage)                         */}
@@ -2640,7 +2581,9 @@ export default function JobRadarGlobe() {
         <div className="absolute bottom-4 left-4 z-20 hidden sm:flex flex-col gap-1.5 p-3 rounded-xl bg-slate-950/85 border border-slate-800 backdrop-blur-md text-[11px] text-slate-400 max-w-xs shadow-lg animate-fadeIn">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
-              <span className={`w-1.5 h-1.5 rounded-full bg-cyan-400 ${prefersReducedMotion ? "" : "animate-ping"}`} />
+              <span
+                className={`w-1.5 h-1.5 rounded-full bg-cyan-400 ${prefersReducedMotion ? "" : "animate-ping"}`}
+              />
               <span>HOW TO NAVIGATE RADAR</span>
             </div>
             <button
@@ -2653,11 +2596,14 @@ export default function JobRadarGlobe() {
             </button>
           </div>
           <p className="leading-relaxed text-slate-300 pointer-events-none">
-            • Filter by <span className="text-cyan-300 font-semibold">Country, Category, Remote, or Internships</span> above.
-            <br />
-            • Click any <span className="text-cyan-300 font-semibold">City Marker</span> for cinematic fly-in & job drawer.
-            <br />
-            • Drag to orbit • Scroll to zoom • Arrow keys rotate • +/- zoom • Esc closes.
+            • Filter by{" "}
+            <span className="text-cyan-300 font-semibold">
+              Country, Category, Remote, or Internships
+            </span>{" "}
+            above.
+            <br />• Click any <span className="text-cyan-300 font-semibold">City Marker</span> for
+            cinematic fly-in & job drawer.
+            <br />• Drag to orbit • Scroll to zoom • Arrow keys rotate • +/- zoom • Esc closes.
           </p>
         </div>
       ) : (
