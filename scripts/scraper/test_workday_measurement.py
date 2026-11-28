@@ -89,6 +89,29 @@ class RunnerMeasureTests(Base):
         self.assertEqual(a["status_counts"], {"429": fetchers.WORKDAY_MAX_RETRIES + 1})
         self.assertEqual((a["trigger_status"], a["error_class"]), (429, "rate_limited_429"))
 
+    def test_missing_header_error_labels_fallback_not_retry_after(self):
+        self.seed_state_all_ok()
+        report, _ = self.ingest({s: (lambda r: httpx.Response(429)) for s in BOARDS})
+        a = by_source(report)["workday:a"]
+        self.assertIsNone(a["retry_after_seconds_seen"])
+        self.assertIn("fallback backoff 32s", a["error"])
+        self.assertNotIn("Retry-After 32s", a["error"])
+        self.assertEqual(a["status_counts"], {"429": 5})
+
+    def test_deferred_shared_cooldown_does_not_attribute_429_to_unrequested_board(self):
+        self.seed_state_all_ok()
+        report, _ = self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
+        self.assertEqual(self.requests, ["a"])
+        for d in report["deferred_sources"]:
+            self.assertIn("another board", d["reason"])
+            self.assertNotIn("429 this run", d["reason"])
+            self.assertIsNone(d["http_requests"])
+        # Loading this durable deferral in a later run must not present the old event as this-run evidence.
+        again, _ = self.ingest({s: ok_page for s in BOARDS})
+        prior = next(d for d in again["deferred_sources"] if d["source"] == "workday:b")
+        self.assertTrue(prior["reason"].startswith("persisted cooldown:"), prior)
+        self.assertIsNone(prior["http_requests"])
+
     def test_network_errors_are_counted(self):
         self.seed_state_all_ok()
         report, _ = self.ingest({"a": scripted(httpx.ConnectError("boom")), "b": ok_page, "c": ok_page})
@@ -194,6 +217,13 @@ class FetcherMeasureTests(Base):
                     self.go(scripted(httpx.Response(429, headers=headers)), m)
                 self.assertEqual(m["retry_after_seconds_seen"], seen, "the computed fallback delay is never recorded")
                 self.assertEqual(m["status_counts"], {"429": 1, "200": 1})
+
+    def test_present_header_error_retains_retry_after_label(self):
+        m = fetchers.new_workday_metrics()
+        with self.assertRaises(fetchers.WorkdayRateLimited) as err:
+            self.go(lambda r: httpx.Response(429, headers={"Retry-After": "90000"}), m)
+        self.assertIn("Retry-After 90000s", str(err.exception))
+        self.assertEqual(m["retry_after_seconds_seen"], [90000.0])
 
     def test_malformed_page_is_classified(self):
         m = fetchers.new_workday_metrics()
