@@ -39,6 +39,8 @@ export default function MatchScoreBadge({
     job?.remote_scope,
     job?.category,
     job?.skills?.length,
+    job?.evidencedSkills,
+    job?.lean,
     job?.description?.length,
   ]);
 
