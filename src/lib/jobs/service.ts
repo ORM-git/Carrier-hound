@@ -1,3 +1,4 @@
+import { classifyApplyDestination, type ApplyDestination } from "./applyDestination";
 import { experienceBucketsFor, normalizeLeanWireRow, deriveLegacyLeanEvidence } from "@/lib/jobs/leanList";
 import { extractSkillsFromJob } from "@/lib/matcher/scoring";
 import { createClient } from "../supabase/client";
@@ -57,6 +58,8 @@ export interface LiveJob {
   type: string;
   directSource: boolean;
   applyUrl: string;
+  /** Initial URL hint only, never employer ownership or final redirect verification. */
+  applyDestination?: ApplyDestination;
   description?: string;
   /** Pro list row served without its description (see leanList.ts): the full record comes from getLiveJobById on open. Never true on a detail. */
   lean?: boolean;
@@ -988,6 +991,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
           type: wireJobType(row.job_type),
           directSource: Boolean(row.verified),
           applyUrl: "",
+          applyDestination: classifyApplyDestination(""),
           description: "",
           skills: [],
           postedAt: row.posted_at || row.created_at,
@@ -1044,6 +1048,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                         job.salary_original = u.salary_original || null;
                       }
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
+                      job.applyDestination = classifyApplyDestination(job.applyUrl);
                       // Lean batch (requested above): the server omits the description and sends the Experience buckets.
                       // An older server that still sends it is handled the same way: buckets derived here, description dropped.
                       if (u.lean === true && Array.isArray(u.experienceBuckets)) {
@@ -1220,6 +1225,7 @@ async function loadLiveJobById(jobId: string, isPro: boolean = false): Promise<L
                 type: wireJobType(job.job_type),
                 directSource: Boolean(job.verified ?? true),
                 applyUrl: isInactive ? "" : (sanitizeExternalUrl(job.apply_url) || ""),
+                applyDestination: classifyApplyDestination(isInactive ? "" : (sanitizeExternalUrl(job.apply_url) || "")),
                 description: stripHtmlAndExecutableMarkup(job.description || ""),
                 skills: job.skills || [],
                 postedAt: job.posted_at || job.first_seen_at || job.created_at,
@@ -1342,6 +1348,7 @@ async function loadLiveJobById(jobId: string, isPro: boolean = false): Promise<L
         type: wireJobType(row.job_type),
         directSource: Boolean(row.verified),
         applyUrl: "",
+        applyDestination: classifyApplyDestination(""),
         description: "",
         skills: [],
         scoreRevision: scoreInputRevision(row, false, scoredAt),
@@ -1430,6 +1437,7 @@ async function loadAllActiveJobs(): Promise<LiveJob[]> {
         type: wireJobType(row.job_type),
         directSource: Boolean(row.verified),
         applyUrl: "",
+        applyDestination: classifyApplyDestination(""),
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
