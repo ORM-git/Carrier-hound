@@ -1,5 +1,5 @@
-"""Row 34 offline audit: which company names are mapped only by the prefix fallback of
-normalize_company_alias (scripts/scraper/enrichment.py:791-793).
+"""Row 34 offline guard for prefix-only identity inference in normalize_company_alias.
+The runtime now uses exact aliases only; the historical prefix probe should find no hits.
 
 Files only: scripts/scraper/company_seeds.json and data/ats-candidates-all.json. No database, no network.
 The real function is called twice per name: once as-is, and once with the prefix loop disabled (a recording
