@@ -350,6 +350,30 @@ async function run() {
       },
     },
     {
+      id: 'lever-day-wage',
+      text: 'Event Staff',
+      hostedUrl: 'https://jobs.lever.co/logrocket/lever-day-wage',
+      descriptionPlain: 'Staff our annual conference.',
+      createdAt: 1729000000000,
+      salaryRange: { min: 300, max: 400, currency: 'USD', interval: 'per-day-wage' },
+    },
+    {
+      id: 'lever-week-salary',
+      text: 'Seasonal Coordinator',
+      hostedUrl: 'https://jobs.lever.co/logrocket/lever-week-salary',
+      descriptionPlain: 'Coordinate seasonal events.',
+      createdAt: 1729000000000,
+      salaryRange: { min: 1000, max: 1200, currency: 'USD', interval: 'per-week-salary' },
+    },
+    {
+      id: 'lever-one-time',
+      text: 'Hourly Support Lead (sign-on bonus)',
+      hostedUrl: 'https://jobs.lever.co/logrocket/lever-one-time',
+      descriptionPlain: 'Base salary $80,000 - $90,000 per year plus a bonus.',
+      createdAt: 1729000000000,
+      salaryRange: { min: 5000, max: 5000, currency: 'USD', interval: 'one-time-bonus' },
+    },
+    {
       id: 'lever-3',
       text: 'Growth Lead (Regex Fallback)',
       hostedUrl: 'https://jobs.lever.co/logrocket/lever-3',
@@ -629,6 +653,31 @@ async function run() {
     }
     if (!levNoInterval?.salary_text?.includes('$110,000 - $140,000') || !levNoInterval?.salary_text?.includes('/yr')) {
       failures.push(`FAIL: Lever missing interval salary_text unexpected: "${levNoInterval?.salary_text}"`);
+    }
+
+    // Checklist #21: only a native interval (or explicit parsed wording) counts as a stated period.
+    const stated: Array<[string, any, boolean]> = [
+      ['Greenhouse range, no native interval', gh1, false],
+      ['Greenhouse pay-range text says hour', gh2, true],
+      ['Ashby native interval', ash1, true],
+      ['Lever native interval', lev1, true],
+      ['Lever missing interval', levNoInterval, false],
+      ['Lever per-day-wage is never hourly', leverResults.find((j) => j.source_job_id === 'logrocket-lever-day-wage'), false],
+    ];
+    const levDay = leverResults.find((j) => j.source_job_id === 'logrocket-lever-day-wage');
+    if (!levDay || levDay.salary_period === 'hourly') failures.push(`FAIL: Lever per-day-wage relabelled: period=${levDay?.salary_period}`);
+    // A native interval we do not store (daily, weekly, one-time) means salary unknown: no numbers, no currency, no
+    // text (formatSalary would print "/yr"), no guess from the title, and no fallback to the description.
+    for (const id of ['lever-day-wage', 'lever-week-salary', 'lever-one-time']) {
+      const job = leverResults.find((j) => j.source_job_id === `logrocket-${id}`);
+      if (!job) { failures.push(`FAIL: Lever ${id} missing from results`); continue; }
+      if (job.salary_min != null || job.salary_max != null || job.salary_text || job.currency || job.salary_period != null || job.salary_period_stated) {
+        failures.push(`FAIL: Lever ${id} unmapped native interval must leave salary unknown: ${JSON.stringify({ min: job.salary_min, max: job.salary_max, text: job.salary_text, cur: job.currency, period: job.salary_period, stated: job.salary_period_stated })}`);
+      }
+      if (/\/yr/.test(String(job.salary_text ?? ''))) failures.push(`FAIL: Lever ${id} salary_text carries a /yr label`);
+    }
+    for (const [name, job, want] of stated) {
+      if (job?.salary_period_stated !== want) failures.push(`FAIL: ${name}: salary_period_stated=${job?.salary_period_stated}, want ${want}`);
     }
 
     console.log('  ✓ Lever native salaryRange validated successfully.');
