@@ -701,8 +701,11 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
             _WORKDAY_COOLDOWN_UNTIL = max(_WORKDAY_COOLDOWN_UNTIL, time.monotonic() + delay)
             if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS or (time.monotonic() + delay > deadline):
                 _workday_end(metrics, resp.status_code, "rate_limited_429" if resp.status_code == 429 else "server_5xx")
+                # The effective wait may be our exponential fallback, not a source Retry-After header.
+                header_delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=None)  # type: ignore[arg-type]
+                delay_label = "Retry-After" if header_delay is not None else "fallback backoff"
                 raise WorkdayRateLimited(
-                    f"Workday HTTP {resp.status_code} for {url} (Retry-After {delay:.0f}s) after {attempt + 1} request(s)",
+                    f"Workday HTTP {resp.status_code} for {url} ({delay_label} {delay:.0f}s) after {attempt + 1} request(s)",
                     delay,
                 )
             continue
