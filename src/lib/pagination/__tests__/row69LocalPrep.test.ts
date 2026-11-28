@@ -6,10 +6,12 @@ import { applyBaseVisibility, applySearchFilters, type SearchFilterCtx } from "@
 import { recorder, type FilterNode } from "@/lib/jobs/captureFilters";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import { callLogBuilder, teeQuery } from "../readScan";
-import { captureOrder, MAX_PAGE_SIZE, MAX_REFILL_WINDOWS, nextPage, RECOMMENDED_POOL_LIMIT, verifySnapshot, type Snapshot } from "../snapshotReplay";
+import { captureOrder, GUEST_OWNER, MAX_PAGE_SIZE, MAX_REFILL_WINDOWS, nextPage, RECOMMENDED_POOL_LIMIT, SnapshotBindingError, verifySnapshot, type Snapshot, type SnapshotBinding } from "../snapshotReplay";
 import { captureMultiword, MULTIWORD_POOL_LIMIT, rankMultiword } from "../multiwordRelevance";
 import { isStable, liveFallback, snapshotPage, UNSTABLE_NOTICE } from "../stabilityFallback";
 
+/** The request binding every snapshot in these tests is captured for and paged with. */
+const B: SnapshotBinding = { owner: "u-1", tier: "free", queryHash: "q-1" };
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 let seed = 11;
 const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
@@ -112,6 +114,22 @@ describe("1. read-scan tee", () => {
     expect(live.calls()).toHaveLength(1);
   });
 
+  it("memoized: awaiting twice and run() execute the live builder exactly once and share the result", async () => {
+    let executions = 0;
+    const counting: any = new Proxy({}, { get: (_t, prop) => prop === "then"
+      ? (res: any, rej: any) => { executions++; return Promise.resolve({ data: [executions], error: null }).then(res, rej); }
+      : typeof prop === "symbol" ? undefined : () => counting });
+    const tee = teeQuery(counting);
+    tee.q.eq("status", "active");
+    const a = await tee.q;
+    const b = await tee.q;
+    const c = await tee.run();
+    expect(executions).toBe(1);
+    expect(a).toBe(b);
+    expect(c).toBe(a);
+    expect(() => tee.q.eq("is_active", true)).toThrow(/already executed/);         // no stale memo for a changed query
+  });
+
   it("fails closed: a method capture cannot represent throws before the live builder is called", () => {
     const live = callLogBuilder();
     const tee = teeQuery(live.q);
@@ -124,7 +142,7 @@ describe("1. read-scan tee", () => {
 // 2. nextPage: position cursor, holes, refill, untrusted rows, bounds
 // ---------------------------------------------------------------------------------------------------------------------
 type Row = { id: string; v?: number };
-const snapOf = (n: number, binding?: any) => captureOrder(Array.from({ length: n }, (_, i) => ({ id: uuid(i + 1) })), Math.max(n, 1), binding);
+const snapOf = (n: number, binding: SnapshotBinding | null = B) => captureOrder(Array.from({ length: n }, (_, i) => ({ id: uuid(i + 1) })), Math.max(n, 1), binding ?? undefined);
 /** fetchEligible over a mutable "database": returns only rows that still exist and are eligible, in no particular order. */
 const dbOf = (ids: readonly string[]) => {
   const rows = new Map(ids.map((id) => [id, { id, eligible: true }]));
@@ -141,7 +159,7 @@ async function serveAll<T extends { id: string }>(s: Snapshot, size: number, fet
   let cursor = 0;
   for (let n = 0; n < 2000; n++) {
     if (n > 0) between(cursor);
-    const p = await nextPage(s, cursor, size, fetch);
+    const p = await nextPage(s, B, cursor, size, fetch);
     expect(p.total).toBe(s.ids.length);
     expect(p.cursor).toBeGreaterThanOrEqual(cursor);
     if (p.rows.length < size) expect(["snapshot_end", "refill_bound"]).toContain(p.end);    // short only at the end or the bound
@@ -175,7 +193,7 @@ describe("2. nextPage over a frozen snapshot", () => {
   it("never trusts caller rows: unrequested ids, duplicates and other-window rows are ignored; order is the snapshot's", async () => {
     const s = snapOf(30);
     const outsider = uuid(999);
-    const p = await nextPage<Row>(s, 0, 5, (ids) => [{ id: outsider }, { id: ids[3], v: 1 }, { id: s.ids[20] }, { id: ids[0], v: 1 }, { id: ids[3], v: 2 }, { id: ids[1] }]);
+    const p = await nextPage<Row>(s, B, 0, 5, (ids) => [{ id: outsider }, { id: ids[3], v: 1 }, { id: s.ids[20] }, { id: ids[0], v: 1 }, { id: ids[3], v: 2 }, { id: ids[1] }]);
     expect(p.rows.map((r) => r.id)).toEqual([s.ids[0], s.ids[1], s.ids[3]].concat(p.rows.slice(3).map((r) => r.id)));
     expect(p.rows.find((r) => r.id === s.ids[3])!.v).toBe(1);                          // first copy wins
     expect(p.rows.some((r) => r.id === outsider || r.id === s.ids[20])).toBe(false);
@@ -186,46 +204,92 @@ describe("2. nextPage over a frozen snapshot", () => {
     const s = snapOf(200);
     const db = dbOf(s.ids);
     for (const id of s.ids.slice(0, 10 * MAX_REFILL_WINDOWS)) db.rows.delete(id);    // the first 8 windows are all gone
-    const p1 = await nextPage(s, 0, 10, (ids) => db.fetch(ids));
+    const p1 = await nextPage(s, B, 0, 10, (ids) => db.fetch(ids));
     expect(p1).toMatchObject({ rows: [], cursor: 10 * MAX_REFILL_WINDOWS, hasMore: true, end: "refill_bound" });
     expect(db.calls).toHaveLength(MAX_REFILL_WINDOWS);
-    const p2 = await nextPage(s, p1.cursor, 10, (ids) => db.fetch(ids));
+    const p2 = await nextPage(s, B, p1.cursor, 10, (ids) => db.fetch(ids));
     expect(p2.rows.map((r) => r.id)).toEqual(s.ids.slice(80, 90));
     expect(p2.end).toBe("filled");
+  });
+
+  it("consumed-ineligible: an id that was gone/ineligible when read is never revisited, even if it becomes eligible", async () => {
+    const s = snapOf(20);
+    const db = dbOf(s.ids);
+    db.rows.get(s.ids[1])!.eligible = false;
+    const p1 = await nextPage(s, B, 0, 5, (ids) => db.fetch(ids));
+    expect(p1.rows.map((r) => r.id)).toEqual([s.ids[0], s.ids[2], s.ids[3], s.ids[4], s.ids[5]]);
+    db.rows.get(s.ids[1])!.eligible = true;                                            // eligible again: already consumed
+    const after: string[] = [];
+    for (let c = p1.cursor; ;) { const p = await nextPage(s, B, c, 5, (ids) => db.fetch(ids)); after.push(...p.rows.map((r) => r.id)); c = p.cursor; if (!p.hasMore) break; }
+    expect(after).not.toContain(s.ids[1]);                                              // never revisited by this session
+    expect((await serveAll(s, 5, (ids) => db.fetch(ids))).seen).toContain(s.ids[1]);   // a new read from 0 does see it
+  });
+
+  it("unread ids after the last served row stay unread and are re-checked by the next call", async () => {
+    const s = snapOf(20);
+    const db = dbOf(s.ids);
+    db.rows.get(s.ids[3])!.eligible = false;                                            // ineligible when the first window is fetched
+    const p1 = await nextPage(s, B, 0, 2, (ids) => db.fetch(ids));
+    expect(p1.rows.map((r) => r.id)).toEqual([s.ids[0], s.ids[1]]);
+    expect(p1.cursor).toBe(2);                                                          // ids[2], ids[3] fetched but not consumed
+    db.rows.get(s.ids[3])!.eligible = true;                                             // now eligible: must be served
+    db.rows.get(s.ids[2])!.eligible = false;                                            // now ineligible: must be dropped
+    const p2 = await nextPage(s, B, p1.cursor, 2, (ids) => db.fetch(ids));
+    expect(p2.rows.map((r) => r.id)).toEqual([s.ids[3], s.ids[4]]);
   });
 
   it("end of snapshot: short final page, then an empty page at the end position", async () => {
     const s = snapOf(23);
     const db = dbOf(s.ids);
-    const a = await nextPage(s, 20, 10, (ids) => db.fetch(ids));
+    const a = await nextPage(s, B, 20, 10, (ids) => db.fetch(ids));
     expect(a).toMatchObject({ cursor: 23, hasMore: false, end: "snapshot_end", total: 23 });
     expect(a.rows).toHaveLength(3);
-    expect(await nextPage(s, 23, 10, (ids) => db.fetch(ids))).toMatchObject({ rows: [], cursor: 23, hasMore: false, end: "snapshot_end" });
+    expect(await nextPage(s, B, 23, 10, (ids) => db.fetch(ids))).toMatchObject({ rows: [], cursor: 23, hasMore: false, end: "snapshot_end" });
   });
 
   it("bounds: page size, cursor range, the eligibility callback is required", async () => {
     const s = snapOf(10);
     const f = (ids: string[]) => ids.map((id) => ({ id }));
-    await expect(nextPage(s, 0, 0, f)).rejects.toThrow(/pageSize/);
-    await expect(nextPage(s, 0, MAX_PAGE_SIZE + 1, f)).rejects.toThrow(/pageSize/);
-    await expect(nextPage(s, -1, 5, f)).rejects.toThrow(/cursor/);
-    await expect(nextPage(s, 11, 5, f)).rejects.toThrow(/cursor/);
-    await expect(nextPage(s, 1.5, 5, f)).rejects.toThrow(/cursor/);
-    await expect(nextPage(s, 0, 5, undefined as any)).rejects.toThrow(/fetchEligible/);
-    expect((await nextPage(s, 0, MAX_PAGE_SIZE, f)).rows).toHaveLength(10);
+    await expect(nextPage(s, B, 0, 0, f)).rejects.toThrow(/pageSize/);
+    await expect(nextPage(s, B, 0, MAX_PAGE_SIZE + 1, f)).rejects.toThrow(/pageSize/);
+    await expect(nextPage(s, B, -1, 5, f)).rejects.toThrow(/cursor/);
+    await expect(nextPage(s, B, 11, 5, f)).rejects.toThrow(/cursor/);
+    await expect(nextPage(s, B, 1.5, 5, f)).rejects.toThrow(/cursor/);
+    await expect(nextPage(s, B, 0, 5, undefined as any)).rejects.toThrow(/fetchEligible/);
+    expect((await nextPage(s, B, 0, MAX_PAGE_SIZE, f)).rows).toHaveLength(10);
   });
 });
 
-describe("snapshot binding (pure data check, no key, no storage)", () => {
-  it("rejects a snapshot for another owner, tier or query; accepts the matching one", () => {
-    const s = snapOf(3, { owner: "u-1", tier: "free", queryHash: "q1" });
-    expect(verifySnapshot(s, { owner: "u-1", tier: "free", queryHash: "q1" })).toEqual({ ok: true });
-    expect(verifySnapshot(s, { owner: "u-2", tier: "free", queryHash: "q1" })).toEqual({ ok: false, reason: "owner_mismatch" });
-    expect(verifySnapshot(s, { owner: null, tier: "free", queryHash: "q1" })).toEqual({ ok: false, reason: "owner_mismatch" });
-    expect(verifySnapshot(s, { owner: "u-1", tier: "pro", queryHash: "q1" })).toEqual({ ok: false, reason: "tier_mismatch" });
-    expect(verifySnapshot(s, { owner: "u-1", tier: "free", queryHash: "q2" })).toEqual({ ok: false, reason: "query_mismatch" });
-    expect(verifySnapshot(snapOf(3), { owner: "u-1" })).toEqual({ ok: false, reason: "owner_mismatch" });      // unbound never passes
-    expect(verifySnapshot(snapOf(3, { owner: null, tier: "guest" }), { owner: null, tier: "guest" })).toEqual({ ok: true });
+describe("snapshot binding enforced at the paging entry point (pure data check, no key, no storage)", () => {
+  const f = (ids: string[]) => ids.map((id) => ({ id }));
+  const rejects = async (s: Snapshot, expect_: unknown, reason: string) => {
+    await expect(nextPage(s, expect_ as SnapshotBinding, 0, 5, f)).rejects.toMatchObject({ name: "SnapshotBindingError", reason });
+  };
+  it("pages only when owner, tier and queryHash all match", async () => {
+    const s = snapOf(12);
+    expect((await nextPage(s, { ...B }, 0, 5, f)).rows).toHaveLength(5);
+    await rejects(s, { ...B, owner: "u-2" }, "owner_mismatch");
+    await rejects(s, { ...B, tier: "pro" }, "tier_mismatch");
+    await rejects(s, { ...B, queryHash: "q-2" }, "query_mismatch");
+    await rejects(s, { ...B, owner: GUEST_OWNER }, "owner_mismatch");                            // guest vs user
+    await rejects(snapOf(12, { ...B, owner: GUEST_OWNER }), B, "owner_mismatch");                // user vs guest
+    expect((await nextPage(snapOf(12, { ...B, owner: GUEST_OWNER }), { ...B, owner: GUEST_OWNER }, 0, 5, f)).rows).toHaveLength(5);
+  });
+  it("an unbound snapshot never pages; empty, partial or blank expectations throw", async () => {
+    await rejects(snapOf(12, null), B, "unbound_snapshot");
+    const s = snapOf(12);
+    for (const bad of [{}, { owner: "u-1" }, { owner: "u-1", tier: "free" }, { tier: "free", queryHash: "q-1" }, { ...B, owner: "" },
+      { ...B, tier: "  " }, { ...B, queryHash: undefined }, { ...B, owner: null }, null, undefined]) {
+      await rejects(s, bad, "invalid_expectation");
+    }
+    expect(verifySnapshot(s, {} as SnapshotBinding)).toEqual({ ok: false, reason: "invalid_expectation" });
+  });
+  it("capture refuses a partial binding, and stores a frozen copy", () => {
+    expect(() => snapOf(3, { owner: "u-1", tier: "free" } as SnapshotBinding)).toThrow(SnapshotBindingError);
+    const src = { ...B };
+    const s = snapOf(3, src);
+    src.owner = "u-9";
+    expect(s.binding).toEqual(B);
     expect(Object.isFrozen(s) && Object.isFrozen(s.binding)).toBe(true);
   });
 });
@@ -299,7 +363,7 @@ describe("3. contract: frozen membership and order under mutation", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(Date.UTC(2026, 10, 28, 9, 0, 0)));
     const w = worldOf(260);
-    const s = captureMultiword(fetch200(w), Q);
+    const s = captureMultiword(fetch200(w), Q, B);
     expect(s.ids).toHaveLength(MULTIWORD_POOL_LIMIT);
     expect(s.ids).toEqual(rankMultiword(fetch200(w), Q).map((j) => j.id));
     const m = mutator(w, s);
@@ -311,7 +375,7 @@ describe("3. contract: frozen membership and order under mutation", () => {
 
   it("recommended: 1000-row pool, same guarantee", async () => {
     const w = worldOf(1000);
-    const s = captureOrder(rankAndCap(w), RECOMMENDED_POOL_LIMIT);
+    const s = captureOrder(rankAndCap(w), RECOMMENDED_POOL_LIMIT, B);
     expect(s.ids).toHaveLength(1000);
     const m = mutator(w, s);
     const { seen } = await serveAll(s, 25, eligibleIn(w), m.run);
@@ -321,7 +385,7 @@ describe("3. contract: frozen membership and order under mutation", () => {
 
   it("negative control: page-index windows under the same mutations serve short pages mid-snapshot", async () => {
     const w = worldOf(1000);
-    const s = captureOrder(rankAndCap(w), RECOMMENDED_POOL_LIMIT);
+    const s = captureOrder(rankAndCap(w), RECOMMENDED_POOL_LIMIT, B);
     const m = mutator(w, s);
     const pages = await pageIndexServe(s, 25, eligibleIn(w), m.run);
     expect(pages.slice(0, -1).some((p) => p.length < 25)).toBe(true);                 // violates "short only at end/bound"

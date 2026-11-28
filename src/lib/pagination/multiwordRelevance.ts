@@ -4,7 +4,7 @@
 // pages drift. Here the SAME ordering is applied once to the first page's 200 rows and the ordered ids are frozen;
 // later pages replay by id (snapshotReplay). rankMultiword below is a VERBATIM copy of the route's inline ranking
 // (source-compared in the test); after #897 merges the route should import it instead of keeping its own copy.
-import { captureOrder, type Snapshot } from "./snapshotReplay";
+import { captureOrder, type Snapshot, type SnapshotBinding } from "./snapshotReplay";
 
 /** Rows the route fetches for a multi-word query (route: `.order("posted_at", desc nulls last).limit(200)`). */
 export const MULTIWORD_POOL_LIMIT = 200;
@@ -51,8 +51,11 @@ export function rankMultiword<T extends RelevanceRow>(rows: readonly T[], cleanQ
   return sorted;
 }
 
-/** Freeze the multiword order at the first page: exactly the ranked ids of the (at most 200) fetched rows. */
-export function captureMultiword<T extends RelevanceRow>(fetchedRows: readonly T[], cleanQuery: string): Snapshot {
+/**
+ * Freeze the multiword order at the first page: exactly the ranked ids of the (at most 200) fetched rows. Pass the
+ * request binding; a snapshot captured without one can never be paged (snapshotReplay.nextPage).
+ */
+export function captureMultiword<T extends RelevanceRow>(fetchedRows: readonly T[], cleanQuery: string, binding?: SnapshotBinding): Snapshot {
   if (fetchedRows.length > MULTIWORD_POOL_LIMIT) throw new RangeError(`multiword capture takes at most ${MULTIWORD_POOL_LIMIT} rows`);
-  return captureOrder(rankMultiword(fetchedRows, cleanQuery), MULTIWORD_POOL_LIMIT);
+  return captureOrder(rankMultiword(fetchedRows, cleanQuery), MULTIWORD_POOL_LIMIT, binding);
 }

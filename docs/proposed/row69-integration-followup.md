@@ -29,18 +29,28 @@ The PROPOSED-NOT-EXECUTED SQL fixture is only a candidate for the owner to revie
 | `src/lib/jobs/captureFilters.ts` | Recorder, PostgREST or-clause parser and serializer. Unknown methods or grammar throw (fail closed). |
 | `src/lib/jobs/__tests__/fixtures/row69-capture.PROPOSED-NOT-EXECUTED.sql` | Owner-gated candidate SQL. Exercised only on PGlite. |
 | `src/lib/jobs/__tests__/captureRpc.local.test.ts` | 9 fixture tests of that candidate. |
-| `src/lib/pagination/readScan.ts` | `teeQuery`: forwards every builder call unchanged while recording it. `await q` / `run()` returns the live builder's own result; `then` and symbols are never treated as builder calls. |
-| `src/lib/pagination/snapshotReplay.ts` | `captureOrder` (with optional owner/tier/queryHash binding) and `verifySnapshot`. `nextPage(snapshot, cursor, pageSize, fetchEligible)` is the only read path. |
+| `src/lib/pagination/readScan.ts` | `teeQuery`: forwards every builder call unchanged while recording it. `await q` / `run()` returns the live builder's own result; `then` and symbols are never treated as builder calls. Execution is **memoized**: the first await or `run()` executes the live builder once, and every later await shares that result. (A plain Supabase builder re-executes on each await.) A builder call after execution started throws. |
+| `src/lib/pagination/snapshotReplay.ts` | `captureOrder(rows, limit, binding)`, `verifySnapshot`, and `nextPage(snapshot, expect, cursor, pageSize, fetchEligible)`, which is the only paging entry point and enforces the binding first. |
 | `src/lib/pagination/multiwordRelevance.ts` | `rankMultiword` (a verbatim copy of the route's inline relevance sort, source-compared in tests) and `captureMultiword`. |
 | `src/lib/pagination/stabilityFallback.ts` | `liveFallback`: current behaviour, explicitly `stable: false`. `isStable` is true only for snapshot-served pages. |
-| `src/lib/pagination/__tests__/row69LocalPrep.test.ts` | 18 tests, plus the real source mutants listed in the PR. |
+| `src/lib/pagination/__tests__/row69LocalPrep.test.ts` | 23 tests, plus the real source mutants listed in the PR. |
 
 ### `nextPage` rules
+
+- **The binding is enforced at the entry point, with no fail-open path.**
+  - `expect` must hold all three parts: `owner` (a user id, or exactly `"guest"`), `tier` and `queryHash`, none empty.
+  - The snapshot must carry the same full binding, and every part must be equal. Otherwise `SnapshotBindingError` is thrown, with one of `invalid_expectation`, `unbound_snapshot`, `owner_mismatch`, `tier_mismatch` or `query_mismatch`.
+  - An unbound snapshot never pages. `captureOrder` refuses a partial binding.
+  - No paging function without the check is exported.
 
 - **The cursor is a position** in the frozen snapshot (the offset just after the last id consumed), never a page number. A negative, fractional or past-the-end cursor is rejected.
 - **Reading and refilling:** each call reads id windows from the cursor and calls `fetchEligible(ids)`. That callback is where a host applies current visibility and eligibility. Ids that are gone or ineligible are dropped, and the page refills from further windows until it is full or the snapshot ends, up to `MAX_REFILL_WINDOWS` = 8 windows per call.
 - **Short pages** happen only at `snapshot_end` or `refill_bound`, and the result says which.
 - **Untrusted callback output:** rows for ids that weren't requested, duplicates, and rows from outside the window are ignored. There is no rows-only replay.
+- **Consumed-ineligible semantics:**
+  - An id that is gone or ineligible when a page reads it is **consumed**: the cursor moves past it, and it is never revisited in that session, even if it becomes eligible again later.
+  - Ids after the last served row of a window are **not** consumed. They stay unread and are re-checked by the next call.
+- **`fetchEligible` is trusted for what it returns.** It must apply the same current visibility and entitlement rules as a first page would. This module cannot prove that; it only guarantees it never returns a row the callback didn't return for a requested id.
 - **Page size** is 1 to `MAX_PAGE_SIZE` (100); anything else throws.
 - **`hasMore` and `total`** come from the snapshot position, not from survivors.
 
@@ -63,7 +73,7 @@ The PROPOSED-NOT-EXECUTED SQL fixture is only a candidate for the owner to revie
 - `src/app/api/jobs/recommended/route.ts`: freeze the existing ranked, capped pool (at most 1000) with `captureOrder`, then serve with `nextPage`.
 - `src/lib/jobs/service.ts` (`getLiveJobs`): carry the continuation in a header and read the stability flag; the existing degraded and 403/503 handling is kept.
 - `src/app/jobs/page.tsx`: hold the continuation for the current query, and reset on rejection.
-- **Every handler:** `verifySnapshot` against the request's owner, tier and query hash before serving, and `liveFallback(..., reason)` whenever no snapshot is available, so it never claims stability.
+- **Every handler:** call `nextPage` with the request's own owner (user id or `"guest"`), tier and query hash; it rejects any other. Use `liveFallback(..., reason)` whenever no snapshot is available, so it never claims stability.
 
 **2. Netlify search (static export + functions)**
 - `netlify/functions/jobs-search.ts`: its own copy of the visibility and filter block and its own `(posted_at, id)` cursor today. It needs the same `searchFilters` import, `teeQuery` and `nextPage` as the Pages route, with behaviour kept equivalent.
