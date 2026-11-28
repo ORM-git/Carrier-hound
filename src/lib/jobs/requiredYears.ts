@@ -218,3 +218,51 @@ export function buildRequiredYearsClause(range: RequiredYearsRange | null | unde
   if (sel.min !== null && sel.min > 0) parts.push(`or(max_experience_years.is.null,max_experience_years.gte.${sel.min})`);
   return parts.length ? `and(${parts.join(",")})` : null;
 }
+
+// --- Transient (All Filters drawer) selection: three explicit modes ------------------------------------
+// inherit = no explicit choice, the saved range (if any) applies; any = explicit "Any", no years filter even if a
+// range is saved; range = explicit bounds (upper null = no upper bound). A range that restricts nothing is "any".
+export type ExplicitYears =
+  | { mode: "inherit" }
+  | { mode: "any" }
+  | { mode: "range"; min: number | null; max: number | null };
+
+export const INHERIT_YEARS: ExplicitYears = { mode: "inherit" };
+
+export function normalizeExplicitYears(input: unknown): ExplicitYears {
+  const v = input as { mode?: unknown; min?: unknown; max?: unknown } | null | undefined;
+  if (!v || typeof v !== "object") return INHERIT_YEARS;
+  if (v.mode === "any") return { mode: "any" };
+  if (v.mode !== "range") return INHERIT_YEARS;
+  const r = normalizeRequiredYearsRange({ min: v.min, max: v.max });
+  if (r.min === null && r.max === null) return INHERIT_YEARS; // invalid or empty input is not a choice
+  return isRequiredYearsRangeActive(r) ? { mode: "range", min: r.min, max: r.max } : { mode: "any" };
+}
+
+/** URL form: absent = inherit, years=any, years=2-5, years=2- (no upper bound), years=-4 (up to 4). */
+export function yearsToUrlParam(y: ExplicitYears): string | null {
+  const n = normalizeExplicitYears(y);
+  if (n.mode === "inherit") return null;
+  if (n.mode === "any") return "any";
+  return `${n.min ?? ""}-${n.max ?? ""}`;
+}
+
+export function yearsFromUrlParam(value: string | null | undefined): ExplicitYears {
+  if (!value) return INHERIT_YEARS;
+  if (value === "any") return { mode: "any" };
+  const m = /^(\d{1,2}(?:\.\d)?)?-(\d{1,2}(?:\.\d)?)?$/.exec(value);
+  if (!m || (m[1] === undefined && m[2] === undefined)) return INHERIT_YEARS;
+  return normalizeExplicitYears({ mode: "range", min: m[1] === undefined ? null : Number(m[1]), max: m[2] === undefined ? null : Number(m[2]) });
+}
+
+/** The range the request carries: explicit wins over saved (never intersects); "any" clears even a saved range. */
+export function resolveRequiredYears(explicit: ExplicitYears | null | undefined, saved: RequiredYearsRange): RequiredYearsRange {
+  const e = normalizeExplicitYears(explicit);
+  if (e.mode === "any") return normalizeRequiredYearsRange(null);
+  if (e.mode === "range") return normalizeRequiredYearsRange({ min: e.min, max: e.max });
+  return saved;
+}
+
+export function explicitYearsKey(y: ExplicitYears | null | undefined): string {
+  return yearsToUrlParam(y ?? INHERIT_YEARS) ?? "inherit";
+}

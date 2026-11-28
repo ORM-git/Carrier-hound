@@ -6,8 +6,8 @@ import AllFiltersDrawer from "../AllFiltersDrawer";
 import type { JobFilterValues } from "../JobFilterBar";
 
 const base: JobFilterValues = { location: "", category: "", level: "", jobType: "", workModel: "", datePosted: "all", hidden: false, sort: "match" };
-const open = (over: Partial<JobFilterValues> = {}, onApply = vi.fn(), onClose = vi.fn()) => {
-  render(<AllFiltersDrawer isOpen onClose={onClose} filters={{ ...base, ...over }} onApply={onApply} onResetAll={vi.fn()} activeCount={0} />);
+const open = (over: Partial<JobFilterValues> = {}, onApply = vi.fn(), onClose = vi.fn(), extra: Partial<React.ComponentProps<typeof AllFiltersDrawer>> = {}) => {
+  render(<AllFiltersDrawer isOpen onClose={onClose} filters={{ ...base, ...over }} onApply={onApply} onResetAll={vi.fn()} activeCount={0} {...extra} />);
   return { onApply, onClose };
 };
 const applied = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls[0][0] as JobFilterValues;
@@ -132,6 +132,190 @@ describe("All Filters drawer (desktop, five sections)", () => {
     rerender(<AllFiltersDrawer isOpen={false} filters={base} {...props} />);
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
+  });
+
+  const ready = { ready: true, tabSupported: true, saved: null };
+
+  it("years control is disabled with a reason when the page gives no readiness, wrong tab, or still checking; Confirm then keeps the page choice (undefined)", () => {
+    for (const [yc, text] of [
+      [undefined, /not available right now/],
+      [{ ready: false, tabSupported: true }, /not available right now/],
+      [{ ready: true, tabSupported: false }, /Recommended feed only/],
+      [{ ready: false, tabSupported: true, checking: true }, /Checking whether required years/],
+      [{ ready: true, tabSupported: true, checking: true }, /Checking whether required years/], // stale-true while rechecking
+    ] as const) {
+      cleanup();
+      const { onApply } = open({ requiredYears: { mode: "range", min: 1, max: 3 } }, vi.fn(), vi.fn(), { yearsControl: yc as any });
+      expect(screen.getByText(text)).toBeTruthy();
+      expect(screen.queryByLabelText("Min years")).toBeNull();
+      expect(screen.queryByRole("radiogroup", { name: "Required years mode" })).toBeNull();
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(applied(onApply).requiredYears).toBeUndefined();
+    }
+  });
+
+  it("years control (ready): Saved range / Any / range are distinct, Any is explicit, saved range is shown honestly", () => {
+    const a = vi.fn();
+    open({ requiredYears: { mode: "inherit" } }, a, vi.fn(), { yearsControl: { ...ready, saved: { min: 2, max: 6 } } });
+    expect(screen.getByText("Using your saved range: 2-6 yrs")).toBeTruthy();
+    expect((screen.getByLabelText("Saved range") as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByLabelText("Any"));
+    expect(screen.getByText("Any years required")).toBeTruthy();
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(a).requiredYears).toEqual({ mode: "any" });
+    cleanup();
+    const b = vi.fn();
+    open({}, b, vi.fn(), { yearsControl: ready });
+    expect(screen.getByText(/You have no saved range, so no years limit applies/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(b).requiredYears).toEqual({ mode: "inherit" });
+  });
+
+  it("years range: Confirm sends the normalized range; min<=max kept; empty range is inherit; 0 with no max is Any; Reset goes to Saved range", () => {
+    const a = vi.fn();
+    open({}, a, vi.fn(), { yearsControl: ready });
+    fireEvent.click(screen.getByLabelText("Set a range"));
+    const min = screen.getByLabelText("Min years") as HTMLInputElement;
+    const max = screen.getByLabelText("Max years") as HTMLInputElement;
+    fireEvent.change(min, { target: { value: "2" } });
+    fireEvent.change(max, { target: { value: "5" } });
+    expect(screen.getByText("2-5 yrs required")).toBeTruthy();
+    fireEvent.change(min, { target: { value: "9" } });
+    expect(max.value).toBe("9");
+    fireEvent.change(max, { target: { value: "4" } });
+    expect(min.value).toBe("4");
+    fireEvent.change(min, { target: { value: "2" } });
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(a).requiredYears).toEqual({ mode: "range", min: 2, max: 4 });
+    cleanup();
+    const e = vi.fn();
+    open({}, e, vi.fn(), { yearsControl: ready });
+    fireEvent.click(screen.getByLabelText("Set a range"));
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(e).requiredYears).toEqual({ mode: "inherit" });
+    cleanup();
+    const z = vi.fn();
+    open({}, z, vi.fn(), { yearsControl: ready });
+    fireEvent.click(screen.getByLabelText("Set a range"));
+    fireEvent.change(screen.getByLabelText("Min years"), { target: { value: "0" } });
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(z).requiredYears).toEqual({ mode: "any" });
+    cleanup();
+    const r = vi.fn();
+    open({ requiredYears: { mode: "range", min: 1, max: 3 } }, r, vi.fn(), { yearsControl: ready });
+    fireEvent.click(screen.getByText("Reset All"));
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(r).requiredYears).toEqual({ mode: "inherit" });
+  });
+
+  it("asks the page to recheck years readiness every time the drawer opens", () => {
+    const recheck = vi.fn();
+    const props = { onClose: vi.fn(), onApply: vi.fn(), onResetAll: vi.fn(), activeCount: 0, onYearsRecheck: recheck };
+    const { rerender } = render(<AllFiltersDrawer isOpen={false} filters={base} {...props} />);
+    expect(recheck).not.toHaveBeenCalled();
+    rerender(<AllFiltersDrawer isOpen filters={base} {...props} />);
+    rerender(<AllFiltersDrawer isOpen={false} filters={base} {...props} />);
+    rerender(<AllFiltersDrawer isOpen filters={base} {...props} />);
+    expect(recheck).toHaveBeenCalledTimes(2);
+  });
+
+  it("ready:true + checking:true (stale-true reopen): no chip, no control, Confirm sends undefined, Reset does not touch years", () => {
+    const a = vi.fn();
+    open({ requiredYears: { mode: "range", min: 2, max: 5 }, level: "entry" }, a, vi.fn(), { yearsControl: { ready: true, tabSupported: true, checking: true, saved: null } });
+    expect(screen.queryByText("2-5 yrs required")).toBeNull();
+    expect(screen.queryByLabelText("Min years")).toBeNull();
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(a).requiredYears).toBeUndefined();
+    cleanup();
+    const r = vi.fn();
+    open({ requiredYears: { mode: "range", min: 2, max: 5 } }, r, vi.fn(), { yearsControl: { ready: true, tabSupported: true, checking: true } });
+    fireEvent.click(screen.getByText("Reset All"));
+    fireEvent.click(screen.getByText("Confirm"));
+    expect(applied(r).requiredYears).toBeUndefined();
+  });
+
+  it("range inputs have visible Min years / Max years labels", () => {
+    open({}, vi.fn(), vi.fn(), { yearsControl: { ready: true, tabSupported: true } });
+    fireEvent.click(screen.getByLabelText("Set a range"));
+    expect(screen.getByText("Min years")).toBeTruthy();
+    expect(screen.getByText("Max years")).toBeTruthy();
+    expect(screen.getByLabelText("Min years")).toBeTruthy();
+    expect(screen.getByLabelText("Max years")).toBeTruthy();
+  });
+
+  describe("apply result contract", () => {
+    const tick = async () => { await Promise.resolve(); await Promise.resolve(); };
+    it("void and true close (sync for void); false and a rejected/throwing apply keep the drawer open with the draft", async () => {
+      let r = open({}, vi.fn(() => undefined));
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(r.onClose).toHaveBeenCalledTimes(1);
+      cleanup();
+      r = open({}, vi.fn(() => true));
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(r.onClose).toHaveBeenCalledTimes(1);
+      cleanup();
+      r = open({}, vi.fn(() => false));
+      fireEvent.click(screen.getByLabelText("Full-time"));
+      fireEvent.click(screen.getByText("Confirm"));
+      await tick();
+      expect(r.onClose).not.toHaveBeenCalled();
+      expect((screen.getByLabelText("Full-time") as HTMLInputElement).checked).toBe(true);
+      cleanup();
+      r = open({}, vi.fn(() => { throw new Error("x"); }));
+      fireEvent.click(screen.getByText("Confirm"));
+      await tick();
+      expect(r.onClose).not.toHaveBeenCalled();
+    });
+    it("a Confirm that settles after the drawer was closed, or closed and reopened, cannot close or lock the new session", async () => {
+      const resolvers: Array<(v: boolean) => void> = [];
+      const onApply = vi.fn(() => new Promise<boolean>((r) => { resolvers.push(r); }));
+      const onClose = vi.fn();
+      const props = { onClose, filters: base, onApply, onResetAll: vi.fn(), activeCount: 0 };
+      const { rerender } = render(<AllFiltersDrawer isOpen {...props} />);
+      fireEvent.click(screen.getByText("Confirm"));
+      rerender(<AllFiltersDrawer isOpen={false} {...props} />);
+      rerender(<AllFiltersDrawer isOpen {...props} />);
+      // new session is not locked by the old pending Confirm
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(onApply).toHaveBeenCalledTimes(2);
+      resolvers[0](true); // stale true from the previous session
+      await tick();
+      expect(onClose).not.toHaveBeenCalled();
+      resolvers[1](true); // the current session's own answer still closes
+      await tick();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+    it("a stale rejection from an old session does not unlock a pending Confirm in the new session (double click stays one apply)", async () => {
+      const resolvers: Array<(v: boolean) => void> = [];
+      const onApply = vi.fn(() => new Promise<boolean>((r) => { resolvers.push(r); }));
+      const props = { onClose: vi.fn(), filters: base, onApply, onResetAll: vi.fn(), activeCount: 0 };
+      const { rerender } = render(<AllFiltersDrawer isOpen {...props} />);
+      fireEvent.click(screen.getByText("Confirm"));
+      rerender(<AllFiltersDrawer isOpen={false} {...props} />);
+      rerender(<AllFiltersDrawer isOpen {...props} />);
+      fireEvent.click(screen.getByText("Confirm"));
+      resolvers[0](false);
+      await tick();
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(onApply).toHaveBeenCalledTimes(2);
+    });
+    it("async apply: closes only after it resolves non-false; false keeps it open and a second Confirm is allowed; double click is ignored while pending", async () => {
+      let res!: (v: boolean) => void;
+      const onApply = vi.fn(() => new Promise<boolean>((r) => { res = r; }));
+      const { onClose } = open({}, onApply);
+      fireEvent.click(screen.getByText("Confirm"));
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(onApply).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      res(false);
+      await tick();
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText("Confirm"));
+      expect(onApply).toHaveBeenCalledTimes(2);
+      res(true);
+      await tick();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("measures the panel with a ResizeObserver and window resize, and disconnects/removes both on close and unmount", () => {

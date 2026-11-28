@@ -338,14 +338,6 @@ async def run_master_ingestion(
             started = time.monotonic()
             per_board_worst = fetchers_mod.get_workday_tenant_spacing_seconds() + fetchers_mod.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS
             for i, sid in enumerate(wd_chosen):
-                cooldown = fetchers_mod._WORKDAY_COOLDOWN_UNTIL - time.monotonic()
-                if cooldown > fetchers_mod.WORKDAY_MAX_COOLDOWN_SECONDS:  # an earlier board hit a long 429
-                    until = datetime.now(timezone.utc) + timedelta(seconds=cooldown)
-                    for rest in wd_chosen[i:]:
-                        if not dry_run:
-                            workday_schedule.defer_until(wd_boards, rest, until, "shared Workday cooldown triggered by another board; not attempted")
-                        wd_deferred.append({"source": rest, "reason": "shared Workday cooldown triggered by another board; not attempted", "next_eligible_at": until.isoformat()})
-                    break
                 if time.monotonic() - started + per_board_worst > wd_lim["run_budget_seconds"]:
                     wd_deferred.extend({"source": rest, "reason": "run budget", "next_eligible_at": None} for rest in wd_chosen[i:])
                     break
@@ -360,7 +352,7 @@ async def run_master_ingestion(
                     except WorkdayRateLimited as exc:
                         seen["retry_after"] = exc.retry_after
                         raise
-                    finally:  # wall time, not latency: tenant-start spacing, polite delay, shared cooldown wait,
+                    finally:  # wall time, not latency: tenant-start spacing, polite delay, tenant cooldown wait,
                         # per-tenant spacing, limiter wait and retry sleeps are all included, plus transport
                         metrics["elapsed_seconds"] = round(time.monotonic() - t0, 3)
 
