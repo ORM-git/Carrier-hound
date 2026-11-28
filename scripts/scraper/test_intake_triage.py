@@ -11,14 +11,23 @@ from scripts.scraper import intake_triage as it
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "intake_triage_report.example.json"
 
 
+ATTEMPTS = []
+
+
+def _blocked(*a, **k):
+    ATTEMPTS.append(a[1:] if a and isinstance(a[0], socket.socket) else a)
+    raise AssertionError("network access attempted")
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    def blocked(*a, **k):
-        raise AssertionError("network access attempted")
+    ATTEMPTS.clear()
     for name in ("connect", "connect_ex", "sendto"):
-        monkeypatch.setattr(socket.socket, name, blocked)
-    monkeypatch.setattr(socket, "create_connection", blocked)
-    monkeypatch.setattr(socket, "getaddrinfo", blocked)
+        monkeypatch.setattr(socket.socket, name, _blocked)
+    monkeypatch.setattr(socket, "create_connection", _blocked)
+    monkeypatch.setattr(socket, "getaddrinfo", _blocked)
+    yield
+    assert ATTEMPTS == [] or ATTEMPTS == [("guard-self-test",)] * len(ATTEMPTS), f"outbound attempts: {ATTEMPTS}"
 
 
 def load():
@@ -29,9 +38,24 @@ def triage(report=None):
     return it.triage(report or load(), it.connector_evidence(it.DEFAULT_FETCHERS))
 
 
-def test_network_guard_is_active_and_module_imports_no_network_libs():
-    with pytest.raises(AssertionError, match="network"):
-        socket.create_connection(("triage.example", 443))
+def test_network_guard_catches_attempt_without_real_request():
+    # The patched methods are the guard itself, so the attempt is refused before any socket I/O or DNS lookup.
+    assert socket.socket.connect is _blocked and socket.create_connection is _blocked and socket.getaddrinfo is _blocked
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        with pytest.raises(AssertionError, match="network access attempted"):
+            s.connect(("guard-self-test",))
+    with pytest.raises(AssertionError, match="network access attempted"):
+        socket.create_connection(("guard-self-test",))
+    assert ATTEMPTS == [(("guard-self-test",),), (("guard-self-test",),)]
+    ATTEMPTS[:] = [("guard-self-test",)] * 2  # expected self-test attempts; teardown rejects any other
+
+
+def test_full_cli_run_makes_no_network_attempt(tmp_path):
+    assert it.main(["--report", str(FIXTURE), "--out-dir", str(tmp_path)]) == 0
+    assert ATTEMPTS == []
+
+
+def test_module_imports_no_network_libs():
     tree = ast.parse(Path(it.__file__).read_text(encoding="utf-8"))
     imported = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     imported |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
@@ -65,8 +89,8 @@ def test_references_do_not_double_count_and_merges_stay_separate():
 
 def test_connector_groups_compare_against_real_fetchers():
     c = triage()["connectors"]
-    assert {"greenhouse", "lever", "ashby", "smartrecruiters", "workday"} <= set(c["evidence"])
-    assert "boards-api.greenhouse.io" in c["evidence"]["greenhouse"]["api_hosts"]
+    assert {"fetch_greenhouse", "fetch_lever", "fetch_ashby", "fetch_smartrecruiters", "fetch_workday_cxs"} <= set(c["evidence"])
+    assert "boards-api.greenhouse.io" in c["evidence"]["fetch_greenhouse"]["api_hosts"]
     unsupported = {g["vendor"]: g for g in c["unsupported_ats_groups"]}
     assert unsupported["workable"]["connector"] == "unsupported"
     assert unsupported["greenhouse"]["connector"] == "unresolved"
@@ -185,3 +209,136 @@ def test_fixture_uses_reserved_example_hosts_only():
     for r in load()["records"]:
         parts = it.split_url(r["original_url"].replace("ftp://", "https://")) if r["original_url"] else None
         assert parts is None or parts[0].endswith(".example")
+
+
+# ---- review checks -------------------------------------------------------------------------------
+
+def test_possible_duplicate_url_is_only_a_referenced_hint():
+    t = triage()
+    row5 = next(r for r in t["rows"] if r["source_row"] == 5)
+    assert (row5["bucket"], row5["merged_into_row"]) == ("missing_url", None)  # sibling URL changes neither
+    entry = t["missing_urls"][0]
+    assert entry["source_row"] == 5 and "url" not in entry
+    hint = next(h for h in entry["hints"] if h["kind"] == "review_group_rows_with_urls")
+    assert hint["value"] == [16] and "not proof" in hint["note"]   # a row reference, not the sibling's URL
+    assert "gamma.example" not in json.dumps(entry).replace("Gamma.example", "")
+    assert t["buckets"]["missing_url"]["samples"][0]["url"] is None
+    assert all(5 not in g["source_rows"] for g in t["connectors"]["candidate_groups"])
+    assert all(5 not in v["source_rows"] for v in t["website_evidence"].values())
+    assert all(5 not in m["merged_rows"] and m["retained_row"] != 5 for m in t["references"]["proven_merges"])
+    # Same holds when the sibling is a clean connector candidate in the same review group.
+    rep = load()
+    rep["review_groups"][1]["source_rows"] = [5, 8]
+    t2 = triage(rep)
+    assert next(r for r in t2["rows"] if r["source_row"] == 5)["bucket"] == "missing_url"
+    assert [g["source_rows"] for g in t2["connectors"]["candidate_groups"]] == [[8]]
+
+
+def test_connector_parsing_with_no_connectors_fails_clearly(tmp_path):
+    empty = tmp_path / "fetchers.py"
+    empty.write_text("def helper():\n    return 'https://api.example'\n", encoding="utf-8")
+    with pytest.raises(it.TriageError, match=r"no fetch_\* connector functions found"):
+        it.connector_evidence(empty)
+    broken = tmp_path / "broken.py"
+    broken.write_text("def fetch_x(:\n", encoding="utf-8")
+    with pytest.raises(it.TriageError, match="cannot read connector code"):
+        it.connector_evidence(broken)
+
+
+def test_workday_and_workable_never_confused(tmp_path):
+    src = tmp_path / "fetchers.py"
+    src.write_text("async def fetch_workday_cxs(c, l, seed):\n    return f'https://{seed}.wd5.myworkdayjobs.com'\n", encoding="utf-8")
+    conns = it.connector_evidence(src)
+    assert [c["function"] for c in it.find_connectors(conns, "workday")] == ["fetch_workday_cxs"]
+    assert it.find_connectors(conns, "workable") == [] and it.find_connectors(conns, "work") == []
+    rep = load()
+    rep["records"][13]["status"] = "unsupported_ats"   # row 15: workday URL the intake could not use
+    groups = {g["vendor"]: g for g in it.triage(rep, conns)["connectors"]["unsupported_ats_groups"]}
+    assert groups["workable"]["connector"] == "unsupported" and "fetch_workable" in groups["workable"]["reason"]
+    assert groups["workday"]["connector"] == "unresolved" and "fetch_workday_cxs" in groups["workday"]["reason"]
+    assert groups["greenhouse"]["connector"] == "unsupported"  # no greenhouse fetcher in this source
+
+
+def test_eu_greenhouse_stays_unresolved_even_with_greenhouse_connector():
+    groups = {g["vendor"]: g for g in triage()["connectors"]["unsupported_ats_groups"]}
+    assert groups["greenhouse"]["connector"] == "unresolved"
+    assert groups["greenhouse"]["source_rows"] == [7]
+    assert all(7 not in g["source_rows"] for g in triage()["connectors"]["candidate_groups"])
+
+
+SECRETS = ("SECRET", "hunter2", "sess=", "sig=", "#frag", "utm_", "api_key", "user:pass", "?")
+
+
+def _poisoned():
+    rep = load()
+    r = rep["records"]
+    r[0]["company"] = "Acme https://acme.example/x?sig=SECRETa"
+    r[1]["company"] = "Acme https://acme.example/x?sig=SECRETa"
+    r[2]["reason"] = "see beta.example/p?sess=SECRETb#frag"
+    r[4]["ats_candidate"] = "workable"
+    r[4]["original_url"] = r[4]["normalized_url"] = "https://admin:hunter2@apply.workable.example/d?api_key=SECRETc"
+    r[11]["status"] = "odd https://kappa.example/?utm_source=SECRETd"
+    r[7]["candidate_boards"] = ['ashby:{"token": "eta?x=SECRETe"}', 'lever:{"token": "zeta"}']
+    rep["review_groups"][0]["group"] = "similar_name:gamma https://g.example/?SECRETf"
+    rep["review_groups"][0]["urls"] = ["https://user:pass@gamma.example/a?SECRETg#frag"]
+    return rep
+
+
+def test_redaction_covers_every_output_and_error(tmp_path, capsys):
+    p = tmp_path / "poisoned.json"
+    p.write_text(json.dumps(_poisoned()), encoding="utf-8")
+    assert it.main(["--report", str(p), "--out-dir", str(tmp_path / "o")]) == 0
+    outputs = [(tmp_path / "o" / n).read_text(encoding="utf-8") for n in ("intake_triage.json", "intake_triage.md")]
+    outputs.append(capsys.readouterr().out)
+    bad = _poisoned()
+    bad["records"][3]["source_row"] = "https://x.example/?SECRETh"   # error path
+    p.write_text(json.dumps(bad), encoding="utf-8")
+    assert it.main(["--report", str(p), "--out-dir", str(tmp_path / "o2")]) == 2
+    outputs.append(capsys.readouterr().err)
+    for text in outputs:
+        for secret in SECRETS:
+            assert secret not in text, (secret, text[:200])
+    assert "https://acme.example/x" in outputs[0]   # redacted, not deleted
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("https://a.example/p?t=SECRET#f", "https://a.example/p"),
+    ("see a.example/p?t=SECRET now", "see a.example/p now"), ('ashby:{"token": "eta?x=S"}', 'ashby:{"token": "eta"}'),
+    ("mail jobs@a.example", "mail <redacted>"),
+    ("ftp://u:p@a.example/x?y", "<unparseable>"),
+    ("path segment /careers", "path segment /careers"),
+    ('lever:{"token": "zeta"}', 'lever:{"token": "zeta"}'),
+])
+def test_redact_text_unit(raw, expected):
+    assert it.redact_text(raw) == expected
+
+
+def test_repeated_runs_identical_bytes(tmp_path):
+    for d in ("a", "b", "c"):
+        it.run(FIXTURE, tmp_path / d)
+    for n in ("intake_triage.json", "intake_triage.md"):
+        first = (tmp_path / "a" / n).read_bytes()
+        assert first == (tmp_path / "b" / n).read_bytes() == (tmp_path / "c" / n).read_bytes()
+        assert b"\r\n" not in first
+
+
+@pytest.mark.parametrize("tamper,msg", [
+    (lambda a: a["website_only"].pop(), "dropped="),
+    (lambda a: a["ambiguous"].append(a["website_only"][0]), "double="),
+])
+def test_triage_reconciliation_rejects_dropped_or_double_counted_rows(monkeypatch, tamper, msg):
+    real = it.check_partition
+
+    def tampered(row_ids, buckets):
+        tamper(buckets)
+        return real(row_ids, buckets)
+    monkeypatch.setattr(it, "check_partition", tampered)
+    with pytest.raises(it.TriageError, match=msg):
+        triage()
+
+
+def test_markdown_structure_survives_redaction(tmp_path):
+    it.run(FIXTURE, tmp_path)
+    md = (tmp_path / "intake_triage.md").read_text(encoding="utf-8")
+    assert md.startswith("# Company intake triage\n")
+    assert "\n## Connector groups" in md and "\n## References" in md

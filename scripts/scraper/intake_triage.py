@@ -43,7 +43,9 @@ _CAREERS_SEG = re.compile(r"^(careers?|jobs?|join|join-?us|work-with-us|openings
                           r"positions|opportunities|karriere|carreiras?|empleos?|stellenangebote)$")
 _CAREERS_LABELS = {"careers", "career", "jobs", "join", "hiring"}
 _HOME_SEG = re.compile(r"^([a-z]{2}(-[a-z]{2})?|home|index)$")
-_URL_IN_TEXT = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+_URL_IN_TEXT = re.compile(r"[a-z][a-z0-9+.-]*://[^\s\"'|,]+", re.IGNORECASE)
+_AT_TOKEN = re.compile(r"[^\s\"'|,]*@[^\s\"'|,]*\.[^\s\"'|,]*")  # user:pw@host, mail@host
+_QUERY_TAIL = re.compile(r"(?<=[^\s\"'|,#])[?#][^\s\"'|,]*")  # attached tail only: Markdown "## Heading" survives
 _NAME_DOT_TOKEN = re.compile(r"\b[a-z0-9][a-z0-9-]*\.[a-z]{2,}\b", re.IGNORECASE)
 
 
@@ -85,7 +87,19 @@ def redact_url(url: object) -> str | None:
 
 
 def redact_text(text: object) -> str:
-    return _URL_IN_TEXT.sub(lambda m: redact_url(m.group(0)) or "", str(text or ""))
+    """Strips query, fragment and credentials from free text: URLs are reduced to host+path, any other
+    ?…/#… tail is dropped, and tokens with an @ are replaced."""
+    text = _URL_IN_TEXT.sub(lambda m: redact_url(m.group(0)) or "", str(text or ""))
+    return _QUERY_TAIL.sub("", _AT_TOKEN.sub("<redacted>", text))
+
+
+def scrub(obj):
+    """Final pass over everything written: every string, keys included, goes through redact_text."""
+    if isinstance(obj, dict):
+        return {redact_text(k) if isinstance(k, str) else k: scrub(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [scrub(v) for v in obj]
+    return redact_text(obj) if isinstance(obj, str) else obj
 
 
 def _on(host: str, base: str) -> bool:
@@ -117,8 +131,7 @@ def website_evidence(url: object) -> tuple[str, str]:
 # ---- connector evidence -------------------------------------------------------------------------
 
 def connector_evidence(fetchers_path: Path) -> dict[str, dict]:
-    """vendor -> {function, line, api_hosts} from fetch_* functions in fetchers.py (parsed, not imported).
-    shortcut: vendor = first word after fetch_ (fetch_workday_cxs -> workday); upgrade if a fetcher is renamed."""
+    """function name -> {function, line, api_hosts} for top-level fetch_* functions in fetchers.py (parsed, not imported)."""
     try:
         tree = ast.parse(fetchers_path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError) as exc:
@@ -138,10 +151,16 @@ def connector_evidence(fetchers_path: Path) -> dict[str, dict]:
             m = re.match(r"https://([^/?#]+)", text)
             if m and m.group(1).strip("{}"):
                 hosts.add(m.group(1))
-        out[fn.name.split("_")[1]] = {"function": fn.name, "line": fn.lineno, "api_hosts": sorted(hosts)}
+        out[fn.name] = {"function": fn.name, "line": fn.lineno, "api_hosts": sorted(hosts)}
     if not out:
-        raise TriageError(f"no fetch_* functions found in {fetchers_path}")
+        raise TriageError(f"no fetch_* connector functions found in {fetchers_path}; refusing to classify connectors")
     return out
+
+
+def find_connectors(connectors: dict[str, dict], vendor: str) -> list[dict]:
+    """Whole-word vendor match: fetch_workday_cxs serves "workday", never "workable" or "work".
+    shortcut: relies on fetch_<vendor>[_suffix] naming in fetchers.py; upgrade if a fetcher is renamed."""
+    return [c for name, c in sorted(connectors.items()) if name == f"fetch_{vendor}" or name.startswith(f"fetch_{vendor}_")]
 
 
 # ---- report loading -----------------------------------------------------------------------------
@@ -230,16 +249,17 @@ def triage(report: dict, connectors: dict[str, dict]) -> dict:
         out = []
         for vendor, vrs in sorted(by_vendor.items()):
             hosts = Counter((split_url(_url(r)) or ("<unparseable>",))[0] for r in vrs)
-            conn = connectors.get(vendor)
+            found = [] if vendor == "<unidentified>" else find_connectors(connectors, vendor)
+            where = ", ".join(f"{c['function']} (fetchers.py:{c['line']})" for c in found)
             if vendor == "<unidentified>":
                 verdict, why = "unresolved", "report gives no vendor for these rows"
-            elif not conn:
-                verdict, why = "unsupported", f"no fetch_{vendor}* function in fetchers.py"
+            elif not found:
+                verdict, why = "unsupported", f"no fetch_{vendor} connector in fetchers.py"
             elif clean:
-                verdict, why = "supported", f"{conn['function']} (fetchers.py:{conn['line']}) exists; URL candidates are unverified"
-            else:
-                verdict, why = "unresolved", (f"{conn['function']} (fetchers.py:{conn['line']}) calls {', '.join(conn['api_hosts'])}; "
-                                              f"observed hosts are not shown to be served by it")
+                verdict, why = "supported", f"{where} exists; URL candidates are unverified"
+            else:  # intake already judged these rows unusable by the connector (e.g. EU Greenhouse); never upgraded here
+                called = ", ".join(sorted({h for c in found for h in c["api_hosts"]}))
+                verdict, why = "unresolved", f"{where} calls {called}; observed hosts are not shown to be served by it"
             out.append({"vendor": vendor, "connector": verdict, "reason": why, "count": len(vrs),
                         "hosts": dict(sorted(hosts.items(), key=lambda kv: (-kv[1], kv[0]))),
                         "source_rows": [r["source_row"] for r in vrs], "samples": [_sample(r) for r in vrs[:SAMPLES]]})
@@ -291,7 +311,7 @@ def triage(report: dict, connectors: dict[str, dict]) -> dict:
                            "bucketed_rows": sum(b["count"] for b in buckets.values()),
                            "by_bucket": {b: buckets[b]["count"] for b in BUCKETS}},
         "buckets": buckets,
-        "connectors": {"evidence": {v: connectors[v] for v in sorted(connectors)},
+        "connectors": {"evidence": {name: connectors[name] for name in sorted(connectors)},
                        "unsupported_ats_groups": vendor_groups(assigned.get("unsupported_ats", []), clean=False),
                        "ats_incomplete_groups": vendor_groups(assigned.get("ats_incomplete", []), clean=False),
                        "candidate_groups": vendor_groups(assigned.get("connector_candidate", []), clean=True)},
@@ -342,10 +362,10 @@ def run(report_path: Path, out_dir: Path, fetchers_path: Path = DEFAULT_FETCHERS
         raise TriageError(f"{report_path} is not valid JSON: {exc}") from exc
     t = triage(report, connector_evidence(fetchers_path))
     sha = hashlib.sha256(raw).hexdigest()
-    t = {"input_sha256": sha, **t}
+    t = scrub({"input_sha256": sha, **t})
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "intake_triage.json").write_text(json.dumps(t, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
-    (out_dir / "intake_triage.md").write_text(render_markdown(t, sha), encoding="utf-8", newline="\n")
+    (out_dir / "intake_triage.md").write_text(redact_text(render_markdown(t, sha)), encoding="utf-8", newline="\n")
     return t
 
 
@@ -358,7 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         t = run(a.report, a.out_dir, a.fetchers)
     except (TriageError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {redact_text(exc)}", file=sys.stderr)
         return 2
     print(json.dumps(t["reconciliation"], indent=2))
     return 0
