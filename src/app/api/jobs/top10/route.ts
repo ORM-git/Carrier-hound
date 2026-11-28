@@ -1,3 +1,4 @@
+import { classifyApplyDestination } from "@/lib/jobs/applyDestination";
 import { NextResponse } from "next/server";
 import { wireJobType } from "@/lib/jobs/formatJobType";
 import { createClient } from "@supabase/supabase-js";
@@ -305,6 +306,7 @@ export async function POST(req: Request) {
         type: wireJobType(row.job_type),
         directSource: Boolean(row.apply_url),
         applyUrl: row.apply_url || "",
+        applyDestination: classifyApplyDestination(row.apply_url || ""),
         description: row.description || "",
         skills: Array.isArray(row.skills) ? row.skills : [],
         postedAt: row.posted_at || row.first_seen_at,
