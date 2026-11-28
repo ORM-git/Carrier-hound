@@ -343,8 +343,8 @@ async def run_master_ingestion(
                     until = datetime.now(timezone.utc) + timedelta(seconds=cooldown)
                     for rest in wd_chosen[i:]:
                         if not dry_run:
-                            workday_schedule.defer_until(wd_boards, rest, until, "workday cooldown (429 this run)")
-                        wd_deferred.append({"source": rest, "reason": "workday cooldown (429 this run)", "next_eligible_at": until.isoformat()})
+                            workday_schedule.defer_until(wd_boards, rest, until, "shared Workday cooldown triggered by another board; not attempted")
+                        wd_deferred.append({"source": rest, "reason": "shared Workday cooldown triggered by another board; not attempted", "next_eligible_at": until.isoformat()})
                     break
                 if time.monotonic() - started + per_board_worst > wd_lim["run_budget_seconds"]:
                     wd_deferred.extend({"source": rest, "reason": "run budget", "next_eligible_at": None} for rest in wd_chosen[i:])
