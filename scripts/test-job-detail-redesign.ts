@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import ts from "typescript";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 
@@ -128,22 +129,79 @@ function run() {
     console.log("  [PASS] unlock logic: preserves isUnlocked (isPro && !job.proUnlockError), error retry banner, and onRetryUnlock prop");
   }
 
-  // 7. Mobile match score: heading + one row of four tiles (highlighted overall with its match label, then
-  // Experience Level / Skill / Role Match), masked as "Pro Match" when locked, 11px+ labels
-  const mobileScore = detailCode.slice(detailCode.indexOf('testId="mobile-match-score"'), detailCode.indexOf("(3) CONTENT ORDER"));
-  const tilesCode = detailCode.slice(detailCode.indexOf("function MatchScoreTiles"), detailCode.indexOf("function MatchScorePrompt"));
-  const hasMobileMatchRow =
-    tilesCode.includes("Match Score") &&
-    tilesCode.includes("grid grid-cols-4") &&
-    tilesCode.includes("Pro Match") &&
-    mobileScore.includes("matchLabel") &&
-    ["Experience Level", "Skill", "Role Match"].every((l) => mobileScore.includes(l)) &&
-    !/text-\[(9|10)px\]/.test(mobileScore + tilesCode);
-
-  if (!hasMobileMatchRow) {
-    failures.push("MOBILE MATCH ROW FAIL: Mobile must render Match Score as one grid-cols-4 row: highlighted overall tile (big %, match label) plus Experience Level / Skill / Role Match tiles with 11px+ labels.");
+  // 7. Inspect executable JSX, not an obsolete paid-only label or comment.
+  function mobileMatchGuards(source: string) {
+    const file = ts.createSourceFile("detail.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const flags = { grid: false, heading: false, labels: false, values: false, matchLabel: false, mobile: false };
+    const printer = ts.createPrinter({ removeComments: true });
+    const code = (node: ts.Node) => printer.printNode(ts.EmitHint.Unspecified, node, file).replace(/\s/g, "");
+    function walk(node: ts.Node, visit: (node: ts.Node) => void) {
+      visit(node); ts.forEachChild(node, child => walk(child, visit));
+    }
+    const attrs = (node: ts.JsxOpeningElement | ts.JsxSelfClosingElement, name: string) =>
+      node.attributes.properties.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText(file) === name)?.initializer;
+    walk(file, node => {
+      if (ts.isFunctionDeclaration(node) && node.name?.text === "MatchScoreTiles" && node.body) {
+        walk(node.body, child => {
+          if (ts.isJsxElement(child)) {
+            const tag = child.openingElement.tagName.getText(file);
+            const cls = attrs(child.openingElement, "className");
+            if (tag === "dl" && cls && ts.isStringLiteral(cls)) {
+              const tokens = cls.text.split(/\s+/);
+              flags.grid = tokens.includes("grid") && tokens.includes("grid-cols-4");
+            }
+            if (tag === "h2") flags.heading = child.children.some(c => ts.isJsxText(c) && c.text.trim() === "Match Score");
+            if (tag === "dt" && cls && ts.isJsxExpression(cls) && cls.expression && ts.isTemplateExpression(cls.expression)) {
+              const text = cls.expression.head.text + cls.expression.templateSpans.map(s => s.literal.text).join(" ");
+              flags.labels = text.split(/\s+/).includes("text-[11px]") && !/text-\[(9|10)px\]/.test(text);
+            }
+          }
+          if (ts.isConditionalExpression(child)) {
+            // Overall may show a Free server score; paid component numbers may not.
+            if (code(child.condition) === "(isUnlocked||overall)&&value!==null")
+              flags.values = ts.isParenthesizedExpression(child.whenTrue) && ts.isJsxFragment(child.whenTrue.expression) &&
+                code(child.whenTrue).includes("{value}") && code(child.whenFalse).includes('isUnlocked?"—":"••%"');
+            if (code(child.condition) === "overall" && code(child.whenTrue) === "matchLabel" && code(child.whenFalse) === "label")
+              flags.matchLabel = true;
+          }
+        });
+      }
+      if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(file) === "MatchScoreTiles") {
+        const id = attrs(node, "testId");
+        const label = attrs(node, "matchLabel");
+        const tiles = attrs(node, "tiles");
+        if (id && ts.isStringLiteral(id) && id.text === "mobile-match-score" && label && ts.isJsxExpression(label) &&
+            label.expression && code(label.expression) === "matchLabel" && tiles && ts.isJsxExpression(tiles) && tiles.expression && ts.isArrayLiteralExpression(tiles.expression)) {
+          const names = tiles.expression.elements.map(e => ts.isObjectLiteralExpression(e)
+            ? e.properties.find((p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText(file) === "label")?.initializer : undefined);
+          flags.mobile = names.length === 4 && names.every((n, i) => n && ts.isStringLiteral(n) && n.text === ["Overall", "Experience Level", "Skill", "Role Match"][i]);
+        }
+      }
+    });
+    return flags;
+  }
+  const mobileGuards = mobileMatchGuards(detailCode);
+  if (!Object.values(mobileGuards).every(Boolean)) {
+    failures.push("MOBILE MATCH ROW FAIL: four-column tiles, 11px labels, real overall label and masked component values required: " + JSON.stringify(mobileGuards));
   } else {
-    console.log("  [PASS] mobile match layout: highlighted overall card plus component score cards with readable labels");
+    console.log("  [PASS] mobile match layout: four-column row, 11px labels, real overall score/label, masked Free sub-scores");
+  }
+  // Each obligation fails independently, including comment-only decoys.
+  const mutations: Array<[keyof typeof mobileGuards, string, string]> = [
+    ["grid", "grid grid-cols-4", "grid grid-cols-3"],
+    ["labels", "min-h-[40px] text-[11px]", "min-h-[40px] text-[10px]"],
+    ["values", "(isUnlocked || overall) && value !== null", "value !== null"],
+    ["matchLabel", "{overall ? matchLabel : label}", '{/* overall ? matchLabel : label */}{label}'],
+    ["mobile", '{ label: "Experience Level", value: expSubScore }', '{ label: "Wrong label", value: expSubScore }'],
+  ];
+  mutations.push(
+    ["grid", 'className="grid grid-cols-4 gap-1.5 sm:gap-2"', 'className="grid grid-cols-3 gap-1.5 sm:gap-2" /* grid grid-cols-4 */'],
+    ["values", "(isUnlocked || overall) && value !== null", "(true || overall) && value !== null"],
+  );
+  if (!isNegativeControl) for (const [guard, before, after] of mutations) {
+    const broken = detailCode.replace(before, after);
+    if (broken === detailCode || mobileMatchGuards(broken)[guard]) failures.push("MOBILE NEGATIVE CONTROL FAIL: " + guard);
+    else console.log("  [PASS] mobile independent mutation rejected: " + guard);
   }
 
   // 8. Mobile Single-Row Sticky Strip: X (close) left, Overview/Company tabs centered, "..." menu right

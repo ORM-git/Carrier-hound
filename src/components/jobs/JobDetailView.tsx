@@ -149,7 +149,7 @@ function MatchScoreTiles({ tiles, matchLabel, isUnlocked, testId, className = ""
             className={`flex flex-col overflow-hidden rounded-xl border min-w-0 ${overall ? "border-[#93C5FD] bg-white shadow-sm" : "border-[#E2E8F0] bg-white"}`}
           >
             <dd className="flex-1 flex items-baseline justify-center gap-px px-1 pt-3 pb-2.5 leading-none text-[#0F172A]">
-              {isUnlocked && value !== null ? (
+              {(isUnlocked || overall) && value !== null ? (
                 <>
                   <span className={`${overall ? "font-black" : "font-semibold"} text-[22px] min-[360px]:text-[26px] sm:text-[30px] tabular-nums`}>{value}</span>
                   <span className="text-[11px] sm:text-xs font-semibold text-[#475569]">%</span>
@@ -159,7 +159,7 @@ function MatchScoreTiles({ tiles, matchLabel, isUnlocked, testId, className = ""
               )}
             </dd>
             <dt className={`flex items-center justify-center text-center px-1 py-1.5 min-h-[40px] text-[11px] sm:text-xs leading-tight break-words ${overall ? "bg-[#DBEAFE] text-[#1D4ED8] font-extrabold uppercase tracking-wide" : "bg-[#F1F5F9] text-[#334155] font-semibold"}`}>
-              {overall ? (isUnlocked ? matchLabel : "Pro Match") : label}
+              {overall ? matchLabel : label}
             </dt>
           </div>
         ))}
@@ -302,10 +302,15 @@ export default function JobDetailView({
     }
   }, [hasConfirmedResume, candidate, job]);
 
-  const matchScore = displayMatchScore(job, diagnostics);
+  // Locked viewers (guest, Free, or a Pro row that failed to unlock) get only the server's Free-tier number (revision ".f.", non-paid
+  // inputs); never the browser fit fallback or a stale Pro score. Breakdown tiles stay masked. Owner 28 Nov.
+  const freeServerScore = typeof job.matchScore === "number" && !Number.isNaN(job.matchScore) && typeof job.scoreRevision === "string" && job.scoreRevision.includes(".f.")
+    ? displayMatchScore(job, null) : null;
+  const matchScore = isUnlocked ? displayMatchScore(job, diagnostics) : freeServerScore;
   // Real percentages need a confirmed resume AND usable diagnostics; anything else gets an honest state, never a number.
   const scoreState: "loading" | "none" | "unconfirmed" | "unavailable" | "ready" =
-    resumeState === "loading" ? "loading"
+    !isUnlocked && matchScore !== null ? "ready"
+    : resumeState === "loading" ? "loading"
     : resumeState === "unconfirmed" ? "unconfirmed"
     : !hasConfirmedResume ? "none"
     : diagnostics && matchScore !== null ? "ready"
@@ -926,24 +931,19 @@ export default function JobDetailView({
                   </div>
                   <span
                     className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
-                      // Locked: neutral colour, so the badge never reveals the paid score band.
-                      isUnlocked && matchScore > 70
+                      matchScore > 70
                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                        : isUnlocked && matchScore >= 50
+                        : matchScore >= 50
                         ? "bg-blue-50 text-blue-700 border border-blue-200"
                         : "bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
                   >
-                    {isUnlocked ? matchLabel : "Pro Match"}
+                    {matchLabel}
                   </span>
                 </div>
 
                 <div className="text-2xl font-black text-[#0F172A] leading-none">
-                  {isUnlocked ? (
-                    `${matchScore}%`
-                  ) : (
-                    <span className="select-none text-slate-400">••%</span>
-                  )}
+                  {`${matchScore}%`}
                 </div>
 
                 {/* Sub-scores */}
