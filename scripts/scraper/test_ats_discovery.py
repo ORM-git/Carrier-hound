@@ -601,7 +601,7 @@ def _mutant_many(pairs) -> types.ModuleType:
 def test_negative_control_bom_handling_removed():
     before = _source_sha()
     mutant = _mutant_many([('body.decode("utf-8-sig")', 'body.decode("utf-8")'),
-                           ('body = body[1:] if body.startswith("\ufeff") else body', "body = body")])
+                           ('body = body.lstrip("\\ufeff")', "body = body")])
     failures = 0
     for text, expected in BOM_CASES:
         for kind, body in _bom_bodies(text):
@@ -668,3 +668,59 @@ def test_plan_states_fetcher_responsibilities_and_reconciles():
     assert any("http://" in x and "https://" in x for x in p["fetcher_responsibilities"])
     rec = p["reconciliation"]
     assert rec["input_rows"] == rec["categorized_rows"] == 20
+
+
+# ---- correction round 3: repeated leading BOMs ------------------------------------------------------
+
+_BOM = chr(0xFEFF)
+_DENY_ALL = "User-agent: *\nDisallow: /\n"
+
+
+def _multi_bom_bodies(count):
+    text = _BOM * count + _DENY_ALL
+    return [("str", text), ("bytes", text.encode("utf-8")), ("bytes-sig", (_BOM * (count - 1) + _DENY_ALL).encode("utf-8-sig"))]
+
+
+@pytest.mark.parametrize("count", [2, 3])
+def test_repeated_leading_boms_never_allow_disallow_all(count):
+    for kind, body in _multi_bom_bodies(count):
+        state, why = disc.evaluate_robots({"status": 200, "body": body}, "https://a.example/careers", UA, "unknown")
+        assert state == "deny", (count, kind, why)
+
+
+@pytest.mark.parametrize("count", [2, 3])
+@pytest.mark.parametrize("as_bytes", [False, True])
+def test_repeated_boms_plan_allows_no_page(count, as_bytes):
+    body = _BOM * count + _DENY_ALL
+    rob = robots_json()
+    rob["https://alpha.example"] = {"status": 200, "body": body.encode("utf-8") if as_bytes else body}
+    p = plan(rob=rob, pol=policy(global_request_cap=100))
+    assert {2, 3, 4, 20} <= set(p["rows"]["robots_deny"])
+    assert not {2, 3, 4, 20} & set(p["rows"].get("planned", []))
+    assert all(q["host"] != "alpha.example" for q in p["requests"])
+    alpha = next(e for e in p["robots_evaluated"] if e["origin"] == "https://alpha.example")
+    assert set(alpha["pages"].values()) == {"deny"}
+
+
+def test_negative_control_single_bom_handling_fails_repeated_boms():
+    before = _source_sha()
+    bs = chr(92)
+    mutant = _mutant_many([('body = body.lstrip("' + bs + 'ufeff")',
+                            'body = (body[1:] if body.startswith("' + bs + 'ufeff") else body)')])   # round-2 behavior
+    flipped = []
+    for count in (2, 3):
+        for kind, body in _multi_bom_bodies(count):
+            state, _ = mutant.evaluate_robots({"status": 200, "body": body}, "https://a.example/careers", UA, "unknown")
+            if state != "deny":
+                flipped.append((count, kind, state))
+    assert len(flipped) >= 4, flipped          # the new tests would fail under single-BOM handling
+    assert ("allow" in {s for *_, s in flipped})
+    rob = robots_json()
+    rob["https://alpha.example"] = {"status": 200, "body": _BOM * 3 + _DENY_ALL}
+    assert 2 in mutant.plan_fetches(report(), policy(global_request_cap=100), rob)["rows"]["planned"]
+    assert 2 in plan(rob=rob, pol=policy(global_request_cap=100))["rows"]["robots_deny"]
+    assert _source_sha() == before
+
+
+def test_source_has_no_raw_bom_character():
+    assert _BOM not in SOURCE.read_text(encoding="utf-8")   # the escape stays visible in review

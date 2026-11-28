@@ -324,7 +324,7 @@ def _robots_text(body: object) -> tuple[str | None, str | None]:
             return None, "robots.txt body is not UTF-8"
     if not isinstance(body, str):
         return None, "robots.txt body missing"
-    body = body[1:] if body.startswith("﻿") else body
+    body = body.lstrip("\ufeff")  # every leading BOM, not just one: extra BOMs must not hide the first group
     if len(body.encode("utf-8")) > ROBOTS_MAX_BYTES:
         return None, "robots.txt over 500 KiB"
     return body, None
