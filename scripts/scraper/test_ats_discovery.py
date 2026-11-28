@@ -73,7 +73,7 @@ def test_module_uses_no_network_client():
 def test_end_to_end_cli_makes_no_network_attempt(tmp_path):
     assert disc.main(["discover", "--pages", str(FIX / "pages.json"), "--out", str(tmp_path / "d.json")]) == 0
     assert disc.main(["plan", "--report", str(FIX / "intake_report.json"), "--policy", str(FIX / "policy.json"),
-                      "--out", str(tmp_path / "p.json")]) == 0
+                      "--robots", str(FIX / "robots.json"), "--out", str(tmp_path / "p.json")]) == 0
     assert ATTEMPTS == []
 
 
@@ -81,23 +81,25 @@ def test_end_to_end_cli_makes_no_network_attempt(tmp_path):
 
 def test_every_status_from_fixtures():
     out = disc.discover(pages())
-    assert out["input_pages"] == 10
-    assert out["by_status"] == {"found": 4, "none": 2, "ambiguous": 1, "blocked": 2, "error": 1}
+    assert out["input_pages"] == 13
+    assert out["by_status"] == {"found": 6, "none": 2, "ambiguous": 2, "blocked": 2, "error": 1}
     r = {x["source_row"]: x for x in out["results"]}
     assert {n: x["status"] for n, x in r.items()} == {
-        2: "none", 3: "ambiguous", 4: "none", 5: "found", 6: "found", 7: "found", 8: "blocked", 9: "blocked", 10: "error", 11: "found"}
+        2: "none", 3: "ambiguous", 4: "none", 5: "found", 6: "found", 7: "found", 8: "blocked", 9: "blocked", 10: "error",
+        11: "found", 12: "found", 13: "ambiguous", 14: "found"}
     assert [x["source_row"] for x in out["results"]] == sorted(r)
-    assert all(x["verified"] is False for x in out["results"])
+    assert all(x["verified"] is False and x["company_match"] == "unconfirmed" for x in out["results"])
     assert "no retry" in r[8]["reason"] and "429" in r[8]["reason"] and "403" in r[9]["reason"]
     assert r[10]["reason"] == "HTTP 404"
 
 
 def test_embed_relative_and_repeated_links_collapse_to_one_board():
     r = results()[7]
-    assert [b["board_key"] for b in r["boards"]] == ['greenhouse:{"token": "acme"}']
+    assert [b["board_key"] for b in r["boards"]] == ["greenhouse:acme"]
     b = r["boards"][0]
     assert b["support"] == "supported" and b["evidence_count"] == 4
     assert {e["source"] for e in b["evidence"]} == {"a[href]", "iframe[src]", "script[src]"}
+    assert b["evidence_kinds"] == ["anchor", "embed"] and b["linked_only"] is False
     assert "https://boards.greenhouse.io/acme/jobs/123" in {e["url"] for e in b["evidence"]}   # protocol-relative
     assert r["non_web_links_ignored"] == 3                                                     # mailto, javascript, tel
     assert [x["kind"] for x in r["rejected"]] == ["vendor_site"]                               # "Powered by" link
@@ -119,8 +121,8 @@ def test_extract_links_tags_base_meta_and_no_script_execution():
 
 def test_redirect_onto_board_is_found():
     r = results()[11]
-    assert r["status"] == "found" and r["boards"][0]["board_key"] == 'lever:{"token": "redirected"}'
-    assert r["boards"][0]["evidence"] == [{"source": "final_url", "url": "https://jobs.lever.co/redirected"}]
+    assert r["status"] == "found" and r["boards"][0]["board_key"] == "lever:redirected"
+    assert r["boards"][0]["evidence"] == [{"source": "final_url", "kind": "final_url", "url": "https://jobs.lever.co/redirected"}]
 
 
 def test_workday_meta_refresh_found():
@@ -140,7 +142,7 @@ def test_unsupported_vendor_stays_unsupported_not_ready():
 def test_multiple_boards_ambiguous_never_first_wins():
     r = results()[3]
     assert r["status"] == "ambiguous"
-    assert [b["board_key"] for b in r["boards"]] == ['ashby:{"token": "acme-labs"}', 'lever:{"token": "acme"}']
+    assert [b["board_key"] for b in r["boards"]] == ["ashby:acme-labs", "lever:acme"]
     mixed = disc.discover_page({"source_row": 1, "final_url": "https://m.example/", "http_status": 200, "redirect_chain": [],
                                 "html": '<a href="https://jobs.lever.co/acme"></a><a href="https://acme.breezy.hr/"></a>'})
     assert mixed["status"] == "ambiguous"                                   # supported + unsupported board
@@ -218,36 +220,151 @@ def test_manifest_html_file_cannot_escape(tmp_path):
         disc.load_pages(tmp_path / "m.json")
 
 
+# ---- robots.txt evaluation ---------------------------------------------------------------------------
+
+UA = "CMBot/1.0"
+
+
+def robots_json():
+    return json.loads((FIX / "robots.json").read_text(encoding="utf-8"))
+
+
+def plan(rep=None, pol=None, rob="fixture"):
+    return disc.plan_fetches(rep or report(), pol or policy(), robots_json() if rob == "fixture" else rob)
+
+
+def ev(body, url="https://a.example/careers", status=200, ua=UA, on_4xx="unknown"):
+    return disc.evaluate_robots({"status": status, "body": body}, url, ua, on_4xx)[0]
+
+
+@pytest.mark.parametrize("body,url,state", [
+    ("User-agent: *\nDisallow: /private\n", "https://a.example/private/x", "deny"),
+    ("User-agent: *\nDisallow: /private\n", "https://a.example/careers", "allow"),
+    ("User-agent: *\nAllow: /careers\nDisallow: /\n", "https://a.example/careers", "allow"),   # both readings agree
+    ("User-agent: *\nAllow: /careers\nDisallow: /\n", "https://a.example/about", "deny"),
+    ("User-agent: *\nDisallow: /\n", "https://a.example/", "deny"),
+    ("", "https://a.example/anything", "allow"),                                                 # empty robots.txt: no rules
+    ("# only a comment\n", "https://a.example/anything", "allow"),
+])
+def test_path_allow_and_deny(body, url, state):
+    assert ev(body, url) == state
+
+
+@pytest.mark.parametrize("body,path", [
+    ("User-agent: *\nAllow: /\nDisallow: /careers\n", "/careers"),      # robotparser: allow (first); RFC 9309: deny (longest)
+    ("User-agent: *\nDisallow: /\nAllow: /careers\n", "/careers"),      # robotparser: deny; RFC 9309: allow
+])
+def test_rule_order_disagreement_is_unknown_never_allowed(body, path):
+    state, why = disc.evaluate_robots({"status": 200, "body": body}, "https://a.example" + path, UA, "unknown")
+    assert state == "unknown" and "RFC 9309" in why
+
+
+def test_partial_or_repeated_user_agent_groups_are_unknown():
+    assert ev("User-agent: bot\nAllow: /\n") == "unknown"                    # "bot" is only a substring of "cmbot"
+    assert ev("User-agent: CMBot\nAllow: /\n\nUser-agent: cmbot\nDisallow: /careers\n") == "unknown"
+
+
+def test_specific_and_wildcard_user_agents():
+    body = "User-agent: CMBot\nDisallow: /careers\n\nUser-agent: *\nAllow: /\n"
+    assert ev(body, ua="CMBot/1.0") == "deny"           # specific group applies to us
+    assert ev(body, ua="OtherBot/2.0") == "allow"       # others fall back to *
+    body2 = "User-agent: OtherBot\nDisallow: /\n\nUser-agent: *\nDisallow: /careers\n"
+    assert ev(body2) == "deny"                          # wildcard group applies when ours is absent
+    assert ev("User-agent: OtherBot\nDisallow: /\n") == "allow"   # no group for us and no *: nothing disallowed
+
+
+@pytest.mark.parametrize("response,reason", [
+    (None, "missing"), ({"body": "User-agent: *"}, "no integer status"), ({"status": "200", "body": ""}, "no integer status"),
+    ({"status": 200}, "body missing"), ({"status": 200, "body": b"\xff\xfe"}, "not UTF-8"),
+    ({"status": 200, "body": "<html><body>Hi</body></html>"}, "no robots directives"),
+    ({"status": 200, "body": "random words\nmore words"}, "no robots directives"),
+    ({"status": 200, "body": "User-agent: *\nDisallow: /*careers$\n"}, "path wildcards"),
+    ({"status": 200, "body": "User-agent: *\n" + "Disallow: /x\n" * 60000}, "500 KiB"),
+    ({"status": 500, "body": ""}, "HTTP 500"), ({"status": 503, "body": "busy"}, "HTTP 503"),
+    ({"status": 301, "body": ""}, "HTTP 301"),
+])
+def test_missing_garbage_and_failed_robots_stay_unknown(response, reason):
+    state, why = disc.evaluate_robots(response, "https://a.example/careers", UA, "allow")
+    assert state == "unknown" and reason in why        # even with robots_4xx=allow, these never allow
+
+
+@pytest.mark.parametrize("on_4xx", ["unknown", "allow", "deny"])
+@pytest.mark.parametrize("status", [401, 403, 404, 410])
+def test_robots_4xx_follows_explicit_policy(status, on_4xx):
+    state, why = disc.evaluate_robots({"status": status, "body": ""}, "https://a.example/careers", UA, on_4xx)
+    assert state == on_4xx and f"robots_4xx={on_4xx}" in why
+
+
+def test_robots_4xx_default_is_unknown():
+    assert disc.validate_policy({k: v for k, v in policy().items() if k != "robots_4xx"})["robots_4xx"] == "unknown"
+    p = plan()
+    assert 15 in p["rows"]["robots_unknown"]                       # epsilon.example robots.txt is 404
+    p_allow = plan(pol=policy(robots_4xx="allow", global_request_cap=100))
+    assert 15 in p_allow["rows"]["planned"]                        # only when policy says so
+
+
 # ---- planner ----------------------------------------------------------------------------------------
 
 def test_plan_reconciles_every_row_once():
-    p = disc.plan_fetches(report(), policy())
+    p = plan()
     rec = p["reconciliation"]
-    assert rec["input_rows"] == rec["categorized_rows"] == 15
-    assert p["rows"] == {"planned": [2, 3, 4, 5, 14], "deferred_request_cap": [15], "robots_unknown": [7], "robots_deny": [6],
-                         "skipped_job_board_or_social": [8], "skipped_file": [9], "invalid_url": [16],
-                         "merged_duplicate": [10], "invalid_merge_reference": [11], "not_website_only": [12, 13]}
-    assert sorted(n for v in p["rows"].values() for n in v) == list(range(2, 17))
+    assert rec["input_rows"] == rec["categorized_rows"] == 20
+    assert p["rows"] == {"planned": [2, 4, 5, 20], "awaiting_robots": [7, 19], "deferred_request_cap": [21],
+                         "robots_unknown": [14, 15, 17, 18], "robots_deny": [3, 6], "skipped_job_board_or_social": [8],
+                         "skipped_file": [9], "invalid_url": [16], "merged_duplicate": [10],
+                         "invalid_merge_reference": [11], "not_website_only": [12, 13]}
+    assert sorted(n for v in p["rows"].values() for n in v) == list(range(2, 22))
 
 
-def test_plan_one_request_per_url_spacing_and_cap():
-    p = disc.plan_fetches(report(), policy())
-    assert [(r["seq"], r["host"], r["source_rows"], r["not_before_seconds"]) for r in p["requests"]] == [
-        (1, "alpha.example", [3], 0), (2, "alpha.example", [2, 4], 30), (3, "beta.example", [5], 0), (4, "delta.example", [14], 0)]
-    assert p["reconciliation"]["planned_requests"] == 4 == p["policy"]["global_request_cap"]
-    big = disc.plan_fetches(report(), policy(global_request_cap=100, per_host_spacing_seconds=90))
-    assert [r["not_before_seconds"] for r in big["requests"] if r["host"] == "alpha.example"] == [0, 90]
-    assert big["rows"].get("deferred_request_cap") is None
+def test_robots_requests_first_and_budget_counts_both():
+    p = plan()
+    assert [(q["seq"], q["kind"], q["url"], q["source_rows"], q["not_before_seconds"]) for q in p["requests"]] == [
+        (1, "robots", "https://unknown.example/robots.txt", [7], 0),
+        (2, "robots", "https://zeta.example/robots.txt", [19], 0),
+        (3, "page", "https://alpha.example/careers", [2, 4], 0),
+        (4, "page", "https://alpha.example/jobs", [20], 30),
+        (5, "page", "https://beta.example", [5], 0)]
+    rec = p["reconciliation"]
+    assert (rec["robots_requests"], rec["page_requests"], rec["planned_requests"]) == (2, 3, 5) == (2, 3, policy()["global_request_cap"])
+    assert p["samples"]["deferred_request_cap"][0]["reason"] == "global request cap 5 reached before this page request"
+
+
+def test_budget_exhausted_by_robots_defers_pages_and_robots():
+    p = plan(pol=policy(global_request_cap=1))
+    assert [q["kind"] for q in p["requests"]] == ["robots"]
+    assert p["rows"]["awaiting_robots"] == [7]
+    assert p["rows"]["deferred_request_cap"] == [2, 4, 5, 19, 20, 21]   # zeta's robots and every page wait
+
+
+def test_host_spacing_counts_robots_and_pages_together():
+    rep = report()
+    rep["records"].append({**rep["records"][0], "source_row": 22, "normalized_url": "https://unknown.example/other"})
+    rep["reconciliation"]["input_rows"] += 1
+    rob = robots_json()
+    p = disc.plan_fetches(rep, policy(global_request_cap=100), rob)
+    unknown = [q for q in p["requests"] if q["host"] == "unknown.example"]
+    assert [(q["kind"], q["source_rows"]) for q in unknown] == [("robots", [7, 22])]   # one robots request per origin
+    # Same host, robots + pages: once rules arrive, pages queue behind the robots request on that host.
+    rob["https://unknown.example"] = {"status": 200, "body": "User-agent: *\nAllow: /\n"}
+    rep["records"].append({**rep["records"][0], "source_row": 23, "normalized_url": "https://unknown2.example/a"})
+    rep["reconciliation"]["input_rows"] += 1
+    p2 = disc.plan_fetches(rep, policy(global_request_cap=100), rob)
+    hosts = [(q["host"], q["kind"], q["not_before_seconds"]) for q in p2["requests"] if q["host"].startswith("unknown")]
+    assert hosts == [("unknown2.example", "robots", 0), ("unknown.example", "page", 0), ("unknown.example", "page", 30)]
+
+
+def test_without_robots_input_only_robots_requests_are_planned():
+    p = plan(rob=None, pol=policy(global_request_cap=100))
+    assert {q["kind"] for q in p["requests"]} == {"robots"}
+    assert p["rows"].get("planned") is None
+    assert len({q["url"] for q in p["requests"]}) == len(p["requests"])   # one request per unique URL
 
 
 def test_robots_unknown_never_counts_as_allowed():
-    p = disc.plan_fetches(report(), policy())
-    assert p["robots_pending_hosts"] == ["unknown.example"]
-    assert all(r["host"] != "unknown.example" for r in p["requests"])
-    allow_all = disc.plan_fetches(report(), policy(default_robots="allow", global_request_cap=100))
-    assert 7 in allow_all["rows"]["planned"]                          # only an explicit allow plans it
-    deny_all = disc.plan_fetches(report(), policy(robots={}, default_robots="deny"))
-    assert deny_all["requests"] == [] and 2 in deny_all["rows"]["robots_deny"]
+    p = plan(pol=policy(global_request_cap=100))
+    planned_hosts = {q["host"] for q in p["requests"] if q["kind"] == "page"}
+    assert planned_hosts == {"alpha.example", "beta.example"}
+    assert not planned_hosts & {"delta.example", "epsilon.example", "garbage.example", "wild.example", "denied.example"}
 
 
 @pytest.mark.parametrize("over,msg", [
@@ -255,11 +372,19 @@ def test_robots_unknown_never_counts_as_allowed():
     ({"stop_on_status": [403]}, "403 and 429"), ({"per_host_spacing_seconds": 0}, "positive number"),
     ({"per_host_spacing_seconds": True}, "positive number"), ({"global_request_cap": 0}, "positive integer"),
     ({"global_request_cap": True}, "positive integer"), ({"max_response_bytes": -1}, "positive integer"),
-    ({"robots": {"a.example": "maybe"}}, "robots values"), ({"default_robots": "yes"}, "default_robots"),
+    ({"user_agent": ""}, "user_agent is required"), ({"user_agent": "   "}, "user_agent is required"),
+    ({"user_agent": None}, "user_agent is required"), ({"user_agent": "a\nb"}, "user_agent is required"),
+    ({"robots_4xx": "maybe"}, "robots_4xx"), ({"robots": {"a.example": "allow"}}, "unknown policy keys"),
+    ({"default_robots": "allow"}, "unknown policy keys"),
 ])
 def test_policy_validation(over, msg):
     with pytest.raises(disc.DiscoveryError, match=msg):
-        disc.plan_fetches(report(), policy(**over))
+        plan(pol=policy(**over))
+
+
+def test_missing_user_agent_rejected():
+    with pytest.raises(disc.DiscoveryError, match="user_agent is required"):
+        plan(pol={k: v for k, v in policy().items() if k != "user_agent"})
 
 
 @pytest.mark.parametrize("mutate,msg", [
@@ -271,7 +396,81 @@ def test_plan_rejects_bad_report(mutate, msg):
     rep = report()
     mutate(rep)
     with pytest.raises(disc.DiscoveryError, match=msg):
-        disc.plan_fetches(rep, policy())
+        plan(rep=rep)
+
+
+def test_robots_input_must_be_object():
+    with pytest.raises(disc.DiscoveryError, match="keyed by origin"):
+        plan(rob=["https://a.example"])
+
+
+# ---- board identity -----------------------------------------------------------------------------------
+
+def test_case_equivalent_token_boards_deduplicate():
+    r = results()[12]
+    assert r["status"] == "found" and [b["board_key"] for b in r["boards"]] == ["greenhouse:acme"]
+    b = r["boards"][0]
+    assert b["identifier_variants"] == [{"token": "ACME"}, {"token": "acme"}]   # both spellings kept as evidence
+    assert b["evidence_kinds"] == ["anchor", "embed"]
+
+
+@pytest.mark.parametrize("ats,a,b", [("greenhouse", "Acme", "acme"), ("lever", "ACME", "acme"),
+                                     ("ashby", "Acme-Labs", "acme-labs"), ("smartrecruiters", "Visa", "VISA")])
+def test_token_vendor_identity_matches_existing_helper(ats, a, b):
+    from scripts.scraper.enrichment import build_source_id
+    assert disc.board_identity(ats, {"token": a}) == disc.board_identity(ats, {"token": b}) == build_source_id(ats, a)
+
+
+def test_workday_site_case_stays_significant():
+    r = results()[13]
+    assert r["status"] == "ambiguous" and len(r["boards"]) == 2
+    a = disc.board_identity("workday", {"tenant": "acme", "wd_cluster": "wd5", "site": "External"})
+    b = disc.board_identity("workday", {"tenant": "acme", "wd_cluster": "wd5", "site": "external"})
+    assert a != b
+
+
+def test_genuinely_different_boards_stay_ambiguous():
+    for html in ('<a href="https://jobs.lever.co/acme"></a><a href="https://jobs.lever.co/acme2"></a>',
+                 '<a href="https://jobs.lever.co/acme"></a><a href="https://jobs.ashbyhq.com/acme"></a>',
+                 '<a href="https://acme.breezy.hr/"></a><a href="https://ACME2.breezy.hr/"></a>'):
+        page = {"source_row": 1, "final_url": "https://d.example/", "http_status": 200, "redirect_chain": [], "html": html}
+        assert disc.discover_page(page)["status"] == "ambiguous", html
+
+
+def test_unsupported_vendor_path_case_not_folded():
+    a = disc.classify_link("https://apply.workable.com/Acme/")["key"]
+    b = disc.classify_link("https://apply.workable.com/acme/")["key"]
+    assert a != b                                                      # no identity rule establishes case-insensitivity
+
+
+def test_partner_link_is_never_a_company_match():
+    r = results()[14]
+    assert r["status"] == "found" and r["company_match"] == "unconfirmed" and r["verified"] is False
+    b = r["boards"][0]
+    assert b["linked_only"] is True and b["evidence_kinds"] == ["anchor"]
+    assert "partner or customer" in r["reason"] and "verified" not in r["reason"].replace("unverified", "")
+
+
+# ---- negative controls: robots path enforcement and false dedupe ---------------------------------------
+
+def test_negative_control_robots_path_enforcement():
+    before = _source_sha()
+    mutant = _mutant("    if allowed:\n", "    if True:\n")
+    bad = mutant.plan_fetches(report(), policy(), robots_json())
+    assert 3 in bad["rows"]["planned"] and "robots_deny" not in bad["rows"]   # mutant plans a disallowed path
+    good = plan()
+    assert good["rows"]["robots_deny"] == [3, 6] and 3 not in good["rows"]["planned"]
+    assert _source_sha() == before
+
+
+def test_negative_control_false_board_dedup():
+    before = _source_sha()
+    mutant = _mutant('    return f"{ats}:{json.dumps(identifiers, sort_keys=True)}"',
+                     '    return f"{ats}:{json.dumps(identifiers, sort_keys=True)}".lower()')
+    bad = {r["source_row"]: r for r in mutant.discover(pages())["results"]}[13]
+    assert bad["status"] == "found"                                     # mutant folds Workday site case: false dedupe
+    assert results()[13]["status"] == "ambiguous"
+    assert _source_sha() == before
 
 
 # ---- redaction --------------------------------------------------------------------------------------
@@ -319,7 +518,7 @@ def test_deterministic_bytes_and_order_independent(tmp_path):
     for d in ("a", "b"):
         disc.main(["discover", "--pages", str(FIX / "pages.json"), "--out", str(tmp_path / d / "d.json")])
         disc.main(["plan", "--report", str(FIX / "intake_report.json"), "--policy", str(FIX / "policy.json"),
-                   "--out", str(tmp_path / d / "p.json")])
+                   "--robots", str(FIX / "robots.json"), "--out", str(tmp_path / d / "p.json")])
     for n in ("d.json", "p.json"):
         assert (tmp_path / "a" / n).read_bytes() == (tmp_path / "b" / n).read_bytes()
     shuffled = pages()
@@ -327,7 +526,7 @@ def test_deterministic_bytes_and_order_independent(tmp_path):
     assert disc.discover(shuffled) == disc.discover(pages())
     rep = report()
     random.Random(5).shuffle(rep["records"])
-    assert disc.plan_fetches(rep, policy()) == disc.plan_fetches(report(), policy())
+    assert disc.plan_fetches(rep, policy(), robots_json()) == disc.plan_fetches(report(), policy(), robots_json())
 
 
 # ---- negative controls by in-memory mutation (the source file is never written) ----------------------

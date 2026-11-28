@@ -6,8 +6,8 @@
   ],
   "note": "synthetic fixture",
   "reconciliation": {
-    "input_rows": 15,
-    "output_records": 15
+    "input_rows": 20,
+    "output_records": 20
   },
   "records": [
     {
@@ -40,11 +40,11 @@
       ],
       "company": "What? Inc",
       "url_column": "Scraping Website",
-      "original_url": "https://alpha.example/about",
+      "original_url": "https://alpha.example/about/team",
       "all_urls": {
-        "Scraping Website": "https://alpha.example/about"
+        "Scraping Website": "https://alpha.example/about/team"
       },
-      "normalized_url": "https://alpha.example/about",
+      "normalized_url": "https://alpha.example/about/team",
       "normalized_domain": null,
       "ats_candidate": null,
       "identifiers": {},
@@ -126,7 +126,7 @@
         7,
         7
       ],
-      "company": "Unknown Robots",
+      "company": "No Robots Yet",
       "url_column": "Scraping Website",
       "original_url": "https://unknown.example/jobs",
       "all_urls": {
@@ -331,6 +331,116 @@
         "Scraping Website": "https://u:pw@cred.example/careers?token=SECRETc"
       },
       "normalized_url": "https://u:pw@cred.example/careers?token=SECRETc",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 17,
+      "source_lines": [
+        17,
+        17
+      ],
+      "company": "Garbage Robots",
+      "url_column": "Scraping Website",
+      "original_url": "https://garbage.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://garbage.example/careers"
+      },
+      "normalized_url": "https://garbage.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 18,
+      "source_lines": [
+        18,
+        18
+      ],
+      "company": "Wildcard Robots",
+      "url_column": "Scraping Website",
+      "original_url": "https://wild.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://wild.example/careers"
+      },
+      "normalized_url": "https://wild.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 19,
+      "source_lines": [
+        19,
+        19
+      ],
+      "company": "Zeta Site",
+      "url_column": "Scraping Website",
+      "original_url": "https://zeta.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://zeta.example/careers"
+      },
+      "normalized_url": "https://zeta.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 20,
+      "source_lines": [
+        20,
+        20
+      ],
+      "company": "Alpha Jobs",
+      "url_column": "Scraping Website",
+      "original_url": "https://alpha.example/jobs",
+      "all_urls": {
+        "Scraping Website": "https://alpha.example/jobs"
+      },
+      "normalized_url": "https://alpha.example/jobs",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 21,
+      "source_lines": [
+        21,
+        21
+      ],
+      "company": "Beta Team",
+      "url_column": "Scraping Website",
+      "original_url": "https://beta.example/team",
+      "all_urls": {
+        "Scraping Website": "https://beta.example/team"
+      },
+      "normalized_url": "https://beta.example/team",
       "normalized_domain": null,
       "ats_candidate": null,
       "identifiers": {},

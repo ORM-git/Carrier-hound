@@ -5,7 +5,7 @@ Nothing in this module opens a connection: pages are supplied (HTML, final URL, 
 the planner only emits a fetch plan as data. A discovered link is a candidate, never a verified working board.
 
   python -m scripts.scraper.ats_discovery discover --pages pages.json --out discovery.json
-  python -m scripts.scraper.ats_discovery plan --report intake_report.json --policy policy.json --out plan.json
+  python -m scripts.scraper.ats_discovery plan --report intake_report.json --policy policy.json [--robots robots.json] --out plan.json
 """
 
 from __future__ import annotations
@@ -17,17 +17,21 @@ import sys
 from collections import defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
+from urllib.robotparser import RobotFileParser
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.scraper import ats_detect as ad
+from scripts.scraper.enrichment import build_source_id
+
+# Vendors whose persisted board identity is already case-insensitive (see board_identity).
+CASE_INSENSITIVE_TOKEN_ATS = ("greenhouse", "lever", "ashby", "smartrecruiters")
 
 MAX_PAGE_BYTES = 2_000_000
 MAX_LINKS = 2_000
 MAX_EVIDENCE = 5
 BLOCK_STATUSES = (403, 429)
-ROBOTS_STATES = ("allow", "deny", "unknown")
 
 # (tag, attribute) pairs whose value is a URL. Inline <script> bodies are never read or run.
 _LINK_ATTRS = {("a", "href"), ("area", "href"), ("iframe", "src"), ("frame", "src"), ("script", "src"),
@@ -141,6 +145,27 @@ def _vendor_base(host: str) -> str | None:
     return None
 
 
+def board_identity(ats: str, identifiers: dict) -> str:
+    """Dedup key for a supported board, following the identity the existing code already persists:
+    - token vendors: fetchers.build_normalized_job stores source_id "<ats>:<token lowercased>" and
+      enrichment.build_source_id lowercases the same way, so acme/ACME are one board there; reuse that helper.
+    - Workday: fetch_workday_cxs stores "workday:{tenant}:{site}" with the site's case kept, so site case stays
+      significant (tenant and cluster come from the host, already lowercased by detect_ats).
+    Anything without such a rule keeps its exact identifiers."""
+    if ats in CASE_INSENSITIVE_TOKEN_ATS and set(identifiers) == {"token"}:
+        return build_source_id(ats, identifiers["token"])
+    return f"{ats}:{json.dumps(identifiers, sort_keys=True)}"
+
+
+def evidence_kind(source: str) -> str:
+    tag = source.split("[", 1)[0]
+    if tag in ("iframe", "frame", "script", "embed", "object"):
+        return "embed"
+    if tag in ("a", "area"):
+        return "anchor"
+    return {"meta": "meta_refresh", "form": "form", "link": "link_tag"}.get(tag, source)  # final_url, redirect
+
+
 def classify_link(url: str) -> dict:
     """One link through detect_ats. kind: board | unsupported_board | lookalike | vendor_site | incomplete | other."""
     det = ad.detect_ats(url)
@@ -148,7 +173,7 @@ def classify_link(url: str) -> dict:
     path = urlsplit(det["normalized_url"] or "").path.strip("/")
     if det["status"] == ad.CANDIDATE:
         return {"kind": "board", "ats": det["ats"], "identifiers": det["identifiers"],
-                "key": f"{det['ats']}:{json.dumps(det['identifiers'], sort_keys=True)}", "reason": det["reason"]}
+                "key": board_identity(det["ats"], det["identifiers"]), "reason": det["reason"]}
     if det["status"] == ad.UNSUPPORTED:
         base = _vendor_base(host) or host
         if host == base and base.count(".") == 1:  # bare vendor domain (workable.com/...): marketing, not a tenant board
@@ -183,7 +208,7 @@ def discover_page(page: dict, max_bytes: int = MAX_PAGE_BYTES, max_links: int = 
     """page: {source_row, final_url, http_status, redirect_chain, html}. Returns one deterministic result row."""
     row = page.get("source_row")
     result = {"source_row": row, "final_url": redact_url(page.get("final_url")), "verified": False,
-              "boards": [], "rejected": [], "links_considered": 0, "non_web_links_ignored": 0}
+              "company_match": "unconfirmed", "boards": [], "rejected": [], "links_considered": 0, "non_web_links_ignored": 0}
 
     def done(status, reason):
         return {**result, "status": status, "reason": reason}
@@ -222,28 +247,39 @@ def discover_page(page: dict, max_bytes: int = MAX_PAGE_BYTES, max_links: int = 
     rejected: dict[tuple[str, str], dict] = {}
     for source, url in links:
         c = classify_link(url)
-        ev = {"source": source, "url": redact_url(url)}
+        ev = {"source": source, "kind": evidence_kind(source), "url": redact_url(url)}
         if c["kind"] in ("board", "unsupported_board"):
-            b = boards.setdefault(c["key"], {"ats": c["ats"], "identifiers": c["identifiers"], "board_key": c["key"],
+            b = boards.setdefault(c["key"], {"ats": c["ats"], "board_key": c["key"],
                                              "support": "supported" if c["kind"] == "board" else "unsupported",
-                                             "reason": c["reason"], "evidence": []})
+                                             "reason": c["reason"], "evidence": [], "_variants": []})
+            if c["identifiers"] not in b["_variants"]:
+                b["_variants"].append(c["identifiers"])
             if ev not in b["evidence"]:
                 b["evidence"].append(ev)
         elif c["kind"] in ("lookalike", "vendor_site", "incomplete"):
             r = rejected.setdefault((c["kind"], ev["url"]), {"kind": c["kind"], "url": ev["url"], "reason": c["reason"], "sources": []})
             if source not in r["sources"]:
                 r["sources"].append(source)
-    result.update(links_considered=len(links), non_web_links_ignored=ignored,
-                  boards=[{**b, "evidence_count": len(b["evidence"]), "evidence": sorted(b["evidence"], key=lambda e: (e["url"], e["source"]))[:MAX_EVIDENCE]}
-                          for _, b in sorted(boards.items())],
+    out_boards = []
+    for _, b in sorted(boards.items()):
+        variants = sorted(b.pop("_variants"), key=lambda v: json.dumps(v, sort_keys=True))
+        kinds = sorted({e["kind"] for e in b["evidence"]})
+        out_boards.append({**b, "identifiers": variants[0], "identifier_variants": variants, "evidence_kinds": kinds,
+                           # Evidence strength only; never a verification or an approved company match.
+                           "linked_only": set(kinds) <= {"anchor", "form", "link_tag"},
+                           "evidence_count": len(b["evidence"]),
+                           "evidence": sorted(b["evidence"], key=lambda e: (e["url"], e["source"]))[:MAX_EVIDENCE]})
+    result.update(links_considered=len(links), non_web_links_ignored=ignored, boards=out_boards,
                   rejected=[{**r, "sources": sorted(r["sources"])} for _, r in sorted(rejected.items())])
     if len(boards) > 1:
         return done("ambiguous", f"{len(boards)} distinct boards linked; needs review, none chosen")
     if boards:
         b = result["boards"][0]
+        tail = ("; only linked from the page, may belong to a partner or customer" if b["linked_only"]
+                else "; embedded or reached by navigation")
         if b["support"] == "unsupported":
-            return done("found", "one board on an ATS without a connector; connector backlog, not ready to ingest")
-        return done("found", "one supported-ATS board candidate; unverified until a live check")
+            return done("found", "one board on an ATS without a connector; connector backlog, not ready to ingest" + tail)
+        return done("found", "one supported-ATS board candidate; unverified, company match unconfirmed" + tail)
     return done("none", "no ATS board link found in supplied page")
 
 
@@ -266,19 +302,93 @@ def discover(pages: list[dict], **caps) -> dict:
             "results": results}
 
 
+# ---- robots.txt (supplied responses, parsed locally) ----------------------------------------------
+
+ROBOTS_MAX_BYTES = 500 * 1024          # RFC 9309 parsing limit
+_ROBOTS_DIRECTIVE = re.compile(r"^\s*(user-agent|allow|disallow|sitemap|crawl-delay)\s*:", re.IGNORECASE)
+
+
+def origin_of(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def evaluate_robots(response: object, url: str, user_agent: str, on_4xx: str) -> tuple[str, str]:
+    """('allow' | 'deny' | 'unknown', reason) for one page URL. Only a parsed, usable robots.txt or an explicit 4xx
+    policy can allow; anything missing, failed or unusable is unknown."""
+    if not isinstance(response, dict) or type(response.get("status")) is not int:
+        return "unknown", "robots response missing or has no integer status"
+    status = response["status"]
+    if 400 <= status < 500:
+        return on_4xx, f"robots.txt HTTP {status}; policy robots_4xx={on_4xx}"
+    if not 200 <= status < 300:
+        return "unknown", f"robots.txt HTTP {status}; unusable"
+    body = response.get("body")
+    if isinstance(body, bytes):
+        try:
+            body = body.decode("utf-8")
+        except UnicodeDecodeError:
+            return "unknown", "robots.txt body is not UTF-8"
+    if not isinstance(body, str):
+        return "unknown", "robots.txt body missing"
+    if len(body.encode("utf-8")) > ROBOTS_MAX_BYTES:
+        return "unknown", "robots.txt over 500 KiB"
+    lines = [ln.split("#", 1)[0] for ln in body.splitlines()]
+    if any(ln.strip() for ln in lines) and not any(_ROBOTS_DIRECTIVE.match(ln) for ln in lines):
+        return "unknown", "robots.txt has no robots directives (garbage or HTML)"  # robotparser would allow everything
+    rp = RobotFileParser()
+    rp.parse(body.splitlines())
+    agent = user_agent.split("/", 1)[0].lower()
+    matching = [e for e in rp.entries if e.applies_to(user_agent)]
+    if len(matching) > 1 or (matching and agent not in {a.lower() for a in matching[0].useragents}):
+        # robotparser takes the first substring match ("bot" applies to "cmbot"); RFC 9309 wants exact, merged groups.
+        return "unknown", f"robots user-agent groups for {agent!r} are ambiguous (partial or repeated match)"
+    group = matching[0] if matching else rp.default_entry
+    if group and any("%2A" in r.path or "%24" in r.path for r in group.rulelines):
+        # urllib.robotparser matches * and $ literally, which could silently allow a disallowed path.
+        return "unknown", f"robots group for {agent!r} uses path wildcards urllib.robotparser cannot evaluate"
+    path = urlsplit(url).path or "/"
+    allowed = rp.can_fetch(user_agent, url)
+    if group and allowed != _longest_match_allows(group, url):
+        # robotparser applies the first matching rule; RFC 9309 applies the longest. Disagreement is never allowed.
+        return "unknown", f"robots rule order for {path} differs between urllib.robotparser and RFC 9309 longest match"
+    if allowed:
+        return "allow", f"robots.txt allows {path} for {agent!r}"
+    return "deny", f"robots.txt disallows {path} for {agent!r}"
+
+
+def _longest_match_allows(group, url: str) -> bool:
+    """RFC 9309 decision over robotparser's own parsed rule lines: longest matching path wins, a tie allows."""
+    parts = urlsplit(unquote(url))
+    target = quote(urlunsplit(("", "", parts.path, parts.query, parts.fragment))) or "/"  # same form robotparser matches
+    hits = [r for r in group.rulelines if r.applies_to(target)]
+    if not hits:
+        return True
+    longest = max(len(r.path) for r in hits)
+    return any(r.allowance for r in hits if len(r.path) == longest)
+
+
 # ---- dry-run fetch planner ----------------------------------------------------------------------
+
+_POLICY_KEYS = {"user_agent", "robots_4xx", "per_host_spacing_seconds", "global_request_cap", "max_response_bytes",
+                "requests_per_url", "retries", "stop_on_status"}
+
 
 def validate_policy(policy: object) -> dict:
     if not isinstance(policy, dict):
         raise DiscoveryError("policy must be an object")
-    p = {"robots": policy.get("robots", {}), "default_robots": policy.get("default_robots", "unknown"),
+    extra = sorted(set(policy) - _POLICY_KEYS)
+    if extra:  # e.g. the old manual robots/default_robots map: robots now come only from supplied robots.txt
+        raise DiscoveryError(f"unknown policy keys {extra}")
+    p = {"user_agent": policy.get("user_agent"), "robots_4xx": policy.get("robots_4xx", "unknown"),
          "per_host_spacing_seconds": policy.get("per_host_spacing_seconds"), "global_request_cap": policy.get("global_request_cap"),
          "max_response_bytes": policy.get("max_response_bytes", MAX_PAGE_BYTES), "requests_per_url": policy.get("requests_per_url", 1),
          "retries": policy.get("retries", 0), "stop_on_status": policy.get("stop_on_status", list(BLOCK_STATUSES))}
-    if not isinstance(p["robots"], dict) or any(v not in ROBOTS_STATES for v in p["robots"].values()):
-        raise DiscoveryError(f"robots values must be one of {ROBOTS_STATES}")
-    if p["default_robots"] not in ROBOTS_STATES:
-        raise DiscoveryError(f"default_robots must be one of {ROBOTS_STATES}")
+    ua = p["user_agent"]
+    if not isinstance(ua, str) or not ua.strip() or any(c in ua for c in "\r\n"):
+        raise DiscoveryError("user_agent is required: a non-empty single-line string")
+    if p["robots_4xx"] not in ("unknown", "allow", "deny"):
+        raise DiscoveryError("robots_4xx must be 'unknown' (default), 'allow' or 'deny'")
     sp = p["per_host_spacing_seconds"]
     if type(sp) not in (int, float) or sp <= 0:
         raise DiscoveryError("per_host_spacing_seconds must be a positive number")
@@ -289,7 +399,7 @@ def validate_policy(policy: object) -> dict:
         raise DiscoveryError("policy allows exactly one request per URL and no retries")
     if not isinstance(p["stop_on_status"], list) or not set(BLOCK_STATUSES) <= set(p["stop_on_status"]):
         raise DiscoveryError("stop_on_status must include 403 and 429")
-    p["robots"] = {str(h).lower().rstrip("."): v for h, v in sorted(p["robots"].items())}
+    p["user_agent"] = ua.strip()
     p["stop_on_status"] = sorted(set(p["stop_on_status"]))
     return p
 
@@ -302,9 +412,21 @@ def _skip_reason(host: str, path: str) -> str | None:
     return None
 
 
-def plan_fetches(report: object, policy: object) -> dict:
-    """Pure dry-run plan for website-only rows of an intake_report.json. Every record gets exactly one category."""
+PLAN_CATEGORIES = ("planned", "awaiting_robots", "deferred_request_cap", "robots_unknown", "robots_deny",
+                   "skipped_job_board_or_social", "skipped_file", "invalid_url", "merged_duplicate",
+                   "invalid_merge_reference", "not_website_only")
+
+
+def plan_fetches(report: object, policy: object, robots: object = None) -> dict:
+    """Pure dry-run plan for website-only rows of an intake_report.json.
+
+    robots: {origin: {"status": int, "body": str}} for robots.txt responses already in hand (none are fetched here).
+    An origin without one gets a single robots.txt request and its pages wait; only pages robots.txt allows are
+    planned. Robots and page requests share the global cap and per-host spacing. Every record gets one category."""
     pol = validate_policy(policy)
+    robots = {} if robots is None else robots
+    if not isinstance(robots, dict):
+        raise DiscoveryError("robots responses must be an object keyed by origin")
     if not isinstance(report, dict) or not isinstance(report.get("records"), list):
         raise DiscoveryError("report must be an object with a 'records' list")
     rows: dict[int, dict] = {}
@@ -316,8 +438,10 @@ def plan_fetches(report: object, policy: object) -> dict:
         rows[r["source_row"]] = r
 
     category: dict[int, str] = {}
-    by_url: dict[str, list[int]] = defaultdict(list)
-    url_host: dict[str, str] = {}
+    reasons: dict[int, str] = {}
+    pages: dict[str, list[int]] = defaultdict(list)        # robots-allowed page URL -> rows
+    waiting: dict[str, list[int]] = defaultdict(list)      # origin with no robots.txt in hand -> rows
+    evaluated: dict[str, dict] = {}
     for n, r in sorted(rows.items()):
         if r.get("status") != "website_only":
             category[n] = "not_website_only"
@@ -334,49 +458,55 @@ def plan_fetches(report: object, policy: object) -> dict:
         if skip:
             category[n] = skip
             continue
-        robots = pol["robots"].get(host, pol["default_robots"])
-        if robots == "deny":
-            category[n] = "robots_deny"
-        elif robots == "unknown":
-            category[n] = "robots_unknown"  # never treated as allowed
-        else:
-            by_url[url].append(n)
-            url_host[url] = host
-
-    requests, per_host = [], defaultdict(int)
-    for url in sorted(by_url, key=lambda u: (url_host[u], u)):   # one request per URL, shared by every row using it
-        refs = sorted(by_url[url])
-        if len(requests) >= pol["global_request_cap"]:
-            for n in refs:
-                category[n] = "deferred_request_cap"
+        origin = origin_of(url)
+        if origin not in robots:
+            waiting[origin].append(n)
             continue
-        host = url_host[url]
-        requests.append({"seq": len(requests) + 1, "host": host, "url": redact_url(url), "source_rows": refs,
-                         "not_before_seconds": per_host[host] * pol["per_host_spacing_seconds"]})
-        per_host[host] += 1
+        state, why = evaluate_robots(robots[origin], url, pol["user_agent"], pol["robots_4xx"])
+        resp = robots[origin] if isinstance(robots[origin], dict) else {}
+        evaluated.setdefault(origin, {"status": resp.get("status"), "pages": {}})["pages"][redact_url(url)] = state
+        reasons[n] = why
+        if state == "allow":
+            pages[url].append(n)
+        else:
+            category[n] = "robots_deny" if state == "deny" else "robots_unknown"
+
+    planned = [("robots", origin + "/robots.txt", sorted(rs)) for origin, rs in sorted(waiting.items())]
+    planned += [("page", u, sorted(rs)) for u, rs in sorted(pages.items(), key=lambda kv: (origin_of(kv[0]), kv[0]))]
+    requests, per_host = [], defaultdict(int)
+    for kind, url, refs in planned:                         # robots first: pages never outrun their rules
+        fits = len(requests) < pol["global_request_cap"]
         for n in refs:
-            category[n] = "planned"
+            category[n] = ("awaiting_robots" if kind == "robots" else "planned") if fits else "deferred_request_cap"
+            if not fits:
+                reasons[n] = f"global request cap {pol['global_request_cap']} reached before this {kind} request"
+        if not fits:
+            continue
+        host = urlsplit(url).hostname
+        requests.append({"seq": len(requests) + 1, "kind": kind, "host": host, "url": redact_url(url),
+                         "source_rows": refs, "not_before_seconds": per_host[host] * pol["per_host_spacing_seconds"]})
+        per_host[host] += 1
 
     assert sorted(category) == sorted(rows)  # every row exactly once
-    cats = ("planned", "deferred_request_cap", "robots_unknown", "robots_deny", "skipped_job_board_or_social",
-            "skipped_file", "invalid_url", "merged_duplicate", "invalid_merge_reference", "not_website_only")
-    grouped = {c: [n for n, cat in sorted(category.items()) if cat == c] for c in cats}
+    grouped = {c: [n for n, cat in sorted(category.items()) if cat == c] for c in PLAN_CATEGORIES}
 
     def samples(c):
-        return [{"source_row": n, "company": redact_text(rows[n].get("company")),
+        return [{"source_row": n, "company": redact_text(rows[n].get("company")), "reason": reasons.get(n),
                  "url": redact_url(rows[n].get("normalized_url") or rows[n].get("original_url"))} for n in grouped[c][:MAX_EVIDENCE]]
 
-    pending_hosts = sorted({ad.normalize_url(rows[n].get("normalized_url") or rows[n].get("original_url"))[1]
-                            for n in grouped["robots_unknown"]})
-    return {"note": "Dry-run plan only. Nothing was fetched; robots 'unknown' rows wait for an explicit robots decision.",
+    kinds: dict[str, int] = defaultdict(int)
+    for q in requests:
+        kinds[q["kind"]] += 1
+    return {"note": "Dry-run plan only. Nothing was fetched; pages wait until a robots.txt in hand allows them.",
             "policy": pol,
             "reconciliation": {"input_rows": len(rows), "categorized_rows": sum(len(v) for v in grouped.values()),
-                               "by_category": {c: len(v) for c, v in grouped.items()}, "planned_requests": len(requests)},
+                               "by_category": {c: len(v) for c, v in grouped.items()}, "planned_requests": len(requests),
+                               "robots_requests": kinds["robots"], "page_requests": kinds["page"]},
             "requests": requests,
-            "robots_pending_hosts": pending_hosts,
+            "robots_evaluated": [{"origin": redact_url(o), "status": e["status"], "pages": dict(sorted(e["pages"].items()))}
+                                 for o, e in sorted(evaluated.items())],
             "rows": {c: v for c, v in grouped.items() if v},
-            "skipped_samples": {c: samples(c) for c in ("skipped_job_board_or_social", "skipped_file", "robots_deny",
-                                                        "robots_unknown", "invalid_url") if grouped[c]}}
+            "samples": {c: samples(c) for c in PLAN_CATEGORIES[1:] if grouped[c]}}
 
 
 # ---- CLI ----------------------------------------------------------------------------------------
@@ -412,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
     pl = sub.add_parser("plan")
     pl.add_argument("--report", required=True, type=Path)
     pl.add_argument("--policy", required=True, type=Path)
+    pl.add_argument("--robots", type=Path, help="robots.txt responses already in hand: {origin: {status, body}}")
     pl.add_argument("--out", required=True, type=Path)
     a = ap.parse_args(argv)
     try:
@@ -420,7 +551,8 @@ def main(argv: list[str] | None = None) -> int:
             summary = result["by_status"]
         else:
             result = plan_fetches(json.loads(a.report.read_text(encoding="utf-8-sig")),
-                                  json.loads(a.policy.read_text(encoding="utf-8")))
+                                  json.loads(a.policy.read_text(encoding="utf-8")),
+                                  json.loads(a.robots.read_text(encoding="utf-8")) if a.robots else None)
             summary = result["reconciliation"]
         _write(result, a.out)
     except (DiscoveryError, OSError, json.JSONDecodeError) as exc:
