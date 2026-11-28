@@ -72,7 +72,7 @@ class RunnerMeasureTests(Base):
         self.assertEqual((a["trigger_status"], a["error_class"], a["retry_after_seconds_seen"]), (429, "rate_limited_429", [90000.0]))
         self.assertIsNone(a["jobs_persisted"], "writes were not attempted")
         deferred = {d["source"]: d for d in report["deferred_sources"]}
-        self.assertEqual(sorted(deferred), ["workday:b", "workday:c"])
+        self.assertEqual(sorted(deferred), ["workday:c"], "b got its own 429; c is stopped by the streak")
         for d in deferred.values():
             self.assertEqual(d["deferred_reason"], d["reason"])
             self.assertTrue(all(d[k] is None for k in ingest_report.WORKDAY_MEASURES), d)
@@ -98,12 +98,13 @@ class RunnerMeasureTests(Base):
         self.assertNotIn("Retry-After 32s", a["error"])
         self.assertEqual(a["status_counts"], {"429": 5})
 
-    def test_deferred_shared_cooldown_does_not_attribute_429_to_unrequested_board(self):
+    def test_streak_deferral_does_not_attribute_429_to_unrequested_board(self):
         self.seed_state_all_ok()
         report, _ = self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
-        self.assertEqual(self.requests, ["a"])
+        self.assertEqual(self.requests, ["a", "b"])
+        self.assertEqual([d["source"] for d in report["deferred_sources"]], ["workday:c"])
         for d in report["deferred_sources"]:
-            self.assertIn("another board", d["reason"])
+            self.assertIn("in a row rate-limited", d["reason"])
             self.assertNotIn("429 this run", d["reason"])
             self.assertIsNone(d["http_requests"])
         # Loading this durable deferral in a later run must not present the old event as this-run evidence.
@@ -162,14 +163,14 @@ class RunnerMeasureTests(Base):
                                  "b": lambda r: httpx.Response(503, headers={"Retry-After": "90000"}), "c": ok_page})
         s = ingest_report.cohort_summary(report, 1, "workday")
         t = s["workday_totals"]
-        self.assertEqual((t["boards_measured"], t["http_requests"]), (2, 3))
-        self.assertEqual(t["status_counts"], {"200": 1, "429": 1, "503": 1})
+        self.assertEqual((t["boards_measured"], t["http_requests"]), (3, 4), "b's long 503 no longer pauses c")
+        self.assertEqual(t["status_counts"], {"200": 2, "429": 1, "503": 1})
         self.assertEqual(t["boards_by_error_class"], {"server_5xx": 1})
         self.assertEqual([b["source"] for b in s["workday_boards"]], ["workday:a", "workday:b", "workday:c"])
         text = ingest_report.render_cohort(s)
         self.assertIn("Workday request measures", text)
-        self.assertIn('| workday HTTP status counts | {"200": 1, "429": 1, "503": 1} |', text)
-        self.assertIn("| workday:c | unknown | unknown |", text, "deferred board: unknown, never zero")
+        self.assertIn('| workday HTTP status counts | {"200": 2, "429": 1, "503": 1} |', text)
+        self.assertIn("| workday:c | tc.wd5.myworkdayjobs.com | 1 |", text)
 
         # A report from before this change has no measures: unknown, not zero.
         old = {"dry_run": False, "workday": {"selected": 1}, "sources": [{"source": "workday:a", "source_type": "workday"}]}
@@ -188,7 +189,7 @@ class FetcherMeasureTests(Base):
             return asyncio.run(run())
 
     def test_pre_request_cooldown_and_page_budget_have_no_trigger_status(self):
-        fetchers._WORKDAY_COOLDOWN_UNTIL = fetchers.time.monotonic() + 1000
+        fetchers._WORKDAY_COOLDOWN_UNTIL["ta.wd5.myworkdayjobs.com"] = fetchers.time.monotonic() + 1000
         m = fetchers.new_workday_metrics()
         with self.assertRaises(fetchers.WorkdayRateLimited):
             self.go(ok_page, m)
@@ -196,7 +197,8 @@ class FetcherMeasureTests(Base):
         self.assertEqual((m["trigger_status"], m["error_class"], m["http_requests"], m["pages_requested"]),
                          (None, "cooldown_active", 0, 1))
 
-        fetchers._WORKDAY_COOLDOWN_UNTIL = fetchers._WORKDAY_LAST_TENANT_START = 0.0  # no real tenant-spacing sleep
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
+        fetchers._WORKDAY_LAST_TENANT_START = 0.0  # no real tenant-spacing sleep
         fetchers._WORKDAY_TENANT_NEXT["ta.wd5.myworkdayjobs.com"] = fetchers.time.monotonic() + 1000
         m = fetchers.new_workday_metrics()
         with self.assertRaises(fetchers.WorkdayRateLimited):
@@ -207,7 +209,8 @@ class FetcherMeasureTests(Base):
     def test_retry_after_only_from_a_present_parseable_header(self):
         for headers, seen in (({"Retry-After": "2"}, [2.0]), ({}, []), ({"Retry-After": "soon-ish"}, [])):
             with self.subTest(headers=headers):
-                fetchers._WORKDAY_COOLDOWN_UNTIL = fetchers._WORKDAY_LAST_TENANT_START = 0.0
+                fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
+                fetchers._WORKDAY_LAST_TENANT_START = 0.0
                 fetchers._WORKDAY_TENANT_NEXT.clear()
                 m = fetchers.new_workday_metrics()
 
@@ -234,7 +237,9 @@ class FetcherMeasureTests(Base):
     def test_retry_sleep_and_cooldown_identical_with_and_without_collector(self):
         def outcome(metrics, responses, preset_cooldown=0.0, preset_tenant=0.0, env=None):
             clock = [1000.0]
-            fetchers._WORKDAY_COOLDOWN_UNTIL = clock[0] + preset_cooldown if preset_cooldown else 0.0
+            fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
+            if preset_cooldown:
+                fetchers._WORKDAY_COOLDOWN_UNTIL["ta.wd5.myworkdayjobs.com"] = clock[0] + preset_cooldown
             fetchers._WORKDAY_TENANT_NEXT.clear()
             if preset_tenant:
                 fetchers._WORKDAY_TENANT_NEXT["ta.wd5.myworkdayjobs.com"] = clock[0] + preset_tenant
@@ -250,7 +255,7 @@ class FetcherMeasureTests(Base):
                     result = ("ok", [j["source_job_id"] for j in self.go(scripted(*responses), metrics, **(env or {}))])
                 except Exception as exc:
                     result = (type(exc).__name__, str(exc), getattr(exc, "retry_after", None))
-            return result, sleeps, fetchers._WORKDAY_COOLDOWN_UNTIL - clock[0]
+            return result, sleeps, fetchers._WORKDAY_COOLDOWN_UNTIL.get("ta.wd5.myworkdayjobs.com", 0.0) - clock[0]
 
         n = fetchers.WORKDAY_MAX_RETRIES + 1
         cases = {  # every raise path in _workday_post / fetch_workday_cxs, plus recoveries

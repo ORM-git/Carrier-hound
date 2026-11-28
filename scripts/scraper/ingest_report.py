@@ -22,7 +22,8 @@ PER_SOURCE_COLUMNS = ("source", "status", "fetched", "validated", "rejected", "s
                       "inserted", "updated", "failed", "expired", "cooldown_reason", "next_eligible_at", "last_success_at")
 # Per-board Workday request observations (run_ingestion) and terminal cause; null means unknown, never zero.
 WORKDAY_MEASURES = ("request_host", "http_requests", "status_counts", "network_errors", "retry_after_seconds_seen",
-                    "pages_requested", "elapsed_seconds", "jobs_fetched", "jobs_persisted", "trigger_status", "error_class")
+                    "pages_requested", "elapsed_seconds", "jobs_fetched", "jobs_persisted", "trigger_status", "error_class",
+                    "source_total", "pagination_complete")
 WORKDAY_BOARD_COLUMNS = ("source", *WORKDAY_MEASURES, "deferred_reason")
 
 

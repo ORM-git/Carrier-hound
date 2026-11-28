@@ -33,7 +33,7 @@ def ok_page(_req):
 
 class Base(unittest.TestCase):
     def setUp(self):
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         fetchers._WORKDAY_TENANT_NEXT.clear()
         fetchers._WORKDAY_LAST_TENANT_START = 0.0
         tmp = tempfile.TemporaryDirectory()
@@ -134,28 +134,31 @@ class IsolationTests(Base):
         self.assertEqual(report["workday"]["completed"], 2)
         self.assertEqual(report["workday"]["failed"], 1)
 
-    def test_429_with_long_retry_after_is_degraded_persisted_and_defers_the_rest(self):
+    def test_all_tenants_blocked_stops_after_streak_and_persists_only_their_own_cooldown(self):
         self.seed_state_all_ok()
         before = datetime.now(timezone.utc)
         report, writer = self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
-        self.assertEqual(self.requests, ["a"], "one 429 with a long Retry-After: no further Workday request this run")
-        self.assertEqual([f["source"] for f in report["failed_sources"]], ["workday:a"])
-        self.assertEqual(sorted(d["source"] for d in report["deferred_sources"]), ["workday:b", "workday:c"])
+        streak = fetchers.WORKDAY_RATE_LIMITED_STREAK_STOP
+        self.assertEqual(self.requests, BOARDS[:streak], "one request per blocked tenant, then the run stops")
+        self.assertEqual([f["source"] for f in report["failed_sources"]], [f"workday:{s}" for s in BOARDS[:streak]])
+        self.assertEqual([d["source"] for d in report["deferred_sources"]], [f"workday:{s}" for s in BOARDS[streak:]])
+        self.assertIn("in a row rate-limited", report["deferred_sources"][0]["reason"])
         writer.sync_jobs_set_diff.assert_not_called()
         self.assertIn("write_withheld", report["guard_block_reason"])
         self.assertTrue(engine.ingestion_has_errors(report), "429 is degraded, never successful-empty")
         state = self.saved()
-        nxt = datetime.fromisoformat(state["workday:a"]["next_eligible_at"])
-        self.assertGreaterEqual(nxt, before + timedelta(seconds=90000), "Retry-After honoured across runs")
-        self.assertEqual(state["workday:a"]["last_reason"], "rate_limited")
-        self.assertIsNotNone(state["workday:b"]["next_eligible_at"])
+        for s in BOARDS[:streak]:
+            nxt = datetime.fromisoformat(state[f"workday:{s}"]["next_eligible_at"])
+            self.assertGreaterEqual(nxt, before + timedelta(seconds=90000), "Retry-After honoured across runs")
+            self.assertEqual(state[f"workday:{s}"]["last_reason"], "rate_limited")
+        self.assertIsNone(state["workday:c"].get("next_eligible_at"), "c is not cooled down by other tenants' 429s")
 
-        # The next run inside the cooldown defers instead of retrying early.
+        # The next run (new process) defers the blocked tenants and still fetches the untouched one.
         self.requests.clear()
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         report2, _ = self.ingest({s: ok_page for s in BOARDS})
-        self.assertEqual(self.requests, [])
-        self.assertEqual(len(report2["deferred_sources"]), 3)
+        self.assertEqual(self.requests, ["c"])
+        self.assertEqual(sorted(d["source"] for d in report2["deferred_sources"]), ["workday:a", "workday:b"])
         self.assertEqual(report2["failed_sources"], [])
 
     def test_partial_pagination_and_malformed_pages_write_nothing(self):
@@ -266,8 +269,9 @@ class RotationAndStateTests(Base):
 
     def test_all_deferred_after_a_prior_429_is_a_noop_not_success(self):
         self.seed_state_all_ok()
-        self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        for _ in range(2):  # the streak stop leaves c unattempted in run 1; run 2 rate-limits c too
+            self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
+            fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         self.requests.clear()
         report, writer = self.ingest({s: ok_page for s in BOARDS})
         self.assertEqual(self.requests, [])
@@ -283,11 +287,11 @@ class RotationAndStateTests(Base):
         self.seed_state_all_ok()
         before = self.state.read_bytes()
         self.ingest({s: ok_page for s in BOARDS}, dry_run=True)
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS}, dry_run=True)
         self.assertEqual(self.state.read_bytes(), before)
         # 3) the next production run is not deferred by anything the dry runs did
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         self.requests.clear()
         report, writer = self.ingest({s: ok_page for s in BOARDS})
         self.assertEqual(sorted(self.requests), BOARDS)

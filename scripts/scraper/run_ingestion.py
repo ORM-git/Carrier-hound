@@ -337,14 +337,11 @@ async def run_master_ingestion(
             reports: list[dict[str, Any]] = []
             started = time.monotonic()
             per_board_worst = fetchers_mod.get_workday_tenant_spacing_seconds() + fetchers_mod.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS
+            rate_limited_streak = 0  # consecutive boards ending in WorkdayRateLimited; any other outcome resets it
             for i, sid in enumerate(wd_chosen):
-                cooldown = fetchers_mod._WORKDAY_COOLDOWN_UNTIL - time.monotonic()
-                if cooldown > fetchers_mod.WORKDAY_MAX_COOLDOWN_SECONDS:  # an earlier board hit a long 429
-                    until = datetime.now(timezone.utc) + timedelta(seconds=cooldown)
-                    for rest in wd_chosen[i:]:
-                        if not dry_run:
-                            workday_schedule.defer_until(wd_boards, rest, until, "shared Workday cooldown triggered by another board; not attempted")
-                        wd_deferred.append({"source": rest, "reason": "shared Workday cooldown triggered by another board; not attempted", "next_eligible_at": until.isoformat()})
+                if rate_limited_streak >= fetchers_mod.WORKDAY_RATE_LIMITED_STREAK_STOP:  # likely a cross-tenant limit
+                    reason = f"{rate_limited_streak} Workday boards in a row rate-limited this run; not attempted"
+                    wd_deferred.extend({"source": rest, "reason": reason, "next_eligible_at": None} for rest in wd_chosen[i:])
                     break
                 if time.monotonic() - started + per_board_worst > wd_lim["run_budget_seconds"]:
                     wd_deferred.extend({"source": rest, "reason": "run budget", "next_eligible_at": None} for rest in wd_chosen[i:])
@@ -360,7 +357,7 @@ async def run_master_ingestion(
                     except WorkdayRateLimited as exc:
                         seen["retry_after"] = exc.retry_after
                         raise
-                    finally:  # wall time, not latency: tenant-start spacing, polite delay, shared cooldown wait,
+                    finally:  # wall time, not latency: tenant-start spacing, polite delay, tenant cooldown wait,
                         # per-tenant spacing, limiter wait and retry sleeps are all included, plus transport
                         metrics["elapsed_seconds"] = round(time.monotonic() - t0, 3)
 
@@ -381,6 +378,7 @@ async def run_master_ingestion(
                         reason="rate_limited" if "retry_after" in seen else (rep["error"] or "failed")[:80],
                         retry_after=seen.get("retry_after"),
                     )
+                rate_limited_streak = rate_limited_streak + 1 if "retry_after" in seen else 0
                 reports.append(rep)
             if not dry_run:
                 workday_schedule.save_state(wd_state_path, wd_boards)  # failures/cooldowns persist even if writes fail later

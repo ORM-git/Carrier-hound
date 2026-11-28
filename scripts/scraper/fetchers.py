@@ -646,9 +646,9 @@ async def fetch_smartrecruiters(
 # ---------------------------------------------------------------------------
 
 _WORKDAY_LOCK = asyncio.Lock()
-# Shared across every Workday tenant in this process: once Workday rate-limits us, all boards wait out the
-# server's Retry-After (or fail fast if it is longer than we are willing to wait) instead of retrying elsewhere.
-_WORKDAY_COOLDOWN_UNTIL = 0.0
+# Per tenant host: a 429/5xx Retry-After pauses only the tenant that received it (waited out or failed fast);
+# other tenants keep their own spacing. run_ingestion stops the run after consecutive rate-limited tenants.
+_WORKDAY_COOLDOWN_UNTIL: dict[str, float] = {}   # tenant host -> monotonic time its cooldown ends
 _WORKDAY_TENANT_NEXT: dict[str, float] = {}   # tenant host -> earliest monotonic time of its next request
 _WORKDAY_LAST_TENANT_START = 0.0
 
@@ -669,6 +669,8 @@ WORKDAY_TENANT_SPACING_SECONDS = 2.0
 WORKDAY_MAX_RETRIES = 4          # per page: at most 5 requests, all through the per-host limiter
 WORKDAY_MAX_COOLDOWN_SECONDS = 30.0            # a single Retry-After longer than this fails the board at once
 WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS = 60.0    # deadline for all of a page's waiting (cooldown, spacing, backoff)
+WORKDAY_RATE_LIMITED_STREAK_STOP = 2           # this many tenants in a row rate-limited: likely a shared limit, stop the run
+WORKDAY_PAGE_SIZE = 20
 
 
 class WorkdayRateLimited(RuntimeError):
@@ -689,10 +691,14 @@ def new_workday_metrics() -> dict[str, Any]:
     retry_after_seconds_seen: values parsed from a Retry-After header that was present and parseable; the fallback
       delay the code computes when it is missing or unparseable is not recorded.
     elapsed_seconds: set by the caller; wall time of the whole board, not latency (see run_ingestion).
+    source_total: the first page's integer `total`, None when Workday did not report one.
+    pagination_complete: True only when the last page was short/empty or the source total was reached; False when
+      the page cap stopped it or the fetch failed.
     """
     return {"request_host": None, "http_requests": 0, "status_counts": {}, "network_errors": 0,
             "retry_after_seconds_seen": [], "pages_requested": 0, "jobs_fetched": 0, "elapsed_seconds": None,
-            "last_status": None, "trigger_status": None, "error_class": None}
+            "last_status": None, "trigger_status": None, "error_class": None,
+            "source_total": None, "pagination_complete": False}
 
 
 def _workday_end(metrics: dict[str, Any] | None, trigger: int | str | None, error_class: str) -> None:
@@ -702,8 +708,7 @@ def _workday_end(metrics: dict[str, Any] | None, trigger: int | str | None, erro
 
 async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, url: str, body: dict[str, Any], headers: dict[str, str],
                         metrics: dict[str, Any] | None = None) -> dict[str, Any]:
-    """One page request under the shared budget: limiter-paced, Retry-After respected, no transport switching."""
-    global _WORKDAY_COOLDOWN_UNTIL
+    """One page request under the tenant's budget: limiter-paced, Retry-After respected, no transport switching."""
     tenant_host = urlparse(url).hostname or url
     if metrics is not None:
         metrics["request_host"] = urlparse(url).hostname  # host only: never a path, query, cookie or header
@@ -712,7 +717,7 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
     retry_at = 0.0  # network-error backoff, waited out at the top of the loop under the same deadline
     for attempt in range(WORKDAY_MAX_RETRIES + 1):
         now = time.monotonic()
-        cooldown = _WORKDAY_COOLDOWN_UNTIL - now
+        cooldown = _WORKDAY_COOLDOWN_UNTIL.get(tenant_host, 0.0) - now
         if cooldown > WORKDAY_MAX_COOLDOWN_SECONDS:
             _workday_end(metrics, None, "cooldown_active")
             raise WorkdayRateLimited(f"Workday cooldown active for {cooldown:.0f}s more; not requesting {url}", cooldown)
@@ -749,7 +754,7 @@ async def _workday_post(client: httpx.AsyncClient, limiter: PerHostRateLimiter, 
         if resp.status_code == 429 or resp.status_code in (502, 503, 504):
             delay = parse_retry_after(resp.headers.get("Retry-After"), default_delay=2.0 * (2 ** attempt))
             # Honor server requested delay without shortening longer waits
-            _WORKDAY_COOLDOWN_UNTIL = max(_WORKDAY_COOLDOWN_UNTIL, time.monotonic() + delay)
+            _WORKDAY_COOLDOWN_UNTIL[tenant_host] = max(_WORKDAY_COOLDOWN_UNTIL.get(tenant_host, 0.0), time.monotonic() + delay)
             if attempt >= WORKDAY_MAX_RETRIES or delay > WORKDAY_MAX_COOLDOWN_SECONDS or (time.monotonic() + delay > deadline):
                 _workday_end(metrics, resp.status_code, "rate_limited_429" if resp.status_code == 429 else "server_5xx")
                 # The effective wait may be our exponential fallback, not a source Retry-After header.
@@ -784,7 +789,7 @@ async def fetch_workday_cxs(
     """Workday CXS: POST https://{tenant}.{wd_cluster}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
     
     Executes one board at a time under _WORKDAY_LOCK with conservative tenant spacing. Every request goes through the
-    per-host limiter and the shared Workday retry/cooldown budget (_workday_post); a rate limit is never
+    per-host limiter and the tenant's retry/cooldown budget (_workday_post); a rate limit is never
     retried with a different transport or fingerprint. When the budget is exhausted the board raises, so
     the source is reported failed and the run-level guard withholds writes.
     """
@@ -816,8 +821,8 @@ async def fetch_workday_cxs(
             if page_idx > 0 or polite_delay > 0:
                 await asyncio.sleep(polite_delay)
 
-            offset = page_idx * 20
-            body = {"limit": 20, "offset": offset, "searchText": ""}
+            offset = page_idx * WORKDAY_PAGE_SIZE
+            body = {"limit": WORKDAY_PAGE_SIZE, "offset": offset, "searchText": ""}
             if metrics is not None:
                 metrics["pages_requested"] += 1
             resp_data = await _workday_post(client, limiter, url, body, headers, metrics)
@@ -826,7 +831,12 @@ async def fetch_workday_cxs(
                 raise RuntimeError(f"Workday malformed page {page_idx} for {url}: no jobPostings list")  # never success-empty
 
             postings = resp_data["jobPostings"]
+            total = resp_data.get("total")
+            if page_idx == 0 and metrics is not None and isinstance(total, int) and not isinstance(total, bool):
+                metrics["source_total"] = total  # later pages may report 0; only the first is trusted
             if not postings:
+                if metrics is not None:
+                    metrics["pagination_complete"] = True
                 break
 
             for item in postings:
@@ -858,7 +868,10 @@ async def fetch_workday_cxs(
                 )
             if metrics is not None:
                 metrics["jobs_fetched"] = len(results)
-            if len(postings) < 20:
+                src_total = metrics["source_total"]
+                if len(postings) < WORKDAY_PAGE_SIZE or (src_total is not None and offset + len(postings) >= src_total):
+                    metrics["pagination_complete"] = True
+            if len(postings) < WORKDAY_PAGE_SIZE:
                 break
 
         return results
