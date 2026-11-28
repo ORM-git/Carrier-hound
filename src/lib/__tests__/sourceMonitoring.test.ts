@@ -8,13 +8,16 @@ import {
   evaluateSourceFreshness,
   evaluateSourceHealth,
   partitionRunsByPipeline,
+  pythonHealthRecordingEnabled,
   renderMonitoringSummary,
   type IngestRunSnapshot,
   type MonitoringConfig,
 } from "../observability/sourceHealth";
 import {
   fetchRunsWindow,
+  healthyStatusLine,
   loadMonitoringConfig,
+  notMonitoredNotice,
   LOOKBACK_HOURS,
   PY_COHORT_OVERDUE_AFTER_HOURS,
   PY_SOURCE_STALE_AFTER_HOURS,
@@ -46,6 +49,7 @@ function config(over: Partial<MonitoringConfig> = {}): MonitoringConfig {
       "non-workday": { expectedSources: ["greenhouse:stripe", "amazon", "adzuna:in"], sourceStaleAfterHours: 24, overdueAfterHours: 12 },
       workday: { expectedSources: ["workday:nvidia", "workday:walmart", "workday:cisco"], sourceStaleAfterHours: 72, overdueAfterHours: 12 },
     },
+    pythonRecording: true, // these cases judge Python; the gate itself is tested below
     ...over,
   };
 }
@@ -226,7 +230,8 @@ describe("check-source-health evidence window", () => {
   });
 
   it("runCheck evaluates both pipelines from checked-in configuration (mocked read, no network)", async () => {
-    const result = await runCheck(async () => ({ data: [...TS_ROWS, PY.non_workday_ok], error: null }), NOW);
+    const result = await runCheck(async () => ({ data: [...TS_ROWS, PY.non_workday_ok], error: null }), NOW,
+      loadMonitoringConfig(ROOT, { PY_HEALTH_RECORD: "true" }));
     expect(result.checks.map((c) => c.scope)).toEqual(["cycles", "sources", "cohort:non-workday", "cohort:workday"]);
     expect(result.checks.find((c) => c.scope === "cohort:workday")!.state).toBe("missing");
     expect(result.exitCode).toBe(1);
@@ -248,8 +253,8 @@ describe("checked-in configuration and workflow windows", () => {
 
   it("missing configuration is not_configured (exit 2), never healthy", () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), "sh-"));
-    const cfg = loadMonitoringConfig(empty);
-    expect([cfg.typescript, cfg.python]).toEqual([null, null]);
+    const cfg = loadMonitoringConfig(empty, {});
+    expect([cfg.typescript, cfg.python, cfg.pythonRecording]).toEqual([null, null, false]);
     expect(evaluateIngestionMonitoring(TS_ROWS, cfg, NOW).exitCode).toBe(2);
   });
 
@@ -274,5 +279,55 @@ describe("checked-in configuration and workflow windows", () => {
     expect(alert).toContain('- "Source Health Monitoring"');
     expect(alert).toContain('- "Python Job Ingestion (every 4 hours)"');
     expect(wf("source-health-cron.yml")).toContain("npx tsx scripts/check-source-health.ts");
+  });
+});
+
+describe("PY_HEALTH_RECORD gate (one policy: workflow == 'true' is case-insensitive, no trim)", () => {
+  it.each([["true", true], ["TRUE", true], ["True", true], [undefined, false], ["", false], ["false", false], ["yes", false], [" true", false], ["true ", false], ["1", false]])(
+    "PY_HEALTH_RECORD=%j -> recording %s, through loadMonitoringConfig",
+    (value, on) => {
+      expect(pythonHealthRecordingEnabled(value as string | undefined)).toBe(on);
+      const env = value === undefined ? {} : { PY_HEALTH_RECORD: value as string };
+      expect(loadMonitoringConfig(ROOT, env).pythonRecording).toBe(on);
+    }
+  );
+
+  it("off: Python cohorts and stray rows are skipped, reported as not_monitored, never as healthy Python", () => {
+    const stray = { ...PY.non_workday_ok, per_source_counts: { python_run: { pipeline: "python", cohort: "custom", outcome: "ok" } } };
+    for (const off of [undefined, false]) {
+      const r = evaluateIngestionMonitoring([...TS_ROWS, PY.non_workday_failed, stray], config({ pythonRecording: off }), NOW);
+      expect(r.checks.filter((c) => c.pipeline === "python")).toEqual([
+        { pipeline: "python", scope: "pipeline", state: "not_monitored", severity: "ok",
+          reason: "Python health recording is off (PY_HEALTH_RECORD is not true): Python cohorts are NOT MONITORED." }]);
+      expect(r.python).toEqual([]);
+      expect(r.notMonitored).toEqual(["python"]);
+      expect([r.status, r.exitCode]).toEqual(["healthy", 0]);
+      const text = renderMonitoringSummary(r);
+      expect(text.split("\n")[0]).toBe("## Source health: HEALTHY - TypeScript only, python NOT MONITORED (exit 0)");
+      expect(notMonitoredNotice(r)).toMatch(/^::notice title=Python ingestion NOT MONITORED::/);
+      expect(healthyStatusLine(r)).toBe("TypeScript healthy; Python NOT MONITORED");
+    }
+  });
+
+  it("off: TypeScript failures still fail", () => {
+    const failedTs = [tsShard("c1", 0, 2, { "greenhouse-a": 3 }, "failed"), tsShard("c1", 1, 2, { "lever-b": 1 })];
+    const r = evaluateIngestionMonitoring(failedTs, config({ pythonRecording: false }), NOW);
+    expect([r.status, r.exitCode, r.notMonitored]).toEqual(["degraded", 1, ["python"]]);
+    expect(renderMonitoringSummary(r).split("\n")[0]).toBe("## Source health: DEGRADED - python NOT MONITORED (exit 1)");
+  });
+
+  it("on: Python is judged and the summary/last line claim both pipelines", () => {
+    const r = evaluateIngestionMonitoring(TS_ROWS, config({ pythonRecording: true }), NOW);
+    expect(r.notMonitored).toEqual([]);
+    expect(r.checks.filter((c) => c.pipeline === "python").map((c) => c.state)).toEqual(["missing", "missing"]);
+    expect(notMonitoredNotice(r)).toBeNull();
+    expect(healthyStatusLine({ ...r, notMonitored: [] })).toBe("Source health is healthy.");
+  });
+
+  it("workflows: writer gated on the variable, checker receives it", () => {
+    const wf = (name: string) => fs.readFileSync(path.join(ROOT, ".github/workflows", name), "utf8");
+    const step = wf("python-ingest.yml").split("- name: Record run health")[1].split("- name:")[0];
+    expect(step).toContain("if: always() && needs.plan.outputs.mode == 'write-production-expire' && vars.PY_HEALTH_RECORD == 'true'");
+    expect(wf("source-health-cron.yml")).toContain("PY_HEALTH_RECORD: ${{ vars.PY_HEALTH_RECORD }}");
   });
 });

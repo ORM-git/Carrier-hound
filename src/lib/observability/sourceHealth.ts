@@ -588,9 +588,19 @@ export function evaluatePythonCohort(
   };
 }
 
+/**
+ * The one PY_HEALTH_RECORD gate policy, matching the workflow condition `vars.PY_HEALTH_RECORD == 'true'`:
+ * GitHub Actions string == is case-insensitive, so true/TRUE/True are on; nothing is trimmed, so " true" is off.
+ */
+export function pythonHealthRecordingEnabled(value: string | null | undefined): boolean {
+  return (value ?? "").toLowerCase() === "true";
+}
+
 export interface MonitoringConfig {
   typescript: { health: SourceHealthPolicy; expectedSources: string[]; sourceStaleAfterHours: number; cycleRowWindow: number } | null;
   python: Record<string, CohortExpectation> | null;
+  /** Python is judged only when this is exactly true (the writer is enabled); undefined/false = not monitored. */
+  pythonRecording?: boolean;
   evidenceTruncated?: boolean;
 }
 
@@ -609,6 +619,7 @@ export interface MonitoringResult {
   referenceTime: string;
   checks: MonitoringCheck[];
   python: PythonCohortResult[];
+  notMonitored: Array<"python">; // pipelines deliberately not judged; never part of a "healthy" claim
 }
 
 /** Both pipelines, one verdict. Degraded wins over unavailable; nothing missing is ever reported healthy. */
@@ -638,8 +649,14 @@ export function evaluateIngestionMonitoring(runs: readonly IngestRunSnapshot[], 
   }
 
   const python: PythonCohortResult[] = [];
-  const cohorts = config.python ? Object.keys(config.python).sort() : [];
-  if (cohorts.length === 0) {
+  const notMonitored: MonitoringResult["notMonitored"] = [];
+  const pythonOn = config.pythonRecording === true;
+  const cohorts = pythonOn && config.python ? Object.keys(config.python).sort() : [];
+  if (!pythonOn) {
+    notMonitored.push("python");
+    checks.push({ pipeline: "python", scope: "pipeline", state: "not_monitored", severity: "ok",
+      reason: "Python health recording is off (PY_HEALTH_RECORD is not true): Python cohorts are NOT MONITORED." });
+  } else if (cohorts.length === 0) {
     checks.push({ pipeline: "python", scope: "pipeline", state: "not_configured", severity: "unavailable", reason: "No Python cohorts configured." });
   }
   for (const cohort of cohorts) {
@@ -649,9 +666,9 @@ export function evaluateIngestionMonitoring(runs: readonly IngestRunSnapshot[], 
     checks.push({ pipeline: "python", scope: `cohort:${cohort}`, state: r.state, severity: r.severity, reason: r.reason,
       sources: { ...problems, unknown: r.unknownSources } });
   }
-  // Python rows for a cohort nobody expects are reported, never silently counted.
+  // Python rows for a cohort nobody expects are reported, never silently counted (only while Python is monitored).
   const known = new Set(cohorts);
-  const strays = Array.from(new Set(pyRows.map((r) => pythonRunMeta(r)!.cohort).filter((c) => !known.has(c)))).sort();
+  const strays = pythonOn ? Array.from(new Set(pyRows.map((r) => pythonRunMeta(r)!.cohort).filter((c) => !known.has(c)))).sort() : [];
   if (strays.length) {
     checks.push({ pipeline: "python", scope: "cohorts", state: "unexpected_cohort", severity: "unavailable",
       reason: `Rows for unconfigured Python cohort(s): ${strays.join(", ")}.` });
@@ -661,13 +678,16 @@ export function evaluateIngestionMonitoring(runs: readonly IngestRunSnapshot[], 
   return {
     status: severity === "ok" ? "healthy" : severity,
     exitCode: severity === "ok" ? 0 : severity === "degraded" ? 1 : 2,
-    referenceTime: nowIso, checks, python,
+    referenceTime: nowIso, checks, python, notMonitored,
   };
 }
 
 /** Readable per-pipeline/cohort summary: source IDs and states only, never URLs or credentials. */
 export function renderMonitoringSummary(result: MonitoringResult, maxIdsPerState = 15): string {
-  const lines = [`## Source health: ${result.status.toUpperCase()} (exit ${result.exitCode})`, "",
+  const scope = result.notMonitored.includes("python")
+    ? (result.status === "healthy" ? " - TypeScript only, python NOT MONITORED" : " - python NOT MONITORED")
+    : "";
+  const lines = [`## Source health: ${result.status.toUpperCase()}${scope} (exit ${result.exitCode})`, "",
     `Reference time ${result.referenceTime}.`, "", "| pipeline | scope | state | severity | detail |", "|---|---|---|---|---|"];
   for (const c of result.checks) {
     lines.push(`| ${c.pipeline} | ${c.scope} | ${c.state} | ${c.severity} | ${c.reason.replace(/\|/g, "/")} |`);

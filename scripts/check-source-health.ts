@@ -15,9 +15,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import {
   evaluateIngestionMonitoring,
+  pythonHealthRecordingEnabled,
   renderMonitoringSummary,
   type IngestRunSnapshot,
   type MonitoringConfig,
+  type MonitoringResult,
 } from "../src/lib/observability/sourceHealth";
 
 const MAX_FAILURES_IN_WINDOW = 1;
@@ -52,8 +54,9 @@ function readJson(file: string): unknown {
   }
 }
 
-/** Expected sources come only from checked-in configuration; anything missing becomes not_configured. */
-export function loadMonitoringConfig(root = REPO_ROOT): MonitoringConfig {
+/** Expected sources come only from checked-in configuration; anything missing becomes not_configured.
+ * Python is judged only when PY_HEALTH_RECORD (repo variable, passed by source-health-cron.yml) enables the writer. */
+export function loadMonitoringConfig(root = REPO_ROOT, env: Record<string, string | undefined> = process.env): MonitoringConfig {
   const scheduled = readJson(path.join(root, "scripts", "config", "companies-scheduled.json"));
   const tsSources = Array.isArray(scheduled)
     ? scheduled.filter((s) => s && s.enabled && typeof s.id === "string").map((s) => s.id as string)
@@ -80,6 +83,7 @@ export function loadMonitoringConfig(root = REPO_ROOT): MonitoringConfig {
         }
       : null,
     python: Object.keys(python).length ? python : null,
+    pythonRecording: pythonHealthRecordingEnabled(env.PY_HEALTH_RECORD),
   };
 }
 
@@ -128,6 +132,8 @@ async function main() {
   console.log(JSON.stringify(result));
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+  const notice = notMonitoredNotice(result);
+  if (notice) console.log(notice);
   const worst = result.checks.filter((c) => c.severity !== "ok").map((c) => `${c.pipeline}/${c.scope}: ${c.state}`).join("; ");
   if (result.exitCode === 1) {
     console.error(`[SOURCE-HEALTH-ALERT] ${worst}`);
@@ -137,7 +143,19 @@ async function main() {
     console.error(`[SOURCE-HEALTH-UNAVAILABLE] ${worst}`);
     process.exit(2);
   }
-  console.log("Source health is healthy.");
+  console.log(healthyStatusLine(result));
+}
+
+/** GitHub ::notice when Python is deliberately not judged (writer off). */
+export function notMonitoredNotice(result: MonitoringResult): string | null {
+  return result.notMonitored.includes("python")
+    ? "::notice title=Python ingestion NOT MONITORED::PY_HEALTH_RECORD is not true, so no Python health rows are written and Python cohorts are not judged."
+    : null;
+}
+
+/** Last line on exit 0, scope-aware so no log tail reads as overall healthy while Python is not monitored. */
+export function healthyStatusLine(result: MonitoringResult): string {
+  return result.notMonitored.includes("python") ? "TypeScript healthy; Python NOT MONITORED" : "Source health is healthy.";
 }
 
 const norm = (p: string) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));

@@ -63,7 +63,7 @@ function makeChain(table: string) {
     if (table === "companies") return { data: null, error: null, count: 42 };
     return { data: [], error: null, count: 0 };
   };
-  for (const m of ["or", "eq", "order", "limit", "range", "in", "neq", "filter", "gt", "lt", "gte", "lte", "like", "ilike", "not"])
+  for (const m of ["or", "eq", "order", "limit", "range", "in", "neq", "filter", "gt", "lt", "gte", "lte", "like", "ilike", "not", "is"])
     chain[m] = () => chain;
   chain.select = (_cols?: any, opts?: any) => {
     if (opts?.head) head = true;

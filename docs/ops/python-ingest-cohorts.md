@@ -80,4 +80,4 @@ curl -X POST https://carrier-hound-ingest-watchdog.<subdomain>.workers.dev/dispa
 
 ## Source-health record
 
-Each write-mode cohort run also writes one `ingest_runs` row (step **Record run health**), read by the daily source-health check. See [source-health-monitoring.md](source-health-monitoring.md).
+Once the owner sets repository variable `PY_HEALTH_RECORD=true` (off by default), each write-mode cohort run also writes one `ingest_runs` row (step **Record run health**), read by the daily source-health check. See [source-health-monitoring.md](source-health-monitoring.md).

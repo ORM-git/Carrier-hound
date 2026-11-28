@@ -1,27 +1,51 @@
 # Source-health monitoring (rows 46/78)
 
-One scheduled check, `scripts/check-source-health.ts` (`source-health-cron.yml`, daily 04:30 UTC), now covers both
+One scheduled check, `scripts/check-source-health.ts` (`source-health-cron.yml`, daily 04:30 UTC), covers both
 ingestion pipelines from the existing `public.ingest_runs` table. No new table, column, SQL, secret, webhook or recipient.
+
+**The Python writer is off until the owner sets the repository variable `PY_HEALTH_RECORD=true`.** Until then no Python
+row is written, and the check judges TypeScript only:
+- its summary header reads `HEALTHY - TypeScript only, python NOT MONITORED`;
+- it prints a `::notice`;
+- its last line on exit 0 is `TypeScript healthy; Python NOT MONITORED`.
+
+TypeScript failures still fail the check.
+
+## Gate (one policy)
+- **Writer:** `python-ingest.yml` step **Record run health** runs only if
+  `needs.plan.outputs.mode == 'write-production-expire' && vars.PY_HEALTH_RECORD == 'true'`.
+- **Checker:** `source-health-cron.yml` passes `PY_HEALTH_RECORD: ${{ vars.PY_HEALTH_RECORD }}`, and
+  `loadMonitoringConfig` reads it through the one parser `pythonHealthRecordingEnabled`:
+  `(value ?? '').toLowerCase() === 'true'`, with no trimming.
+- **Why lowercase:** GitHub Actions string `==` is case-insensitive, so `true`/`TRUE`/`True` are on and
+  `''`/`false`/`yes`/`" true"` are off, on both sides.
+- **Default:** `MonitoringConfig.pythonRecording` is on only when it is exactly `true`; undefined means off.
+- **When off:** Python cohorts and stray-row checks are skipped, and one check
+  `{pipeline: "python", scope: "pipeline", state: "not_monitored", severity: "ok"}` is reported. The result also
+  carries `notMonitored: ["python"]`.
 
 ## Evidence
 
 | Pipeline | Writer | Row |
 |---|---|---|
 | TypeScript | `scripts/ingest.ts` (unchanged) | one row per shard; `per_source_counts = {<ts source id>: inserted+updated, coverage: {cycle_id, shard_id, expected_shards}}` |
-| Python | `scripts/scraper/health_record.py`, step **Record run health** in `python-ingest.yml` (write mode only) | one row per cohort run; `per_source_counts = {<python source_id>: inserted+updated or null, python_run: {...}}` |
+| Python | `scripts/scraper/health_record.py`, step **Record run health** in `python-ingest.yml` (write mode and `PY_HEALTH_RECORD=true` only) | one row per cohort run; `per_source_counts = {<python source_id>: inserted+updated or null, python_run: {...}}` |
 
 Python row rules:
 - Only existing columns are used. `total_active` and `total_verified` are **null**, because the Python runner doesn't measure them.
 - Source keys are the Python report's `source_id`, verbatim (`greenhouse:stripe`, `workday:nvidia`, `adzuna:in`). They never collide with or rename the TS IDs (`greenhouse-stripe`).
 - A source's value is `null` when its count is unknown: the source failed, its Workday pagination was incomplete, or writes were withheld. It is never 0. Deferred (cooldown/budget) boards appear only under `python_run.deferred`.
 - `status` is `success` only when the cohort exited 0 and every executed source completed with full pagination. Incomplete Workday pagination and a deferred no-op are `warning`. Failures without confirmed writes are `failed`, and a missing report is `failed` with outcome `no_report`.
-- `python_run` carries the cohort, outcome, exit code, the guard prefix, per-source state (`completed`/`incomplete`/`failed`, reusing #873's `pagination_complete`), deferrals and GitHub run identity. It has no `coverage` key, so the TS cleanup safety check (`shouldPerformUnseenCleanup`, filtered by `cycle_id`) and `evaluateSourceHealth` never treat a Python row as a TS shard.
-- Dry runs never write. The step is gated on `write-production-expire`, and the code refuses any report with `dry_run: true`.
+- `python_run` carries the cohort, outcome, exit code, the guard prefix, per-source state (`completed`/`incomplete`/`failed`, reusing #873's `pagination_complete`), deferrals and GitHub run identity. It has no `coverage` key.
+- Dry runs never write. The step is gated on `write-production-expire` (and on `PY_HEALTH_RECORD`), and the code refuses any report with `dry_run: true`.
 - One POST, with a 15s timeout and no retry. A failed write is an `::error` annotation and a step-summary line. `continue-on-error` keeps the job's result equal to the ingestion result. The missing row then shows up as a missing or overdue cohort in the next check.
 
-Side effects of a Python row, both existing behaviour:
-- The `trigger_refresh_worldwide_company_counts` trigger refreshes `worldwide_company_counts` whenever a finished run row is written, as it already does for TS rows.
-- `/api/radar`'s `dataAsOf` uses the newest row's `finished_at`, which can now be a Python run.
+How Python rows are kept out of TypeScript logic:
+- **Cleanup safety:** `shouldPerformUnseenCleanup` (`scripts/cleanup.ts`) drops Python rows (`pythonRunMeta`) before its shard logic. It does this even when no `cycleId` is passed, so a Python success row can never stand in for TS shard 0. With no TS rows left, cleanup is blocked.
+- **Cycle health:** `evaluateSourceHealth` is only given TS rows.
+- **Radar `dataAsOf`:** this is **the latest TypeScript run's `finished_at`** and nothing more. `src/lib/observability/radarRunMeta.ts` filters `per_source_counts->python_run is null` before ordering by `started_at` desc. A failed TypeScript run can still advance the stamp, and it can lag a successful Python write.
+
+Side effect once the writer is on: the existing `trigger_refresh_worldwide_company_counts` trigger refreshes `worldwide_company_counts` for every finished run row, Python included. The refresh time has not been measured.
 
 ## Expectations (checked-in configuration only)
 - **TypeScript:** the enabled IDs in `scripts/config/companies-scheduled.json`.
@@ -41,12 +65,12 @@ Side effects of a Python row, both existing behaviour:
 
 ## States and exit codes
 
-- **Exit 0, healthy:** every check is healthy.
+- **Exit 0, healthy:** every judged check is healthy. While Python is not monitored, this covers TypeScript only, and the header and last line say so.
 - **Exit 1, degraded:**
   - TS cycles degraded;
   - a TS source is stale or never seen;
-  - a Python cohort is missing, overdue or failed;
-  - a Python source is stale, never seen or failed.
+  - (when monitored) a Python cohort is missing, overdue or failed;
+  - (when monitored) a Python source is stale, never seen or failed.
 - **Exit 2, evidence unavailable:**
   - `insufficient_evidence`;
   - Workday `incomplete` (one page of a larger board);
@@ -62,10 +86,14 @@ There's no new path. A non-zero exit fails `Source Health Monitoring`, and `work
 lists both it and `Python Job Ingestion (every 4 hours)`. **A failed workflow run is not proof that anyone received an alert.**
 
 ## Owner-only activation and closure evidence
-1. **Merge:** after review, merge the PR. Nothing here changes secrets, schema or flags.
-2. **First natural runs:**
-   - The first scheduled `python-ingest.yml` run after merge writes the first Python rows. Check its **Record run health** step summary says "written".
+1. **Merge:** after review, merge the PR. Nothing here changes secrets, schema, flags or variables; the writer stays off.
+2. **Turn the writer on (owner only, needs an explicit go-ahead):** set repository variable `PY_HEALTH_RECORD=true`. Then:
+   - Each future write-mode Python cohort run inserts one `ingest_runs` row.
+   - Each row fires the existing refresh trigger (refresh time unmeasured).
+   - The daily check starts judging Python.
+3. **First natural runs after that:**
+   - Check that the **Record run health** step summary says "written".
    - Until both cohorts have rows, the daily check reports the missing cohorts (exit 1).
-   - Workday boards fetched one page at a time are expected to report `incomplete` (exit 2) until pagination is complete. This is deliberate: partial coverage is not shown as healthy.
-3. **Alert path:** confirm from a real failed `Source Health Monitoring` run that `workflow-failure-alert.yml` ran and the alert was actually seen. The tests here only mock it.
-4. **Row closure:** rows 46/78 close only with a natural scheduled run's evidence and a verified alert path, not from mocks.
+   - Workday boards fetched one page at a time are expected to report `incomplete` (exit 2). This is deliberate: partial coverage is not shown as healthy.
+4. **Alert path:** confirm from a real failed `Source Health Monitoring` run that `workflow-failure-alert.yml` ran and the alert was actually seen. The tests here only mock it.
+5. **Row closure:** rows 46/78 close only with a natural scheduled run's evidence and a verified alert path, not from mocks.

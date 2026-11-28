@@ -379,7 +379,9 @@ class WorkflowWiringTests(unittest.TestCase):
     def test_record_step_is_write_mode_only_bounded_and_non_masking(self):
         wf = WORKFLOW.read_text(encoding="utf-8")
         step = wf.split("- name: Record run health", 1)[1].split("- name:", 1)[0]
-        self.assertIn("if: always() && needs.plan.outputs.mode == 'write-production-expire'", step)
+        # Off by default: write mode AND the owner's repo variable (Actions == is case-insensitive).
+        self.assertIn("if: always() && needs.plan.outputs.mode == 'write-production-expire' && vars.PY_HEALTH_RECORD == 'true'", step)
+        self.assertEqual(len(re.findall(r"^\s+if:", step, re.M)), 1)
         self.assertIn("continue-on-error: true", step)
         self.assertRegex(step, r"timeout-minutes:\s*[1-5]\b")
         self.assertIn("python -m scripts.scraper.health_record record", step)
