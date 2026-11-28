@@ -111,23 +111,21 @@ it("guest phone: Filters keeps the transient video filter sheet (no saved prefer
   expect(screen.getByRole("dialog", { name: "Filter positions" })).toBeTruthy();
 });
 
-it("signed-in desktop: Preferences box and sheet present; the Active strip renders (md:flex) with its chips and Clear all", async () => {
+it("signed-in desktop: saved-priorities banner and Recommended/Preferences row are removed; the Active strip still renders (md:flex) with its chips and Clear all", async () => {
   h.user = SIGNED_IN;
   h.isPro = true;
   h.prefs = PREFS;
   window.history.replaceState(null, "", "/jobs?jobType=contract");
   render(<JobsPage />);
   await flush(10);
-  expect(screen.getByText("Recommended uses your saved preferences")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: /^Preferences/ }));
-  await flush();
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.queryByText("Recommended uses your saved preferences")).toBeNull();
+  expect(screen.queryByText("Edit saved priorities")).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Preferences/ })).toBeNull();
   const strip = screen.getByTestId("active-filters-strip");
   expect(strip.className).toContain("md:flex");
   expect(within(strip).getByText("Active:")).toBeTruthy();
   expect(within(strip).getByRole("button", { name: "Clear all" })).toBeTruthy();
   // On a phone resize the row goes; Preferences stay reachable through Filters.
-  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   await act(async () => { phone = true; listeners.forEach((f) => f()); });
   await flush();
   expect(screen.queryByText("Recommended uses your saved preferences")).toBeNull();

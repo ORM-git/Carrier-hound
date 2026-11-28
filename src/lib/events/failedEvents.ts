@@ -342,6 +342,42 @@ export async function recordFailedEvent(
         };
       }
 
+      // razorpay_verify rows are record-only incidents: a repeated verify failure of the SAME
+      // payment refreshes payload/error/last_attempt_at in place. attempts, status and
+      // next_retry_at are NEVER touched here, so user retries can never dead-letter the record
+      // (paired with the replay-dispatch skip below, a razorpay_verify row can never become dead).
+      // Every other source keeps exactly the behavior below.
+      if (source === "razorpay_verify") {
+        const { error: refreshErr } = await client
+          .from("failed_events")
+          .update({
+            payload: scrubbedPayload,
+            error: errorStr,
+            last_attempt_at: nowIso,
+          })
+          .eq("id", existing.id);
+
+        if (refreshErr) {
+          safeLogWarn(`Failed to refresh existing failed_event (${source}, ${eventId}):`, refreshErr);
+          return {
+            ok: false,
+            id: existing.id,
+            status: existing.status,
+            attempts: existing.attempts,
+            idempotent: true,
+            error: refreshErr.message,
+          };
+        }
+
+        return {
+          ok: true,
+          id: existing.id,
+          status: existing.status,
+          attempts: existing.attempts,
+          idempotent: true,
+        };
+      }
+
       const newAttempts = Math.max((existing.attempts || 0) + 1, attempts ?? 1);
       const newStatus: FailedEventStatus = newAttempts >= 5 ? "dead" : status ?? "pending";
 
@@ -651,6 +687,13 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
     } else {
       query = query.eq("source", options.source);
     }
+  } else {
+    // Broad (unscoped) replay: razorpay_verify rows are record-only and stay pending forever.
+    // They are excluded at SELECTION time, not just in the dispatch loop, because the query is
+    // oldest-first with a LIMIT: permanently-pending rows would otherwise fill every batch and
+    // starve replayable sources of slots. An explicit source/sources request still selects them
+    // (the dispatch loop below reports them as record-only skips without touching the rows).
+    query = query.neq("source", "razorpay_verify");
   }
 
   const { data: rows, error: fetchErr } = await query;
@@ -672,8 +715,26 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
   let replayedCount = 0;
   let deadCount = 0;
   let pendingCount = 0;
+  let skippedCount = 0;
 
   for (const event of events) {
+    // razorpay_verify rows are record-only incidents: replay never applies (there is no
+    // verify-side replay handler) and they must never be dead-lettered by the unknown-source
+    // fall-through or the max-attempts check. Row stays pending with attempts unchanged, so the
+    // incident remains inspectable via GET /api/admin/replay until a human resolves it.
+    if (event.source === "razorpay_verify") {
+      skippedCount++;
+      results.push({
+        id: event.id!,
+        source: event.source,
+        eventId: event.event_id,
+        status: event.status,
+        attempts: event.attempts,
+        error: "Record-only incident: replay is not applicable to razorpay_verify",
+      });
+      continue;
+    }
+
     // 1. Max attempts check: if already at or over maxAttempts, mark dead immediately
     if (event.attempts >= maxAttempts) {
       await client
@@ -922,7 +983,7 @@ export async function replayFailedEvents(options: ReplayOptions = {}): Promise<R
     replayed: replayedCount,
     dead: deadCount,
     pending: pendingCount,
-    skipped: 0,
+    skipped: skippedCount,
     results,
   };
 }
