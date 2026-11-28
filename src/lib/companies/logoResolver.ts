@@ -8,7 +8,9 @@
  *    source URLs, company records, Ashby publicWebsite, or board Schema.org metadata).
  *    Never invents or guesses `${slug}.com`.
  * 2. Fetches and validates logos through a multi-tier fallback pipeline:
- *    - Tier 1: ATS Board icons or og:image (Greenhouse, Ashby, Lever).
+ *    - Tier 1: ATS Board icons or og:image (Greenhouse, Ashby, Lever), only when the image is
+ *      NOT hosted on an ATS/aggregator host (see isAtsImageUrl). Board pages still feed domain
+ *      derivation (Ashby publicWebsite, Schema.org Organization url).
  *    - Tier 2: Company website homepage favicon, apple-touch-icon, or og:image.
  *    - Tier 3: Free logo service fallback (Unavatar -> Google Favicons -> DuckDuckGo).
  * 3. Rigorous image validation:
@@ -207,6 +209,8 @@ export interface FetchWithTimeoutOptions {
   maxRedirects?: number;
   customLookup?: DnsLookupFn;
   customFetch?: (url: string, init?: RequestInit & { dispatcher?: Agent }) => Promise<Response>;
+  /** URL policy checked on the initial URL and every redirect hop BEFORE it is requested; true = refuse. */
+  isDeniedUrl?: (url: string) => boolean;
 }
 
 export const ATS_HOST_KEYWORDS = [
@@ -246,6 +250,46 @@ export const ATS_HOST_KEYWORDS = [
   "sng.link",
   "youtu.be",
   "youtube.com",
+  // Job aggregators / remote-job boards: their apply/source URLs and icons are never a company's own.
+  "remoteok.com",
+  "remoteok.io",
+  "weworkremotely.com",
+  "remotive.com",
+  "remotive.io",
+  "himalayas.app",
+  "jobicy.com",
+  "workingnomads.com",
+  "remote.co",
+  "adzuna.com",
+  "adzuna.co.uk",
+  // Adzuna India: ingested country "in" (scripts/scraper/fetch_aggregators_and_india.py); redirect_url is www.adzuna.in
+  "adzuna.in",
+  "monster.com",
+  "simplyhired.com",
+  "dice.com",
+  "jooble.org",
+  "careerjet.com",
+  "otta.com",
+  "welcometothejungle.com",
+  "levels.fyi",
+  // Additional ATS vendors, their CDNs and hosted career sites
+  "greenhouse-cdn.com",
+  "myworkdaysite.com",
+  "jobvite.com",
+  "teamtailor.com",
+  "teamtailor-cdn.com",
+  "join.com",
+  "jobs.personio.de",
+  "jobs.personio.com",
+  "pinpointhq.com",
+  "applytojob.com",
+  "taleo.net",
+  "successfactors.com",
+  "ultipro.com",
+  "recruiting.paylocity.com",
+  // Lever's client-logo S3 bucket (observed host in the 2026-11-26 dry run). Exact bucket host only:
+  // matching the bare "lever-client-logos." prefix would also block unrelated lookalike hosts.
+  "lever-client-logos.s3.us-west-2.amazonaws.com",
 ];
 
 const STRIPPED_SUBDOMAINS = [
@@ -268,8 +312,21 @@ const STRIPPED_SUBDOMAINS = [
  * Returns true if hostname belongs to an ATS vendor, job board aggregator, or CDN.
  */
 export function isAtsHost(host: string): boolean {
-  const h = host.toLowerCase().trim();
+  const h = host.toLowerCase().trim().replace(/\.$/, "");
   return ATS_HOST_KEYWORDS.some((k) => h === k || h.endsWith("." + k));
+}
+
+/**
+ * Returns true if a logo image URL is hosted on an ATS vendor, job aggregator, or their CDNs.
+ * Logos must come from the company's own canonical domain or brand asset, never from a job board.
+ * Unparseable URLs are treated as denied.
+ */
+export function isAtsImageUrl(url: string): boolean {
+  try {
+    return isAtsHost(new URL(url).hostname);
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -561,6 +618,10 @@ export async function fetchWithTimeout(
         );
       }
 
+      if (options.isDeniedUrl?.(currentUrl)) {
+        throw new Error(`Blocked by URL policy: ${parsedUrl.hostname}`);
+      }
+
       const { resolvedIp, family } = await resolveAndValidateHost(
         parsedUrl.hostname,
         customLookup
@@ -693,14 +754,20 @@ export async function fetchWithTimeout(
  * - Valid raster format (no SVG)
  * - Dimensions >= minSize (default 32px)
  * - Aspect ratio 0.6 <= ratio <= 1.6
+ * - ATS/aggregator policy (isAtsImageUrl) on the initial URL, on every redirect hop before it is
+ *   requested (via the fetcher's isDeniedUrl option), and on the final response URL
  */
 export async function downloadAndValidateImage(
   url: string,
   minSize: number = 32,
-  fetcher: (targetUrl: string) => Promise<Response> = fetchWithTimeout
+  fetcher: (targetUrl: string, options?: FetchWithTimeoutOptions) => Promise<Response> = fetchWithTimeout,
+  isDeniedUrl: (targetUrl: string) => boolean = isAtsImageUrl
 ): Promise<ValidatedImage | null> {
   try {
-    const imgRes = await fetcher(url);
+    if (isDeniedUrl(url)) return null;
+    const imgRes = await fetcher(url, { isDeniedUrl });
+    // Defense in depth for fetchers that do not apply isDeniedUrl on their hops.
+    if (imgRes.url && isDeniedUrl(imgRes.url)) return null;
     if (!imgRes.ok) return null;
 
     const arrayBuf = await imgRes.arrayBuffer();
@@ -829,7 +896,8 @@ export async function inspectCompanyHomepage(
     } catch {}
   }
 
-  if (!html || !finalUrl) {
+  // A homepage that redirects onto an ATS/aggregator host is not the company's own site.
+  if (!html || !finalUrl || isAtsImageUrl(finalUrl)) {
     return null;
   }
 
@@ -844,6 +912,7 @@ export async function inspectCompanyHomepage(
 
   // 1. Try icons in order of declared size
   for (const icon of iconUrls) {
+    if (isAtsImageUrl(icon.url)) continue;
     const imgData = await downloadAndValidateImage(icon.url, minSize);
     if (imgData && !(await isRejected(imgData.buffer))) {
       return {
@@ -859,8 +928,8 @@ export async function inspectCompanyHomepage(
     }
   }
 
-  // 2. Try og:image fallback (not used by the logo contract: social banners are not company icons)
-  if (ogImageUrl && includeOgImage) {
+  // 2. Optional social-image fallback: preserve the durable logo contract's opt-out and host policy.
+  if (ogImageUrl && includeOgImage && !isAtsImageUrl(ogImageUrl)) {
     const imgData = await downloadAndValidateImage(ogImageUrl, minSize);
     if (imgData && !(await isRejected(imgData.buffer))) {
       return {
@@ -911,7 +980,10 @@ export async function fetchFreeLogoService(
   // Service 2: Google Favicon service (returns 128x128 PNG or defaults)
   try {
     const gglUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-    const gglData = await downloadAndValidateImage(gglUrl, minSize, fetcher);
+    // This exact constructed free-service endpoint is intentional, not evidence of a company domain.
+    // Keep the default deny policy for every other URL, including redirect hops and final responses.
+    const googleFaviconPolicy = (targetUrl: string) => targetUrl !== gglUrl && isAtsImageUrl(targetUrl);
+    const gglData = await downloadAndValidateImage(gglUrl, minSize, fetcher, googleFaviconPolicy);
     if (gglData && !(await isRejected(gglData.buffer))) {
       return {
         imageUrl: gglUrl,
@@ -1011,6 +1083,7 @@ export async function resolveCompanyLogo(
 
       // Check board icon >= 128px
       for (const icon of iconUrls) {
+        if (isAtsImageUrl(icon.url)) continue;
         const imgData = await downloadAndValidateImage(icon.url, 128);
         if (imgData && !(await isRejected(imgData.buffer))) {
           return {
@@ -1026,7 +1099,7 @@ export async function resolveCompanyLogo(
       }
 
       // Check board og:image
-      if (ogImageUrl) {
+      if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
         const imgData = await downloadAndValidateImage(ogImageUrl, 128);
         if (imgData && !(await isRejected(imgData.buffer))) {
           return {
