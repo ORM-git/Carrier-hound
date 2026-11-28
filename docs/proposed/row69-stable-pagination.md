@@ -111,7 +111,7 @@ So a new arrival, a rank change, or one capped job dropping out between page N a
    - Without it the engine fails closed, so integrating before it exists would break page 2+.
 2. **Page-1 payload: decided, keep the full 1000-member session.** The owner accepted about 23.5 KB of continuation tokens on the page-1 response (measured: 39 tokens of 599 characters at page size 25). No session cap below the pool size and no "refresh for more" boundary. Later pages carry no extra tokens. The rejected alternatives were a 250-member cap (about 5.4 KB) or a server store (needs SQL or Redis).
 3. **Shared files.** `recommended/route.ts`, `search/route.ts`, `service.ts` and `jobs/page.tsx` are owned by the lean-payload change. Integration waits for it to land, then rebases.
-4. **Search order change.** Integration sets `verified` NULLS LAST; today it's Postgres's default NULLS FIRST. That puts null-verified rows after unverified ones instead of above verified ones. It needs a yes. The multi-word branch and the offset fallback must move onto the keyset path or say plainly that they're unpaged.
+4. **Search order change: approved by the owner.** For `sort=match`, integration sets `verified` DESC NULLS LAST, so the order is true > false > null. Today Postgres's DESC default (NULLS FIRST) puts null-verified rows above verified ones. The multi-word branch (currently capped at 200 rows, no cursor) and the legacy offset fallback move onto the same keyset path, with no offset fallback left.
 
 ## Integration plan (after the blockers clear)
 
