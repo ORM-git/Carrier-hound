@@ -1,0 +1,264 @@
+{
+  "generated_by": "python -m scripts.scraper.test_health_record --write-fixture",
+  "now": "2026-11-28T12:00:00+00:00",
+  "rows": {
+    "non_workday_ok": {
+      "started_at": "2026-11-28T10:47:00+00:00",
+      "finished_at": "2026-11-28T11:05:30+00:00",
+      "duration_seconds": 1110,
+      "companies_processed": 3,
+      "total_active": null,
+      "total_verified": null,
+      "per_source_counts": {
+        "greenhouse:stripe": 3,
+        "amazon": 0,
+        "adzuna:in": 4,
+        "python_run": {
+          "pipeline": "python",
+          "version": 1,
+          "cohort": "non-workday",
+          "run": {
+            "github_run_id": "9001",
+            "github_run_attempt": "1"
+          },
+          "git_sha": "abc123",
+          "exit_code": "0",
+          "outcome": "ok",
+          "guard": null,
+          "selected_sources": 3,
+          "executed_sources": 3,
+          "sources": {
+            "greenhouse:stripe": {
+              "state": "completed",
+              "source_type": "greenhouse",
+              "fetched": 5,
+              "inserted": 2,
+              "updated": 1,
+              "pagination_complete": null,
+              "source_total": null,
+              "error_class": null
+            },
+            "amazon": {
+              "state": "completed",
+              "source_type": "amazon",
+              "fetched": 5,
+              "inserted": 0,
+              "updated": 0,
+              "pagination_complete": null,
+              "source_total": null,
+              "error_class": null
+            },
+            "adzuna:in": {
+              "state": "completed",
+              "source_type": "adzuna",
+              "fetched": 5,
+              "inserted": 4,
+              "updated": 0,
+              "pagination_complete": null,
+              "source_total": null,
+              "error_class": null
+            }
+          },
+          "deferred": {},
+          "confirmed_writes": {
+            "inserted": 6,
+            "updated": 1,
+            "unchanged": 0
+          },
+          "counts_basis": "per-source inserted+updated; null = unknown, never zero"
+        }
+      },
+      "status": "success",
+      "error": null
+    },
+    "workday_incomplete_and_deferred": {
+      "started_at": "2026-11-28T11:06:00+00:00",
+      "finished_at": "2026-11-28T11:20:00+00:00",
+      "duration_seconds": 840,
+      "companies_processed": 2,
+      "total_active": null,
+      "total_verified": null,
+      "per_source_counts": {
+        "workday:nvidia": 3,
+        "workday:walmart": null,
+        "python_run": {
+          "pipeline": "python",
+          "version": 1,
+          "cohort": "workday",
+          "run": {
+            "github_run_id": "9001",
+            "github_run_attempt": "1"
+          },
+          "git_sha": "abc123",
+          "exit_code": "0",
+          "outcome": "ok",
+          "guard": null,
+          "selected_sources": 3,
+          "executed_sources": 2,
+          "sources": {
+            "workday:nvidia": {
+              "state": "completed",
+              "source_type": "workday",
+              "fetched": 5,
+              "inserted": 2,
+              "updated": 1,
+              "pagination_complete": true,
+              "source_total": 1,
+              "error_class": null
+            },
+            "workday:walmart": {
+              "state": "incomplete",
+              "source_type": "workday",
+              "fetched": 5,
+              "inserted": 2,
+              "updated": 1,
+              "pagination_complete": false,
+              "source_total": 900,
+              "error_class": null
+            }
+          },
+          "deferred": {
+            "workday:cisco": {
+              "reason": "cooldown",
+              "next_eligible_at": "2026-11-28T18:00:00+00:00"
+            }
+          },
+          "confirmed_writes": {
+            "inserted": 4,
+            "updated": 2,
+            "unchanged": 0
+          },
+          "counts_basis": "per-source inserted+updated; null = unknown, never zero"
+        }
+      },
+      "status": "warning",
+      "error": "incomplete: 1 Workday board(s) fetched without full pagination"
+    },
+    "non_workday_failed": {
+      "started_at": "2026-11-28T06:47:00+00:00",
+      "finished_at": "2026-11-28T07:00:00+00:00",
+      "duration_seconds": 780,
+      "companies_processed": 2,
+      "total_active": null,
+      "total_verified": null,
+      "per_source_counts": {
+        "greenhouse:stripe": null,
+        "amazon": null,
+        "python_run": {
+          "pipeline": "python",
+          "version": 1,
+          "cohort": "non-workday",
+          "run": {
+            "github_run_id": "9001",
+            "github_run_attempt": "1"
+          },
+          "git_sha": "abc123",
+          "exit_code": "1",
+          "outcome": "failed",
+          "guard": "write_withheld",
+          "selected_sources": 2,
+          "executed_sources": 2,
+          "sources": {
+            "greenhouse:stripe": {
+              "state": "failed",
+              "source_type": "greenhouse",
+              "fetched": 5,
+              "inserted": 0,
+              "updated": 0,
+              "pagination_complete": null,
+              "source_total": null,
+              "error_class": null
+            },
+            "amazon": {
+              "state": "completed",
+              "source_type": "amazon",
+              "fetched": 5,
+              "inserted": 0,
+              "updated": 0,
+              "pagination_complete": null,
+              "source_total": null,
+              "error_class": null
+            }
+          },
+          "deferred": {},
+          "confirmed_writes": null,
+          "counts_basis": "per-source inserted+updated; null = unknown, never zero"
+        }
+      },
+      "status": "failed",
+      "error": "failed: exit 1; 1 failed source(s); guard write_withheld"
+    },
+    "workday_deferred_noop": {
+      "started_at": "2026-11-28T07:01:00+00:00",
+      "finished_at": "2026-11-28T07:02:00+00:00",
+      "duration_seconds": 60,
+      "companies_processed": 0,
+      "total_active": null,
+      "total_verified": null,
+      "per_source_counts": {
+        "python_run": {
+          "pipeline": "python",
+          "version": 1,
+          "cohort": "workday",
+          "run": {
+            "github_run_id": "9001",
+            "github_run_attempt": "1"
+          },
+          "git_sha": "abc123",
+          "exit_code": "3",
+          "outcome": "deferred_noop",
+          "guard": "noop_deferred",
+          "selected_sources": 1,
+          "executed_sources": 0,
+          "sources": {},
+          "deferred": {
+            "workday:nvidia": {
+              "reason": "cooldown",
+              "next_eligible_at": null
+            }
+          },
+          "confirmed_writes": {
+            "inserted": 0,
+            "updated": 0,
+            "unchanged": 0
+          },
+          "counts_basis": "per-source inserted+updated; null = unknown, never zero"
+        }
+      },
+      "status": "warning",
+      "error": "deferred_noop: every selected Workday board was deferred (1); nothing written"
+    },
+    "workday_no_report": {
+      "started_at": null,
+      "finished_at": "2026-11-28T12:00:00+00:00",
+      "duration_seconds": null,
+      "companies_processed": null,
+      "total_active": null,
+      "total_verified": null,
+      "per_source_counts": {
+        "python_run": {
+          "pipeline": "python",
+          "version": 1,
+          "cohort": "workday",
+          "run": {
+            "github_run_id": "9001",
+            "github_run_attempt": "1"
+          },
+          "git_sha": null,
+          "exit_code": "1",
+          "outcome": "no_report",
+          "guard": null,
+          "selected_sources": null,
+          "executed_sources": null,
+          "sources": {},
+          "deferred": {},
+          "confirmed_writes": null,
+          "counts_basis": "per-source inserted+updated; null = unknown, never zero",
+          "timing": "no report: times are when this record was written"
+        }
+      },
+      "status": "failed",
+      "error": "no_report: python workday cohort produced no parseable report (exit 1)"
+    }
+  }
+}
