@@ -27,7 +27,7 @@ export default function RadarFlatMap({
   return (
     <div ref={ref} className="radar-flat-map" aria-label="Flat job map">
       <div className="radar-flat-map-content" style={{ width, height }}>
-        <img src="/globe/earth-radar-light.jpg" alt="World map" />
+        <img src="/globe/earth-radar-boundaries.png" alt="World map" />
         {placeFlatRadarCities(cities, width, height).map((city) => (
           <button
             key={city.id}

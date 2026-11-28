@@ -148,7 +148,7 @@ type GlobeMapStyle = "dots" | "night" | "satellite" | "minimal";
 
 const GLOBE_MAP_TEXTURES: Record<GlobeMapStyle, string> = {
   // Light geography is rendered from the repository Natural Earth land polygons.
-  dots: "/globe/earth-radar-light.jpg",
+  dots: "/globe/earth-radar-boundaries.png",
   night: "/globe/earth-night.jpg",
   satellite: "/globe/earth-blue-marble.jpg",
   minimal: "/globe/earth-dark.jpg",
@@ -1174,14 +1174,18 @@ export default function JobRadarGlobe() {
 
     // Resize Handler
     const handleResize = () => {
-      if (!containerRef.current || !renderer || !camera) return;
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
+      if (isCancelled) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w <= 0 || h <= 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener("resize", handleResize);
+    // Sidebar/breakpoint layout can settle after the window resize event.
+    const sizeObserver = new ResizeObserver(handleResize);
+    sizeObserver.observe(container);
 
     // Pause the render loop when the tab is hidden or the globe is scrolled off-screen
     let isOnScreen = true;
@@ -1410,6 +1414,7 @@ export default function JobRadarGlobe() {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (autoRotateResumeTimeoutRef.current) clearTimeout(autoRotateResumeTimeoutRef.current);
       window.removeEventListener("resize", handleResize);
+      sizeObserver.disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       onScreenObserver.disconnect();
       hoverRoot.removeEventListener("pointerover", handlePointerOver);
