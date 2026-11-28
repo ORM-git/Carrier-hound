@@ -13,8 +13,8 @@ describe("jobs page saved preselection is display only", () => {
     }
     expect(src).toContain("savedDisplay={savedDisplay}");
   });
-  it("wires the persistent note to bar and drawer, with edit opening Preferences", () => {
-    expect(src).toContain('<SavedPrioritiesNote where="bar"');
+  it("desktop bar note removed (owner, 28 Nov); the drawer note keeps edit opening Preferences", () => {
+    expect(src).not.toContain('<SavedPrioritiesNote where="bar"');
     expect(src).toMatch(/savedPriorities=\{[\s\S]{0,200}setPreferencesOpen\(true\)/);
   });
   it("dismisses saved display on patch, reset and apply-all", () => {

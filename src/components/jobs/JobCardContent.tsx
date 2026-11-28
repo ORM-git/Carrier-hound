@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useId } from "react";
 import Link from "next/link";
 import { ArrowRight, Briefcase, Clock, DollarSign, EyeOff, Heart, Laptop, Lock, MapPin, Sparkles, TrendingUp } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
@@ -251,7 +251,7 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                         handleSelectJob(job);
                                       }}
                                       data-tour={index === 0 ? "tour-job-apply" : undefined}
-                                      className="w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
+                                      className="w-[120px] h-8 min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#1D4ED8] hover:from-[#2563EB] hover:to-[#1E40AF] active:to-[#1E3A8A] text-white text-xs font-bold transition shadow-none focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:ring-offset-1 cursor-pointer"
                                     >
                                       <span>Apply</span>
                                       <ArrowRight className="w-3.5 h-3.5" />
@@ -275,14 +275,15 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
 
                               {/* Right: Desktop Match Panel (about 164px wide, inset 4px top/right/bottom, radius 12, full card height ~224px) */}
                               {matchScore !== null ? (
-                                <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#09151E] via-[#0B1E28] to-[#06241D] text-white border border-emerald-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
+                                <div className="w-[164px] sm:w-44 shrink-0 rounded-xl sm:rounded-[16px] bg-gradient-to-b from-[#0B1630] via-[#0F2146] to-[#0A1B3D] text-white border border-blue-950/40 p-3 self-stretch my-0.5 mr-0.5 flex flex-col items-center justify-between min-h-[196px] text-center shadow-inner">
                                   <div className="flex flex-col items-center w-full pt-1">
-                                    {/* Same white capsule with a CM-blue perimeter on every breakpoint (reference). */}
+                                    {/* Laptop only (owner, 28 Nov): full circle, track + CM-blue gradient arc driven by the real score. */}
                                     <CircularMatchRing
                                       score={matchScore}
-                                      size={70}
-                                      strokeWidth={3}
-                                      light
+                                      size={76}
+                                      strokeWidth={4}
+                                      shape="circle"
+                                      gradient
                                       isPro={isPro}
                                     />
                                     <div className="text-[11px] font-bold uppercase tracking-wider text-slate-100 mt-2">
@@ -299,11 +300,11 @@ export default function JobCardContent({ job, index, isPro, locationVisible, isS
                                   <div className="w-full pt-2 border-t border-white/10 mt-2">
                                     <div className="space-y-1 text-[11px] text-slate-300 text-left w-full pl-2">
                                       <div className="flex items-center gap-1.5 text-slate-300">
-                                        <span className="text-emerald-400 font-bold">✓</span>
+                                        <span className="text-blue-300 font-bold">✓</span>
                                         <span className="truncate">{job.remote ? "Remote Eligible" : "Verified Direct"}</span>
                                       </div>
                                       <div className="flex items-center gap-1.5 text-slate-300">
-                                        <span className="text-emerald-400 font-bold">✓</span>
+                                        <span className="text-blue-300 font-bold">✓</span>
                                         <span className="truncate">{scoreDescription ? "Sample score" : (job.directSource ? "Direct Feed" : "Active Feed")}</span>
                                       </div>
                                     </div>
@@ -509,6 +510,7 @@ function CircularMatchRing({
   strokeWidth = 4.5,
   light = false,
   shape = "capsule",
+  gradient = false,
 }: {
   score: number;
   size?: number;
@@ -518,7 +520,10 @@ function CircularMatchRing({
   light?: boolean;
   /** Desktop ring (pre-#726): full circle; the mobile reference stays a capsule. */
   shape?: "capsule" | "circle";
+  /** Circle only: stroke the arc with a CM-blue gradient instead of a flat colour. */
+  gradient?: boolean;
 }) {
+  const gradId = useId();
   const displayScore = Math.min(100, Math.max(0, score));
   const textClass = size >= 75 ? "text-2xl font-black" : size >= 65 ? "text-xl font-black" : size >= 50 ? "text-[16px] font-bold" : "text-[13px] font-bold";
 
@@ -542,11 +547,19 @@ function CircularMatchRing({
             strokeWidth={strokeWidth}
             fill="transparent"
           />
+          {gradient && (
+            <defs>
+              <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#93C5FD" />
+                <stop offset="100%" stopColor="#2563EB" />
+              </linearGradient>
+            </defs>
+          )}
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke={light ? "#2563EB" : "#2DD4BF"}
+            stroke={gradient ? `url(#${gradId})` : light ? "#2563EB" : "#2DD4BF"}
             strokeWidth={strokeWidth}
             strokeDasharray={circumference}
             strokeDashoffset={offset}

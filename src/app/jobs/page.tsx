@@ -28,7 +28,6 @@ import JobDetailView, { type ResumeState } from "@/components/jobs/JobDetailView
 import JobFilterBar, { JobFilterValues } from "@/components/jobs/JobFilterBar";
 import { formatJobType } from "@/lib/jobs/formatJobType";
 import AllFiltersDrawer from "@/components/jobs/AllFiltersDrawer";
-import SavedPrioritiesNote from "@/components/jobs/SavedPrioritiesNote";
 import { matchCountryWithStrictFallback } from "@/lib/countries";
 import MobileFilterSheet from "@/components/jobs/MobileFilterSheet";
 import PhoneVideoFilters from "@/components/jobs/PhoneVideoFilters";
@@ -2243,32 +2242,8 @@ function JobsPageInner() {
           ) : (
             <>
               <div className="space-y-2 sm:space-y-3 lg:col-start-1">
-                {/* Saved preferences (Recommended feed). Only for a signed-in user whose own row is loaded.
-                    Desktop row only: on phones the Filters button opens this same saved-preferences sheet. */}
-                {user && preferences && activeTab === "recommended" && !isPhone && savedSummary && (
-                  <SavedPrioritiesNote where="bar" summary={savedSummary} onEdit={() => setPreferencesOpen(true)} />
-                )}
-                {user && preferences && activeTab === "recommended" && !isPhone && (
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-white px-3 py-1.5">
-                    <p className="min-w-0 truncate text-[13px] text-[#475569]">
-                      Recommended uses your saved preferences
-                    </p>
-                    <button
-                      ref={preferencesTriggerRef}
-                      type="button"
-                      onClick={() => setPreferencesOpen(true)}
-                      aria-haspopup="dialog"
-                      className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-[#2563EB] hover:bg-[#EFF6FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
-                    >
-                      Preferences
-                      {savedPreferenceCount > 0 && (
-                        <span className="rounded-full bg-[#2563EB] px-1.5 text-[11px] text-white">
-                          {savedPreferenceCount}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                )}
+                {/* Desktop saved-priorities banner and "Recommended uses your saved preferences" row removed (owner, 28 Nov 09:14).
+                    Saved preferences stay editable: phone Filters button and the All Filters drawer open the same sheet. */}
                 {user && preferences && (
                   <PreferencesSheet
                     key={user.id}
