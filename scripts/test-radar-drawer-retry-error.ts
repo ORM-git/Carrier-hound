@@ -1,4 +1,5 @@
 import assert from "assert";
+import ts from "typescript";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
@@ -89,7 +90,11 @@ async function runRadarDrawerRetryErrorSuite() {
 
   // STEP A: Initial fetch fails (HTTP 500 / Network Error)
   await handleRetry(false);
-  assert.strictEqual(radarProUnlockError, true, "radarProUnlockError must be true on failed attempt");
+  assert.strictEqual(
+    radarProUnlockError,
+    true,
+    "radarProUnlockError must be true on failed attempt"
+  );
 
   const markupAfterFailure = renderToStaticMarkup(
     React.createElement(RadarJobDrawerBanner, {
@@ -112,7 +117,9 @@ async function runRadarDrawerRetryErrorSuite() {
   await handleRetry(true);
 
   if (isNegativeControl) {
-    console.log("\n[NEGATIVE CONTROL MODE] Intentionally asserting invalid condition (banner MUST linger after retry success)...\n");
+    console.log(
+      "\n[NEGATIVE CONTROL MODE] Intentionally asserting invalid condition (banner MUST linger after retry success)...\n"
+    );
     // Deliberately assert that banner is still visible after success
     assert.strictEqual(
       radarProUnlockError,
@@ -130,7 +137,11 @@ async function runRadarDrawerRetryErrorSuite() {
     })
   );
 
-  assert.strictEqual(radarProUnlockError, false, "radarProUnlockError must be false after successful retry");
+  assert.strictEqual(
+    radarProUnlockError,
+    false,
+    "radarProUnlockError must be false after successful retry"
+  );
   assert.strictEqual(
     markupAfterSuccess,
     "",
@@ -172,7 +183,9 @@ async function runRadarDrawerRetryErrorSuite() {
     "",
     "Drawer for new job/city must not show lingering error banner from previous job"
   );
-  console.log("  -> [PASS-LOCAL] Target switch: Previous error immediately cleared for new selection.");
+  console.log(
+    "  -> [PASS-LOCAL] Target switch: Previous error immediately cleared for new selection."
+  );
 
   // ---------------------------------------------------------------------------
   // TEST 3: Source Code Verification in src/components/JobRadarGlobe.tsx
@@ -181,48 +194,109 @@ async function runRadarDrawerRetryErrorSuite() {
   const globePath = path.resolve(process.cwd(), "src/components/JobRadarGlobe.tsx");
   const globeSource = fs.readFileSync(globePath, "utf-8");
 
-  // 1. fetchCityJobs clears error at start
-  assert.ok(
-    globeSource.includes("setRadarProUnlockError(false);") &&
-      globeSource.includes("async (target: ActiveSelection, page: number = 1, append: boolean = false) => {\n      setJobsLoading(true);\n      setRadarProUnlockError(false);") ||
-      globeSource.includes("async (target: ActiveSelection, page: number = 1, append: boolean = false) => {\r\n      setJobsLoading(true);\r\n      setRadarProUnlockError(false);"),
-    "fetchCityJobs must clear radarProUnlockError(false) at start of every fetch/retry"
+  // Structural checks of the shipped callbacks, not adjacent formatter-specific strings.
+  function guards(src: string) {
+    const f = ts.createSourceFile(
+      "globe.tsx",
+      src,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    const found = { start: false, success: false, failure: false, retry: false, target: false };
+    const directCalls = (n: ts.Node): ts.CallExpression[] => {
+      if (ts.isArrowFunction(n)) return directCalls(n.body);
+      if (
+        ts.isJsxAttribute(n) &&
+        n.initializer &&
+        ts.isJsxExpression(n.initializer) &&
+        n.initializer.expression
+      )
+        return directCalls(n.initializer.expression);
+      const statements = ts.isBlock(n) ? n.statements : ts.isExpressionStatement(n) ? [n] : [];
+      return statements
+        .filter(ts.isExpressionStatement)
+        .map((st) => st.expression)
+        .filter(ts.isCallExpression);
+    };
+    const has = (n: ts.Node, value: boolean) =>
+      directCalls(n).some(
+        (c) =>
+          ts.isIdentifier(c.expression) &&
+          c.expression.text === "setRadarProUnlockError" &&
+          c.arguments.length === 1 &&
+          c.arguments[0].kind === (value ? ts.SyntaxKind.TrueKeyword : ts.SyntaxKind.FalseKeyword)
+      );
+    const containsRetry = (n: ts.Node): boolean => {
+      let found = false;
+      const visit = (x: ts.Node) => {
+        if (
+          ts.isCallExpression(x) &&
+          x.expression.getText(f) === "fetchCityJobs" &&
+          x.arguments.map((a) => a.getText(f)).join(",") === "selectedCity,jobsPage,false"
+        )
+          found = true;
+        ts.forEachChild(x, visit);
+      };
+      visit(n);
+      return found;
+    };
+    const visit = (n: ts.Node) => {
+      if (ts.isVariableDeclaration(n) && n.name.getText(f) === "fetchCityJobs") {
+        const init = n.initializer;
+        if (init && ts.isCallExpression(init)) {
+          const cb = init.arguments[0];
+          if (cb && ts.isArrowFunction(cb) && ts.isBlock(cb.body)) {
+            found.start = cb.body.statements.slice(0, 3).some((st) => has(st, false));
+          }
+        }
+      }
+      if (ts.isIfStatement(n) && n.expression.getText(f) === "proRes.ok")
+        found.success =
+          has(n.thenStatement, false) && !!n.elseStatement && has(n.elseStatement, true);
+      if (ts.isCatchClause(n) && n.variableDeclaration?.name.getText(f) === "proErr")
+        found.failure = has(n.block, true);
+      if (ts.isJsxAttribute(n) && n.name.getText(f) === "onClick" && containsRetry(n))
+        found.retry = has(n, false);
+      if (
+        ts.isCallExpression(n) &&
+        n.expression.getText(f) === "useEffect" &&
+        n.arguments[1] &&
+        ts.isArrayLiteralExpression(n.arguments[1]) &&
+        n.arguments[1].elements.some((e) => e.getText(f) === "selectedCity")
+      )
+        found.target = found.target || has(n.arguments[0], false);
+      ts.forEachChild(n, visit);
+    };
+    visit(f);
+    return found;
+  }
+  for (const [name, ok] of Object.entries(guards(globeSource)))
+    assert.ok(ok, "actual shipped callback guard missing: " + name);
+  assert.ok(globeSource.includes("<span>Details are locked. Retry</span>"), "Preserve banner copy");
+  // Mutation controls must reject removal of clearing or failure surfacing in the actual component.
+  for (const value of ["false", "true"]) {
+    const broken = globeSource
+      .split("setRadarProUnlockError(" + value + ");")
+      .join("/* mutation removed state transition */");
+    assert.notStrictEqual(broken, globeSource);
+    assert.ok(
+      Object.values(guards(broken)).some((ok) => !ok),
+      "must reject removed " + value + " transitions"
+    );
+  }
+  console.log(
+    "  -> [PASS-LOCAL] Source code checks: All 5 error-clearing locations verified; 0 copy changes."
   );
 
-  // 2. fetchCityJobs clears error on successful pro unlock
-  assert.ok(
-    globeSource.includes("setRadarProUnlockError(false);\n              } else {\n                console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failed") ||
-      globeSource.includes("setRadarProUnlockError(false);\r\n              } else {\r\n                console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failed"),
-    "fetchCityJobs must clear radarProUnlockError(false) on successful Pro unlock response"
-  );
-
-  // 3. fetchCityJobs sets error on catch
-  assert.ok(
-    globeSource.includes("catch (proErr: any) {\n            console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failure") ||
-      globeSource.includes("catch (proErr: any) {\r\n            console.error(`[API /jobs/pro error]: Radar drawer Pro unlock failure"),
-    "fetchCityJobs must catch Pro unlock network errors and handle error state"
-  );
-
-  // 4. Retry button explicitly clears error on click
-  assert.ok(
-    globeSource.includes("onClick={() => {\n                    setRadarProUnlockError(false);") ||
-      globeSource.includes("onClick={() => {\r\n                    setRadarProUnlockError(false);"),
-    "Retry button in radar drawer must clear setRadarProUnlockError(false) on click"
-  );
-
-  // 5. Drawer target changes clear error
-  assert.ok(
-    globeSource.includes("useEffect(() => {\n    setRadarProUnlockError(false);") ||
-      globeSource.includes("useEffect(() => {\r\n    setRadarProUnlockError(false);"),
-    "useEffect watching selectedCity must clear radarProUnlockError on target change"
-  );
-
-  // 6. Zero unintended copy changes
-  assert.ok(
-    globeSource.includes("<span>Details are locked. Retry</span>"),
-    "Must preserve existing banner copy without modification"
-  );
-  console.log("  -> [PASS-LOCAL] Source code checks: All 5 error-clearing locations verified; 0 copy changes.");
+  for (const replacement of [
+    "/* setRadarProUnlockError(false); */",
+    "if (false) setRadarProUnlockError(false);",
+    "(() => setRadarProUnlockError(false));",
+  ]) {
+    const broken = globeSource.split("setRadarProUnlockError(false);").join(replacement);
+    assert.ok(!guards(broken).retry, "reject comment/dead/nested retry decoys");
+  }
 
   // ---------------------------------------------------------------------------
   // TEST 4: Subprocess Negative Control Verification
@@ -238,7 +312,9 @@ async function runRadarDrawerRetryErrorSuite() {
     0,
     "Negative control MUST exit with non-zero exit code when invalid condition is asserted!"
   );
-  console.log(`  -> [PASS-LOCAL] Negative control exited non-zero (${negResult.status}) as expected.`);
+  console.log(
+    `  -> [PASS-LOCAL] Negative control exited non-zero (${negResult.status}) as expected.`
+  );
 
   console.log("\n================================================================================");
   console.log("    ALL RADAR JOB DRAWER RETRY ERROR TESTS PASSED SUCCESSFULLY [PASS-LOCAL]     ");

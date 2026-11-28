@@ -22,36 +22,106 @@ function check(name: string, cond: boolean) {
   }
 }
 
-// Minimal, order-independent regex: an onError callback body (within the next
-// 400 chars after the "() => {" that follows textureLoader.load's second
-// `undefined,` argument marker inside loadStyleTexture) must call onError?.().
-function loadStyleTextureCallsOnError(src: string): boolean {
-  const fnStart = src.indexOf("const loadStyleTexture = (");
-  assert.ok(fnStart !== -1, "loadStyleTexture definition not found");
-  const fnBody = src.slice(fnStart, fnStart + 1200);
-  return /onError\?\.\(\)/.test(fnBody);
+// Inspect the actual callback structure, independent of formatter line wrapping.
+import ts from "typescript";
+function textureContract(src: string) {
+  const file = ts.createSourceFile(
+    "globe.tsx",
+    src,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  let forwards = false,
+    settles = false;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.name.getText(file) === "loadStyleTexture" &&
+      node.initializer &&
+      ts.isArrowFunction(node.initializer) &&
+      ts.isBlock(node.initializer.body)
+    ) {
+      for (const st of node.initializer.body.statements) {
+        if (
+          !ts.isExpressionStatement(st) ||
+          !ts.isCallExpression(st.expression) ||
+          st.expression.expression.getText(file) !== "textureLoader.load"
+        )
+          continue;
+        const error = st.expression.arguments[3];
+        if (!error || !ts.isArrowFunction(error) || !ts.isBlock(error.body)) continue;
+        forwards = error.body.statements.some(
+          (st) =>
+            ts.isIfStatement(st) &&
+            st.expression.getText(file) === "!isCancelled" &&
+            ts.isExpressionStatement(st.thenStatement) &&
+            ts.isCallExpression(st.thenStatement.expression) &&
+            ts.isIdentifier(st.thenStatement.expression.expression) &&
+            st.thenStatement.expression.expression.text === "onError" &&
+            !!st.thenStatement.expression.questionDotToken
+        );
+      }
+    }
+    if (ts.isCallExpression(node) && node.expression.getText(file) === "loadStyleTexture") {
+      const cb = node.arguments[2];
+      if (cb && ts.isArrowFunction(cb)) {
+        const direct = ts.isBlock(cb.body)
+          ? cb.body.statements
+              .filter(ts.isExpressionStatement)
+              .map((st) => st.expression)
+              .filter(ts.isCallExpression)
+          : [];
+        const calls = direct.map(
+          (c) =>
+            c.expression.getText(file) +
+            "(" +
+            c.arguments.map((a) => a.getText(file)).join(",") +
+            ")"
+        );
+        settles =
+          calls.includes("setTextureLoaded(true)") && calls.includes("setTextureLoadFailed(true)");
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return { forwards, settles };
 }
-
+function loadStyleTextureCallsOnError(src: string): boolean {
+  return textureContract(src).forwards;
+}
 function runNegativeControl(): number {
-  const src = fs.readFileSync(path.resolve(process.cwd(), "src/components/JobRadarGlobe.tsx"), "utf8");
-
-  // Simulate the original bug, reverting both halves of the fix:
-  // 1) loadStyleTexture's onError handler did nothing (no forwarding).
-  let leaky = src.replace(/if \(!isCancelled\) onError\?\.\(\);/, "/* leave fallback material in place on error */");
-  // 2) the initial call site had no third (onError) argument at all.
-  leaky = leaky.replace(
-    /\}, \(\) => \{\s*\/\/ Texture failed to load[\s\S]{0,200}setTextureLoaded\(true\);\s*setTextureLoadFailed\(true\);\s*\}\);/,
-    "});"
+  const src = fs.readFileSync(
+    path.resolve(process.cwd(), "src/components/JobRadarGlobe.tsx"),
+    "utf8"
   );
-
-  assert.ok(!loadStyleTextureCallsOnError(leaky), "negative control: leaky source must fail the onError-call check");
-  assert.ok(
-    !/\}, \(\) => \{\s*\/\/ Texture failed to load[\s\S]{0,200}setTextureLoaded\(true\);\s*setTextureLoadFailed\(true\);\s*\}\);/.test(
-      leaky
-    ),
-    "negative control: leaky source must fail the call-site settle check"
+  for (const [needle, field] of [
+    ["onError?.()", "forwards"],
+    ["setTextureLoaded(true);", "settles"],
+    ["setTextureLoadFailed(true);", "settles"],
+  ] as const) {
+    // Remove every matching call so the check must reject the corresponding missing behaviour.
+    const broken = src.split(needle).join("/* mutation removed call */");
+    assert.notStrictEqual(broken, src, "mutation must change source");
+    assert.strictEqual(
+      textureContract(broken)[field],
+      false,
+      "negative control must reject missing " + needle
+    );
+  }
+  for (const replacement of [
+    "/* onError?.() */",
+    "if (false) onError?.()",
+    "(() => onError?.())",
+  ]) {
+    const broken = src.replace("if (!isCancelled) onError?.();", replacement + ";");
+    assert.notStrictEqual(broken, src);
+    assert.strictEqual(textureContract(broken).forwards, false, "reject comment/dead/nested decoy");
+  }
+  console.log(
+    "PASS negative controls reject missing forwarding and either missing error-state setter"
   );
-  console.log("PASS negative control correctly rejects a source lacking the fix");
   return 0;
 }
 
@@ -69,9 +139,7 @@ check(
 
 check(
   "initial loadStyleTexture call site settles textureLoaded AND marks textureLoadFailed on error",
-  /\}, \(\) => \{\s*\/\/ Texture failed to load[\s\S]{0,200}setTextureLoaded\(true\);\s*setTextureLoadFailed\(true\);\s*\}\);/.test(
-    src
-  )
+  textureContract(src).settles
 );
 
 check(
@@ -86,7 +154,9 @@ check(
 
 check(
   "fallback wireframe mesh is still added to the scene before the texture load attempt (visible once overlay clears)",
-  /const fallbackMesh = new THREE\.Mesh\(earthGeo, fallbackMat\);\s*scene\.add\(fallbackMesh\);/.test(src)
+  /const fallbackMesh = new THREE\.Mesh\(earthGeo, fallbackMat\);\s*scene\.add\(fallbackMesh\);/.test(
+    src
+  )
 );
 
 // Negative-control subprocess: confirms this test actually detects a reintroduced bug, not just a tautology.
