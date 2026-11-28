@@ -33,7 +33,23 @@ export function searchOrder(sort: SearchSort): Array<{ column: "verified" | "pos
   return keys.map((column) => ({ column, ascending: false, nullsFirst: false }));
 }
 
-/** Reference comparator for searchOrder(sort) (negative = a first). */
+const TS = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}(?::?\d{2})?)$/;
+
+/**
+ * An ISO timestamp as [whole-second epoch ms, microseconds], so ordering keeps PostgreSQL timestamptz precision
+ * (microseconds; Date.parse alone keeps milliseconds). Accepts at most 6 fractional digits: PostgreSQL output never has
+ * more, and an input with more would be rounded by PostgreSQL in a way this does not model, so it is rejected.
+ */
+export function timestampKey(value: string): [number, number] {
+  const m = TS.exec(value);
+  if (!m) throw new RangeError(`not an ISO timestamp with <= 6 fractional digits: ${value}`);
+  const offset = m[3] === "Z" ? "Z" : m[3].length === 3 ? `${m[3]}:00` : m[3].includes(":") ? m[3] : `${m[3].slice(0, 3)}:${m[3].slice(3)}`;
+  const seconds = Date.parse(`${m[1]}${offset}`);
+  if (Number.isNaN(seconds)) throw new RangeError(`not a valid timestamp: ${value}`);
+  return [seconds, Number((m[2] ?? "").padEnd(6, "0"))];
+}
+
+/** Reference comparator for searchOrder(sort) (negative = a first), at PostgreSQL microsecond precision. */
 export function compareSortKeys(a: SortKey, b: SortKey, sort: SearchSort): number {
   if (sort === "match") {
     const rank = (v: boolean | null) => (v === true ? 0 : v === false ? 1 : 2);
@@ -42,8 +58,10 @@ export function compareSortKeys(a: SortKey, b: SortKey, sort: SearchSort): numbe
   if (a.posted_at !== b.posted_at) {
     if (a.posted_at === null) return 1;
     if (b.posted_at === null) return -1;
-    const d = Date.parse(b.posted_at) - Date.parse(a.posted_at);
-    if (d !== 0) return d;
+    const [as, aus] = timestampKey(a.posted_at);
+    const [bs, bus] = timestampKey(b.posted_at);
+    if (as !== bs) return bs - as;
+    if (aus !== bus) return bus - aus;
   }
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }

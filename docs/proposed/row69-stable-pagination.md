@@ -31,7 +31,7 @@ An arrival, a rank change or a capped job dropping out between pages repeats or 
 **Page 1:**
 - The route builds the final ordered list exactly as the listing orders it, at most `MAX_MEMBERS` = 1000 ids:
   - Recommended: ranked and company-capped.
-  - Search: `ORDER BY searchOrder(sort) LIMIT N + 1` over every search filter and eligibility check (`searchSession.ts`).
+  - Search: `ORDER BY searchOrder(sort) LIMIT N + 1` over every search filter and eligibility check (`searchSession.ts`). PostgreSQL does this ordering at its own microsecond precision. The JS reference comparator (`compareSortKeys`/`timestampKey`) matches it to the microsecond and refuses timestamps with more than 6 fractional digits.
 - It calls `openFeedSession`. If the listing had more rows than the cap, the session is **capped** and every continuation says so.
 
 **Page k:**
@@ -54,6 +54,12 @@ An arrival, a rank change or a capped job dropping out between pages repeats or 
 A different binding, secret or any tampered field is rejected as `invalid`. Expiry, page size and range are checked after the MAC. Rejections never fall back to offsets.
 
 **Masking and eligibility:** page k runs the same eligibility query and masking/Pro-hydration code as page 1, restricted to its ids. The engine returns ids only and never decides what a tier may see.
+
+**Scores are not frozen; only membership and order are.**
+- A continuation freezes which jobs are in the session and in what order. It does **not** freeze the score each card shows.
+- Page k computes each displayed `matchScore` and its `scoreRevision` from the job row **as it is when page k is served**, at `scoredAt` = the session's `issuedAt`. So a member whose fields changed since page 1 (title, salary, location, dates) can show a different score than the one it was ranked by, and scores down the list need not be monotonic.
+- What stays consistent: each row's score and `scoreRevision` are computed together from the same row (`scoreInputRevision`, `src/lib/matcher/scoring.ts:723`). The existing `withFeedScore` (`src/lib/jobs/recommendations.ts:517`) adopts a feed score on the card or detail only when the revisions match.
+- Freezing displayed scores (carrying them in the session) is **not implemented and not tested**. It would also put scores (paid display inputs for Pro) into tokens, which needs its own review.
 
 ### Privacy and transport
 
@@ -98,7 +104,7 @@ The hard limit is 2,360 characters per token. Ids are random, so these sizes bar
 - The secret fails closed; caller-bug guards.
 - The cap flag; token bounds and no binding values in tokens; the fingerprint.
 
-**`src/lib/pagination/__tests__/searchSession.test.ts`, 7 tests, real Postgres (PGlite):**
+**`src/lib/pagination/__tests__/searchSession.test.ts`, 10 tests, real Postgres (PGlite); keys read back with microseconds (`.US`), never truncated:**
 - For both sorts, between every page:
   - one unserved member's `verified` flips;
   - another's `posted_at` jumps to newest;
@@ -108,7 +114,9 @@ The hard limit is 2,360 characters per token. Ids are random, so these sizes bar
   - an unserved member goes inactive, and on one page another stops matching the query.
 - Pages still equal exactly the snapshot order minus the dropped jobs, with no arrivals.
 - A capped session holds exactly the first N.
-- The comparator matches Postgres `ORDER BY`.
+- The comparator matches Postgres `ORDER BY`, including rows that differ only below the millisecond and an equal instant written with a `+05:30` offset.
+- A `Date.parse` (millisecond) comparator disagrees with Postgres on those rows (negative control). Restoring `Date.parse` in the source fails 2 tests.
+- `timestampKey` treats every ISO offset form as the same instant and refuses 7+ fractional digits.
 - Search tokens don't open on another surface, query or sort.
 - Negative controls: main's cursor (26 of 54 skipped); the earlier keyset-plus-fence design (1 skipped, 5 repeated).
 
@@ -131,8 +139,9 @@ The hard limit is 2,360 characters per token. Ids are random, so these sizes bar
 2. **Membership cap and page-1 size.** Per surface: 1000 (about 23.6 KB on page 1), 500 (about 11.5 KB), 250 (about 5.4 KB), or a server-side store (needs SQL or Redis, not available here). This trades against the lean-payload goal.
 3. **Search ordering.** Keep today's verified NULLS FIRST, or switch to true > false > null (`searchOrder`). The engine works with either, as long as page 1 and the comparator agree.
 4. **Search beyond the cap.** Today search scrolls indefinitely. With a fixed membership, rows past the cap can't be reached in one session. Options: an explicit end with "refine/refresh", or a larger search cap.
-5. **Transport for page k.** POST body versus a request header. Either keeps tokens out of URLs.
+5. **Transport for page k.** POST body versus a request header. Either keeps tokens out of URLs. It must be honored by the Pages routes and the Netlify functions alike.
 6. **Reset UX** as proposed above: replace the list and return to the top on restart.
+7. **Recommended on Netlify.** Add a Netlify function for `/api/jobs/recommended`, or leave it unserved there (as today).
 
 ## Infrastructure actually needed
 
@@ -141,9 +150,30 @@ The hard limit is 2,360 characters per token. Ids are random, so these sizes bar
   - Page k: one `id IN (≤ page size)` query using the primary key, plus today's hydration.
   - Search page 1: one membership query of `LIMIT cap + 1` that selects keys only, where today's query is `LIMIT pageSize + 1`. Its cost on production indexes is **not measured** and has to be checked during integration.
 
+## Serving paths (from repo config; not verified live)
+
+The two hosts build differently (`next.config.mjs:34`, `docs/dns-cutover-runbook.md`). Which host serves `careermonke.com` is an owner fact that isn't recorded in the repo.
+
+| Path | Cloudflare Pages (edge server build) | Netlify (static export + functions) |
+|---|---|---|
+| `/api/jobs/recommended` | `src/app/api/jobs/recommended/route.ts` | **No handler.** No `netlify.toml` redirect and no function; a static export has no API routes. `service.ts:562-564` turns the failure into a retryable degraded result. |
+| `/api/jobs/search` | `src/app/api/jobs/search/route.ts` | `netlify.toml:57-61` redirects to `netlify/functions/jobs-search.ts`. That's a separate 1,003-line handler with its own `(posted_at, id)` cursor (`:440`) and offset fallback (`:628`). |
+| Browser direct path | `src/lib/jobs/service.ts:487-488`: when the browser has a candidate profile and no server filter, `getLiveJobs` skips the API, queries Supabase directly, ranks a 1000-row pool and slices `from..to` (`:880-898`). | Same code, on both hosts. |
+
+Consequences for integration:
+- **Every path has to change.** Fixing only the Next.js routes leaves Netlify search on the old cursor, and leaves the browser direct path re-ranking and slicing.
+- **The browser can't sign continuations** (it can't hold the key). The direct path has to go behind a server handler on both hosts.
+- **Setting an environment variable alone wires up nothing.** The key has to be read in each handler:
+  - Pages: `getRuntimeEnv(..., cfEnv)`, as `COMPANY_GROUP_ID_SECRET` is read in `recommended/route.ts`.
+  - Netlify functions: `process.env`.
+  Each handler must fail closed when the key is missing.
+- **Recommended on Netlify** needs an owner decision: add a function, or accept that it doesn't exist there (as today).
+
 ## Integration (after the decisions and the lean-payload change)
 
 - **Recommended:** page 1 opens the session on `cappedJobs` ids. Page k reads it, queries `id IN ids` with the existing eligibility filters and hydration, then calls `orderSurvivors`, with display scores computed at the session's `issuedAt`.
-- **Search:** page 1 runs the membership query and opens the session. Page k is the same as recommended. The `(posted_at, id)` cursor, the offset fallback and the uncursored multi-word branch go away.
+- **Search, in both handlers** (`src/app/api/jobs/search/route.ts` and `netlify/functions/jobs-search.ts`, kept equivalent): page 1 runs the membership query and opens the session, and page k is the same as recommended. The `(posted_at, id)` cursor, the offset fallback and the uncursored multi-word branch go away from both.
+- **Browser direct path** (`service.ts` `getLiveJobs`): candidate-ranked pages go through a server handler that opens and serves sessions, instead of slicing in the browser.
+- **Recommended on Netlify:** per the owner decision above.
 - **Client:** continuations live in memory and `history.state`, page k sends `continuation[k-2]` in the body or header, and a 409 triggers the reset. `appendPage`, `isStalledCursor` and the look-ahead stay.
-- **Then:** route tests, `jobsPaginationIntegration.test.tsx`, and live verification after review and release.
+- **Then:** route tests for both search handlers (behavior parity) and the recommended route, `jobsPaginationIntegration.test.tsx`, and live verification on whichever host serves production, after review and release.

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { openFeedSession, orderSurvivors, readFeedPage, type SessionBinding } from "../feedSession";
-import { compareSortKeys, searchOrder, type SearchSort, type SortKey } from "../searchSession";
+import { compareSortKeys, searchOrder, timestampKey, type SearchSort, type SortKey } from "../searchSession";
 
 // Row 69: search gets the same stable-membership guarantee as the recommended feed, checked against real Postgres
 // (PGlite) while verified flags and timestamps change between pages. Synthetic data only; test-only secret.
@@ -13,7 +13,11 @@ const SIZE = 7;
 let db: PGlite;
 
 const ORDER = (sort: SearchSort) => searchOrder(sort).map((o) => `${o.column} DESC NULLS LAST`).join(", ");
-const KEY_COLS = `id::text, verified, to_char(posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS posted_at`;
+// Microsecond output (.US), as PostgreSQL stores timestamptz: never truncated to milliseconds.
+const KEY_COLS = `id::text, verified, to_char(posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS posted_at`;
+// Rows that differ only below the millisecond (and one written with a +05:30 offset, equal to another instant).
+const SUB_MS = ["2026-11-04T00:00:00.000001Z", "2026-11-04T00:00:00.000002Z", "2026-11-04T00:00:00.000999Z",
+  "2026-11-04T05:30:00.0005+05:30", "2026-11-04T00:00:00.0005Z", "2026-11-04T00:00:00.000501Z"];
 // Search filter + eligibility, the same on page 1 and on every later page.
 const MATCHES = `is_active AND title ILIKE '%engineer%'`;
 
@@ -77,6 +81,7 @@ beforeEach(async () => {
     const title = n % 10 === 0 ? "Designer" : "Engineer";                                       // some never match
     rows.push(`('${uuid(n)}', '${title}', ${verified}, ${posted}, '2026-11-20T00:00:00Z')`);
   }
+  SUB_MS.forEach((ts, i) => rows.push(`('${uuid(61 + i)}', 'Engineer', ${i % 2 ? "true" : "false"}, '${ts}', '2026-11-20T00:00:00Z')`));
   await db.exec(`INSERT INTO jobs (id, title, verified, posted_at, first_seen_at) VALUES ${rows.join(",")}`);
 });
 afterAll(async () => { await db.close(); });
@@ -86,7 +91,7 @@ describe("search session: stable ordered membership while verified and dates cha
     it(`${sort}: complete ordered surviving membership, exactly`, async () => {
       const m = mutator();
       const { s, ids, seen } = await browseSession(sort, 1000, m.run);
-      expect(s.total).toBe(54);                                                                  // 60 minus the 6 non-matching
+      expect(s.total).toBe(60);                                                                  // 66 minus the 6 non-matching
       expect(s.capped).toBe(false);
       expect(m.dropped.size).toBeGreaterThan(5);
       expect(seen).toEqual(ids.filter((id) => !m.dropped.has(id)));                              // order, no skip, no repeat
@@ -101,6 +106,33 @@ describe("search session: stable ordered membership while verified and dates cha
     expect(seen).toEqual(ids);
     const last = await readFeedPage({ token: s.continuation.at(-1), binding: bindingFor("match"), secret: SECRET, pageSize: SIZE, now: T0 + 1 });
     expect(last.ok && last.capped).toBe(true);
+  });
+
+  it("sub-millisecond ordering: the comparator matches PostgreSQL at microsecond precision", async () => {
+    const rows = (await db.query<SortKey>(`SELECT ${KEY_COLS} FROM jobs WHERE id::text = ANY($1::text[])`, [SUB_MS.map((_, i) => uuid(61 + i))])).rows;
+    expect(rows.map((r) => r.posted_at)).toContain("2026-11-04T00:00:00.000501Z");             // read back with microseconds
+    for (const sort of ["newest", "match"] as const) {
+      const pg = (await db.query<{ id: string }>(`SELECT id::text FROM jobs WHERE id::text = ANY($1::text[]) ORDER BY ${ORDER(sort)}`,
+        [rows.map((r) => r.id)])).rows.map((r) => r.id);
+      expect([...rows].sort((a, b) => compareSortKeys(a, b, sort)).map((r) => r.id)).toEqual(pg);
+    }
+  });
+
+  it("negative control: a Date.parse (millisecond) comparator disagrees with PostgreSQL on the same rows", async () => {
+    const rows = (await db.query<SortKey>(`SELECT ${KEY_COLS} FROM jobs WHERE id::text = ANY($1::text[])`, [SUB_MS.map((_, i) => uuid(61 + i))])).rows;
+    const msCompare = (a: SortKey, b: SortKey) => (Date.parse(b.posted_at!) - Date.parse(a.posted_at!)) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+    const pg = (await db.query<{ id: string }>(`SELECT id::text FROM jobs WHERE id::text = ANY($1::text[]) ORDER BY ${ORDER("newest")}`,
+      [rows.map((r) => r.id)])).rows.map((r) => r.id);
+    expect([...rows].sort(msCompare).map((r) => r.id)).not.toEqual(pg);
+  });
+
+  it("timestampKey: offsets in every ISO form are the same instant; more than 6 fractional digits is refused", () => {
+    expect(timestampKey("2026-11-04T05:30:00.0005+05:30")).toEqual(timestampKey("2026-11-04T00:00:00.000500Z"));
+    expect(timestampKey("2026-11-04T05:30:00.000500+0530")).toEqual(timestampKey("2026-11-04T00:00:00.0005Z"));
+    expect(timestampKey("2026-11-04T05:00:00.5+05")).toEqual(timestampKey("2026-11-04T00:00:00.5Z"));
+    expect(timestampKey("2026-11-04T00:00:00Z")[1]).toBe(0);
+    expect(() => timestampKey("2026-11-04T00:00:00.0000001Z")).toThrow("6 fractional");
+    expect(() => timestampKey("not a time")).toThrow();
   });
 
   it("the JS comparator agrees with Postgres ORDER BY (ties, nulls, all verified tiers)", async () => {

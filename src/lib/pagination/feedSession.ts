@@ -12,6 +12,8 @@
  * - Serving page k: verify, then load ONLY those ids under every current eligibility filter and masking rule, and
  *   return survivors in snapshot order (orderSurvivors). Inactive/hidden/deleted/no-longer-matching ids drop out;
  *   nothing new enters; no member moves, whatever happened to its score, verified flag or dates since page 1.
+ *   Only membership and order are frozen: the score a card shows is computed by the route from the row as served
+ *   (with its scoreRevision), so it can differ from the score the member was ranked by on page 1.
  * - Rejected safely (no offset fallback): malformed, oversized, forged or other-binding (indistinguishable on purpose),
  *   expired, future-dated, wrong page size, out-of-range page.
  *
