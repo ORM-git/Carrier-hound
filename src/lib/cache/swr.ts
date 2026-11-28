@@ -12,6 +12,8 @@
  * - `isSwrStale` reports cache age so pages can revalidate on tab-visible.
  */
 
+import { recordCacheOutcome } from "./cacheStats";
+
 interface CacheEntry<T> {
   data: T;
   ts: number;
@@ -44,11 +46,15 @@ export async function swrFetch<T>(
 ): Promise<T> {
   const hit = store.get(key) as CacheEntry<T> | undefined;
   if (hit && Date.now() - hit.ts < ttlMs) {
+    recordCacheOutcome("swr", "hit");
     return hit.data;
   }
 
   let pending = inflight.get(key) as Promise<T> | undefined;
-  if (!pending) {
+  if (pending) {
+    recordCacheOutcome("swr", "dedupe");
+  } else {
+    recordCacheOutcome("swr", "miss");
     pending = fetcher()
       .then((data) => {
         // Invalidation detaches an old flight; only its current replacement
