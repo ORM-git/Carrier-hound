@@ -87,7 +87,7 @@ def plan_boards(
     for sid in ids:
         nxt = _parse(boards.get(sid, {}).get("next_eligible_at"))
         if nxt is not None and nxt > now:
-            deferred.append({"source": sid, "reason": boards[sid].get("last_reason") or "cooldown", "next_eligible_at": _iso(nxt)})
+            deferred.append({"source": sid, "reason": f"persisted cooldown: {boards[sid].get('last_reason') or 'cooldown'}", "next_eligible_at": _iso(nxt)})
         else:
             eligible.append(sid)
     eligible.sort(key=lambda sid: (boards.get(sid, {}).get("last_attempt_at") or "", sid))

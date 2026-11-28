@@ -732,7 +732,9 @@ COMPANY_ALIASES: dict[str, tuple[str, str, str | None]] = {
     "datadog": ("Datadog", "MNC_BIGTECH", "datadoghq.com"),
     "cloudflare": ("Cloudflare", "MNC_BIGTECH", "cloudflare.com"),
     "palantir": ("Palantir Technologies", "MNC_BIGTECH", "palantir.com"),
+    "palantirtechnologies": ("Palantir Technologies", "MNC_BIGTECH", "palantir.com"),
     "bosch": ("Bosch Group", "MNC_BIGTECH", "bosch.com"),
+    "boschgroup": ("Bosch Group", "MNC_BIGTECH", "bosch.com"),
     "stripe": ("Stripe", "HIGH_PRODUCT_YC", "stripe.com"),
     "openai": ("OpenAI", "HIGH_PRODUCT_YC", "openai.com"),
     "anthropic": ("Anthropic", "HIGH_PRODUCT_YC", "anthropic.com"),
@@ -775,7 +777,8 @@ _IT_SERVICE_PATTERN_RE = re.compile(
 
 def normalize_company_alias(company_name: str | None) -> tuple[str, str | None, str | None]:
     """
-    Normalizes company name aliases.
+    Normalizes exact company aliases and known legal-suffix variants.
+    Never infer identity, category or domain from an arbitrary name prefix.
     Returns (canonical_company_name, matched_category_or_None, canonical_domain_or_None).
     """
     raw = (company_name or "Unknown").strip()
@@ -787,10 +790,6 @@ def normalize_company_alias(company_name: str | None) -> tuple[str, str | None, 
     raw_token = re.sub(r"[^a-z0-9]", "", raw.lower())
     if raw_token in COMPANY_ALIASES:
         return COMPANY_ALIASES[raw_token]
-
-    for alias_key, (canon_name, cat, dom) in COMPANY_ALIASES.items():
-        if len(alias_key) >= 5 and token.startswith(alias_key):
-            return canon_name, cat, dom
 
     return (stripped or raw), None, None
 

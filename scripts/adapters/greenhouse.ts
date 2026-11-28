@@ -70,6 +70,7 @@ export class GreenhouseAdapter implements SourceAdapter {
         let salaryMax: number | null = null;
         let currency: string | undefined = undefined;
         let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+        let salaryPeriodStated = false;
 
         const validRange = Array.isArray(j.pay_input_ranges)
           ? j.pay_input_ranges.find(
@@ -109,6 +110,7 @@ export class GreenhouseAdapter implements SourceAdapter {
           const context = `${validRange.title || ''} ${validRange.blurb || ''}`;
           if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(context)) {
             salaryPeriod = 'hourly';
+            salaryPeriodStated = true; // the pay range's own title/blurb says hour: source salary text
           } else {
             salaryPeriod = undefined;
           }
@@ -127,6 +129,7 @@ export class GreenhouseAdapter implements SourceAdapter {
             salaryMax = fallback.salary_max;
             currency = fallback.currency;
             salaryPeriod = fallback.salary_period;
+            salaryPeriodStated = fallback.salary_period_stated;
           }
         }
 
@@ -158,6 +161,7 @@ export class GreenhouseAdapter implements SourceAdapter {
           salary_max: salaryMax,
           currency: (salaryMin != null || salaryMax != null) ? currency : undefined,
           salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
+          salary_period_stated: (salaryMin != null || salaryMax != null) && salaryPeriodStated,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,
