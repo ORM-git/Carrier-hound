@@ -178,9 +178,56 @@ describe("row 72: the Pro batch unlock is lean on the wire (feed) and still full
       expect(j.description).toBe("");
       expect(j.lean).toBe(true);
       expect(j.experienceBuckets).toContain("5+ Years");
-      expect(j.descriptionSkills).toEqual(expect.arrayContaining(["Kotlin"]));
+      expect(j.evidencedSkills).toEqual(expect.arrayContaining(["Kotlin"]));
+      expect(j.skills).toEqual([]);   // the unlock merge must not put the raw skills back on a lean row
+      expect(Array.isArray(j.top_keywords) && j.top_keywords.length > 0).toBe(true);
       expect(j.applyUrl).toBeTruthy();
       expect(typeof j.scoreRevision).toBe("string");
+    }
+  });
+
+  it("an older server that still sends full rows (no lean flag): the client derives the evidence, drops description AND raw skills, keeps the server keywords", async () => {
+    const inner = proResponder;
+    proResponder = async (req) => {
+      const sent = JSON.parse(await req.clone().text()); delete sent.lean;
+      return inner(new Request(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(sent) }));
+    };
+    const { jobs } = await forYou();
+    for (const j of jobs) {
+      expect(j.lean).toBe(true);
+      expect(j.description).toBe("");
+      expect(j.skills).toEqual([]);
+      expect(j.evidencedSkills).toEqual(expect.arrayContaining(["Kotlin"]));
+      expect(Array.isArray(j.top_keywords) && j.top_keywords.length > 0).toBe(true);
+    }
+  });
+
+  it("the REAL previously deployed lean DTO (lean+buckets+descriptionSkills+RAW skills, no evidencedSkills): evidence derived before the raw skills are dropped", async () => {
+    const { extractSkillsFromJob, extractDescriptionSkills } = await import("@/lib/matcher/scoring");
+    const inner = proResponder;
+    let sentDto: any[] = [];
+    proResponder = async (req) => {
+      const res = await inner(req);
+      const body = await res.clone().json();
+      body.jobs = body.jobs.map((j: any) => {
+        const row = db.jobs.find((d) => d.id === j.id);
+        const { evidencedSkills, ...rest } = j; void evidencedSkills;
+        return { ...rest, skills: row?.skills || [], descriptionSkills: extractDescriptionSkills(LONG, row?.category) };
+      });
+      sentDto = body.jobs;
+      return new Response(JSON.stringify(body), { status: res.status, headers: res.headers });
+    };
+    const { jobs } = await forYou();
+    expect(sentDto.length).toBeGreaterThan(0);
+    for (const dto of sentDto) { expect(dto.lean).toBe(true); expect(dto.evidencedSkills).toBeUndefined(); expect(dto.descriptionSkills.length).toBeGreaterThan(0); }
+    for (const j of jobs) {
+      const row = db.jobs.find((d) => d.id === j.id);
+      expect(j.lean).toBe(true);
+      expect(j.skills).toEqual([]);                                  // raw skills never restored on a lean row
+      expect(j.description).toBe("");
+      // exact old client evidence: raw skills + description + title, same order and case
+      expect(j.evidencedSkills).toEqual(extractSkillsFromJob({ title: j.title, description: LONG, skills: row?.skills || [], category: j.category } as any));
+      expect(j.evidencedSkills).toEqual(expect.arrayContaining(["Kotlin"]));
     }
   });
 
@@ -193,5 +240,58 @@ describe("row 72: the Pro batch unlock is lean on the wire (feed) and still full
     const body = await res.json();
     expect(body.jobs[0].description).toBe(LONG);
     expect(body.jobs[0].lean).toBeUndefined();
+  });
+});
+
+describe("row 72: the previously deployed lean DTO (raw skills + descriptionSkills, no evidencedSkills) through EVERY service ingress", () => {
+  const DESC_ONLY = ["Kotlin", "Android"];
+  const oldLean = (id: string, skills: string[]) => ({
+    id, title: "Mobile Engineer", company: "Acme", category: "engineering", description: "", lean: true,
+    experienceBuckets: ["3-5 Years"], skills, descriptionSkills: DESC_ONLY, role_category: "SDE", top_keywords: ["Kotlin"],
+  });
+  const expected = (skills: string[]) => async () => {
+    const { extractSkillsFromJob } = await import("@/lib/matcher/scoring");
+    return extractSkillsFromJob({ title: "Mobile Engineer", description: "", skills: [...skills, ...DESC_ONLY], category: "engineering" } as any);
+  };
+  const serve = (path: string, body: any) => {
+    globalThis.fetch = vi.fn(async (input: any) => {
+      if (String(input).startsWith(`http://localhost${path}`)) return new Response(JSON.stringify(body), { status: 200 });
+      throw new Error(`unexpected fetch ${String(input)}`);
+    }) as any;
+  };
+  const check = async (jobs: LiveJob[], skills: string[]) => {
+    const want = await expected(skills)();
+    expect(want).toEqual(expect.arrayContaining(["Kotlin", "Android", ...skills]));
+    for (const j of jobs) {
+      expect(j.lean).toBe(true);
+      expect(j.evidencedSkills).toEqual(want);        // exact old order and case: raw skills, description skills, title
+      expect(j.skills).toEqual([]);                   // raw skills dropped only AFTER the evidence was derived
+      expect((j as any).descriptionSkills).toBeUndefined();
+      expect(j.description).toBe("");
+    }
+  };
+  it("GET /api/jobs/recommended (no resume)", async () => {
+    serve("/api/jobs/recommended", { jobs: [oldLean("r1", ["Jetpack Compose"]), oldLean("r2", [])], totalCount: 2 });
+    const { jobs } = await getLiveJobs({ isPro: true, sortBy: "match", page: 1, pageSize: 25, baseUrl: "http://localhost", preferences: { roles: ["Mobile Engineer"] } as any });
+    expect(jobs.length).toBe(2);
+    await check(jobs.slice(0, 1), ["Jetpack Compose"]); await check(jobs.slice(1), []);
+  });
+  it("GET /api/jobs/search", async () => {
+    serve("/api/jobs/search", { jobs: [oldLean("s1", ["Jetpack Compose"])], totalCount: 1, hasNextPage: false });
+    const { jobs } = await getLiveJobs({ isPro: true, sortBy: "newest", search: "kotlin", page: 1, pageSize: 25, baseUrl: "http://localhost" });
+    expect(jobs.length).toBe(1);
+    await check(jobs, ["Jetpack Compose"]);
+  });
+  it("new-contract rows (evidencedSkills present) and non-lean rows pass through untouched; negative control: without the normalizer the old DTO loses the description evidence", async () => {
+    const fresh = { ...oldLean("n1", []), skills: [], descriptionSkills: undefined, evidencedSkills: ["Zig"] };
+    const full = { id: "f1", title: "Mobile Engineer", category: "engineering", description: "Full text row", skills: ["Kotlin"] };
+    serve("/api/jobs/search", { jobs: [fresh, full], totalCount: 2 });
+    const { jobs } = await getLiveJobs({ isPro: true, sortBy: "newest", search: "kotlin", page: 1, pageSize: 25, baseUrl: "http://localhost" });
+    expect(jobs[0].evidencedSkills).toEqual(["Zig"]);
+    expect(jobs[1]).toMatchObject({ skills: ["Kotlin"], description: "Full text row" });
+    expect((jobs[1] as any).evidencedSkills).toBeUndefined();
+    const { extractSkillsFromJob } = await import("@/lib/matcher/scoring");
+    const bare = extractSkillsFromJob({ ...oldLean("x", ["Jetpack Compose"]), lean: true } as any);
+    expect(bare).not.toEqual(expect.arrayContaining(["Kotlin"]));   // the extractor alone ignores descriptionSkills: the normalizer is what preserves it
   });
 });
