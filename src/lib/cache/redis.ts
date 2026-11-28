@@ -18,6 +18,8 @@
  * See docs/managed-redis.md for the owner activation checklist.
  */
 
+import { recordCacheOutcome } from "./cacheStats";
+
 export interface RedisAdapter {
   /** Returns null on miss, on disabled adapter, or on any failure. */
   get(key: string): Promise<string | null>;
@@ -49,7 +51,7 @@ export interface RedisOptions {
 }
 
 class NoopRedis implements RedisAdapter {
-  async get(): Promise<string | null> { return null; }
+  async get(): Promise<string | null> { recordCacheOutcome("redis", "noop"); return null; }
   async set(): Promise<boolean> { return false; }
   async del(): Promise<boolean> { return false; }
   async incr(): Promise<number | null> { return null; }
@@ -71,7 +73,8 @@ class UpstashRestRedis implements RedisAdapter {
 
   isEnabled(): boolean { return true; }
 
-  private async call(args: Array<string | number>): Promise<unknown> {
+  // Per-call outcome (no shared instance state): concurrent calls on one adapter cannot see each other's failure.
+  private async callOutcome(args: Array<string | number>): Promise<{ result: unknown; failed: boolean }> {
     try {
       const path = args.map((a) => encodeURIComponent(String(a))).join("/");
       const res = await this.fetchImpl(`${this.base}/${path}`, {
@@ -81,16 +84,23 @@ class UpstashRestRedis implements RedisAdapter {
       if (!res.ok) throw new Error(`redis HTTP ${res.status}`);
       const body = (await res.json()) as { result?: unknown; error?: string };
       if (body.error) throw new Error(`redis error: ${body.error}`);
-      return body.result ?? null;
+      return { result: body.result ?? null, failed: false };
     } catch (err) {
       notifyError(this.onError, err);
-      return null;
+      return { result: null, failed: true };
     }
   }
 
+  private async call(args: Array<string | number>): Promise<unknown> {
+    return (await this.callOutcome(args)).result;
+  }
+
   async get(key: string): Promise<string | null> {
-    const r = await this.call(["GET", key]);
-    return typeof r === "string" ? r : null;
+    const { result: r, failed } = await this.callOutcome(["GET", key]);
+    // A failed call and a plain miss both return null; the error hook already counted the failure.
+    if (typeof r === "string") { recordCacheOutcome("redis", "hit"); return r; }
+    recordCacheOutcome("redis", failed ? "error" : "miss");
+    return null;
   }
 
   async set(key: string, value: string, opts?: { exSeconds?: number }): Promise<boolean> {
