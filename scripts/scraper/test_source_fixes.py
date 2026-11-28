@@ -25,12 +25,13 @@ class TestSourceFixes(unittest.TestCase):
         """Test-only isolation for the Workday tenant spacing: no real 60s waits, no state leaking in or out."""
         from scripts.scraper import fetchers
 
-        saved_cooldown = fetchers._WORKDAY_COOLDOWN_UNTIL
+        saved_cooldown = dict(fetchers._WORKDAY_COOLDOWN_UNTIL)
         saved_last_start = fetchers._WORKDAY_LAST_TENANT_START
         saved_tenant_next = dict(fetchers._WORKDAY_TENANT_NEXT)
 
         def _restore_workday_state() -> None:
-            fetchers._WORKDAY_COOLDOWN_UNTIL = saved_cooldown
+            fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
+            fetchers._WORKDAY_COOLDOWN_UNTIL.update(saved_cooldown)
             fetchers._WORKDAY_LAST_TENANT_START = saved_last_start
             fetchers._WORKDAY_TENANT_NEXT.clear()
             fetchers._WORKDAY_TENANT_NEXT.update(saved_tenant_next)
@@ -44,7 +45,7 @@ class TestSourceFixes(unittest.TestCase):
         env_patch.start()
         self.addCleanup(env_patch.stop)
 
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         fetchers._WORKDAY_TENANT_NEXT.clear()
         fetchers._WORKDAY_LAST_TENANT_START = 0.0
 
@@ -256,14 +257,14 @@ class _Sleeps:
 
 
 class TestWorkdaySharedBudget(unittest.TestCase):
-    """One transport (httpx via the limiter), one bounded budget per page, Retry-After respected and shared."""
+    """One transport (httpx via the limiter), one bounded budget per page, Retry-After respected per tenant."""
 
     URL_HOST = "t1.wd5.myworkdayjobs.com"
 
     def setUp(self) -> None:
         from scripts.scraper import fetchers
         self.fetchers = fetchers
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         fetchers._WORKDAY_TENANT_NEXT.clear()
         fetchers._WORKDAY_LAST_TENANT_START = 0.0
         self.clock = _Sleeps()
@@ -296,14 +297,19 @@ class TestWorkdaySharedBudget(unittest.TestCase):
                 patch.object(self.fetchers.time, "monotonic", self.clock.monotonic):
             return asyncio.run(_go())
 
-    def test_long_retry_after_fails_fast_and_cools_down_every_tenant(self) -> None:
+    def test_long_retry_after_fails_fast_and_cools_down_only_that_tenant(self) -> None:
         import httpx
-        seeds = [{"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}, {"slug": "b", "tenant": "t2", "site": "s2", "name": "B"}]
-        out = self._run(lambda n: httpx.Response(429, headers={"Retry-After": "120"}), seeds)
+        seeds = [{"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}, {"slug": "b", "tenant": "t2", "site": "s2", "name": "B"},
+                 {"slug": "a2", "tenant": "t1", "site": "s1", "name": "A"}]
+        ok = httpx.Response(200, json={"jobPostings": [{"title": "Engineer", "externalPath": "/job/1", "bulletFields": ["R1"]}]})
+        out = self._run(lambda n: httpx.Response(429, headers={"Retry-After": "120"}) if n == 1 else ok, seeds)
         self.assertIsInstance(out[0], self.fetchers.WorkdayRateLimited)
-        self.assertIsInstance(out[1], self.fetchers.WorkdayRateLimited)
-        self.assertEqual(len(self.requests), 1, "after a 120s Retry-After no further Workday request may be sent")
-        self.assertEqual(self.limiter_calls, [f"https://{self.URL_HOST}/wday/cxs/t1/s1/jobs"])
+        self.assertEqual(len(out[1]), 1, "t2 is not paused by t1's Retry-After")
+        self.assertIsInstance(out[2], self.fetchers.WorkdayRateLimited, "t1 stays cooled down for the rest of its 120s")
+        self.assertEqual(self.requests, [self.URL_HOST, "t2.wd5.myworkdayjobs.com"], "t1 was not requested again")
+        self.assertEqual(self.limiter_calls, [f"https://{self.URL_HOST}/wday/cxs/t1/s1/jobs",
+                                              "https://t2.wd5.myworkdayjobs.com/wday/cxs/t2/s2/jobs"])
+        self.assertEqual(sorted(self.fetchers._WORKDAY_COOLDOWN_UNTIL), [self.URL_HOST])
         self.assertTrue(all(s <= 60.0 for s in self.clock.calls), self.clock.calls)
 
     def test_short_retry_after_is_waited_out_within_the_page_budget(self) -> None:
@@ -369,7 +375,7 @@ class TestWorkdaySharedBudget(unittest.TestCase):
 
     def test_inherited_cooldown_counts_against_the_page_deadline(self) -> None:
         import httpx
-        self.fetchers._WORKDAY_COOLDOWN_UNTIL = 25.0  # left by an earlier tenant's 429
+        self.fetchers._WORKDAY_COOLDOWN_UNTIL[self.URL_HOST] = 25.0  # left by this tenant's earlier 429
         seed = {"slug": "a", "tenant": "t1", "site": "s1", "name": "A"}
 
         def handler(n):
@@ -419,7 +425,7 @@ class TestMixedSuccessZeroWriteVeto(unittest.TestCase):
         import httpx
         from scripts.scraper import fetchers, rate_limiter, run_ingestion
 
-        fetchers._WORKDAY_COOLDOWN_UNTIL = 0.0
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         fetchers._WORKDAY_TENANT_NEXT.clear()
         fetchers._WORKDAY_LAST_TENANT_START = 0.0
         env = {
