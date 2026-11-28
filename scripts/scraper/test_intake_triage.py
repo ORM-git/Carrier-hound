@@ -456,3 +456,125 @@ def test_bool_row_refs_in_review_groups_are_not_rows():
     rep["review_groups"][0]["source_rows"] = [5, 16, True, "7"]
     g = next(g for g in triage(rep)["references"]["possible_duplicates"] if g["label"] == "similar_name:gamma")
     assert g["source_rows"] == [5, 16] and g["invalid_row_refs"] == 2
+
+
+# ---- field-aware redaction: ?/# token tails and ;path-parameters ---------------------------------------------------
+
+CANARY = "CANARY"  # every planted value contains it; matched case-insensitively (group IDs are lower-cased)
+
+
+def _canaried():
+    """One synthetic canary per affected field and URL form (all hosts .example)."""
+    rep = load()
+    r = rep["records"]
+    r[0]["company"] = "Acme a#CANARYco1"                                    # bare # tail in a name
+    r[2]["company"] = "Beta abc?CANARYco2"                                  # bare ? tail in a name
+    r[2]["reason"] = ("see https://beta.example/p;jsessionid=CANARYr1?q=1 and beta.example/q;sid=CANARYr2 "
+                      "tok?CANARYr3 and https://beta.example/a;x=CANARYr4/b;y=CANARYr5/c")
+    r[4]["ats_candidate"] = "workable#CANARYats"                            # vendor key and group label
+    r[4]["normalized_url"] = "https://apply.workable.example/d;x=CANARYnu1/e;y=CANARYnu2?q=1#f"
+    r[12]["original_url"] = "https://mu.example/m;jsessionid=CANARYou?x=1"  # normalized_url empty -> original used
+    r[12]["normalized_url"] = ""
+    r[11]["status"] = "odd?CANARYst"                                        # unrecognized status, echoed in reason
+    r[7]["candidate_boards"] = ['ashby:{"token": "eta#CANARYcb1"}', "boards.example/b;sid=CANARYcb2",
+                                "https://x.example/c;s=CANARYcb3?q=1"]
+    r[7]["reason"] = "conflict abc?CANARYr6"
+    g = rep["review_groups"][0]
+    g["group"] = "similar_name:gamma?CANARYgl"
+    g["kind"] = "similar_name#CANARYgk"                                    # kind feeds the group ID
+    g["urls"] = ["https://gamma.example/a;jsessionid=CANARYgu1?q=1", "https://gamma.example/b;x=CANARYgu2"]
+    return rep
+
+
+def _written(tmp_path, rep, sub="o"):
+    p = tmp_path / f"{sub}.json"
+    p.write_text(json.dumps(rep), encoding="utf-8")
+    it.run(p, tmp_path / sub)
+    return [(tmp_path / sub / n).read_text(encoding="utf-8") for n in ("intake_triage.json", "intake_triage.md")]
+
+
+def test_no_canary_survives_in_json_or_markdown(tmp_path):
+    for text in _written(tmp_path, _canaried()):
+        assert CANARY.lower() not in text.lower(), text[text.lower().find("canary") - 80:][:200]
+    js = _written(tmp_path, _canaried(), "again")[0]
+    # Redacted, not deleted: the URL and the field values are still there in display form.
+    for kept in ("https://beta.example/p", "beta.example/q", "https://beta.example/a/b/c", "https://apply.workable.example/d/e",
+                 "https://mu.example/m", "https://gamma.example/a", "https://gamma.example/b", '"Acme a"', '"Beta abc"',
+                 '"vendor": "workable"', "boards.example/b", "https://x.example/c", "conflict abc", "status 'odd' not known"):
+        assert kept in js, kept
+
+
+def test_canary_output_is_deterministic(tmp_path):
+    a = _written(tmp_path, _canaried(), "a")
+    b = _written(tmp_path, _canaried(), "b")
+    assert a == b
+    shuffled = _canaried()
+    random.Random(11).shuffle(shuffled["records"])
+    drop_sha = lambda s: {k: v for k, v in json.loads(s).items() if k != "input_sha256"}  # noqa: E731
+    assert drop_sha(_written(tmp_path, shuffled, "c")[0]) == drop_sha(a[0])               # input order does not matter
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("abc?CANARY", "abc"), ("a#CANARY", "a"), ("?CANARY", ""), ("C#Labs", "C"),     # text on both sides / leading ?
+    ("C# Labs", "C# Labs"), ("F# Corp", "F# Corp"), ("What? Inc", "What? Inc"),       # delimiter ends the token
+    ("Why?! Co", "Why?! Co"), ("AT&T #1 Partner", "AT&T #1 Partner"), ("## Heading", "## Heading"),  # punctuation / leading #
+    ("calls boards-api.greenhouse.io; observed", "calls boards-api.greenhouse.io; observed"),       # sentence ";" kept
+    ("x b.example/q;sid=CANARY y", "x b.example/q y"), ("c.example;sid=CANARY", "c.example"),
+    ("https://u:p@a.example/a;x=C1/b;y=C2/c?q=1#f", "https://a.example/a/b/c"),
+])
+def test_token_boundary_is_explicit(raw, expected):
+    assert it.redact_text(raw) == expected
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://a.example/p;jsessionid=CANARY", "https://a.example/p"),
+    ("https://a.example/p;jsessionid=CANARY?q=1#f", "https://a.example/p"),
+    ("https://user:pw@a.example/a;x=CANARY/b;y=CANARY/c", "https://a.example/a/b/c"),
+    ("https://a.example/careers/", "https://a.example/careers/"),
+])
+def test_redact_url_drops_path_params_on_every_segment(url, expected):
+    assert it.redact_url(url) == expected
+
+
+def test_names_with_hash_or_question_survive_next_to_canaries(tmp_path):
+    rep = _canaried()
+    rep["records"][10]["company"] = "C# Labs"
+    rep["records"][13]["company"] = "F# Corp"
+    rep["records"][14]["company"] = "What? Inc"
+    js, md = _written(tmp_path, rep)
+    assert '"C# Labs"' in js and '"F# Corp"' in js and '"What? Inc"' in js
+    assert CANARY.lower() not in (js + md).lower()
+
+
+def test_group_ids_stay_distinct_when_kinds_redact_alike(tmp_path):
+    rep = _canaried()
+    rep["review_groups"].append({**rep["review_groups"][0], "group": "other?CANARYx", "kind": "similar_name#CANARYgk2"})
+    ids = [g["id"] for g in it.triage(rep, it.connector_evidence(it.DEFAULT_FETCHERS))["references"]["possible_duplicates"]
+           if g["kind"] == "similar_name"]
+    assert len(ids) == 2 and len(set(ids)) == 2 and ids[1] == f"{ids[0]}-2"          # existing collision suffix
+    assert all(CANARY.lower() not in i for i in ids)
+
+
+def _base_strip_query_tail(m):  # the a5e4c76b rule, kept only as an in-memory negative control
+    tok = m.group(0)
+    i = min((tok.find(c) for c in "?#" if c in tok), default=-1)
+    if i < 0:
+        return tok
+    head, tail = tok[:i], tok[i:]
+    return head if ("." in head or "/" in head or "=" in tail) else tok
+
+
+@pytest.mark.parametrize("disable,survivors", [
+    ("token_tail", ("canaryco1", "canaryco2", "canaryr3", "canaryr6", "canaryst", "canaryats", "canarycb1", "canarygl", "canarygk")),
+    ("path_params", ("canaryr1", "canaryr2", "canaryr4", "canarynu1", "canaryou", "canarycb2", "canarycb3", "canarygu1", "canarygu2")),
+])
+def test_negative_controls_each_fix_is_load_bearing(tmp_path, monkeypatch, disable, survivors):
+    src = Path(it.__file__).read_bytes()
+    if disable == "token_tail":
+        monkeypatch.setattr(it, "_strip_query_tail", _base_strip_query_tail)
+    else:
+        monkeypatch.setattr(it, "_PATH_PARAMS", it.re.compile(r"(?!)"))      # never matches
+    text = "\n".join(_written(tmp_path, _canaried())).lower()
+    leaked = [c for c in survivors if c in text]
+    assert leaked == list(survivors), leaked                                  # every planted value of that kind leaks
+    assert Path(it.__file__).read_bytes() == src                              # in-memory only; source bytes untouched

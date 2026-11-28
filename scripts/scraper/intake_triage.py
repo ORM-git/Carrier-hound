@@ -75,26 +75,39 @@ def split_url(url: object) -> tuple[str, int | None, str] | None:
     return host, (None if port in (None, 80, 443) else port), parts.path
 
 
+_PATH_PARAMS = re.compile(r";[^/]+")  # ;jsessionid=... on any path segment, up to the next "/"; a bare trailing ";" is punctuation
+_DOTTED_HOST = re.compile(r"^[^\s/;?#]*\.[a-z]{2,}(:\d+)?(?=[/;]|$)", re.IGNORECASE)
+
+
 def redact_url(url: object) -> str | None:
-    """Display form: no credentials, query or fragment."""
+    """Display form: no credentials, query, fragment or ;path-parameters (on any segment)."""
     if url is None or (isinstance(url, str) and not url.strip()):
         return None
     parts = split_url(url)
     if not parts:
         return "<unparseable>"
     host, port, path = parts
-    return f"https://{host}{f':{port}' if port else ''}{path}"
+    return f"https://{host}{f':{port}' if port else ''}{_PATH_PARAMS.sub('', path)}"
 
 
 def _strip_query_tail(m: re.Match) -> str:
+    """One whitespace/quote/pipe/comma-delimited token of free text.
+
+    Boundary for "?" and "#" (first one in the token), stated so names are not damaged:
+      - dropped with everything after it when the token is URL-like ("." or "/" before it), the tail is query-like
+        ("=" in it), or the delimiter is directly followed by a word character [A-Za-z0-9_%-] and either has text
+        before it ("abc?CANARY", "a#CANARY", "C#Labs" -> "C") or is a leading "?" ("?CANARY");
+      - kept when it ends the token or is followed only by punctuation ("C#", "F#", "What?", "Why?!"), or is a leading
+        "#" ("#1", "## Heading").
+    Scheme-less URL-like tokens (dotted host first) also lose ";params" on every segment."""
     tok = m.group(0)
     i = min((tok.find(c) for c in "?#" if c in tok), default=-1)
-    if i < 0:
-        return tok
-    head, tail = tok[:i], tok[i:]
-    # URL-like (host.tld/path before it) or query-like (key=value after it): drop the tail.
-    # Plain words keep it: "C# Labs", "What? Inc", Markdown "## Heading".
-    return head if ("." in head or "/" in head or "=" in tail) else tok
+    if i >= 0:
+        head, tail = tok[:i], tok[i:]
+        word_after = re.match(r"[\w%-]", tail[1:2]) is not None
+        if "." in head or "/" in head or "=" in tail or (word_after and (head or tail[0] == "?")):
+            tok = head
+    return _PATH_PARAMS.sub("", tok) if _DOTTED_HOST.match(tok) else tok
 
 
 def redact_text(text: object) -> str:
