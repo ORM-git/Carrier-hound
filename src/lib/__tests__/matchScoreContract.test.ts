@@ -174,7 +174,7 @@ describe("a changed input updates feed card, detail header and Match Insights to
     expect(page).toContain("fullJob.scoreRevision === job.scoreRevision");
     expect(page).toContain("job={detailJob ?? selectedJob}");
     expect(page).not.toMatch(/job\.matchScore = (matchScore|score);/);
-    expect(detail).toContain("const matchScore = displayMatchScore(job, diagnostics);");
+    expect(detail).toContain("const matchScore = isUnlocked ? displayMatchScore(job, diagnostics) : freeServerScore;");
     expect(panel).toContain("const matchScore = displayMatchScore(job, diagnostics);");
     for (const route of ["recommended", "search", "pro"]) {
       expect(readFileSync(`src/app/api/jobs/${route}/route.ts`, "utf8")).toContain("scoreRevision: scoreInputRevision(");
