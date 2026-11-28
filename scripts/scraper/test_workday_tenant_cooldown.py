@@ -19,13 +19,16 @@ def postings(start: int, n: int) -> list[dict]:
     return [dict(POSTING, bulletFields=[f"R{i}"], externalPath=f"/job/x/R{i}") for i in range(start, start + n)]
 
 
-def pages(*sizes: int, total: int | None = None):
-    """Handler serving consecutive pages of the given sizes (unique ids), then empty pages."""
+def pages(*sizes: int, total: object = None, then=None):
+    """Handler serving consecutive pages of the given sizes (unique ids); after them `then` (default: empty pages).
+    total=None omits the field; any other value (even malformed) is sent on page 1, and 0 on later pages."""
     served = [0]
 
-    def handle(_req):
+    def handle(req):
         i = served[0]
         served[0] += 1
+        if i >= len(sizes) and then is not None:
+            return then(req)
         size = sizes[i] if i < len(sizes) else 0
         body = {"jobPostings": postings(sum(sizes[:i]), size)}
         if total is not None:
@@ -55,11 +58,21 @@ class TenantIsolationTests(Base):
         self.assertIsNone(state["workday:a"]["last_success_at"])
         self.assertTrue(state["workday:b"]["last_success_at"] and state["workday:c"]["last_success_at"])
 
-    def test_one_blocked_tenant_resets_the_streak(self):
+    def test_two_blocked_tenants_do_not_stop_a_healthy_third(self):
         self.seed_state_all_ok()
-        report, _ = self.ingest({"a": LONG_429, "b": ok_page, "c": LONG_429})
+        report, writer = self.ingest({"a": LONG_429, "b": LONG_429, "c": ok_page})
         self.assertEqual(self.requests, ["a", "b", "c"])
         self.assertEqual(report["deferred_sources"], [])
+        self.assertEqual([f["source"] for f in report["failed_sources"]], ["workday:a", "workday:b"])
+        self.assertEqual(by_source(report)["workday:c"]["status"], "ok")
+        sent = writer.sync_jobs_set_diff.await_args.args[1]
+        self.assertEqual({j["source_id"] for j in sent}, {"workday:tc:Ext"})
+        state = self.saved()
+        for sid in ("workday:a", "workday:b"):
+            self.assertEqual(state[sid]["last_reason"], "rate_limited")
+            self.assertIsNotNone(state[sid]["next_eligible_at"], "each blocked tenant keeps its own persisted cooldown")
+        self.assertIsNotNone(state["workday:c"]["last_success_at"])
+        self.assertNotEqual(state["workday:c"].get("last_reason"), "rate_limited", "c inherits no cooldown from a or b")
 
     def test_recovery_after_cooldown(self):
         self.seed_state_all_ok()
@@ -103,46 +116,64 @@ class TenantIsolationTests(Base):
 
 
 class PaginationTests(Base):
-    def go(self, handler, max_pages):
-        metrics = fetchers.new_workday_metrics()
+    def go(self, handler, max_pages, *, with_metrics=True):
+        metrics = fetchers.new_workday_metrics() if with_metrics else None
+        sent = [0]
+
+        def counting(req):
+            sent[0] += 1
+            return handler(req)
 
         async def no_sleep(_s):
             return None
 
         async def run():
-            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(counting)) as client:
                 return await fetchers.fetch_workday_cxs(client, rate_limiter.PerHostRateLimiter(1000.0, 1000.0), SEED,
                                                         max_pages=max_pages, polite_delay=0.0, metrics=metrics)
         with patch.object(fetchers.asyncio, "sleep", no_sleep):
             try:
-                return asyncio.run(run()), metrics
+                out = asyncio.run(run())
             except Exception as exc:  # noqa: BLE001
-                return exc, metrics
+                out = exc
+        return out, metrics, sent[0]
 
-    def test_page_cap_reached_is_not_complete(self):
-        jobs, m = self.go(pages(20, 20, 5, total=45), max_pages=1)
-        self.assertEqual((len(jobs), m["jobs_fetched"], m["source_total"], m["pagination_complete"]), (20, 20, 45, False))
+    def test_exact_full_page_total_stops_before_an_unneeded_request(self):
+        for with_metrics in (True, False):
+            with self.subTest(with_metrics=with_metrics):
+                fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
+                jobs, m, sent = self.go(pages(20, total=20, then=LONG_429), max_pages=3, with_metrics=with_metrics)
+                self.assertEqual((len(jobs), sent), (20, 1), "a second request would have been a 429")
+                if m is not None:
+                    self.assertEqual((m["source_total"], m["pagination_complete"], m["pages_requested"]), (20, True, 1))
+
+    def test_page_cap_below_total_is_not_complete(self):
+        jobs, m, sent = self.go(pages(20, 20, 5, total=45), max_pages=1)
+        self.assertEqual((len(jobs), sent, m["jobs_fetched"], m["source_total"], m["pagination_complete"]), (20, 1, 20, 45, False))
+        jobs, m, sent = self.go(pages(20, 20, 5, total=45), max_pages=2)
+        self.assertEqual((len(jobs), sent, m["pagination_complete"]), (40, 2, False))
 
     def test_all_pages_fetched_is_complete(self):
-        jobs, m = self.go(pages(20, 20, 5, total=45), max_pages=3)
-        self.assertEqual((len(jobs), m["source_total"], m["pagination_complete"], m["pages_requested"]), (45, 45, True, 3))
+        jobs, m, sent = self.go(pages(20, 20, 5, total=45), max_pages=5)
+        self.assertEqual((len(jobs), sent, m["source_total"], m["pagination_complete"]), (45, 3, 45, True))
         self.assertEqual(len({j["source_job_id"] for j in jobs}), 45, "no duplicate jobs across pages")
 
-    def test_total_reached_on_a_full_page_is_complete_without_total_unknown(self):
-        _, m = self.go(pages(20, total=20), max_pages=1)
-        self.assertEqual((m["source_total"], m["pagination_complete"]), (20, True))
-        _, m = self.go(pages(20), max_pages=1)
-        self.assertEqual((m["source_total"], m["pagination_complete"]), (None, False), "no total, full page: cannot claim complete")
+    def test_untrusted_totals_use_normal_pagination(self):
+        # total=5 is below the first page's 20 jobs: inconsistent, so not trusted either.
+        for bad in ("20", True, False, -1, 20.0, None, 5):
+            with self.subTest(total=bad):
+                jobs, m, sent = self.go(pages(20, 20, total=bad), max_pages=1)
+                self.assertEqual((sent, m["source_total"], m["pagination_complete"]), (1, None, False), "no early completion")
+                jobs, m, sent = self.go(pages(20, 20, total=bad), max_pages=5)
+                self.assertEqual((len(jobs), sent, m["pagination_complete"]), (40, 3, True), "paged on until an empty page")
 
-    def test_failed_later_page_is_not_complete(self):
-        calls = [0]
-
-        def handler(r):
-            calls[0] += 1
-            return pages(20, total=45)(r) if calls[0] == 1 else httpx.Response(500)
-        out, m = self.go(handler, max_pages=3)
+    def test_failed_fetch_is_not_complete(self):
+        out, m, _ = self.go(pages(20, total=45, then=lambda r: httpx.Response(500)), max_pages=3)
         self.assertIsInstance(out, httpx.HTTPStatusError)
         self.assertEqual((m["jobs_fetched"], m["pagination_complete"]), (20, False))
+        out, m, _ = self.go(LONG_429, max_pages=1)
+        self.assertIsInstance(out, fetchers.WorkdayRateLimited)
+        self.assertFalse(m["pagination_complete"])
 
     def test_run_report_carries_total_and_completeness(self):
         self.seed_state_all_ok()

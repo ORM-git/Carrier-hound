@@ -65,21 +65,20 @@ class RunnerMeasureTests(Base):
         self.assertEqual(a["retry_after_seconds_seen"], [90000.0])
         self.assertEqual(a["http_requests"], 1, "long Retry-After ends the board")
 
-    def test_long_429_records_value_and_deferred_boards_get_null_measures_no_failure(self):
+    def test_long_429_records_value_and_later_deferred_boards_get_null_measures(self):
         self.seed_state_all_ok()
         report, _ = self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
         a = by_source(report)["workday:a"]
         self.assertEqual((a["trigger_status"], a["error_class"], a["retry_after_seconds_seen"]), (429, "rate_limited_429", [90000.0]))
         self.assertIsNone(a["jobs_persisted"], "writes were not attempted")
-        deferred = {d["source"]: d for d in report["deferred_sources"]}
-        self.assertEqual(sorted(deferred), ["workday:c"], "b got its own 429; c is stopped by the streak")
+        self.assertEqual(report["deferred_sources"], [], "every tenant is attempted; none is paused by another's 429")
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()  # next run is a new process
+        again, _ = self.ingest({s: ok_page for s in BOARDS})
+        deferred = {d["source"]: d for d in again["deferred_sources"]}
+        self.assertEqual(sorted(deferred), ["workday:a", "workday:b", "workday:c"])
         for d in deferred.values():
             self.assertEqual(d["deferred_reason"], d["reason"])
             self.assertTrue(all(d[k] is None for k in ingest_report.WORKDAY_MEASURES), d)
-        state = self.saved()
-        for sid in deferred:
-            self.assertEqual(state[sid]["consecutive_failures"], 0)
-            self.assertNotIn("last_attempt_at", state[sid])
 
     def test_no_retry_after_header_records_none(self):
         self.seed_state_all_ok()
@@ -98,16 +97,13 @@ class RunnerMeasureTests(Base):
         self.assertNotIn("Retry-After 32s", a["error"])
         self.assertEqual(a["status_counts"], {"429": 5})
 
-    def test_streak_deferral_does_not_attribute_429_to_unrequested_board(self):
+    def test_persisted_deferral_is_not_presented_as_this_run_evidence(self):
         self.seed_state_all_ok()
         report, _ = self.ingest({s: (lambda r: httpx.Response(429, headers={"Retry-After": "90000"})) for s in BOARDS})
-        self.assertEqual(self.requests, ["a", "b"])
-        self.assertEqual([d["source"] for d in report["deferred_sources"]], ["workday:c"])
-        for d in report["deferred_sources"]:
-            self.assertIn("in a row rate-limited", d["reason"])
-            self.assertNotIn("429 this run", d["reason"])
-            self.assertIsNone(d["http_requests"])
-        # Loading this durable deferral in a later run must not present the old event as this-run evidence.
+        self.assertEqual(self.requests, ["a", "b", "c"])
+        self.assertEqual(report["deferred_sources"], [])
+        # Loading a durable deferral in a later run must not present the old event as this-run evidence.
+        fetchers._WORKDAY_COOLDOWN_UNTIL.clear()
         again, _ = self.ingest({s: ok_page for s in BOARDS})
         prior = next(d for d in again["deferred_sources"] if d["source"] == "workday:b")
         self.assertTrue(prior["reason"].startswith("persisted cooldown:"), prior)

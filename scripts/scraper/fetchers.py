@@ -647,7 +647,7 @@ async def fetch_smartrecruiters(
 
 _WORKDAY_LOCK = asyncio.Lock()
 # Per tenant host: a 429/5xx Retry-After pauses only the tenant that received it (waited out or failed fast);
-# other tenants keep their own spacing. run_ingestion stops the run after consecutive rate-limited tenants.
+# other tenants keep their own spacing and are always attempted.
 _WORKDAY_COOLDOWN_UNTIL: dict[str, float] = {}   # tenant host -> monotonic time its cooldown ends
 _WORKDAY_TENANT_NEXT: dict[str, float] = {}   # tenant host -> earliest monotonic time of its next request
 _WORKDAY_LAST_TENANT_START = 0.0
@@ -669,7 +669,6 @@ WORKDAY_TENANT_SPACING_SECONDS = 2.0
 WORKDAY_MAX_RETRIES = 4          # per page: at most 5 requests, all through the per-host limiter
 WORKDAY_MAX_COOLDOWN_SECONDS = 30.0            # a single Retry-After longer than this fails the board at once
 WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS = 60.0    # deadline for all of a page's waiting (cooldown, spacing, backoff)
-WORKDAY_RATE_LIMITED_STREAK_STOP = 2           # this many tenants in a row rate-limited: likely a shared limit, stop the run
 WORKDAY_PAGE_SIZE = 20
 
 
@@ -691,9 +690,10 @@ def new_workday_metrics() -> dict[str, Any]:
     retry_after_seconds_seen: values parsed from a Retry-After header that was present and parseable; the fallback
       delay the code computes when it is missing or unparseable is not recorded.
     elapsed_seconds: set by the caller; wall time of the whole board, not latency (see run_ingestion).
-    source_total: the first page's integer `total`, None when Workday did not report one.
-    pagination_complete: True only when the last page was short/empty or the source total was reached; False when
-      the page cap stopped it or the fetch failed.
+    source_total: the first page's `total` when trustworthy (a nonnegative int, not bool, at least that page's job
+      count), else None.
+    pagination_complete: True only when a page was short/empty or the trusted total was reached; False when the page
+      cap stopped it or the fetch failed.
     """
     return {"request_host": None, "http_requests": 0, "status_counts": {}, "network_errors": 0,
             "retry_after_seconds_seen": [], "pages_requested": 0, "jobs_fetched": 0, "elapsed_seconds": None,
@@ -810,6 +810,8 @@ async def fetch_workday_cxs(
         base_host = f"https://{tenant}.{cluster}.myworkdayjobs.com"
         url = f"{base_host}/wday/cxs/{tenant}/{site}/jobs"
         results: list[dict[str, Any]] = []
+        source_total: int | None = None
+        complete = False
 
         headers = {
             "Accept": "application/json",
@@ -831,12 +833,14 @@ async def fetch_workday_cxs(
                 raise RuntimeError(f"Workday malformed page {page_idx} for {url}: no jobPostings list")  # never success-empty
 
             postings = resp_data["jobPostings"]
-            total = resp_data.get("total")
-            if page_idx == 0 and metrics is not None and isinstance(total, int) and not isinstance(total, bool):
-                metrics["source_total"] = total  # later pages may report 0; only the first is trusted
+            if page_idx == 0:  # later pages may report total 0; only the first is trusted
+                total = resp_data.get("total")
+                if isinstance(total, int) and not isinstance(total, bool) and total >= len(postings):
+                    source_total = total
+                    if metrics is not None:
+                        metrics["source_total"] = total
             if not postings:
-                if metrics is not None:
-                    metrics["pagination_complete"] = True
+                complete = True
                 break
 
             for item in postings:
@@ -868,12 +872,12 @@ async def fetch_workday_cxs(
                 )
             if metrics is not None:
                 metrics["jobs_fetched"] = len(results)
-                src_total = metrics["source_total"]
-                if len(postings) < WORKDAY_PAGE_SIZE or (src_total is not None and offset + len(postings) >= src_total):
-                    metrics["pagination_complete"] = True
-            if len(postings) < WORKDAY_PAGE_SIZE:
+            if len(postings) < WORKDAY_PAGE_SIZE or (source_total is not None and offset + len(postings) >= source_total):
+                complete = True
                 break
 
+        if metrics is not None:
+            metrics["pagination_complete"] = complete  # only reached on success; a raise leaves False
         return results
 
 

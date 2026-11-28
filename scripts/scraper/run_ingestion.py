@@ -337,12 +337,7 @@ async def run_master_ingestion(
             reports: list[dict[str, Any]] = []
             started = time.monotonic()
             per_board_worst = fetchers_mod.get_workday_tenant_spacing_seconds() + fetchers_mod.WORKDAY_MAX_BACKOFF_PER_PAGE_SECONDS
-            rate_limited_streak = 0  # consecutive boards ending in WorkdayRateLimited; any other outcome resets it
             for i, sid in enumerate(wd_chosen):
-                if rate_limited_streak >= fetchers_mod.WORKDAY_RATE_LIMITED_STREAK_STOP:  # likely a cross-tenant limit
-                    reason = f"{rate_limited_streak} Workday boards in a row rate-limited this run; not attempted"
-                    wd_deferred.extend({"source": rest, "reason": reason, "next_eligible_at": None} for rest in wd_chosen[i:])
-                    break
                 if time.monotonic() - started + per_board_worst > wd_lim["run_budget_seconds"]:
                     wd_deferred.extend({"source": rest, "reason": "run budget", "next_eligible_at": None} for rest in wd_chosen[i:])
                     break
@@ -378,7 +373,6 @@ async def run_master_ingestion(
                         reason="rate_limited" if "retry_after" in seen else (rep["error"] or "failed")[:80],
                         retry_after=seen.get("retry_after"),
                     )
-                rate_limited_streak = rate_limited_streak + 1 if "retry_after" in seen else 0
                 reports.append(rep)
             if not dry_run:
                 workday_schedule.save_state(wd_state_path, wd_boards)  # failures/cooldowns persist even if writes fail later
