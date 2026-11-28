@@ -106,7 +106,7 @@ So a new arrival, a rank change, or one capped job dropping out between page N a
 
 ## Blockers (owner decisions before integration)
 
-1. **Signing secret.** A dedicated server-only secret is required. The only existing HMAC key, `COMPANY_GROUP_ID_SECRET`, must not be reused (`docs/security/secrets-rotation-runbook.md:16`). Creating one is an environment change that I may not make.
+1. **Signing secret: name decided, value still to set.** The owner chose `FEED_SESSION_SECRET`. This PR adds it to `.env.example`, adds a row in `docs/security/secrets-rotation-runbook.md`, and adds `FEED_SESSION_SECRET_ENV` in `feedSession.ts`. The value is not set anywhere yet: the owner sets a random 32+ character value, the same in Cloudflare Pages and Netlify, before the integration deploys. Background: The only existing HMAC key, `COMPANY_GROUP_ID_SECRET`, must not be reused (`docs/security/secrets-rotation-runbook.md:16`). Creating one is an environment change that I may not make.
    - Proposal: `FEED_SESSION_SECRET`, at least 32 random characters, the same value in Cloudflare Pages and Netlify, plus a runbook row.
    - Without it the engine fails closed, so integrating before it exists would break page 2+.
 2. **Page-1 payload.** A full session adds about 23.5 KB of continuation tokens to the page-1 response (1000 members at page size 25). That conflicts with the lean-payload work. Options for the owner:

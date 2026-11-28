@@ -19,6 +19,8 @@
 
 import { UUID_REGEX } from "./cursor";
 
+/** Server-only env var holding the continuation HMAC key (>= 32 chars). Never a NEXT_PUBLIC_ name; never shared. */
+export const FEED_SESSION_SECRET_ENV = "FEED_SESSION_SECRET";
 export const FEED_SESSION_VERSION = "fs1";
 /** Upper bound on session membership: the recommended pool size. */
 export const MAX_MEMBERS = 1000;
