@@ -25,7 +25,7 @@ describe("desktop detail layout (CM data)", () => {
     expect(within(row).getByRole("tab", { name: "Company" }).getAttribute("aria-selected")).toBe("false");
     expect(within(row).getByTestId("share-job-button")).toBeTruthy();
     expect(within(row).getByTestId("report-issue-link")).toBeTruthy();
-    expect(within(row).getByText("Original Job Post")).toBeTruthy();
+    expect(within(row).getByText("Linked Job Post")).toBeTruthy();
     const strip = screen.getByRole("region", { name: "Job header" });
     expect(within(strip).queryByTestId("share-job-button")).toBeNull();
     expect(within(strip).getByRole("button", { name: "Back to jobs list" })).toBeTruthy();
