@@ -1,7 +1,8 @@
-# Fresh-database migration replay: diagnostic findings (proposal for review)
+# Fresh-database migration replay: diagnostic findings
 
 Status: diagnostic only. No migration, product code or production DDL was changed, and nothing was applied anywhere.
-Production's applied migration state is unknown; nothing here reads it.
+Production's applied migration state, and whether its `jobs_public` view exists or what it contains, are unknown;
+nothing here reads production, and no statement below is a claim about it.
 Evidence comes from repo files on main `286e2e42` and from `scripts/diagnose-migration-replay.ts`, which replays into an
 in-memory PGlite (Postgres 17 in WASM), not a Supabase project.
 
@@ -12,13 +13,24 @@ npx tsx scripts/diagnose-migration-replay.ts --platform-stubs                 # 
 npx tsx scripts/diagnose-migration-replay.ts --baseline --platform-stubs      # schema.sql baseline, then migrations
 npx tsx scripts/diagnose-migration-replay.ts --baseline --platform-stubs --assume=jobs_public            # psql-style, rest of chain
 npx tsx scripts/diagnose-migration-replay.ts --baseline --platform-stubs --assume=jobs_public --whole-file  # SQL-Editor-style
-npx tsx scripts/test-diagnose-migration-replay.ts                             # 12 checks (not in the required suite)
+npx tsx scripts/test-diagnose-migration-replay.ts                             # 22 checks (not in the required suite)
 ```
 
 The order is sorted filenames, the same as `scripts/lib/schema-dump.ts:41-43` and `docs/dr-runbook.md:123`
 (`ls -1 supabase/migrations/*.sql | sort`). Locally, JS sort, `LC_ALL=C sort` and `en_US.UTF-8 sort` give the same list of 98 files.
 Statements are sent one at a time, as `psql -f` sends a file. `--whole-file` sends each file as one request instead.
 The first undeclared error stops the run with exit 1. A run that used any skip, no-op or assumption reports `STATUS: PARTIAL`.
+
+The statement splitter is not a general PostgreSQL parser. It handles only the subset these files use:
+- `'...'` with `''` (standard_conforming_strings on);
+- `E'...'` with backslash escapes;
+- `"..."` identifiers;
+- `$$`/`$tag$` bodies;
+- `--` comments and nested block comments.
+
+Every file is split before any statement runs. An unterminated quote, comment or dollar body, or a psql meta-command,
+is rejected with its line number rather than guessed. Not handled: `U&'...' UESCAPE`, psql variables, `COPY ... FROM stdin`.
+All 99 files (with `--baseline`) split without rejection.
 
 ## Results
 
@@ -43,7 +55,7 @@ The first undeclared error stops the run with exit 1. A run that used any skip, 
 - History:
   - `20261001_filter_upgrades.sql` was added in `5ae7fb61` (2026-10-03).
   - `20261010_lock_paid_jobs_data.sql` was added in `c123107c` (2026-10-11).
-  - The GRANT at `:211` arrived later, in `a8985c61` (2026-10-14, "docs: supabase migration phases, preflight and rollback notes"), which rewrote the already-merged 20261001 file. On the live database the view already existed by then, so applying the edited file there would succeed.
+  - The GRANT at `:211` arrived later, in `a8985c61` (2026-10-14, "docs: supabase migration phases, preflight and rollback notes"), which rewrote the already-merged 20261001 file. Whether, when and in what form that edited file was applied anywhere is not recorded in the repo and is unknown.
   - A fresh replay reaches the GRANT in the first file; the view is created in the tenth (8 files in between).
   - This conflicts with `docs/contributor-setup.md:54` ("never edit a merged migration").
 
@@ -81,14 +93,20 @@ The procedure is `docs/dr-runbook.md` Path B (Disaster Recovery Replay into a Fr
   - the anonymous jobs search and recommended routes (`src/app/api/jobs/search/route.ts:146`, `recommended/route.ts:134`);
   - `suggest` (`:103`), `top10` (`:361`) and `radar` (`src/app/api/radar/route.ts:42`).
 
-The live project is not shown to be affected. Its view exists, as the edited file's history implies, but its exact applied state is unknown.
+Nothing here says whether the production project is or is not affected; its applied state is unknown.
 
-## Smallest proposed repair (for review; NOT implemented)
+`supabase/scripts/apply-pending.sql` (DR step 5) does not supply the missing prerequisites:
+- Its header (`:2`) says "DO NOT APPLY / REVIEW PENDING".
+- It never creates `public.jobs` or `public.jobs_public`. Its only `CREATE TABLE`s are `tailored_resumes` (`:236`) and `ai_usage_quotas` (`:277`), and it has no `CREATE VIEW`.
+- It needs both of them itself: `ALTER TABLE public.jobs` at `:44` and `GRANT SELECT ON public.jobs_public` at `:228`.
+- It runs after step 4, the replay that already failed.
+
+## Repair options (unreviewed; NOT implemented, NOT approved)
 
 1. **DR runbook (docs only).** In `docs/dr-runbook.md` Path B step 4, and in `docs/rpo-rto-targets.md` Scenario 4:
    - add "apply `supabase/schema.sql` first";
    - say that `20261116e_repair_642_concurrent_indexes.sql` must run statement by statement outside a transaction (psql), not as one SQL Editor script.
-2. **Create `jobs_public` before 20261001 runs, without touching any merged migration or production.** Append a guarded, rerunnable block to `supabase/schema.sql`, the documented baseline, which runs only on fresh installs:
+2. **Unreviewed option, not a recommended or safe production repair:** a guarded block in `supabase/schema.sql` that creates a placeholder `jobs_public` before 20261001 runs:
    ```sql
    do $$ begin
      if to_regclass('public.jobs_public') is null then
@@ -96,20 +114,21 @@ The live project is not shown to be affected. Its view exists, as the edited fil
      end if;
    end $$;
    ```
-   - It creates nothing when the view exists, so rerunning `schema.sql` on the live project changes nothing.
-   - `20261010:9` and `20261116d:314` then `CREATE OR REPLACE` it with the real columns. Their column lists start with `id`, so that's compatible, and the diagnostic shows the rest of the chain replays.
-   - Alternative for the owner: give the placeholder 20261010's full column list instead of `id`, so the 20261001 grant covers the real shape from the start.
-   - Not proposed: reordering or renaming migrations, editing 20261001, or a new migration that sorts before it. Such a migration would also run on the live project, where `CREATE OR REPLACE` could regress the current view.
+   - Locally it lets the chain replay, the same as `--assume=jobs_public`: `20261010:9` and `20261116d:314` then `CREATE OR REPLACE` it with the real columns, which start with `id`.
+   - Not shown, and needing owner review:
+     - what it does to any existing database, including production, whose state is unknown;
+     - whether a placeholder grant is acceptable;
+     - whether the view should instead get 20261010's full column list.
+   - Not considered here: reordering or renaming migrations, editing 20261001, or a new migration that sorts before it. Any of these would run wherever migrations are applied, so the owner should weigh them against the actual applied state, which nobody here knows.
 3. **Verification after review.** Rerun:
    ```
    npx tsx scripts/diagnose-migration-replay.ts --baseline --platform-stubs
    ```
-   - It should finish PARTIAL with no `--assume`; the only declared items left are platform and extension ones.
+   - Any option should then finish PARTIAL with no `--assume`, leaving only the declared platform and extension items.
    - The real proof is the DR-05 drill (`docs/dr-runbook.md:221`) in a throwaway Supabase project, which needs the owner.
 
 ## Not established here
 
-- Production's applied migrations, or its live view and grants.
+- Production's applied migrations, or whether its `jobs_public` view and grants exist.
 - Real Supabase SQL Editor transaction behavior (`--whole-file` models it as one multi-statement request).
 - Any Postgres version difference between PGlite 17 and the project.
-- Whether `supabase/scripts/apply-pending.sql` (DR step 5) covers any of this.

@@ -27,6 +27,26 @@ async function main() {
   check('splitter: keeps quoted semicolons intact', st[0].sql.includes("'x;y'") && st[0].sql.includes('"b;c"') && st[3].sql.includes("'it''s; fine'"));
   check('splitter: keeps dollar-quoted bodies intact', st[1].sql.endsWith('END $$') && st[2].sql.includes("$fn$ SELECT 'a;b' $fn$"));
 
+  // E-strings: backslash escapes the quote and semicolons stay inside the literal.
+  const e = splitSql("SELECT E'it\\'s; still \\\\ one;';\nSELECT e'\\';';\nSELECT 'plain\\';\nSELECT 2;");
+  check('E-string: escaped quote and semicolon stay in one statement', e.length === 4 && e[0].sql === "SELECT E'it\\'s; still \\\\ one;'", e);
+  check("E-string: lower-case e'...' is an escape string too", e[1].sql === "SELECT e'\\';'", e[1]);
+  check("plain '...' keeps backslash literal (standard_conforming_strings=on)", e[2].sql === "SELECT 'plain\\'" && e[3].sql === 'SELECT 2', e.slice(2));
+  const ident = splitSql("SELECT type'x;y'; SELECT 1;");
+  check("a word ending in e before a quote is not an E-string prefix", ident.length === 2 && ident[0].sql === "SELECT type'x;y'", ident);
+
+  // Nested block comments: semicolons anywhere inside are ignored; comment-only chunks are not statements.
+  const n = splitSql('/* outer; /* inner; */ still comment; */\nSELECT 1;\n/* only a comment; */');
+  check('nested block comment: one statement, on line 2', n.length === 1 && n[0].line === 2 && n[0].sql.endsWith('SELECT 1'), n);
+
+  // Explicit rejections (thrown, never guessed).
+  const throwsLike = (sql: string, re: RegExp) => { try { splitSql(sql); return false; } catch (err: any) { return re.test(err.message); } };
+  check('rejects unterminated E-string', throwsLike("SELECT E'oops\\';", /unterminated E-string at line 1/));
+  check('rejects unterminated string', throwsLike("SELECT 'oops;", /unterminated string/));
+  check('rejects unterminated nested block comment', throwsLike('/* a /* b */ SELECT 1;', /unterminated block comment/));
+  check('rejects unterminated dollar body', throwsLike('DO $x$ BEGIN END;', /unterminated dollar-quoted body \$x\$/));
+  check('rejects psql meta-commands', throwsLike('SELECT 1;\n\\i other.sql\n', /psql meta-command at line 2/));
+
   // Classifier.
   check('classify: missing relation is an ordering/dependency gap', classify('42P01', 'relation "public.jobs_public" does not exist') === 'ordering-or-dependency-gap');
   check('classify: auth schema is a platform object', classify('3F000', 'schema "auth" does not exist') === 'supabase-platform-object');

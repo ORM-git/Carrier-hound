@@ -72,30 +72,66 @@ export const ASSUMPTIONS: Record<string, string> = {
 
 export type Stmt = { sql: string; line: number };
 
-/** Split SQL into top-level statements with their 1-based start line. Aware of '...', "...", $tag$...$tag$, -- and block comments. */
+/**
+ * Split SQL into top-level statements with their 1-based start line. NOT a general PostgreSQL parser: it handles only
+ * this subset, which is what the repo's migrations use: '...' with '' (standard_conforming_strings=on), E'...' with
+ * backslash escapes, "..." identifiers, $$...$$ / $tag$...$tag$ bodies, -- comments and nested block comments.
+ * Unterminated quotes, comments or dollar bodies and psql meta-commands are rejected (thrown) before any replay.
+ * Not handled: U&'...' UESCAPE, psql variables, COPY ... FROM stdin data.
+ */
 export function splitSql(text: string): Stmt[] {
   const out: Stmt[] = [];
   let cur = '';
   let curLine = 0;
   let line = 1;
   let i = 0;
-  const push = () => { if (cur.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, '').trim()) out.push({ sql: cur.trim(), line: curLine }); cur = ''; curLine = 0; };
+  // curLine is set only by non-comment text (take), so a comment-only chunk is never pushed as a statement.
+  const push = () => { if (curLine) out.push({ sql: cur.trim(), line: curLine }); cur = ''; curLine = 0; };
   const take = (s: string) => {
     if (!curLine && s.trim()) curLine = line;
     cur += s;
     line += (s.match(/\n/g) || []).length;
     i += s.length;
   };
+  const reject = (what: string) => { throw new Error(`splitSql: ${what} at line ${line}; refusing to guess statement boundaries`); };
+  let lineStart = true;
   while (i < text.length) {
     const rest = text.slice(i);
     const ch = text[i];
+    // psql meta-commands (\i, \set, ...) are not SQL; this tool does not emulate psql.
+    if (lineStart && /^[ \t]*\\/.test(rest)) reject('psql meta-command');
+    lineStart = ch === '\n';
     if (rest.startsWith('--')) { const nl = rest.indexOf('\n'); const s = nl === -1 ? rest : rest.slice(0, nl); cur += s; i += s.length; continue; }
-    if (rest.startsWith('/*')) { const end = rest.indexOf('*/'); const s = end === -1 ? rest : rest.slice(0, end + 2); cur += s; line += (s.match(/\n/g) || []).length; i += s.length; continue; }
+    if (rest.startsWith('/*')) {
+      // Postgres block comments nest: /* a /* b */ c */ is one comment.
+      let depth = 0;
+      let j = 0;
+      while (j < rest.length) {
+        if (rest.startsWith('/*', j)) { depth++; j += 2; } else if (rest.startsWith('*/', j)) { depth--; j += 2; if (depth === 0) break; } else j++;
+      }
+      if (depth !== 0) reject('unterminated block comment');
+      const s = rest.slice(0, j);
+      cur += s; line += (s.match(/\n/g) || []).length; i += s.length;
+      continue;
+    }
     const tag = rest.match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)?.[0];
-    if (tag) { const end = rest.indexOf(tag, tag.length); take(end === -1 ? rest : rest.slice(0, end + tag.length)); continue; }
+    if (tag) {
+      const end = rest.indexOf(tag, tag.length);
+      if (end === -1) reject(`unterminated dollar-quoted body ${tag}`);
+      take(rest.slice(0, end + tag.length));
+      continue;
+    }
     if (ch === "'" || ch === '"') {
+      // E'...' (escape string): backslash escapes the next character. Plain '...' follows standard_conforming_strings=on.
+      const escape = ch === "'" && /[Ee]$/.test(cur) && !/[A-Za-z0-9_$][Ee]$/.test(cur);
       let j = 1;
-      while (j < rest.length) { if (rest[j] === ch) { if (rest[j + 1] === ch) { j += 2; continue; } break; } j++; }
+      let closed = false;
+      while (j < rest.length) {
+        if (escape && rest[j] === '\\') { j += 2; continue; }
+        if (rest[j] === ch) { if (rest[j + 1] === ch) { j += 2; continue; } closed = true; break; }
+        j++;
+      }
+      if (!closed) reject(`unterminated ${ch === "'" ? (escape ? 'E-string' : 'string') : 'quoted identifier'}`);
       take(rest.slice(0, j + 1));
       continue;
     }
@@ -155,6 +191,12 @@ export async function replay(opts: { baseline?: boolean; platformStubs?: boolean
   const dir = path.join(repo, 'supabase/migrations');
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) files.push({ name: f, rel: `supabase/migrations/${f}` });
   report.filesTotal = files.length;
+  // Split every file before running anything: a file the splitter cannot handle is rejected before any replay.
+  const parsed = new Map<string, { text: string; stmts: Stmt[] }>();
+  for (const f of files) {
+    const raw = fs.readFileSync(path.join(repo, f.rel), 'utf8');
+    try { parsed.set(f.rel, { text: raw, stmts: splitSql(raw) }); } catch (e: any) { await db.close(); throw new Error(`${f.rel}: ${e.message}`); }
+  }
 
   let assumed = false;
   const applyAssumptions = async () => {
@@ -172,18 +214,18 @@ export async function replay(opts: { baseline?: boolean; platformStubs?: boolean
   for (const f of files) {
     if (opts.platformStubs && SKIPPED_FILES[f.name] && !(opts.noSkip ?? []).includes(f.name)) { report.filesSkipped.push({ file: f.rel, reason: SKIPPED_FILES[f.name] }); continue; }
     if ((opts.assume ?? []).length && !assumed && (await jobsExists()).ok) await applyAssumptions();
-    const text = fs.readFileSync(path.join(repo, f.rel), 'utf8');
+    const { text, stmts: split } = parsed.get(f.rel)!;
     // --whole-file: one request per file, as the Supabase SQL Editor sends it (implicit transaction; no per-line position).
     const extOf = (sql: string) => sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, '').trim().match(/^CREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/i)?.[1];
     const isNoOp = (ext?: string) => !!(opts.platformStubs && ext && UNSUPPORTED_EXTENSIONS[ext] !== undefined);
     let whole = text;
     if (opts.wholeFile) {
-      for (const st of splitSql(text)) {
+      for (const st of split) {
         const ext = extOf(st.sql);
         if (isNoOp(ext)) { whole = whole.replace(st.sql, `-- [diagnostic no-op] CREATE EXTENSION ${ext}`); report.extensionNoOps.push({ file: f.rel, line: st.line, extension: ext! }); }
       }
     }
-    const stmts = opts.wholeFile ? [{ sql: whole, line: 1 }] : splitSql(text);
+    const stmts = opts.wholeFile ? [{ sql: whole, line: 1 }] : split;
     for (const st of stmts) {
       const ext = opts.wholeFile ? undefined : extOf(st.sql);
       if (isNoOp(ext)) { report.extensionNoOps.push({ file: f.rel, line: st.line, extension: ext! }); continue; }
