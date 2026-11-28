@@ -17,6 +17,7 @@ import {
   type CanonicalExperienceLevel,
 } from "@/lib/jobs/experienceLevels";
 import { MAX_SKILLS, normalizeSkillList, skillKey } from "@/lib/jobs/skillKey";
+import SelectedRoleStrip from "./SelectedRoleStrip";
 import YearsRangeControl, { describeRange } from "./YearsRangeControl";
 import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { parseWorkAuth, toggleWorkAuth, type WorkAuthId } from "@/lib/onboarding/workAuth";
@@ -568,13 +569,7 @@ export default function PreferencesSheet({ isOpen, onClose, committed, ownerId, 
         </button>
       </div>
       <div className="px-5 pb-3 pt-1">
-        {draft.roles.length > 0 && (
-          <div className="mb-3 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto" aria-label="Selected job functions">
-            {draft.roles.map((r) => (
-              <Pill key={r} onRemove={() => set("roles", draft.roles.filter((x) => x !== r))} removeLabel={`Remove ${r}`}>{r}</Pill>
-            ))}
-          </div>
-        )}
+        <SelectedRoleStrip roles={draft.roles} onRemove={(r) => set("roles", draft.roles.filter((x) => x !== r))} />
         <label htmlFor="pref-role-search" className="sr-only">Search job functions</label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" aria-hidden="true" />
