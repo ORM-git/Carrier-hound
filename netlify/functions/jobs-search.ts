@@ -1,3 +1,4 @@
+import { classifyApplyDestination } from "../../src/lib/jobs/applyDestination";
 import { createClient } from "@supabase/supabase-js";
 import { formatSalary } from "../../src/lib/salary/parser";
 import { COUNTRY_CODE_TO_NAME, getCountryFilterClause } from "../../src/lib/countries";
@@ -391,6 +392,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         type: jobRow.job_type === "internship" ? "Internship" : "Full-time",
         directSource: Boolean(jobRow.verified),
         applyUrl: isInactive || !isPro ? "" : (jobRow.apply_url || ""),
+        applyDestination: classifyApplyDestination(isInactive || !isPro ? "" : (jobRow.apply_url || "")),
         salary: isInactive || !isPro ? "" : (displaySalary || originalSalary || ""),
         salary_display: isInactive || !isPro ? null : displaySalary,
         salary_original: isInactive || !isPro ? null : originalSalary,
@@ -923,6 +925,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
           type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
+          applyDestination: classifyApplyDestination(row.apply_url || ""),
           description: row.description || "",
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
@@ -954,6 +957,7 @@ export function createHandler(deps: JobsSearchDeps = {}) {
         type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
         directSource: Boolean(row.verified),
         applyUrl: "",
+        applyDestination: classifyApplyDestination(""),
         description: "",
         skills: [],
         postedAt: row.posted_at || row.created_at,
