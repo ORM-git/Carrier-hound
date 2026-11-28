@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { capJobsPerCompany } from "@/lib/jobs/capping";
 import {
   canonicalBinding,
+  tokenFingerprint,
   DEFAULT_TTL_MS,
   FeedSessionSecretError,
   MAX_MEMBERS,
@@ -174,8 +175,9 @@ describe("continuation rejection", () => {
     const [t2, t3] = (await open(world)).continuation;
     const p = t2.split(".");
     const swap = (i: number, v: string) => { const q = [...p]; q[i] = v; return q.join("."); };
-    const other = t3.split(".")[6];
-    for (const forged of [swap(2, "3"), swap(1, (T0 + 5).toString(36)), swap(5, t3.split(".")[5]), swap(6, other), swap(3, "9")]) {
+    // fields: 0 version, 1 issued, 2 page, 3 count, 4 size, 5 capped, 6 ids, 7 MAC
+    for (const forged of [swap(2, "3"), swap(1, (T0 + 5).toString(36)), swap(6, t3.split(".")[6]), swap(7, t3.split(".")[7]),
+      swap(3, "9"), swap(5, "1")]) {
       expect(await read(forged)).toEqual({ ok: false, reason: "invalid" });
     }
   });
@@ -198,7 +200,7 @@ describe("continuation rejection", () => {
 
   it("fails closed without a real secret and refuses caller bugs", async () => {
     await expect(openFeedSession({ orderedIds: [uuid(1)], binding, secret: "short", pageSize: 5, now: T0 })).rejects.toBeInstanceOf(FeedSessionSecretError);
-    await expect(read("fs1.a.2.2.5.AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", { secret: "" })).rejects.toBeInstanceOf(FeedSessionSecretError);
+    await expect(read("fs1.a.2.2.5.0.AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", { secret: "" })).rejects.toBeInstanceOf(FeedSessionSecretError);
     await expect(openFeedSession({ orderedIds: [uuid(1), uuid(1)], binding, secret: SECRET, pageSize: 5, now: T0 })).rejects.toThrow("unique");
     await expect(openFeedSession({ orderedIds: ["not-a-uuid"], binding, secret: SECRET, pageSize: 5, now: T0 })).rejects.toThrow("UUID");
     await expect(openFeedSession({ orderedIds: Array.from({ length: MAX_MEMBERS + 1 }, (_, i) => uuid(i + 1)), binding, secret: SECRET, pageSize: 5, now: T0 }))
@@ -215,6 +217,24 @@ describe("continuation rejection", () => {
       expect(t).not.toMatch(/someone|example|free|country/);
     }
     expect(s.continuation.join("").length).toBeLessThan(25_000);        // whole 1000-id session, all pages
+  });
+
+  it("a capped session says so on every continuation, under the MAC", async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => uuid(i + 1));
+    const capped = await openFeedSession({ orderedIds: ids, binding, secret: SECRET, pageSize: 5, now: T0, moreBeyondCap: true });
+    const plain = await openFeedSession({ orderedIds: ids, binding, secret: SECRET, pageSize: 5, now: T0 });
+    expect(capped.capped && !plain.capped).toBe(true);
+    const last = await read(capped.continuation[1]);
+    expect(last.ok && last.capped && last.page === last.pageCount).toBe(true);
+    expect((await read(plain.continuation[1])).ok && !(await read(plain.continuation[1]) as any).capped).toBe(true);
+  });
+
+  it("tokenFingerprint is short, stable and does not contain the token's id bytes", async () => {
+    const t = (await open(world)).continuation[0];
+    const f = await tokenFingerprint(t);
+    expect(f).toMatch(/^[0-9a-f]{12}$/);
+    expect(await tokenFingerprint(t)).toBe(f);
+    expect(t.includes(f)).toBe(false);
   });
 
   it("canonical binding ignores key order but not array order", () => {

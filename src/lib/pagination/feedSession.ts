@@ -1,35 +1,42 @@
 /**
- * Stable browsing sessions for a ranked, bounded job feed (row 69). Pure and stateless on the server:
- * works on Cloudflare edge and Node (Web Crypto only), needs no table, cache or process-local state.
+ * Stable browsing sessions for ranked job listings, recommended feed AND search (row 69). Pure and stateless on the
+ * server: Cloudflare edge and Node (Web Crypto only), no table, cache or process-local state.
  *
  * Contract
- * - The first page fixes the session's ordered membership: the full ranked, capped list (at most MAX_MEMBERS ids).
+ * - Page 1 fixes the session's ordered membership: the final list exactly as the listing orders it (recommended:
+ *   ranked + company-capped; search: full sort key), at most MAX_MEMBERS ids. If the listing has more than that, the
+ *   session is `capped` and its last page says so; the reader refines or refreshes to see beyond it (no silent tail).
  * - The server returns page 1 rows plus one signed continuation per later page. Each continuation carries exactly
- *   that page's ids, in order, the session's issue time, page index and page size, and an HMAC over all of it and
- *   over the caller's binding (user, tier, effective filters, sort, scoring/preferences revision, page size).
- * - Serving page k: verify, then load ONLY those ids under the same current eligibility filters as any listing and
- *   return survivors in snapshot order (orderSurvivors). Inactive/hidden/deleted ids drop out; nothing new enters;
- *   no other member moves. New arrivals appear only in a new session (refresh / new query).
- * - Rejected safely (no offset fallback): malformed, oversized, forged or other-binding (cannot be told apart
- *   without leaking the binding), expired, future-dated, wrong page size, out-of-range page.
- * - Nothing private is in a token: job ids, times and counters only. The binding is never encoded, only MACed.
+ *   that page's ids in order, the issue time, page index/count/size and the cap flag, with an HMAC over all of it and
+ *   over the caller's binding (user, tier, effective filters, sort, scoring/preferences revision, page size, surface).
+ * - Serving page k: verify, then load ONLY those ids under every current eligibility filter and masking rule, and
+ *   return survivors in snapshot order (orderSurvivors). Inactive/hidden/deleted/no-longer-matching ids drop out;
+ *   nothing new enters; no member moves, whatever happened to its score, verified flag or dates since page 1.
+ * - Rejected safely (no offset fallback): malformed, oversized, forged or other-binding (indistinguishable on purpose),
+ *   expired, future-dated, wrong page size, out-of-range page.
  *
- * Needs a dedicated server-only secret (>= 32 chars). Missing/short secret fails closed.
+ * Privacy: a continuation is PRIVATE-DERIVED data. It reveals the order of jobs personalized for one reader. Transport
+ * it only in a request body or header, never in a URL (query strings reach logs, analytics and Referer); send
+ * responses carrying continuations with Cache-Control: no-store; never log or report a raw token: use
+ * tokenFingerprint() if a log line needs to refer to one. The binding itself is never encoded, only MACed.
+ *
+ * Needs a server-only secret (>= 32 chars); missing/short fails closed. Which secret is an OPEN owner decision
+ * (see docs/proposed/row69-stable-pagination.md); FEED_SESSION_SECRET_ENV is only the proposed name.
  */
 
 import { UUID_REGEX } from "./cursor";
 
-/** Server-only env var holding the continuation HMAC key (>= 32 chars). Never a NEXT_PUBLIC_ name; never shared. */
+/** PROPOSED (not approved, not provisioned) server-only env var for the continuation HMAC key. */
 export const FEED_SESSION_SECRET_ENV = "FEED_SESSION_SECRET";
 export const FEED_SESSION_VERSION = "fs1";
-/** Upper bound on session membership: the recommended pool size. */
+/** Upper bound on session membership (the recommended pool size). Size trade-off is an open owner decision. */
 export const MAX_MEMBERS = 1000;
 export const MAX_PAGE_SIZE = 100;
 /** Default session lifetime; a continuation older than this is rejected and the client starts a new session. */
 export const DEFAULT_TTL_MS = 30 * 60 * 1000;
 /** Tolerated clock difference between workers for issue times in the future. */
 export const MAX_CLOCK_SKEW_MS = 60 * 1000;
-/** Longest acceptable token: MAX_PAGE_SIZE ids at 22 chars, plus header, counters and a 43-char MAC. */
+/** Longest acceptable token: MAX_PAGE_SIZE ids at 22 chars (2200), plus header, counters, flag and a 43-char MAC. */
 export const MAX_TOKEN_LENGTH = MAX_PAGE_SIZE * 22 + 160;
 const MIN_SECRET_LENGTH = 32;
 
@@ -46,7 +53,7 @@ export class FeedSessionSecretError extends Error {
 
 export type RejectReason = "malformed" | "oversized" | "invalid" | "expired" | "page_size_mismatch" | "out_of_range";
 export type ReadResult =
-  | { ok: true; page: number; pageCount: number; pageSize: number; issuedAt: number; ids: string[] }
+  | { ok: true; page: number; pageCount: number; pageSize: number; issuedAt: number; capped: boolean; ids: string[] }
   | { ok: false; reason: RejectReason };
 
 export interface OpenedSession {
@@ -56,6 +63,8 @@ export interface OpenedSession {
   total: number;
   /** Page 1 ids, in order. */
   firstPage: string[];
+  /** True when the listing had more than MAX_MEMBERS rows: the session ends at the cap, explicitly. */
+  capped: boolean;
   /** continuation[i] serves page i + 2. Empty when everything fits on page 1. */
   continuation: string[];
 }
@@ -132,8 +141,11 @@ export async function openFeedSession(opts: {
   secret: string;
   pageSize: number;
   now: number;
+  /** The listing had rows beyond orderedIds (fetch MAX_MEMBERS + 1 to know). */
+  moreBeyondCap?: boolean;
 }): Promise<OpenedSession> {
   const { orderedIds, binding, secret, pageSize, now } = opts;
+  const capped = Boolean(opts.moreBeyondCap);
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > MAX_PAGE_SIZE) throw new RangeError(`pageSize must be 1..${MAX_PAGE_SIZE}`);
   if (orderedIds.length > MAX_MEMBERS) throw new RangeError(`session holds at most ${MAX_MEMBERS} ids`);
   if (new Set(orderedIds).size !== orderedIds.length) throw new Error("session ids must be unique");
@@ -145,10 +157,10 @@ export async function openFeedSession(opts: {
   const continuation: string[] = [];
   for (let page = 2; page <= pageCount; page++) {
     const ids = orderedIds.slice((page - 1) * pageSize, page * pageSize);
-    const body = `${now.toString(36)}.${page}.${pageCount}.${pageSize}.${packIds(ids)}`;
+    const body = `${now.toString(36)}.${page}.${pageCount}.${pageSize}.${capped ? 1 : 0}.${packIds(ids)}`;
     continuation.push(`${FEED_SESSION_VERSION}.${body}.${b64url(await mac(secret, signedText(body, binding)))}`);
   }
-  return { issuedAt: now, pageSize, pageCount, total: orderedIds.length, firstPage: orderedIds.slice(0, pageSize), continuation };
+  return { issuedAt: now, pageSize, pageCount, total: orderedIds.length, capped, firstPage: orderedIds.slice(0, pageSize), continuation };
 }
 
 /** Verifies one continuation against the current request's binding and page size. Never throws on user input. */
@@ -165,9 +177,10 @@ export async function readFeedPage(opts: {
   if (typeof token !== "string" || token.length === 0) return { ok: false, reason: "malformed" };
   if (token.length > MAX_TOKEN_LENGTH) return { ok: false, reason: "oversized" };
   const parts = token.split(".");
-  if (parts.length !== 7 || parts[0] !== FEED_SESSION_VERSION) return { ok: false, reason: "malformed" };
-  const [, issued36, pageStr, countStr, sizeStr, packed, macStr] = parts;
-  if (!/^[0-9a-z]{1,11}$/.test(issued36) || ![pageStr, countStr, sizeStr].every((s) => /^[1-9][0-9]{0,3}$/.test(s))) {
+  if (parts.length !== 8 || parts[0] !== FEED_SESSION_VERSION) return { ok: false, reason: "malformed" };
+  const [, issued36, pageStr, countStr, sizeStr, cappedStr, packed, macStr] = parts;
+  if (!/^[0-9a-z]{1,11}$/.test(issued36) || ![pageStr, countStr, sizeStr].every((s) => /^[1-9][0-9]{0,3}$/.test(s))
+    || (cappedStr !== "0" && cappedStr !== "1")) {
     return { ok: false, reason: "malformed" };
   }
   const issuedAt = parseInt(issued36, 36);
@@ -178,7 +191,7 @@ export async function readFeedPage(opts: {
   const sig = fromB64url(macStr);
   if (!ids || !sig || sig.length !== 32 || ids.length > size || size > MAX_PAGE_SIZE) return { ok: false, reason: "malformed" };
 
-  const body = parts.slice(1, 6).join(".");
+  const body = parts.slice(1, 7).join(".");
   if (!equalBytes(sig, await mac(secret, signedText(body, binding)))) return { ok: false, reason: "invalid" };
   // Checked only after the MAC: an attacker cannot learn which field a forged token got wrong.
   if (issuedAt > now + MAX_CLOCK_SKEW_MS || now - issuedAt > ttlMs) return { ok: false, reason: "expired" };
@@ -186,7 +199,7 @@ export async function readFeedPage(opts: {
   if (page < 2 || page > pageCount || pageCount > Math.ceil(MAX_MEMBERS / size)) return { ok: false, reason: "out_of_range" };
   if (page < pageCount && ids.length !== size) return { ok: false, reason: "malformed" };
   if (new Set(ids).size !== ids.length) return { ok: false, reason: "malformed" };
-  return { ok: true, page, pageCount, pageSize: size, issuedAt, ids };
+  return { ok: true, page, pageCount, pageSize: size, issuedAt, capped: cappedStr === "1", ids };
 }
 
 /**
@@ -203,4 +216,15 @@ export function orderSurvivors<T extends { id: string }>(ids: readonly string[],
     if (row) out.push(row);
   }
   return out;
+}
+
+/**
+ * Log-safe reference to a continuation: first 12 hex chars of SHA-256(token). Not reversible to the job ids it holds;
+ * use it in logs/metrics instead of the token. (Equal tokens give equal fingerprints, which is what a log needs.)
+ */
+export async function tokenFingerprint(token: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(String(token))));
+  let hex = "";
+  for (let i = 0; i < 6; i++) hex += digest[i].toString(16).padStart(2, "0");
+  return hex;
 }

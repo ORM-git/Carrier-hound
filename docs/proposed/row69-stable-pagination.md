@@ -1,137 +1,149 @@
-# Row 69: stable job-feed pagination (engine checkpoint)
+# Row 69: stable job-feed pagination (engine checkpoint, for review)
 
-Status: **checkpoint 1 of 2**. The engine, contracts and deterministic tests are in new files only. No route, service or
-client file is edited; those are owned by the lean-payload change until it lands. The row is **not complete**:
-integration and live verification are still to come.
+Status: **engine and tests only, in new files.** No route, service, client or environment file is changed, and no secret exists.
+Integration waits for the lean-payload change, which owns `recommended/route.ts`, `search/route.ts`, `service.ts` and `jobs/page.tsx`. **Row 69 is not complete.**
 
-Base: main `de1db3cf`.
+**Correction to the earlier record:**
+- Commits `63a358e5`, `e17b9c6b`, `a9cd32b2` and the PR #892 comments called the dedicated secret, the 1000-job trade-off and the search ordering change "chosen" or "approved".
+- They are not: the owner has stated that the forwarded report does not establish approval of any of them. All three are listed below as **open decisions**.
+- The `.env.example` entry and runbook row that `63a358e5` added are removed again.
 
 ## Current behavior (evidence)
 
 **Recommended** (`src/app/api/jobs/recommended/route.ts`). Every request re-ranks the current pool, then slices by page number:
-- takes the latest `RECOMMENDED_POOL_SIZE = 1000` relevant rows (`:29`, `:468-471`);
-- re-ranks them at `scoredAt = Date.now()` (`:487-491`);
-- applies `capJobsPerCompany(…, 3, 30)` (`:499`);
-- slices `(page - 1) * pageSize` (`:459-460`, `:501`).
+- latest `RECOMMENDED_POOL_SIZE = 1000` relevant rows (`:29`, `:468-471`);
+- re-ranked at `scoredAt = Date.now()` (`:487-491`);
+- `capJobsPerCompany(…, 3, 30)` (`:499`);
+- sliced at `(page - 1) * pageSize` (`:459-460`, `:501`).
 
-So a new arrival, a rank change, or one capped job dropping out between page N and N+1 shifts the whole list. Jobs then repeat or are skipped. Reproduced in `feedSession.test.ts` under "old pagination bugs".
+An arrival, a rank change or a capped job dropping out between pages repeats or skips jobs (`feedSession.test.ts`, "old pagination bugs").
 
 **Search** (`src/app/api/jobs/search/route.ts`):
-- `sort=match` orders by `verified DESC` (Postgres default NULLS FIRST), `posted_at DESC NULLS LAST`, `id DESC` (`:609-612`).
-- The cursor holds only `(posted_at, id)` (`src/lib/pagination/cursor.ts`), and the filter compares only those (`:603-605`). So the page after the last verified job skips unverified jobs newer than it. Reproduced against real Postgres in `searchKeyset.test.ts`.
-- There's also an offset fallback (`:613-618`) and a multi-word branch capped at 200 rows with no cursor (`:598-599`).
+- `sort=match` orders `verified DESC` (Postgres default NULLS FIRST), `posted_at DESC NULLS LAST`, `id DESC` (`:609-612`).
+- The cursor holds only `(posted_at, id)` (`:603-605`, `cursor.ts`).
+- There's an offset fallback (`:613-618`) and a multi-word branch capped at 200 rows with no cursor (`:598-599`).
+- On test data with no changes at all, that cursor skips 26 of 54 jobs (`searchSession.test.ts`).
 
-## Contract
+**Why a keyset can't be fixed into stability:** `verified` and `posted_at` change in place. Tested with the earlier version of this PR (full-sort-key keyset plus an arrival-time fence) under the same verified and date changes between pages: 1 job skipped, 5 repeated. Only a fixed membership survives key changes.
 
-### Recommended feed: stateless browsing session (`src/lib/pagination/feedSession.ts`)
+## Contract: one browsing session for both surfaces (`src/lib/pagination/feedSession.ts`)
 
-**Page 1 (`openFeedSession`):**
-- The route ranks, filters and company-caps exactly as today, then fixes that ordered list (at most 1000 unique UUIDs) as the session.
-- It returns page 1 rows plus `continuation: string[]`, where `continuation[i]` serves page `i + 2`.
+**Page 1:**
+- The route builds the final ordered list exactly as the listing orders it, at most `MAX_MEMBERS` = 1000 ids:
+  - Recommended: ranked and company-capped.
+  - Search: `ORDER BY searchOrder(sort) LIMIT N + 1` over every search filter and eligibility check (`searchSession.ts`).
+- It calls `openFeedSession`. If the listing had more rows than the cap, the session is **capped** and every continuation says so.
 
-**Each continuation token:**
-- holds exactly that page's ids in order (16 bytes each), the issue time, the page index, the page count and the page size;
-- carries an HMAC-SHA256 over those fields and over the request **binding**;
-- contains no user data, filters or binding values: those are only included in the MAC.
+**Page k:**
+- `readFeedPage` verifies the continuation, then the route loads **only that page's ids**, with every current eligibility filter, query filter and masking rule.
+- `orderSurvivors` returns them in snapshot order.
 
-**The binding** is built by the route from:
-- user id (or `guest`) and tier (guest/free/pro);
-- every effective filter, normalized (query, location, country set, work model, type, experience, salary, saved feed constraints, excluded skills/companies);
+**Guarantee:**
+- Across pages the reader sees the session's members in the fixed order, minus those that stopped being eligible or matching. No repeats, no skips.
+- Nothing new enters, whatever happens meanwhile to scores, `verified`, `posted_at`, ties, nulls or company caps.
+- New arrivals appear in a new session (refresh or new query).
+- Inactive, hidden, deleted or no-longer-matching jobs never come back from a snapshot. Every page re-checks eligibility.
+
+**Binding:** each continuation is MACed together with the request binding:
+- surface (recommended/search), user id or `guest`, and tier (guest/free/pro);
+- every effective filter, normalized;
 - sort;
-- candidate/preferences/scoring revision (answers + resume profile + scorer version);
+- candidate/preferences/scoring revision;
 - page size.
 
-**Page k (`readFeedPage` + `orderSurvivors`):**
-- Verify the token, then load **only** its ids, with every current eligibility filter (active, visible source, user exclusions, query filters).
-- Return the survivors in snapshot order.
-- Nothing outside the page's ids is returned. Nothing new enters, and no other member moves.
+A different binding, secret or any tampered field is rejected as `invalid`. Expiry, page size and range are checked after the MAC. Rejections never fall back to offsets.
 
-**Display scores** on later pages use the session's `issuedAt` as `scoredAt`, so they match page 1.
+**Masking and eligibility:** page k runs the same eligibility query and masking/Pro-hydration code as page 1, restricted to its ids. The engine returns ids only and never decides what a tier may see.
 
-**Rejections** never fall back to offsets. The client starts a new session (page 1) on any of these:
-- `malformed`, `oversized`;
-- `invalid`: forged, or issued for another binding or secret. These deliberately can't be told apart;
-- `expired`: older than 30 minutes, or more than 60 s in the future;
-- `page_size_mismatch`, `out_of_range`.
+### Privacy and transport
 
-**Cross-worker:** there's no server state, so any worker serves any page. Retries and concurrent reads of one token return the same page.
+A continuation is **private-derived data**: it reveals which jobs, in which order, were personalized for one reader. Tokens are **encoded, not encrypted**: anyone holding one can decode its job ids.
+- **Transport:** request body (POST) or a request header only, **never a URL**. Query strings reach access logs, analytics and the `Referer` header.
+- **Responses** that carry continuations: `Cache-Control: no-store`.
+- **Logs and metrics:** never the raw token. `tokenFingerprint()` gives a 12-hex-character SHA-256 prefix to refer to one. No analytics event may include a token.
+- **Client storage:** in memory and in `history.state` for Back/Forward. Both are same-origin and never sent anywhere.
+- **No user data in tokens:** the binding (user id, filters, tier) is MACed, never encoded. A test checks that a binding containing an email doesn't appear in any token.
 
-**Capacity:**
-- At most 1000 members, page size 1–100, a token of at most 2,360 characters.
-- Measured: 599 characters per page at page size 25. A full 1000-member session is 39 tokens, about 23.5 KB of JSON, sent once with page 1.
+### Sizes (measured with real tokens)
 
-### Search: full-sort-key keyset (`src/lib/pagination/searchKeyset.ts`)
+| Session | Continuations | One token (per page-k request) | All continuations on page 1 (JSON) |
+|---|---|---|---|
+| 1000 members, page size 25 | 39 | 601 chars | 23,588 bytes |
+| 1000 members, page size 100 | 9 | 2,202 chars | 19,847 bytes |
+| 500 members, page size 25 | 19 | 601 chars | 11,488 bytes |
+| 250 members, page size 25 | 9 | 601 chars | 5,438 bytes |
+| 100 members, page size 25 | 3 | 600 chars | 1,810 bytes |
 
-**One total order per sort, every key NULLS LAST:**
-- `newest`: `posted_at`, `id`.
-- `match`: `verified` (true > false > null), `posted_at`, `id`.
+The hard limit is 2,360 characters per token. Ids are random, so these sizes barely compress. Page-k responses add no tokens.
 
-**Paging:**
-- The cursor carries every key plus the session arrival time. It's signed and bound the same way (separate MAC domain).
-- `afterCursorFilter()` builds the exact PostgREST `.or()` filter for the rows after the cursor.
-- Every page is also bounded to `first_seen_at <= arrivalAt`. `first_seen_at` is insert-only in this repo's writers: no TS, Python or migration writer updates it.
+### Expiry and reset
 
-**Guarantee:** for rows whose sort keys don't change during the session, pages concatenate to exactly the rows that existed at the arrival time and still match, in order, with no repeat or skip. Search results are unbounded, so their membership is not snapshotted. A row whose `verified` or `posted_at` changes mid-session can cross the cursor: one skip, or one repeat that the client's `appendPage` hides.
+- **TTL** is 30 minutes from page 1, with 60 s of clock-skew tolerance for future-dated issue times.
+- **Retries** and concurrent reads of one continuation return the same page. There's no server state, so any worker can serve it.
+- **Proposed reset behavior**, for review:
+  - On any rejection (expired, invalid, page-size mismatch) the route answers 409 `{ restart: true }`.
+  - The client then **replaces** the list with page 1 of a new session, keeping the current filters, and puts scroll back at the top, the way a query change does today. It never appends a new session to an old one.
+  - Back/Forward within the TTL restores rows and continuations from `history.state` without refetching. After the TTL, restored rows stay visible, and the next page request triggers the restart.
+- **Capped sessions:** the last page reports `capped`. Below the last row the client shows an explicit end, for example "Showing the first 1,000 results, refine your search". Nothing loads silently past the cap.
 
 ## Tests (deterministic, offline)
 
-**`src/lib/pagination/__tests__/feedSession.test.ts`, 16 tests:**
-- Old-bug negative controls: an insert repeats a job; a rank change skips one; a deactivated capped job shifts later pages.
-- Exact ordered surviving membership across inserts, rank changes of unserved and already-shown members, ties, null dates and inactivation.
+**`src/lib/pagination/__tests__/feedSession.test.ts`, 18 tests:**
+- Old-bug negative controls: an insert repeats a job; a rank change skips one; a capped company's job dropping out shifts later pages.
+- Exact ordered surviving membership across inserts, rank changes (unserved and already shown), ties, null dates and inactivation.
 - Company caps stay fixed.
-- An empty page in mid-session, a short final page, empty and single-page sessions.
+- An empty page mid-session, a short final page, empty and single-page sessions.
 - Retry and concurrency.
-- Binding changes for each of user, tier, filters, sort, revision and page size.
-- Tampering with ids, page, issue time or MAC; expiry and future dates; malformed and oversized input; secret fail-closed; caller-bug guards.
-- Token bounds, no binding values in tokens, and canonical binding.
+- Rejection for a change in each binding field; tampering with ids, page, issue time, cap flag or MAC; expiry and future dates; junk and oversized input.
+- The secret fails closed; caller-bug guards.
+- The cap flag; token bounds and no binding values in tokens; the fingerprint.
 
-**`src/lib/pagination/__tests__/searchKeyset.test.ts`, 12 tests, real Postgres (PGlite):**
-- Both sorts at page sizes 1, 7 and 60 concatenate to the full ordered result.
-- A page crossing from `true` directly into `null` (empty middle tier).
-- The JS comparator agrees with Postgres.
-- Inserts after arrival stay out; deactivated rows drop; the rest stays complete.
-- Old-cursor negative control (it skips jobs).
-- Token round-trip and rejection cases.
+**`src/lib/pagination/__tests__/searchSession.test.ts`, 7 tests, real Postgres (PGlite):**
+- For both sorts, between every page:
+  - one unserved member's `verified` flips;
+  - another's `posted_at` jumps to newest;
+  - a third's `verified` and `posted_at` both become NULL;
+  - an already-shown member is demoted;
+  - a verified newest job is inserted;
+  - an unserved member goes inactive, and on one page another stops matching the query.
+- Pages still equal exactly the snapshot order minus the dropped jobs, with no arrivals.
+- A capped session holds exactly the first N.
+- The comparator matches Postgres `ORDER BY`.
+- Search tokens don't open on another surface, query or sort.
+- Negative controls: main's cursor (26 of 54 skipped); the earlier keyset-plus-fence design (1 skipped, 5 repeated).
 
-**Engine negative controls** (source edited temporarily, then restored byte-identical, hash checked):
+**Engine negative controls** (source edited temporarily, restored byte-identical, hash checked):
 
 | Break | Result |
 |---|---|
-| Binding not MACed | 1 failure |
-| Survivors in query order | 4 failures |
-| No expiry check | 1 failure |
-| Null tier dropped after a `true` cursor | 1 failure |
-| Null `posted_at` dropped | 6 failures |
-| `id` tie-break dropped | 6 failures |
+| Binding not MACed | 2 failures |
+| Survivors returned in query order | 7 failures |
+| Cap flag left out of the MAC | 3 failures |
 
-## Blockers (owner decisions before integration)
+## Open decisions (for owner review; none is approved)
 
-1. **Signing secret: name decided, value still to set.** The owner chose `FEED_SESSION_SECRET`. This PR adds it to `.env.example`, adds a row in `docs/security/secrets-rotation-runbook.md`, and adds `FEED_SESSION_SECRET_ENV` in `feedSession.ts`. The value is not set anywhere yet: the owner sets a random 32+ character value, the same in Cloudflare Pages and Netlify, before the integration deploys. Background: The only existing HMAC key, `COMPANY_GROUP_ID_SECRET`, must not be reused (`docs/security/secrets-rotation-runbook.md:16`). Creating one is an environment change that I may not make.
-   - Proposal: `FEED_SESSION_SECRET`, at least 32 random characters, the same value in Cloudflare Pages and Netlify, plus a runbook row.
-   - Without it the engine fails closed, so integrating before it exists would break page 2+.
-2. **Page-1 payload: decided, keep the full 1000-member session.** The owner accepted about 23.5 KB of continuation tokens on the page-1 response (measured: 39 tokens of 599 characters at page size 25). No session cap below the pool size and no "refresh for more" boundary. Later pages carry no extra tokens. The rejected alternatives were a 250-member cap (about 5.4 KB) or a server store (needs SQL or Redis).
-3. **Shared files.** `recommended/route.ts`, `search/route.ts`, `service.ts` and `jobs/page.tsx` are owned by the lean-payload change. Integration waits for it to land, then rebases.
-4. **Search order change: approved by the owner.** For `sort=match`, integration sets `verified` DESC NULLS LAST, so the order is true > false > null. Today Postgres's DESC default (NULLS FIRST) puts null-verified rows above verified ones. The multi-word branch (currently capped at 200 rows, no cursor) and the legacy offset fallback move onto the same keyset path, with no offset fallback left.
+1. **Signing key.** A server-only HMAC key of at least 32 characters is required for the "reject forged" requirement.
+   - Options:
+     - (a) a new dedicated secret. `FEED_SESSION_SECRET` is the proposed name; it's an environment change.
+     - (b) reuse an existing one. `COMPANY_GROUP_ID_SECRET` is forbidden by `docs/security/secrets-rotation-runbook.md:16`.
+     - (c) no MAC. Forgery could then not be detected, only made harmless by re-checking eligibility. That fails the stated requirement.
+   - The engine fails closed without a key.
+2. **Membership cap and page-1 size.** Per surface: 1000 (about 23.6 KB on page 1), 500 (about 11.5 KB), 250 (about 5.4 KB), or a server-side store (needs SQL or Redis, not available here). This trades against the lean-payload goal.
+3. **Search ordering.** Keep today's verified NULLS FIRST, or switch to true > false > null (`searchOrder`). The engine works with either, as long as page 1 and the comparator agree.
+4. **Search beyond the cap.** Today search scrolls indefinitely. With a fixed membership, rows past the cap can't be reached in one session. Options: an explicit end with "refine/refresh", or a larger search cap.
+5. **Transport for page k.** POST body versus a request header. Either keeps tokens out of URLs.
+6. **Reset UX** as proposed above: replace the list and return to the top on restart.
 
-## Integration plan (after the blockers clear)
+## Infrastructure actually needed
 
-**Recommended route:**
-- Page 1 builds the binding and calls `openFeedSession` on `cappedJobs` ids, returning `continuation`.
-- Page k calls `readFeedPage`. On `ok`, it queries `id IN ids` with the existing eligibility filters and hydration, then `orderSurvivors`. On reject it returns 409 `{ restart: true }`; there is no offset fallback.
-- Masking, company-group IDs and Pro hydration stay as they are.
+- **One server-only HMAC key** (decision 1), in Cloudflare Pages and Netlify. Nothing else: no table, no Redis, no KV, no process-local state.
+- **Database load:**
+  - Page k: one `id IN (≤ page size)` query using the primary key, plus today's hydration.
+  - Search page 1: one membership query of `LIMIT cap + 1` that selects keys only, where today's query is `LIMIT pageSize + 1`. Its cost on production indexes is **not measured** and has to be checked during integration.
 
-**Search route:**
-- Use `searchOrder`, `afterCursorFilter` and the `first_seen_at` bound.
-- Encode the cursor from the last eligible row's full key.
-- Remove the `(posted_at, id)` cursor and the offset fallback.
+## Integration (after the decisions and the lean-payload change)
 
-**Client (`jobs/page.tsx`):**
-- Keep `continuation` with the list state for the current query: memory plus `history.state`, so Back/Forward restores it with no refetch.
-- Use `continuation[k-2]` as the cursor for page k.
-- A 409 restart resets the chain the way a query change already does.
-- `appendPage`, `isStalledCursor` and the look-ahead stay unchanged.
-
-**Tests:**
-- Route tests for page 1 / page k / restart, masking parity, Pro hydration and filters.
-- Rerun `jobsPaginationIntegration.test.tsx`.
-- Then live verification after review and release.
+- **Recommended:** page 1 opens the session on `cappedJobs` ids. Page k reads it, queries `id IN ids` with the existing eligibility filters and hydration, then calls `orderSurvivors`, with display scores computed at the session's `issuedAt`.
+- **Search:** page 1 runs the membership query and opens the session. Page k is the same as recommended. The `(posted_at, id)` cursor, the offset fallback and the uncursored multi-word branch go away.
+- **Client:** continuations live in memory and `history.state`, page k sends `continuation[k-2]` in the body or header, and a 409 triggers the reset. `appendPage`, `isStalledCursor` and the look-ahead stay.
+- **Then:** route tests, `jobsPaginationIntegration.test.tsx`, and live verification after review and release.
