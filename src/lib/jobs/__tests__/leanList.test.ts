@@ -12,7 +12,7 @@ describe("lean Pro list helpers", () => {
   });
   it("lean rows use the buckets, full rows use the text, an unknown bucket never filters", () => {
     const full = { title: "Engineer", description: "Senior with 5+ years", skills: ["Go"] };
-    const lean = { title: "Engineer", skills: ["Go"], ...leanProListFields(full) };
+    const lean = { title: "Engineer", ...leanProListFields(full) };
     expect(lean.description).toBe("");
     expect(lean.lean).toBe(true);
     for (const b of ["1-3 Years", "3-5 Years", "5+ Years", "8+ Years"]) expect(jobMatchesExperience(lean, b)).toBe(jobMatchesExperience(full, b));
