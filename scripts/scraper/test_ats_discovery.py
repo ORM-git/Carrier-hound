@@ -560,3 +560,111 @@ def test_negative_control_multi_board_ambiguity():
     assert bad["status"] == "found"                           # mutant lets the first board win
     assert results()[3]["status"] == "ambiguous"
     assert _source_sha() == before
+
+
+# ---- correction round 2: leading BOM and Crawl-delay ---------------------------------------------------
+
+BOM_CASES = [("User-agent: *\nDisallow: /\n", "deny"), ("User-agent: *\nAllow: /\n", "allow"),
+             ("User-agent: CMBot\nDisallow: /careers\n\nUser-agent: *\nAllow: /\n", "deny")]
+
+
+def _bom_bodies(text):
+    return [("str", "﻿" + text), ("bytes", ("﻿" + text).encode("utf-8")), ("bytes-sig", text.encode("utf-8-sig"))]
+
+
+@pytest.mark.parametrize("text,expected", BOM_CASES)
+def test_leading_bom_is_normalized_for_str_and_bytes(text, expected):
+    for kind, body in _bom_bodies(text):
+        state, why = disc.evaluate_robots({"status": 200, "body": body}, "https://a.example/careers", UA, "unknown")
+        assert state == expected, (kind, why)
+
+
+def test_bom_disallow_all_blocks_pages_in_plan():
+    rob = robots_json()
+    rob["https://alpha.example"] = {"status": 200, "body": "﻿User-agent: *\nDisallow: /\n"}
+    p = plan(rob=rob, pol=policy(global_request_cap=100))
+    assert {2, 3, 4, 20} <= set(p["rows"]["robots_deny"])
+    assert all(q["host"] != "alpha.example" for q in p["requests"])
+
+
+def _mutant_many(pairs) -> types.ModuleType:
+    src = SOURCE.read_text(encoding="utf-8")
+    for old, new in pairs:
+        assert src.count(old) == 1, old
+        src = src.replace(old, new)
+    mod = types.ModuleType("ats_discovery_mutant")
+    mod.__dict__.update(__package__="scripts.scraper", __file__=str(SOURCE))
+    exec(compile(src, str(SOURCE), "exec"), mod.__dict__)
+    return mod
+
+
+def test_negative_control_bom_handling_removed():
+    before = _source_sha()
+    mutant = _mutant_many([('body.decode("utf-8-sig")', 'body.decode("utf-8")'),
+                           ('body = body[1:] if body.startswith("\ufeff") else body', "body = body")])
+    failures = 0
+    for text, expected in BOM_CASES:
+        for kind, body in _bom_bodies(text):
+            state, _ = mutant.evaluate_robots({"status": 200, "body": body}, "https://a.example/careers", UA, "unknown")
+            failures += state != expected
+    assert failures >= 6          # every BOM "Disallow" case (str and bytes) flips to allow without the fix
+    deny_all = "﻿User-agent: *\nDisallow: /\n"
+    assert mutant.evaluate_robots({"status": 200, "body": deny_all}, "https://a.example/x", UA, "unknown")[0] == "allow"
+    assert disc.evaluate_robots({"status": 200, "body": deny_all}, "https://a.example/x", UA, "unknown")[0] == "deny"
+    assert _source_sha() == before
+
+
+@pytest.mark.parametrize("body,delay", [
+    ("User-agent: *\nCrawl-delay: 45\nAllow: /\n", 45),
+    ("User-agent: CMBot\nCrawl-delay: 90\nAllow: /\n\nUser-agent: *\nCrawl-delay: 5\n", 90),   # specific group wins
+    ("User-agent: OtherBot\nCrawl-delay: 90\n\nUser-agent: *\nCrawl-delay: 5\n", 5),           # falls back to *
+    ("﻿User-agent: *\nCrawl-delay: 12\n", 12),
+    ("User-agent: *\nAllow: /\n", None),
+])
+def test_crawl_delay_parsed_per_user_agent(body, delay):
+    assert disc.robots_crawl_delay({"status": 200, "body": body}, UA) == delay
+
+
+def test_unreadable_crawl_delay_is_unknown():
+    state, why = disc.evaluate_robots({"status": 200, "body": "User-agent: *\nCrawl-delay: 2.5\nAllow: /\n"},
+                                      "https://a.example/careers", UA, "unknown")
+    assert state == "unknown" and "Crawl-delay" in why
+    assert disc.robots_crawl_delay({"status": 503, "body": "User-agent: *\nCrawl-delay: 5\n"}, UA) is None
+
+
+def _alpha_delay(seconds):
+    rob = robots_json()
+    rob["https://alpha.example"] = {"status": 200, "body": f"User-agent: *\nCrawl-delay: {seconds}\nDisallow: /about\n"}
+    return rob
+
+
+def test_crawl_delay_above_spacing_defers_pages_and_frees_budget():
+    p = plan(rob=_alpha_delay(60), pol=policy(per_host_spacing_seconds=30))
+    alpha = next(e for e in p["robots_evaluated"] if e["origin"] == "https://alpha.example")
+    assert (alpha["crawl_delay"], alpha["crawl_delay_exceeds_spacing"]) == (60, True)
+    assert p["rows"]["deferred_crawl_delay"] == [2, 4, 20]
+    assert "Crawl-delay 60s exceeds per_host_spacing_seconds 30" in p["samples"]["deferred_crawl_delay"][0]["reason"]
+    assert all(q["host"] != "alpha.example" for q in p["requests"])
+    # Deferred pages use no budget: beta's two pages now fit within the same cap of 5.
+    assert [(q["kind"], q["host"], q["source_rows"]) for q in p["requests"]] == [
+        ("robots", "unknown.example", [7]), ("robots", "zeta.example", [19]),
+        ("page", "beta.example", [5]), ("page", "beta.example", [21])]
+    assert p["rows"].get("deferred_request_cap") is None
+    assert p["rows"]["robots_deny"] == [3, 6]                          # deny still wins over delay handling
+
+
+@pytest.mark.parametrize("spacing", [60, 90])
+def test_crawl_delay_planned_when_spacing_is_at_least_that_long(spacing):
+    p = plan(rob=_alpha_delay(60), pol=policy(per_host_spacing_seconds=spacing, global_request_cap=100))
+    alpha = [q for q in p["requests"] if q["host"] == "alpha.example"]
+    assert [(q["source_rows"], q["not_before_seconds"]) for q in alpha] == [([2, 4], 0), ([20], spacing)]
+    assert p["rows"].get("deferred_crawl_delay") is None
+    assert next(e for e in p["robots_evaluated"] if e["origin"] == "https://alpha.example")["crawl_delay_exceeds_spacing"] is False
+
+
+def test_plan_states_fetcher_responsibilities_and_reconciles():
+    p = plan(rob=_alpha_delay(60))
+    assert any("redirect" in x for x in p["fetcher_responsibilities"])
+    assert any("http://" in x and "https://" in x for x in p["fetcher_responsibilities"])
+    rec = p["reconciliation"]
+    assert rec["input_rows"] == rec["categorized_rows"] == 20

@@ -306,11 +306,57 @@ def discover(pages: list[dict], **caps) -> dict:
 
 ROBOTS_MAX_BYTES = 500 * 1024          # RFC 9309 parsing limit
 _ROBOTS_DIRECTIVE = re.compile(r"^\s*(user-agent|allow|disallow|sitemap|crawl-delay)\s*:", re.IGNORECASE)
+_CRAWL_DELAY = re.compile(r"^\s*crawl-delay\s*:(.*)$", re.IGNORECASE)
 
 
 def origin_of(url: str) -> str:
     parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}"
+
+
+def _robots_text(body: object) -> tuple[str | None, str | None]:
+    """Body as text with a leading UTF-8 BOM removed, so directive validation and parsing see the same lines.
+    (A BOM glued to the first "User-agent" hides that group from robotparser and turns "Disallow: /" into allow-all.)"""
+    if isinstance(body, bytes):
+        try:
+            body = body.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return None, "robots.txt body is not UTF-8"
+    if not isinstance(body, str):
+        return None, "robots.txt body missing"
+    body = body[1:] if body.startswith("﻿") else body
+    if len(body.encode("utf-8")) > ROBOTS_MAX_BYTES:
+        return None, "robots.txt over 500 KiB"
+    return body, None
+
+
+def _parse_robots(response: dict, user_agent: str):
+    """(RobotFileParser, group applying to user_agent or None, problem). Problem set means: treat as unknown."""
+    body, problem = _robots_text(response.get("body"))
+    if problem:
+        return None, None, problem
+    lines = [ln.split("#", 1)[0] for ln in body.splitlines()]
+    if any(ln.strip() for ln in lines) and not any(_ROBOTS_DIRECTIVE.match(ln) for ln in lines):
+        return None, None, "robots.txt has no robots directives (garbage or HTML)"  # robotparser would allow everything
+    rp = RobotFileParser()
+    rp.parse(body.splitlines())
+    agent = user_agent.split("/", 1)[0].lower()
+    matching = [e for e in rp.entries if e.applies_to(user_agent)]
+    if len(matching) > 1 or (matching and agent not in {a.lower() for a in matching[0].useragents}):
+        # robotparser takes the first substring match ("bot" applies to "cmbot"); RFC 9309 wants exact, merged groups.
+        return None, None, f"robots user-agent groups for {agent!r} are ambiguous (partial or repeated match)"
+    bad_delay = [ln for ln in lines if _CRAWL_DELAY.match(ln) and not _CRAWL_DELAY.match(ln).group(1).strip().isdigit()]
+    if bad_delay:  # robotparser silently drops a non-integer Crawl-delay, which would understate the site's request
+        return None, None, "robots.txt has a Crawl-delay urllib.robotparser cannot read"
+    return rp, (matching[0] if matching else rp.default_entry), None
+
+
+def robots_crawl_delay(response: object, user_agent: str) -> int | None:
+    """Crawl-delay (seconds) that applies to user_agent in a usable 2xx robots.txt, else None."""
+    if not isinstance(response, dict) or type(response.get("status")) is not int or not 200 <= response["status"] < 300:
+        return None
+    _, group, problem = _parse_robots(response, user_agent)
+    return None if problem or group is None else group.delay
 
 
 def evaluate_robots(response: object, url: str, user_agent: str, on_4xx: str) -> tuple[str, str]:
@@ -323,27 +369,10 @@ def evaluate_robots(response: object, url: str, user_agent: str, on_4xx: str) ->
         return on_4xx, f"robots.txt HTTP {status}; policy robots_4xx={on_4xx}"
     if not 200 <= status < 300:
         return "unknown", f"robots.txt HTTP {status}; unusable"
-    body = response.get("body")
-    if isinstance(body, bytes):
-        try:
-            body = body.decode("utf-8")
-        except UnicodeDecodeError:
-            return "unknown", "robots.txt body is not UTF-8"
-    if not isinstance(body, str):
-        return "unknown", "robots.txt body missing"
-    if len(body.encode("utf-8")) > ROBOTS_MAX_BYTES:
-        return "unknown", "robots.txt over 500 KiB"
-    lines = [ln.split("#", 1)[0] for ln in body.splitlines()]
-    if any(ln.strip() for ln in lines) and not any(_ROBOTS_DIRECTIVE.match(ln) for ln in lines):
-        return "unknown", "robots.txt has no robots directives (garbage or HTML)"  # robotparser would allow everything
-    rp = RobotFileParser()
-    rp.parse(body.splitlines())
+    rp, group, problem = _parse_robots(response, user_agent)
+    if problem:
+        return "unknown", problem
     agent = user_agent.split("/", 1)[0].lower()
-    matching = [e for e in rp.entries if e.applies_to(user_agent)]
-    if len(matching) > 1 or (matching and agent not in {a.lower() for a in matching[0].useragents}):
-        # robotparser takes the first substring match ("bot" applies to "cmbot"); RFC 9309 wants exact, merged groups.
-        return "unknown", f"robots user-agent groups for {agent!r} are ambiguous (partial or repeated match)"
-    group = matching[0] if matching else rp.default_entry
     if group and any("%2A" in r.path or "%24" in r.path for r in group.rulelines):
         # urllib.robotparser matches * and $ literally, which could silently allow a disallowed path.
         return "unknown", f"robots group for {agent!r} uses path wildcards urllib.robotparser cannot evaluate"
@@ -412,7 +441,7 @@ def _skip_reason(host: str, path: str) -> str | None:
     return None
 
 
-PLAN_CATEGORIES = ("planned", "awaiting_robots", "deferred_request_cap", "robots_unknown", "robots_deny",
+PLAN_CATEGORIES = ("planned", "awaiting_robots", "deferred_request_cap", "deferred_crawl_delay", "robots_unknown", "robots_deny",
                    "skipped_job_board_or_social", "skipped_file", "invalid_url", "merged_duplicate",
                    "invalid_merge_reference", "not_website_only")
 
@@ -422,7 +451,9 @@ def plan_fetches(report: object, policy: object, robots: object = None) -> dict:
 
     robots: {origin: {"status": int, "body": str}} for robots.txt responses already in hand (none are fetched here).
     An origin without one gets a single robots.txt request and its pages wait; only pages robots.txt allows are
-    planned. Robots and page requests share the global cap and per-host spacing. Every record gets one category."""
+    planned. Robots and page requests share the global cap and per-host spacing. A Crawl-delay above the plan's
+    per-host spacing defers that origin's pages. Robots redirects and HTTP vs HTTPS origins are the future fetcher's
+    job (this plan only uses the https origins 882's normalize_url produces). Every record gets one category."""
     pol = validate_policy(policy)
     robots = {} if robots is None else robots
     if not isinstance(robots, dict):
@@ -464,9 +495,18 @@ def plan_fetches(report: object, policy: object, robots: object = None) -> dict:
             continue
         state, why = evaluate_robots(robots[origin], url, pol["user_agent"], pol["robots_4xx"])
         resp = robots[origin] if isinstance(robots[origin], dict) else {}
-        evaluated.setdefault(origin, {"status": resp.get("status"), "pages": {}})["pages"][redact_url(url)] = state
+        if origin not in evaluated:
+            delay = robots_crawl_delay(resp, pol["user_agent"])
+            evaluated[origin] = {"status": resp.get("status"), "crawl_delay": delay, "pages": {},
+                                 "crawl_delay_exceeds_spacing": delay is not None and delay > pol["per_host_spacing_seconds"]}
+        evaluated[origin]["pages"][redact_url(url)] = state
         reasons[n] = why
-        if state == "allow":
+        if state == "allow" and evaluated[origin]["crawl_delay_exceeds_spacing"]:
+            # The site asks for more time between requests than this plan spaces them: never planned faster.
+            category[n] = "deferred_crawl_delay"
+            reasons[n] = (f"Crawl-delay {evaluated[origin]['crawl_delay']}s exceeds per_host_spacing_seconds "
+                          f"{pol['per_host_spacing_seconds']}; deferred until spacing is at least that long")
+        elif state == "allow":
             pages[url].append(n)
         else:
             category[n] = "robots_deny" if state == "deny" else "robots_unknown"
@@ -503,8 +543,11 @@ def plan_fetches(report: object, policy: object, robots: object = None) -> dict:
                                "by_category": {c: len(v) for c, v in grouped.items()}, "planned_requests": len(requests),
                                "robots_requests": kinds["robots"], "page_requests": kinds["page"]},
             "requests": requests,
-            "robots_evaluated": [{"origin": redact_url(o), "status": e["status"], "pages": dict(sorted(e["pages"].items()))}
-                                 for o, e in sorted(evaluated.items())],
+            "robots_evaluated": [{"origin": redact_url(o), "status": e["status"], "crawl_delay": e["crawl_delay"],
+                                  "crawl_delay_exceeds_spacing": e["crawl_delay_exceeds_spacing"],
+                                  "pages": dict(sorted(e["pages"].items()))} for o, e in sorted(evaluated.items())],
+            "fetcher_responsibilities": ["follow robots.txt redirects and supply the final response per origin",
+                                         "treat http:// and https:// as separate origins (this plan uses https only)"],
             "rows": {c: v for c, v in grouped.items() if v},
             "samples": {c: samples(c) for c in PLAN_CATEGORIES[1:] if grouped[c]}}
 
