@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -513,11 +513,28 @@ export default function JobRadarGlobe() {
     internshipFilter ||
     verifiedOnly;
 
+  // Bind every continuation to the current drawer scope, including entitlement.
+  // Update during render so a response cannot commit between render and effect cleanup.
+  const drawerScope = JSON.stringify([selectedCity?.id, countryFilter, categoryFilter,
+    remoteFilter, internshipFilter, verifiedOnly, isPro]);
+  const drawerScopeRef = useRef(drawerScope);
+  drawerScopeRef.current = drawerScope;
+  const drawerRequestRef = useRef<{ generation: number; controller: AbortController | null }>({
+    generation: 0, controller: null,
+  });
+
   // 6. Fetch jobs for the selected city / worldwide remote drawer with 4 Light Filters
   const fetchCityJobs = useCallback(
     async (target: ActiveSelection, page: number = 1, append: boolean = false) => {
       setJobsLoading(true);
       setRadarProUnlockError(false);
+      drawerRequestRef.current.controller?.abort();
+      const controller = new AbortController();
+      const generation = ++drawerRequestRef.current.generation;
+      drawerRequestRef.current.controller = controller;
+      const scope = drawerScopeRef.current;
+      const isCurrent = () => !controller.signal.aborted &&
+        generation === drawerRequestRef.current.generation && scope === drawerScopeRef.current;
       try {
         const supabase = createClient();
         const pageSize = 10;
@@ -573,7 +590,10 @@ export default function JobRadarGlobe() {
 
         const { data, count, error } = await query
           .order("discovered_at", { ascending: false, nullsFirst: false })
-          .range(offset, offset + pageSize - 1);
+          .range(offset, offset + pageSize - 1)
+          .abortSignal(controller.signal);
+
+        if (!isCurrent()) return;
 
         if (error) throw error;
 
@@ -602,18 +622,22 @@ export default function JobRadarGlobe() {
             const {
               data: { session },
             } = await supabase.auth.getSession();
+            if (!isCurrent()) return;
             const token = session?.access_token;
             if (token) {
               const proRes = await fetch("/api/jobs/pro", {
                 method: "POST",
+                signal: controller.signal,
                 headers: {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({ ids: cards.map((c) => c.id) }),
               });
+              if (!isCurrent()) return;
               if (proRes.ok) {
                 const proData = await proRes.json();
+                if (!isCurrent()) return;
                 if (Array.isArray(proData.jobs)) {
                   const unlockedMap = new Map<string, any>(
                     proData.jobs.map((pj: any) => [pj.id, pj])
@@ -636,6 +660,7 @@ export default function JobRadarGlobe() {
                   const {
                     data: { session: currentSession },
                   } = await supabase.auth.getSession();
+                  if (!isCurrent()) return;
                   if (!currentSession && typeof window !== "undefined") {
                     const returnTo = window.location.pathname + window.location.search;
                     window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
@@ -645,6 +670,7 @@ export default function JobRadarGlobe() {
               }
             }
           } catch (proErr: any) {
+            if (!isCurrent()) return;
             console.error(
               `[API /jobs/pro error]: Radar drawer Pro unlock failure (${proErr?.message || "fetch failed"})`
             );
@@ -652,6 +678,7 @@ export default function JobRadarGlobe() {
           }
         }
 
+        if (!isCurrent()) return;
         if (append) {
           setDrawerJobs((prev) => [...prev, ...cards]);
         } else {
@@ -663,15 +690,31 @@ export default function JobRadarGlobe() {
         setJobsHasMore(offset + pageSize < total);
         setJobsPage(page);
       } catch (err: any) {
+        if (!isCurrent()) return;
         console.error("Error fetching jobs for city:", err);
       } finally {
-        setJobsLoading(false);
+        if (isCurrent()) setJobsLoading(false);
       }
     },
-    [countryFilter, categoryFilter, remoteFilter, internshipFilter, verifiedOnly]
+    [countryFilter, categoryFilter, remoteFilter, internshipFilter, verifiedOnly, isPro]
   );
 
-  // Trigger drawer fetch when selectedCity or any filter changes
+  // Clear old/unlocked rows before paint and invalidate all old continuations.
+  useLayoutEffect(() => {
+    ++drawerRequestRef.current.generation;
+    drawerRequestRef.current.controller?.abort();
+    setDrawerJobs([]);
+    setJobsTotal(0);
+    setJobsHasMore(false);
+    setJobsPage(1);
+    setJobsLoading(false);
+    return () => {
+      ++drawerRequestRef.current.generation;
+      drawerRequestRef.current.controller?.abort();
+    };
+  }, [selectedCity, fetchCityJobs]);
+
+  // Trigger drawer fetch when selectedCity, filter or entitlement changes.
   useEffect(() => {
     setRadarProUnlockError(false);
     if (selectedCity) {
