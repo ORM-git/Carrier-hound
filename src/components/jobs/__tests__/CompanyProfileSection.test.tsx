@@ -72,7 +72,10 @@ describe("Company section", () => {
     const other = container.querySelector('[data-testid="company-other-jobs"]');
     expect(other?.className).toContain("hidden sm:block");
     expect(other?.textContent).toContain("Design Engineer");
-    expect(screen.getByText("Similar jobs")).toBeTruthy();
+    // Inline card (phones/tablets, lg:hidden) plus the laptop-only sidebar that replaces the AI Tools column.
+    expect(screen.getAllByText("Similar jobs")).toHaveLength(2);
+    expect(container.querySelector('[data-testid="similar-jobs-inline"]')?.className).toContain("lg:hidden");
+    expect(container.querySelector('[data-testid="similar-jobs-sidebar"]')?.className).toContain("hidden lg:block");
   });
 
   it("distinguishes an empty company-job result from unavailable data and selects its job id", () => {
