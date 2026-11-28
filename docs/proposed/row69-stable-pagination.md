@@ -109,10 +109,7 @@ So a new arrival, a rank change, or one capped job dropping out between page N a
 1. **Signing secret: name decided, value still to set.** The owner chose `FEED_SESSION_SECRET`. This PR adds it to `.env.example`, adds a row in `docs/security/secrets-rotation-runbook.md`, and adds `FEED_SESSION_SECRET_ENV` in `feedSession.ts`. The value is not set anywhere yet: the owner sets a random 32+ character value, the same in Cloudflare Pages and Netlify, before the integration deploys. Background: The only existing HMAC key, `COMPANY_GROUP_ID_SECRET`, must not be reused (`docs/security/secrets-rotation-runbook.md:16`). Creating one is an environment change that I may not make.
    - Proposal: `FEED_SESSION_SECRET`, at least 32 random characters, the same value in Cloudflare Pages and Netlify, plus a runbook row.
    - Without it the engine fails closed, so integrating before it exists would break page 2+.
-2. **Page-1 payload.** A full session adds about 23.5 KB of continuation tokens to the page-1 response (1000 members at page size 25). That conflicts with the lean-payload work. Options for the owner:
-   - accept it;
-   - lower the session cap (for example 250 members, about 5.4 KB). Beyond the cap the reader would need an explicit "refresh for more", which is a visible change;
-   - a server-side store, which needs new SQL or Redis and is out of scope here.
+2. **Page-1 payload: decided, keep the full 1000-member session.** The owner accepted about 23.5 KB of continuation tokens on the page-1 response (measured: 39 tokens of 599 characters at page size 25). No session cap below the pool size and no "refresh for more" boundary. Later pages carry no extra tokens. The rejected alternatives were a 250-member cap (about 5.4 KB) or a server store (needs SQL or Redis).
 3. **Shared files.** `recommended/route.ts`, `search/route.ts`, `service.ts` and `jobs/page.tsx` are owned by the lean-payload change. Integration waits for it to land, then rebases.
 4. **Search order change.** Integration sets `verified` NULLS LAST; today it's Postgres's default NULLS FIRST. That puts null-verified rows after unverified ones instead of above verified ones. It needs a yes. The multi-word branch and the offset fallback must move onto the keyset path or say plainly that they're unpaged.
 
