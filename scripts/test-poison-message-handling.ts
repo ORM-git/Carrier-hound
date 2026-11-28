@@ -57,6 +57,7 @@ function makeQuery(db: Record<string, Row[]>, table: string) {
     select: () => q,
     eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
     in: (c: string, vals: any[]) => { filters.push((r) => vals.includes(r[c])); return q; },
+    neq: (c: string, v: any) => { filters.push((r) => r[c] !== v); return q; },
     ilike: (c: string, v: string) => {
       filters.push((r) => String(r[c] ?? "").toLowerCase() === String(v).toLowerCase());
       return q;
