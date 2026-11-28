@@ -57,6 +57,8 @@ from .fetchers import (
     fetch_workday_cxs,
     enrich_greenhouse_pay_transparency,
 )
+from . import conditional_state
+from .conditional_state import BoardUnchanged, ConditionalContext
 from .persistence import prevalidate_jobs, sanitize_salaries
 from .rate_limiter import PerHostRateLimiter, redact_sensitive_params
 
@@ -111,10 +113,24 @@ async def run_isolated_source(
     coro_factory: Callable[[], Awaitable[Any]],
     *,
     is_full_coverage: bool = True,
+    conditional: ConditionalContext | None = None,
 ) -> dict[str, Any]:
     """Executes a single source coroutine with complete error isolation."""
     try:
         raw_result = await coro_factory()
+        if isinstance(raw_result, BoardUnchanged):
+            # Handled before any list coercion: an unchanged board is never an empty board. It must name this
+            # board and the URL that carried validators this run, else it is a failure.
+            if conditional is not None and conditional.validate_unchanged(raw_result, source_id):
+                return {
+                    "source": source_id, "source_type": source_type, "status": "unchanged", "completed": True,
+                    "is_full_coverage": False, "unchanged": True, "fetched": 0, "jobs": [], "error": None,
+                }
+            return {
+                "source": source_id, "source_type": source_type, "status": "failed", "completed": False,
+                "is_full_coverage": False, "unchanged": False, "fetched": 0, "jobs": [],
+                "error": "Unexpected unchanged result: no validators were sent for this board",
+            }
         if isinstance(raw_result, tuple) and len(raw_result) == 2:
             jobs, error_msg = raw_result
         else:
@@ -127,6 +143,7 @@ async def run_isolated_source(
             "status": "failed" if has_error else "ok",
             "completed": not has_error,
             "is_full_coverage": is_full_coverage and not has_error,
+            "unchanged": False,
             "fetched": len(jobs) if isinstance(jobs, list) else 0,
             "jobs": jobs if isinstance(jobs, list) else [],
             "error": redact_sensitive_params(error_msg) if error_msg else None,
@@ -139,6 +156,7 @@ async def run_isolated_source(
             "status": "failed",
             "completed": False,
             "is_full_coverage": False,
+            "unchanged": False,
             "fetched": 0,
             "jobs": [],
             "error": f"{type(exc).__name__}: {clean_err}",
@@ -299,6 +317,14 @@ async def run_master_ingestion(
     selected_plan = select_sources(plan, source_filter, cohort)
     started_at = datetime.now(timezone.utc).isoformat()
 
+    # Conditional fetch is OFF unless CONDITIONAL_FETCH_ATS names Layer 1 ATS types. Missing/corrupt state = full fetch.
+    cond_path = os.environ.get("CONDITIONAL_STATE_PATH") or None
+    cond_ats = {a.strip().lower() for a in os.environ.get("CONDITIONAL_FETCH_ATS", "").split(",") if a.strip()}
+    cond_ctx: ConditionalContext | None = None
+    if cond_ats:
+        cond_boards, cond_status = conditional_state.load_state(cond_path)
+        cond_ctx = ConditionalContext(cond_boards, cond_status, datetime.now(timezone.utc), cond_ats)
+
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(25.0),
         follow_redirects=True,
@@ -308,7 +334,10 @@ async def run_master_ingestion(
         def factory(p: dict[str, Any]) -> Callable[[], Awaitable[Any]]:
             kind, seed = p["kind"], p["seed"]
             if kind == "layer1":
-                return lambda: fetch_layer1_seed(client, limiter, seed)
+                view = cond_ctx.view(p["id"]) if cond_ctx is not None and cond_ctx.enabled_for(p["type"]) else None
+                if view is None:
+                    return lambda: fetch_layer1_seed(client, limiter, seed)
+                return lambda: fetch_layer1_seed(client, limiter, seed, conditional=view)
             if kind == "workday":  # partial coverage, max_pages=1
                 return lambda: fetch_workday_cxs(client, limiter, seed, max_pages=1)
             if kind == "amazon":
@@ -379,7 +408,7 @@ async def run_master_ingestion(
             return reports
 
         other_tasks = [
-            asyncio.create_task(run_isolated_source(p["id"], p["type"], factory(p), is_full_coverage=p["full"]))
+            asyncio.create_task(run_isolated_source(p["id"], p["type"], factory(p), is_full_coverage=p["full"], conditional=cond_ctx))
             for p in selected_plan if p["type"] != "workday"
         ]
         other_reports, workday_reports = await asyncio.gather(asyncio.gather(*other_tasks), run_workday_boards())
@@ -405,6 +434,7 @@ async def run_master_ingestion(
                     "is_full_coverage": rep["is_full_coverage"],
                     "fetched": rep["fetched"],
                     "error": rep["error"],
+                    "unchanged": rep.get("unchanged", False),
                 }
             )
             if not rep["completed"] or rep["status"] == "failed":
@@ -417,6 +447,7 @@ async def run_master_ingestion(
                 "is_full_coverage": rep["is_full_coverage"],
                 "error": rep["error"],
                 "fetched_jobs": rep["jobs"],
+                "unchanged": rep.get("unchanged", False),
             }
 
         fetched_count = len(all_jobs)
@@ -518,6 +549,16 @@ async def run_master_ingestion(
 
             for bsid, b_info in board_status_map.items():
                 st = b_info["source_type"]
+
+                if b_info.get("unchanged"):  # 304: no listing was seen, so nothing can be judged stale
+                    expiry_reports.append({
+                        "source_id": bsid,
+                        "source_type": st,
+                        "expired": 0,
+                        "status": "skipped_unchanged",
+                        "reason": f"Board {bsid} returned 304 Not Modified; expiry skipped.",
+                    })
+                    continue
 
                 if not b_info["completed"] or b_info["error"]:
                     expiry_reports.append({
@@ -634,6 +675,12 @@ async def run_master_ingestion(
         expired_by_source = {e.get("source_id"): int(e.get("expired") or 0) for e in expiry_reports}
         now_dt = datetime.now(timezone.utc)
         wd_persisted = 0
+        # Conditional-fetch veto: identity duplicates among the ORIGINAL fetched rows (before any set or collapse) on
+        # ANY source veto every commit this run. select_unique_jobs collapses them before the writer sees them.
+        orig_identity_dup = any(
+            len({(str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) for j in r_["jobs"]}) != len(r_["jobs"])
+            for r_ in task_reports
+        )
         for rep, src in zip(task_reports, source_reports):
             keys = {(str(j.get("source_id") or ""), str(j.get("source_job_id") or "")) for j in rep["jobs"]}
             key_str = {k: f"{k[0]}/{k[1]}"[:160] for k in keys}
@@ -654,6 +701,15 @@ async def run_master_ingestion(
                 workday_schedule.record_attempt(wd_boards, src["source"], now_dt, wd_lim, ok=True)
                 workday_schedule.mark_persisted(wd_boards, src["source"], now_dt)
                 wd_persisted += 1
+            if cond_ctx is not None and src["source_type"] != "workday":
+                b_stat = board_status_map.get(src["source"]) or {}
+                cond_ctx.finalize_board(
+                    src["source"], jobs=rep["jobs"], completed=bool(b_stat.get("completed")),
+                    is_full_coverage=bool(b_stat.get("is_full_coverage")), error=b_stat.get("error"),
+                    unchanged=bool(rep.get("unchanged")), writes_attempted=bool(writes_attempted), dry_run=dry_run,
+                    persisted_keys=key_sets["persisted_source_keys"], board_rejected=rej, board_duplicates=len(dups),
+                    global_veto=bool(db_stats.get("persistence_failed")) or bool(duplicates) or orig_identity_dup,
+                )
         for src in source_reports:
             if src["source_type"] == "workday":
                 entry = wd_boards.get(src["source"], {})
@@ -661,6 +717,8 @@ async def run_master_ingestion(
                            cooldown_reason=entry.get("last_reason"))
         if wd_plan and not dry_run:
             workday_schedule.save_state(wd_state_path, wd_boards)
+        if cond_ctx is not None and cond_ctx.dirty and not dry_run and cond_path:
+            conditional_state.save_state(cond_path, cond_ctx.boards)
 
         category_counts: dict[str, int] = {}
         for j in to_insert:
