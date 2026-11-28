@@ -7,7 +7,7 @@ Workday -> {"tenant", "wd_cluster", "site"} (see fetchers.fetch_workday_cxs).
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 # Statuses, one per outcome kind, so reports can keep them separate.
 BLANK = "blank"
@@ -20,9 +20,12 @@ LOOKALIKE = "rejected_lookalike"
 WEBSITE = "website_only"
 
 _TRACKING_PARAMS = {"gclid", "fbclid", "msclkid", "mc_cid", "mc_eid", "gh_src", "lever-source", "lever-origin", "ref", "source", "src"}
-_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%~-]*$")
+# Decoded identifier charset the connectors can put into a URL path; stored re-encoded (space -> %20).
+_IDENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~ -]*$")
+_BAD_ESCAPE_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
-_LOCALE_RE = re.compile(r"^[a-z]{2}(-[a-z]{2})?$", re.IGNORECASE)
+_LOCALE_RE = re.compile(r"^[a-z]{2}-[A-Za-z]{2}$")  # Workday locale prefix: en-US. Bare /IT or /ge is not assumed a locale.
+_WORKDAY_RESERVED = {"job", "details", "login", "wday"}
 _WORKDAY_JOBS_RE = re.compile(r"^([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com$")
 _WORKDAY_SITE_RE = re.compile(r"^(wd\d+)\.myworkdaysite\.com$")
 _MULTI_URL_RE = re.compile(r"\s|,|\|")
@@ -86,8 +89,19 @@ def normalize_url(raw: str | None) -> tuple[str | None, str | None, str | None]:
     return urlunsplit(("https", netloc, path, urlencode(query), "")), host, None
 
 
-def _token(value: str | None) -> str | None:
-    return value if value and _TOKEN_RE.match(value) else None
+def _ident(value: str | None, decoded: bool = False) -> tuple[str | None, str | None]:
+    """Returns (canonical identifier, problem). Path segments are decoded once; query values arrive decoded."""
+    if not value:
+        return None, "missing"
+    if not decoded:
+        if _BAD_ESCAPE_RE.search(value):
+            return None, f"malformed percent-escape in {value!r}"
+        value = unquote(value)
+    if any(c in value for c in "/\\?#"):
+        return None, f"encoded path separator in identifier {value!r}"
+    if not _IDENT_RE.match(value):
+        return None, f"identifier {value!r} has characters the connector URL cannot carry"
+    return quote(value, safe="._~-"), None
 
 
 def _result(ats, status, reason, identifiers=None):
@@ -108,24 +122,27 @@ def detect_ats(raw_url: str | None) -> dict:
     return {**base, **_classify(host, segs, first, query)}
 
 
-def _token_result(ats, token, where):
-    tok = _token(token)
+def _token_result(ats, raw, where, decoded=False):
+    tok, problem = _ident(raw, decoded)
     if tok:
         return _result(ats, CANDIDATE, f"{ats} board token from {where}; not verified", {"token": tok})
-    return _result(ats, INCOMPLETE, f"{ats} host but no board token in {where}")
+    if problem == "missing":
+        return _result(ats, INCOMPLETE, f"{ats} host but no board token in {where}")
+    return _result(ats, INCOMPLETE, f"{ats} board token in {where} unusable: {problem}")
 
 
 def _classify(host, segs, first, query):
     # Greenhouse
     if host in ("boards.greenhouse.io", "job-boards.greenhouse.io"):
         if first == "embed":
-            return _token_result("greenhouse", query.get("for"), "embed ?for= param")
+            return _token_result("greenhouse", query.get("for"), "embed ?for= param", decoded=True)
         return _token_result("greenhouse", first, "path")
     if host == "boards-api.greenhouse.io":
         return _token_result("greenhouse", segs[2] if segs[:2] == ["v1", "boards"] and len(segs) > 2 else None, "API path")
     if host in ("boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io"):
+        tok, _ = _ident(first)
         return _result("greenhouse", UNSUPPORTED, "EU Greenhouse board; fetch_greenhouse only calls the US API",
-                       {"token": _token(first)} if _token(first) else None)
+                       {"token": tok} if tok else None)
     # Lever
     if host == "jobs.lever.co":
         return _token_result("lever", first, "path")
@@ -149,18 +166,27 @@ def _classify(host, segs, first, query):
     m = _WORKDAY_JOBS_RE.match(host)
     if m:
         tenant, cluster = m.groups()
+        ids = {"tenant": tenant, "wd_cluster": cluster}
         if segs[:2] == ["wday", "cxs"]:
-            site = segs[3] if len(segs) > 3 else None
+            path_tenant = segs[2] if len(segs) > 2 else None
+            if path_tenant != tenant:  # fetch_workday_cxs puts the same tenant in host and path
+                return _result("workday", INCOMPLETE, f"host tenant {tenant!r} != /wday/cxs/ path tenant {path_tenant!r}", ids)
+            site, problem = (segs[3], None) if len(segs) > 3 else (None, "no site after /wday/cxs/{tenant}/")
         else:
-            rest = segs[1:] if segs and _LOCALE_RE.match(segs[0]) else segs
-            site = rest[0] if rest and rest[0] not in ("job", "details", "login") else None
-        return _workday(tenant, cluster, site, "myworkdayjobs host/path")
-    m = _WORKDAY_SITE_RE.match(host)
-    if m:
+            site, problem = _workday_site(segs)
+        if problem:
+            return _result("workday", INCOMPLETE, f"workday site unresolved: {problem}", ids)
+        site, problem = _ident(site)
+        if problem:
+            return _result("workday", INCOMPLETE, f"workday site unusable: {problem}", ids)
+        return _result("workday", CANDIDATE, "workday tenant/cluster/site from myworkdayjobs URL; not verified", {**ids, "site": site})
+    if _WORKDAY_SITE_RE.match(host):
+        # The connector needs {tenant}.{wdN}.myworkdayjobs.com; that host cannot be derived offline from this URL.
         rest = segs[1:] if segs and _LOCALE_RE.match(segs[0]) else segs
+        ids = {}
         if rest[:1] == ["recruiting"] and len(rest) > 2:
-            return _workday(rest[1].lower(), m.group(1), rest[2], "myworkdaysite /recruiting/ path; CXS host not checked")
-        return _result("workday", INCOMPLETE, "myworkdaysite host without /recruiting/{tenant}/{site}")
+            ids = {"tenant": rest[1], "site": rest[2]}
+        return _result("workday", INCOMPLETE, "myworkdaysite.com URL; connector's myworkdayjobs CXS host not derivable offline", ids)
     if _on(host, "myworkdayjobs.com"):
         return _result("workday", INCOMPLETE, "myworkdayjobs host without {tenant}.{wdN} cluster")
     # Official domain, but not a board host: the vendor's own site (lever.co, ashbyhq.com/careers).
@@ -177,8 +203,12 @@ def _classify(host, segs, first, query):
     return _result(None, WEBSITE, "no supported ATS host; website or custom careers page")
 
 
-def _workday(tenant, cluster, site, where):
-    ids = {"tenant": tenant, "wd_cluster": cluster}
-    if _token(site):
-        return _result("workday", CANDIDATE, f"workday tenant/cluster/site from {where}; not verified", {**ids, "site": site})
-    return _result("workday", INCOMPLETE, f"workday tenant/cluster found but no site in {where}", ids)
+def _workday_site(segs):
+    """Site from a public myworkdayjobs path: /{site}/..., /{xx-XX}/{site}/... Returns (raw site, problem)."""
+    if segs and _LOCALE_RE.match(segs[0]):
+        segs = segs[1:]
+    elif segs and re.fullmatch(r"[A-Za-z]{2}", segs[0]) and len(segs) > 1 and segs[1] not in _WORKDAY_RESERVED:
+        return None, f"/{segs[0]}/{segs[1]}: two-letter segment may be a locale or the site"
+    if not segs or segs[0] in _WORKDAY_RESERVED:
+        return None, "no site in path"
+    return segs[0], None

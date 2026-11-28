@@ -21,8 +21,14 @@ from scripts.scraper import ats_detect as ad
      {"tenant": "walmart", "wd_cluster": "wd504", "site": "WalmartExternal"}),
     ("https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs", "workday",
      {"tenant": "nvidia", "wd_cluster": "wd5", "site": "NVIDIAExternalCareerSite"}),
-    ("https://wd3.myworkdaysite.com/en-US/recruiting/Acme/External", "workday",
-     {"tenant": "acme", "wd_cluster": "wd3", "site": "External"}),
+    ("https://acme.wd1.myworkdayjobs.com/fr-FR/Acme_Careers/job/Paris/x_R1", "workday",
+     {"tenant": "acme", "wd_cluster": "wd1", "site": "Acme_Careers"}),
+    ("https://ge.wd5.myworkdayjobs.com/IT/job/x_R1", "workday", {"tenant": "ge", "wd_cluster": "wd5", "site": "IT"}),
+    ("https://ge.wd5.myworkdayjobs.com/ge", "workday", {"tenant": "ge", "wd_cluster": "wd5", "site": "ge"}),
+    ("https://ge.wd5.myworkdayjobs.com/en-US/ge/details/x", "workday", {"tenant": "ge", "wd_cluster": "wd5", "site": "ge"}),
+    ("https://jobs.ashbyhq.com/Quora%20Inc", "ashby", {"token": "Quora%20Inc"}),
+    ("https://jobs.ashbyhq.com/acme%2Dlabs", "ashby", {"token": "acme-labs"}),
+    ("https://boards.greenhouse.io/embed/job_board?for=acme+labs", "greenhouse", {"token": "acme%20labs"}),
 ])
 def test_supported_variants(url, ats, ids):
     d = ad.detect_ats(url)
@@ -78,3 +84,45 @@ def test_unsupported(url, ats):
 ])
 def test_blank_and_malformed(raw, status):
     assert ad.detect_ats(raw)["status"] == status
+
+
+@pytest.mark.parametrize("url,why", [
+    ("https://nvidia.wd5.myworkdayjobs.com/wday/cxs/walmart/WalmartExternal/jobs", "!= /wday/cxs/ path tenant"),
+    ("https://nvidia.wd5.myworkdayjobs.com/wday/cxs/NVIDIA/Site/jobs", "!= /wday/cxs/ path tenant"),
+    ("https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia", "no site"),
+    ("https://acme.wd1.myworkdayjobs.com/fr/Careers", "may be a locale or the site"),
+    ("https://acme.wd1.myworkdayjobs.com/en-US", "no site"),
+    ("https://acme.wd1.myworkdayjobs.com/en-US/job/x", "no site"),
+    ("https://acme.wd1.myworkdayjobs.com/Site%2", "malformed percent-escape"),
+    ("https://acme.wd1.myworkdayjobs.com/Site%2Fother", "encoded path separator"),
+    ("https://acme.wd1.myworkdayjobs.com/Site%5Cother", "encoded path separator"),
+    ("https://acme.wd1.myworkdayjobs.com/%C3%A9t%C3%A9", "cannot carry"),
+])
+def test_workday_identifier_problems_stay_unresolved(url, why):
+    d = ad.detect_ats(url)
+    assert d["status"] == ad.INCOMPLETE and why in d["reason"] and "site" not in d["identifiers"]
+
+
+def test_myworkdaysite_never_invents_cxs_host():
+    d = ad.detect_ats("https://wd3.myworkdaysite.com/en-US/recruiting/Acme/External")
+    assert d["status"] == ad.INCOMPLETE and "wd_cluster" not in d["identifiers"]
+    assert d["identifiers"] == {"tenant": "Acme", "site": "External"}
+
+
+@pytest.mark.parametrize("url,why", [
+    ("https://jobs.lever.co/acme%zz", "malformed percent-escape"),
+    ("https://jobs.lever.co/acme%2Fevil", "encoded path separator"),
+    ("https://jobs.ashbyhq.com/acme%3Fx%3D1", "encoded path separator"),
+    ("https://boards.greenhouse.io/embed/job_board?for=a/b", "encoded path separator"),
+    ("https://boards.greenhouse.io/embed/job_board?for=a%252F", "cannot carry"),
+    ("https://jobs.smartrecruiters.com/-acme", "cannot carry"),
+])
+def test_unusable_tokens_rejected(url, why):
+    d = ad.detect_ats(url)
+    assert d["status"] == ad.INCOMPLETE and why in d["reason"] and d["identifiers"] == {}
+
+
+def test_equivalent_encodings_give_one_token():
+    tokens = {ad.detect_ats(u)["identifiers"]["token"] for u in
+              ("https://jobs.ashbyhq.com/acme-labs", "https://jobs.ashbyhq.com/acme%2Dlabs", "https://jobs.ashbyhq.com/acme%2dlabs")}
+    assert tokens == {"acme-labs"}

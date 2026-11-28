@@ -10,7 +10,7 @@ MAP = {"company": "Company", "website": "Scraping Website", "careers": None}
 
 def write(tmp_path, body):
     p = tmp_path / "in.csv"
-    p.write_text(textwrap.dedent(body).lstrip(), encoding="utf-8")
+    p.write_text(textwrap.dedent(body).lstrip(), encoding="utf-8", newline="")
     return p
 
 
@@ -116,3 +116,52 @@ def test_only_proven_identical_rows_merge(tmp_path):
     assert groups['same_ats_board:ashby:{"token": "gamma"}'] == [12, 13]
     rec = rep["reconciliation"]
     assert (rec["input_rows"], rec["merged_duplicate_rows"], rec["unique_companies_after_merge"]) == (12, 2, 10)
+
+
+def test_conflicting_row_never_merges_or_becomes_clean_candidate(tmp_path):
+    m = {"company": "Company", "website": "Website", "careers": "Careers"}
+    rep = run(tmp_path, """
+        Company,Website,Careers
+        Acme,,https://jobs.lever.co/acme
+        Acme,https://jobs.ashbyhq.com/acme,https://jobs.lever.co/acme
+        Acme,,https://jobs.lever.co/acme/123
+        """, m)
+    rows = by_row(rep)
+    assert rows[4]["merged_into_row"] == 2                      # clean identical rows still merge
+    bad = rows[3]
+    assert (bad["status"], bad["ats_candidate"], bad["identifiers"], bad["merged_into_row"]) == ("ambiguous", None, {}, None)
+    assert bad["candidate_boards"] == ['ashby:{"token": "acme"}', 'lever:{"token": "acme"}']
+    assert bad["all_urls"] == {"Careers": "https://jobs.lever.co/acme", "Website": "https://jobs.ashbyhq.com/acme"}
+    assert 'same_ats_board:lever:{"token": "acme"}' in bad["review_groups"]
+    assert "similar_name:acme" in bad["review_groups"]
+    companies = {c["canonical_row"]: c for c in rep["companies"]}
+    assert companies[2]["source_rows"] == [2, 4] and companies[2]["status"] == "ats_candidate"
+    conflict = companies[3]
+    assert (conflict["source_rows"], conflict["status"], conflict["ats_candidate"]) == ([3], "ambiguous", None)
+    assert conflict["urls"] == ["https://jobs.ashbyhq.com/acme", "https://jobs.lever.co/acme"]
+    assert "similar_name:acme" in conflict["review_groups"]
+    assert rep["reconciliation"]["conflicting_ats_rows"] == 1
+    assert "ambiguous" in (tmp_path / "out" / "intake_records.csv").read_text(encoding="utf-8")
+
+
+def test_unclean_rows_never_merge_even_if_identical(tmp_path):
+    rep = run(tmp_path, """
+        Company,Scraping Website
+        Bad,ftp://bad
+        Bad,ftp://bad
+        Half,https://acme.wd1.myworkdayjobs.com/fr/Careers
+        Half,https://acme.wd1.myworkdayjobs.com/fr/Careers
+        """)
+    assert all(r["merged_into_row"] is None for r in rep["records"])
+
+
+def test_multiline_cell_does_not_shift_logical_rows(tmp_path):
+    body = 'Company,Scraping Website\n"Multi\nLine Co",https://multi.com\nNext,https://next.com\n"A\n\nB",\nLast,https://last.com\n'
+    rep = run(tmp_path, body)
+    rows = by_row(rep)
+    assert sorted(rows) == [2, 3, 4, 5]
+    assert (rows[2]["company"], rows[2]["source_lines"]) == ("Multi\nLine Co", [2, 3])
+    assert (rows[3]["company"], rows[3]["source_lines"]) == ("Next", [4, 4])
+    assert rows[4]["source_lines"] == [5, 7] and rows[4]["status"] == "blank"
+    assert (rows[5]["company"], rows[5]["source_lines"]) == ("Last", [8, 8])
+    assert rep["reconciliation"]["input_rows"] == rep["reconciliation"]["output_records"] == 4
