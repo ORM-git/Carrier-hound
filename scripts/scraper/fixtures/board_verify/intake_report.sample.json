@@ -1,0 +1,303 @@
+{
+  "source_csv": "synthetic_fixture.csv",
+  "headers": [
+    "Company",
+    "Website",
+    "Careers"
+  ],
+  "mapping": {
+    "company": "Company",
+    "website": "Website",
+    "careers": "Careers"
+  },
+  "note": "SYNTHETIC FIXTURE in company_sheet_intake (PR #882) intake_report.json shape; no real companies.",
+  "reconciliation": {},
+  "records": [
+    {
+      "source_row": 2,
+      "company": "Synthetic Alpha",
+      "url_column": "Careers",
+      "original_url": "https://boards.greenhouse.io/synthetic-alpha",
+      "normalized_url": "https://boards.greenhouse.io/synthetic-alpha",
+      "normalized_domain": null,
+      "ats_candidate": "greenhouse",
+      "identifiers": {
+        "token": "synthetic-alpha"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://boards.greenhouse.io/synthetic-alpha",
+        "Website": "https://alpha.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 3,
+      "company": "Synthetic Beta",
+      "url_column": "Careers",
+      "original_url": "https://jobs.lever.co/synthetic-beta",
+      "normalized_url": "https://jobs.lever.co/synthetic-beta",
+      "normalized_domain": null,
+      "ats_candidate": "lever",
+      "identifiers": {
+        "token": "synthetic-beta"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://jobs.lever.co/synthetic-beta",
+        "Website": "beta.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 4,
+      "company": "Synthetic Gamma",
+      "url_column": "Careers",
+      "original_url": "https://jobs.ashbyhq.com/synthetic-gamma",
+      "normalized_url": "https://jobs.ashbyhq.com/synthetic-gamma",
+      "normalized_domain": null,
+      "ats_candidate": "ashby",
+      "identifiers": {
+        "token": "synthetic-gamma"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://jobs.ashbyhq.com/synthetic-gamma",
+        "Website": "https://www.gamma.example/"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 5,
+      "company": "Synthetic Delta",
+      "url_column": "Careers",
+      "original_url": "https://jobs.smartrecruiters.com/SyntheticDelta",
+      "normalized_url": "https://jobs.smartrecruiters.com/SyntheticDelta",
+      "normalized_domain": null,
+      "ats_candidate": "smartrecruiters",
+      "identifiers": {
+        "token": "SyntheticDelta"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://jobs.smartrecruiters.com/SyntheticDelta",
+        "Website": "https://delta.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 6,
+      "company": "Synthetic Epsilon",
+      "url_column": "Careers",
+      "original_url": "https://boards.greenhouse.io/synthetic-epsilon",
+      "normalized_url": "https://boards.greenhouse.io/synthetic-epsilon",
+      "normalized_domain": null,
+      "ats_candidate": "greenhouse",
+      "identifiers": {
+        "token": "synthetic-epsilon"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://boards.greenhouse.io/synthetic-epsilon",
+        "Website": "https://epsilon.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 7,
+      "company": "Synthetic Zeta",
+      "url_column": "Careers",
+      "original_url": "https://zeta.wd5.myworkdayjobs.com/External",
+      "normalized_url": "https://zeta.wd5.myworkdayjobs.com/External",
+      "normalized_domain": null,
+      "ats_candidate": "workday",
+      "identifiers": {
+        "tenant": "zeta",
+        "wd_cluster": "wd5",
+        "site": "External"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://zeta.wd5.myworkdayjobs.com/External",
+        "Website": "https://zeta.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 8,
+      "company": "Synthetic Eta",
+      "url_column": "Careers",
+      "original_url": "",
+      "normalized_url": "",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "status": "website_only",
+      "reason": "no supported ATS host; website or custom careers page",
+      "all_urls": {
+        "Careers": "",
+        "Website": "https://eta.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 9,
+      "company": "Synthetic Alpha",
+      "url_column": "Careers",
+      "original_url": "https://boards.greenhouse.io/synthetic-alpha",
+      "normalized_url": "https://boards.greenhouse.io/synthetic-alpha",
+      "normalized_domain": null,
+      "ats_candidate": "greenhouse",
+      "identifiers": {
+        "token": "synthetic-alpha"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://boards.greenhouse.io/synthetic-alpha",
+        "Website": "https://alpha.example"
+      },
+      "merged_into_row": 2,
+      "review_groups": []
+    },
+    {
+      "source_row": 10,
+      "company": "Synthetic Theta",
+      "url_column": "Careers",
+      "original_url": "https://boards.greenhouse.io/synthetic-shared",
+      "normalized_url": "https://boards.greenhouse.io/synthetic-shared",
+      "normalized_domain": null,
+      "ats_candidate": "greenhouse",
+      "identifiers": {
+        "token": "synthetic-shared"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://boards.greenhouse.io/synthetic-shared",
+        "Website": "https://theta.example"
+      },
+      "merged_into_row": null,
+      "review_groups": [
+        "same_ats_board:greenhouse:{\"token\": \"synthetic-shared\"}"
+      ]
+    },
+    {
+      "source_row": 11,
+      "company": "Synthetic Iota",
+      "url_column": "Careers",
+      "original_url": "https://boards.greenhouse.io/synthetic-shared",
+      "normalized_url": "https://boards.greenhouse.io/synthetic-shared",
+      "normalized_domain": null,
+      "ats_candidate": "greenhouse",
+      "identifiers": {
+        "token": "synthetic-shared"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://boards.greenhouse.io/synthetic-shared",
+        "Website": "https://iota.example"
+      },
+      "merged_into_row": null,
+      "review_groups": [
+        "same_ats_board:greenhouse:{\"token\": \"synthetic-shared\"}"
+      ]
+    },
+    {
+      "source_row": 12,
+      "company": "Synthetic Kappa",
+      "url_column": "Careers",
+      "original_url": "https://jobs.lever.co/synthetic-kappa",
+      "normalized_url": "https://jobs.lever.co/synthetic-kappa",
+      "normalized_domain": null,
+      "ats_candidate": "lever",
+      "identifiers": {
+        "token": "synthetic-kappa"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://jobs.lever.co/synthetic-kappa",
+        "Website": "https://shared.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 13,
+      "company": "Synthetic Lambda",
+      "url_column": "Careers",
+      "original_url": "https://jobs.ashbyhq.com/synthetic-lambda",
+      "normalized_url": "https://jobs.ashbyhq.com/synthetic-lambda",
+      "normalized_domain": null,
+      "ats_candidate": "ashby",
+      "identifiers": {
+        "token": "synthetic-lambda"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://jobs.ashbyhq.com/synthetic-lambda",
+        "Website": "https://shared.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 14,
+      "company": "Synthetic Mu",
+      "url_column": "Careers",
+      "original_url": "https://boards.greenhouse.io/synthetic-mu",
+      "normalized_url": "https://boards.greenhouse.io/synthetic-mu",
+      "normalized_domain": null,
+      "ats_candidate": "greenhouse",
+      "identifiers": {
+        "token": "synthetic-mu"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://boards.greenhouse.io/synthetic-mu",
+        "Website": ""
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 15,
+      "company": "",
+      "url_column": "Careers",
+      "original_url": "https://jobs.lever.co/synthetic-nameless",
+      "normalized_url": "https://jobs.lever.co/synthetic-nameless",
+      "normalized_domain": null,
+      "ats_candidate": "lever",
+      "identifiers": {
+        "token": "synthetic-nameless"
+      },
+      "status": "blank_company",
+      "reason": "company name blank; url outcome was ats_candidate",
+      "all_urls": {
+        "Careers": "https://jobs.lever.co/synthetic-nameless",
+        "Website": "https://nameless.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    }
+  ],
+  "companies": [],
+  "review_groups": []
+}
