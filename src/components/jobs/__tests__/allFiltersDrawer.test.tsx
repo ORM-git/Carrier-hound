@@ -133,4 +133,40 @@ describe("All Filters drawer (desktop, five sections)", () => {
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
   });
+
+  it("measures the panel with a ResizeObserver and window resize, and disconnects/removes both on close and unmount", () => {
+    const disconnect = vi.fn();
+    const observe = vi.fn();
+    const RO = vi.fn(function (this: any) { this.observe = observe; this.disconnect = disconnect; this.unobserve = vi.fn(); });
+    vi.stubGlobal("ResizeObserver", RO);
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const props = { onClose: vi.fn(), filters: base, onApply: vi.fn(), onResetAll: vi.fn(), activeCount: 0 };
+    const { rerender, unmount } = render(<AllFiltersDrawer isOpen {...props} />);
+    expect(RO).toHaveBeenCalledTimes(1);
+    expect(observe).toHaveBeenCalledTimes(1);
+    const resizeAdds = add.mock.calls.filter((c) => c[0] === "resize").length;
+    expect(resizeAdds).toBe(1);
+    rerender(<AllFiltersDrawer isOpen={false} {...props} />);
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(remove.mock.calls.filter((c) => c[0] === "resize").length).toBe(1);
+    rerender(<AllFiltersDrawer isOpen {...props} />);
+    expect(RO).toHaveBeenCalledTimes(2);
+    unmount();
+    expect(disconnect).toHaveBeenCalledTimes(2);
+    expect(remove.mock.calls.filter((c) => c[0] === "resize").length).toBe(2);
+    add.mockRestore();
+    remove.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("the dim backdrop closes the drawer on click, is presentation-only (not a control), and Escape and the close button still close it", () => {
+    const { onClose } = open();
+    const backdrop = document.querySelector('div[aria-hidden="true"].fixed.inset-0') as HTMLElement;
+    expect(backdrop.getAttribute("role")).toBe("presentation");
+    fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
 });
