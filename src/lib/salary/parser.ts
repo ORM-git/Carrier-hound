@@ -17,6 +17,8 @@ export interface ParsedSalary {
   salary_max: number | null;
   currency: string;
   salary_period: SalaryPeriod;
+  /** True only when the text itself stated this period (not the yearly default, not a scale-check adjustment). */
+  salary_period_stated: boolean;
 }
 
 export interface ParseSalaryOptions {
@@ -291,6 +293,10 @@ export function detectPayPeriod(text: string | null | undefined): SalaryPeriod |
 
 export const normalizeSalaryPeriod = detectPayPeriod;
 
+// Daily/weekly wording, same regex style. jobs.salary_period cannot store these periods yet (checklist #21).
+export const DAILY_PERIOD = /(?:^|\b)(?:per\s+day|\/day|daily|a\s+day)(?:(?<=\w)\b|$|\s)/i;
+export const WEEKLY_PERIOD = /(?:^|\b)(?:per\s+week|\/week|weekly|a\s+week)(?:(?<=\w)\b|$|\s)/i;
+
 /**
  * Parses numeric compensation amounts from a snippet.
  */
@@ -430,6 +436,7 @@ export function parseSalary(
     salary_max: null,
     currency: 'USD',
     salary_period: 'yearly',
+    salary_period_stated: false,
   };
 
   if (!rawSalary || !rawSalary.trim()) {
@@ -455,6 +462,10 @@ export function parseSalary(
 
   // Detect pay period (defaults to yearly unless hourly/monthly detected)
   const explicitPeriod = detectPayPeriod(snippet);
+  // A stated daily/weekly rate must never be relabelled hourly/yearly by the scale check below.
+  if (!explicitPeriod && (DAILY_PERIOD.test(snippet) || WEEKLY_PERIOD.test(snippet))) {
+    return nullResult;
+  }
   const initialPeriod = explicitPeriod || 'yearly';
 
   // Parse numbers
@@ -505,5 +516,6 @@ export function parseSalary(
     salary_max: max,
     currency,
     salary_period: adjustedPeriod,
+    salary_period_stated: explicitPeriod !== null && adjustedPeriod === explicitPeriod,
   };
 }
