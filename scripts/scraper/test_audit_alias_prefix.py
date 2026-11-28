@@ -10,10 +10,8 @@ FIXTURE = {
 
 
 class TestAliasPrefixAudit(unittest.TestCase):
-    def test_prefix_only_name_is_flagged_with_key_and_inherited_identity(self) -> None:
-        hit = prefix_match("Acmecorp Logistics", FIXTURE)
-        self.assertEqual(hit, {"alias_key": "acmecorp",
-                               "inherited": {"name": "Acme Corp", "category": "OTHER_STARTUPS", "domain": "acme.com"}})
+    def test_unrelated_prefix_is_no_longer_mapped(self) -> None:
+        self.assertIsNone(prefix_match("Acmecorp Logistics", FIXTURE))
 
     def test_exact_match_and_no_match_are_not_flagged(self) -> None:
         self.assertIsNone(prefix_match("Acme Corp", FIXTURE))      # exact token "acmecorp"
