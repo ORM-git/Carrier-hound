@@ -1,5 +1,5 @@
-import { experienceBucketsFor } from "@/lib/jobs/leanList";
-import { extractDescriptionSkills } from "@/lib/matcher/scoring";
+import { experienceBucketsFor, normalizeLeanWireRow, deriveLegacyLeanEvidence } from "@/lib/jobs/leanList";
+import { extractSkillsFromJob } from "@/lib/matcher/scoring";
 import { createClient } from "../supabase/client";
 import { wireJobType } from "@/lib/jobs/formatJobType";
 import { appendExcludedSkillParams, appendRequiredYearsParams } from "@/lib/preferences/advancedFilters";
@@ -62,8 +62,8 @@ export interface LiveJob {
   lean?: boolean;
   /** Experience buckets this row matches, derived server-side from the full text; only on lean rows. */
   experienceBuckets?: string[];
-  /** Skills evidenced in the description, derived server-side for lean rows (card fit diagnostics input). */
-  descriptionSkills?: string[];
+  /** Lean rows: extractSkillsFromJob of the FULL row, derived server-side (card fit diagnostics / ranking input). Replaces the raw skills on lean rows. */
+  evidencedSkills?: string[];
   skills?: string[];
   postedAt?: string;
   /** CM arrival: jobs.first_seen_at (DB default now() on insert, never written by ingestion). Not the employer date. */
@@ -574,7 +574,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
         const json = await recRes.json();
         const count = json.totalCount ?? (json.jobs?.length || 0);
         return {
-          jobs: json.jobs || [],
+          jobs: (json.jobs || []).map(normalizeLeanWireRow),
           totalCount: count,
           nextCursor: null,
           hasNextPage: (page * pageSize) < count,
@@ -634,7 +634,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
       if (res.ok) {
         const json = await res.json();
         return {
-          jobs: json.jobs || [],
+          jobs: (json.jobs || []).map(normalizeLeanWireRow),
           totalCount: json.totalCount ?? (json.jobs?.length || 0),
           nextCursor: json.nextCursor ?? null,
           hasNextPage: Boolean(json.hasNextPage),
@@ -1048,16 +1048,23 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                       // An older server that still sends it is handled the same way: buckets derived here, description dropped.
                       if (u.lean === true && Array.isArray(u.experienceBuckets)) {
                         job.experienceBuckets = u.experienceBuckets;
-                        if (Array.isArray(u.descriptionSkills)) job.descriptionSkills = u.descriptionSkills;
+                        if (Array.isArray(u.evidencedSkills)) {
+                          job.evidencedSkills = u.evidencedSkills;
+                        } else {
+                          // Previously deployed lean DTO (raw skills + descriptionSkills, no evidencedSkills): derive the exact evidence
+                          // (raw skills, then description skills, then title; same order/case as before) BEFORE the raw skills are dropped.
+                          job.evidencedSkills = deriveLegacyLeanEvidence({ title: job.title, category: job.category, skills: u.skills, descriptionSkills: u.descriptionSkills });
+                        }
                         job.lean = true;
                         job.description = "";
                       } else if (u.description || u.skills) {
                         job.experienceBuckets = experienceBucketsFor({ title: job.title, description: u.description, skills: u.skills || job.skills });
-                        job.descriptionSkills = extractDescriptionSkills(u.description, job.category);
+                        job.evidencedSkills = extractSkillsFromJob({ title: job.title, description: u.description || "", skills: u.skills || job.skills || [], category: job.category } as any);
                         job.lean = true;
                         job.description = "";
                       }
-                      if (u.skills) job.skills = u.skills;
+                      // Lean rows never get the raw skills back (the evidenced list stands in); only a non-lean unlock restores them.
+                      if (u.skills && !job.lean) job.skills = u.skills;
                       if (Array.isArray(u.top_keywords) && u.top_keywords.length > 0) {
                         job.top_keywords = u.top_keywords.slice(0, 8);
                       } else if (u.description || u.skills) {
@@ -1504,6 +1511,8 @@ export async function getTopRankedJobsForCandidate(
         remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
         category: job.category,
         skills: job.skills,
+        evidencedSkills: job.evidencedSkills,
+        lean: job.lean,
         salary_text: job.salary,
         description: job.description,
       });
