@@ -19,7 +19,7 @@ describe("lean list rows keep the card fit diagnostics identical", () => {
 
   it("server derives the description-evidenced skills; the text is dropped", () => {
     expect(lean.description).toBe("");
-    expect(lean.descriptionSkills).toEqual(expect.arrayContaining(["Python", "React"]));
+    expect(lean.evidencedSkills).toEqual(expect.arrayContaining(["Python", "React"]));
   });
 
   it("matchedSkills, score and the zero-skills card label are the same as with the full description", () => {
@@ -32,13 +32,13 @@ describe("lean list rows keep the card fit diagnostics identical", () => {
   });
 
   it("negative control: without the derived skills the lean row would flip to zero matched skills", () => {
-    const stripped = computeFitDiagnostics(candidate, toFitInput({ ...lean, descriptionSkills: undefined }));
+    const stripped = computeFitDiagnostics(candidate, toFitInput({ ...lean, evidencedSkills: undefined }));
     expect(stripped.matchedSkills.length).toBe(0);
   });
 
-  it("a full row (description present) ignores descriptionSkills, so detail scoring is unchanged", () => {
+  it("a full row (description present) ignores evidencedSkills, so detail scoring is unchanged", () => {
     const a = computeFitDiagnostics(candidate, toFitInput(job));
-    const b = computeFitDiagnostics(candidate, toFitInput({ ...job, descriptionSkills: ["Kubernetes"] }));
+    const b = computeFitDiagnostics(candidate, toFitInput({ ...job, evidencedSkills: ["Kubernetes"] }));
     expect(b.matchedSkills).toEqual(a.matchedSkills);
   });
 });
