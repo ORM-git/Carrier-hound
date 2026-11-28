@@ -1,0 +1,429 @@
+.radar-reference {
+  border: 10px solid #f2f3f5;
+  border-top: 64px solid #f2f3f5;
+  border-radius: 24px;
+  isolation: isolate;
+}
+.radar-reference-toolbar {
+  position: absolute;
+  top: -56px;
+  left: 4px;
+  right: 4px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #232323;
+  z-index: 40;
+}
+.radar-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  border-radius: 28px;
+  box-shadow: 0 2px 5px #0000000c;
+  padding: 12px 18px;
+  width: min(560px, 50%);
+  font-size: 13px;
+}
+.radar-search input {
+  outline: 0;
+  background: none;
+  min-width: 0;
+  width: 100%;
+}
+.radar-search > span {
+  font-size: 11px;
+  color: #aaa;
+  background: #f5f5f5;
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.radar-stat-pills {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+.radar-stat-pills > span {
+  padding: 12px 16px;
+  background: white;
+  border-radius: 24px;
+  white-space: nowrap;
+}
+.radar-stat-pills b {
+  background: #f4f4f4;
+  border-radius: 10px;
+  padding: 3px 6px;
+  margin-left: 6px;
+}
+.radar-view-switch {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 35;
+  display: flex;
+  background: #fff;
+  border-radius: 30px;
+  padding: 5px;
+  box-shadow: 0 2px 6px #0001;
+  color: #666;
+  font-size: 13px;
+}
+.radar-view-switch button {
+  padding: 8px 14px;
+  border-radius: 25px;
+  min-height: 36px;
+}
+.radar-view-switch button[aria-pressed="true"] {
+  background: #f2f3f5;
+  color: #111;
+}
+.radar-map-controls {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: #333;
+}
+.radar-map-controls button {
+  width: 36px;
+  height: 36px;
+  background: white;
+  font-size: 22px;
+  border: 1px solid #ddd;
+}
+.radar-map-controls button:first-child {
+  border-radius: 7px 7px 0 0;
+}
+.radar-map-controls button:last-child {
+  border-radius: 6px;
+  margin-top: 8px;
+}
+.radar-count-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border-radius: 100%;
+  border: 1px solid #ffffff70;
+  background: #20201e;
+  color: #fffdf5;
+  box-shadow: 0 2px 4px #0003;
+}
+.radar-count-small {
+  background: #f5f3eb;
+  color: #222;
+  border: 1px solid #999;
+}
+.radar-count-selected {
+  outline: 3px solid white;
+  outline-offset: 3px;
+}
+.radar-count-number {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 26px;
+  line-height: 1;
+}
+.radar-count-label {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  margin-top: 5px;
+}
+.radar-city-name {
+  font-size: 10px;
+  border-radius: 6px;
+  background: #fffffff0;
+  color: #333;
+  padding: 1px 5px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px #0002;
+}
+.radar-reference .cluster-extra {
+  font-size: 8px !important;
+  color: inherit !important;
+}
+.radar-reference
+  > .pointer-events-none.bg-\[radial-gradient\(ellipse_at_center\,_var\(--tw-gradient-stops\)\)\] {
+  display: none;
+}
+.radar-reference > div.absolute.top-3 {
+  inset: 0;
+  pointer-events: none;
+}
+.radar-reference > div.absolute.top-3 > div {
+  display: none;
+}
+.radar-reference .radar-filter-trigger {
+  position: absolute;
+  bottom: 18px;
+  left: 12px;
+  margin: 0;
+  background: white;
+  color: #222;
+  border: 0;
+  box-shadow: 0 2px 4px #0002;
+}
+.radar-reference .radar-filter-backdrop {
+  align-items: flex-end;
+  justify-content: flex-start;
+  background: #0002;
+  backdrop-filter: none;
+}
+.radar-filter-backdrop > div {
+  max-width: 360px;
+  margin: 0 0 80px 94px;
+  border-radius: 18px;
+  background: white;
+  color: #222;
+  border: 1px solid #ddd;
+  box-shadow: 0 12px 50px #0003;
+}
+.radar-filter-backdrop h3 {
+  color: #222;
+}
+.radar-filter-backdrop select {
+  background: #f7f7f7;
+  color: #222;
+  border-color: #ddd;
+}
+.radar-reference > .absolute.bottom-4.left-4 {
+  display: none;
+}
+.radar-city-list {
+  position: absolute;
+  inset: 65px auto 75px 12px;
+  width: 380px;
+  max-width: calc(100% - 70px);
+  overflow: auto;
+  background: #fffffff7;
+  border-radius: 16px;
+  z-index: 28;
+  color: #222;
+  box-shadow: 0 8px 35px #0003;
+  padding: 12px;
+}
+.radar-city-list h2 {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 10px;
+}
+.radar-city-list > button {
+  display: flex;
+  justify-content: space-between;
+  text-align: left;
+  width: 100%;
+  padding: 14px 10px;
+  border-bottom: 1px solid #eee;
+  gap: 12px;
+  font-size: 14px;
+}
+.radar-city-list > button:hover {
+  background: #f4f3ed;
+}
+.radar-city-list small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #777;
+  margin-top: 4px;
+}
+.radar-flat-map {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #bfc8d5;
+}
+.radar-reference {
+  overflow: visible !important;
+}
+.radar-reference > div[ref] {
+  overflow: hidden;
+}
+.radar-reference .radar-filter-trigger {
+  display: flex !important;
+}
+.radar-reference > div.absolute.inset-0 {
+  border-radius: 14px;
+  overflow: hidden;
+}
+@media (max-width: 639px) {
+  .radar-reference {
+    border-width: 5px;
+    border-top-width: 62px;
+    border-radius: 16px;
+    min-height: calc(100dvh - 110px);
+    margin-top: 0;
+  }
+  .radar-reference-toolbar {
+    top: -55px;
+    left: 2px;
+    right: 2px;
+  }
+  .radar-search {
+    width: 100%;
+    padding: 11px 13px;
+    font-size: 12px;
+  }
+  .radar-stat-pills {
+    display: none;
+  }
+  .radar-search > span {
+    display: none;
+  }
+  .radar-view-switch {
+    top: 10px;
+    left: 8px;
+    font-size: 12px;
+  }
+  .radar-map-controls {
+    top: 10px;
+    right: 8px;
+  }
+  .radar-filter-backdrop > div {
+    margin: 0;
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+  }
+  .radar-count-number {
+    font-size: 21px;
+  }
+  .radar-city-list {
+    left: 8px;
+    width: 320px;
+    bottom: 74px;
+  }
+  .radar-count-disc {
+    max-width: 65px;
+    max-height: 65px;
+  }
+  .radar-count-label {
+    font-size: 7px;
+  }
+}
+.radar-filter-note {
+  font-size: 11px;
+  color: #666;
+  line-height: 1.5;
+}
+.radar-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.radar-filter-actions > button {
+  background: #f1f2f4;
+  border: 1px solid #ddd;
+  padding: 7px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  min-height: 36px;
+}
+.radar-search:focus-within {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+.radar-reference button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
+.radar-reference .radar-map-controls button {
+  min-width: 40px;
+  min-height: 40px;
+}
+.radar-city-list > p {
+  padding: 14px;
+  color: #777;
+  font-size: 13px;
+}
+
+.radar-filter-trigger {
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 30px;
+  padding: 11px 15px;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 44px;
+}
+.radar-map-controls button:disabled {
+  opacity: 0.4;
+}
+.radar-reference .radar-count-disc {
+  flex-shrink: 0;
+}
+
+.radar-flat-map {
+  overflow: auto;
+  scrollbar-width: thin;
+  border-radius: 14px;
+}
+.radar-flat-map-content {
+  position: relative;
+}
+.radar-flat-map-content > img {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+.radar-flat-map-content > button {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #222;
+  color: white;
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  width: 46px;
+  height: 46px;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+}
+.radar-flat-map-content small {
+  display: block;
+  font-family: Arial, sans-serif;
+  font-size: 8px;
+  font-style: normal;
+  white-space: nowrap;
+}
+.radar-flat-map-note {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-size: 10px;
+  padding: 5px 9px;
+  border-radius: 20px;
+  background: #ffffffdc;
+  color: #444;
+  white-space: nowrap;
+}
+
+.radar-filter-backdrop > div {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  overscroll-behavior: contain;
+}
+.radar-reference {
+  min-height: calc(100dvh - 78px);
+}
+@media (max-width: 639px) {
+  .radar-reference {
+    min-height: calc(100dvh - 100px);
+  }
+}
+.radar-filter-backdrop > div > div:first-child {
+  position: sticky;
+  top: -16px;
+  background: #fff;
+  z-index: 2;
+  padding-bottom: 8px;
+}

@@ -127,7 +127,7 @@ export default function RadarPage() {
       user={user}
       isPro={true}
       hideFooter
-      mainClassName="flex-1 w-full relative bg-[#040610] overflow-hidden flex flex-col"
+      mainClassName="flex-1 w-full relative bg-[#f2f3f5] overflow-hidden flex flex-col"
     >
       <JobRadarGlobe />
     </LoggedInAppShell>
