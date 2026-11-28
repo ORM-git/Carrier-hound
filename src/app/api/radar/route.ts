@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/observability/logger";
 import { singleFlight } from "@/lib/cache/singleFlight";
 import { radarJsonResponse } from "@/lib/api/radarResponse";
 import { VISIBLE_SOURCE_FILTER } from "@/lib/jobs/sourcePolicy";
+import { radarCompanyName } from "@/lib/jobs/radarCompanies";
 
 const baseLog = createLogger({ context: { route: "/api/radar" } });
 
@@ -145,7 +146,7 @@ async function computeRadarPayload(supabase: any, now: number): Promise<any> {
       if (resolved.type === 'worldwide_remote') {
         worldwideRemote.totalCount++;
         if (isVerified) worldwideRemote.verifiedCount++;
-        if (j.company) worldwideRemote.companies.add(j.company);
+        { const name = radarCompanyName(j.company); if (name) worldwideRemote.companies.add(name); }
       } else if (resolved.type === 'city') {
         let city = cityMap.get(resolved.id);
         if (!city && resolved.coordinates) {
@@ -164,7 +165,7 @@ async function computeRadarPayload(supabase: any, now: number): Promise<any> {
         if (city) {
           city.totalCount++;
           if (isVerified) city.verifiedCount++;
-          if (j.company) city.companies.add(j.company);
+          { const name = radarCompanyName(j.company); if (name) city.companies.add(name); }
         }
         if (resolved.countryCode && countryMap.has(resolved.countryCode)) {
           const c = countryMap.get(resolved.countryCode)!;
