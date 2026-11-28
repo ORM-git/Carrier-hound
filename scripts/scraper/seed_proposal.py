@@ -4,13 +4,14 @@
       --verification out/verify/verification_results.json [--metadata reviewed_metadata.json] --out-dir out/proposal
 
 Outputs (in --out-dir):
-  proposed_seeds.json                      {"layer1_public_ats": [...]} production proposals only, exact seed schema
+  proposed_seeds.json                      {"layer1_public_ats": []}: always empty in this offline build
   proposed_seeds.TEST_ONLY_SYNTHETIC.json  proposals backed only by synthetic fixture evidence, under a key no loader reads
   seed_review_report.json                  every intake record once: proposal status, provenance, unresolved fields,
                                            conflicts, verification evidence, or the reason it was skipped
 
-A production proposal needs every seed field resolved, no conflict, and a live verification with usable jobs. This
-build has no live verification, so only fixtures can be supplied and production stays empty.
+This build has no live verification, so no production proposal can exist, from the CLI or from propose(). A results
+file claiming evidence="live" or test_only=false is not proof: the whole file is quarantined. A result is used only
+when it is synthetic and bound to the exact intake record, board and endpoint it was planned for.
 
 --metadata (optional, reviewer supplied): [{"source_row": int, "canonical_domain": str|null, "category": str|null,
 "provenance": str}]. Without it, category stays unresolved: the sheet has none and no documented seed default exists.
@@ -36,7 +37,6 @@ from scripts.scraper.enrichment import COMPANY_CATEGORIES
 
 SEED_FIELDS = ("slug", "name", "ats", "token", "canonical_domain", "category")  # company_seeds.json layer1 entry
 TEST_ONLY_KEY = "TEST_ONLY_SYNTHETIC_FIXTURE_PROPOSALS_DO_NOT_SEED"
-PRODUCTION = "production_proposal"
 TEST_ONLY = "test_only_proposal"
 UNRESOLVED = "unresolved"
 NOT_QUALIFIED = "not_qualified"
@@ -99,24 +99,39 @@ def load_metadata(raw: Any, eligible_rows: set[Any]) -> tuple[dict[Any, dict[str
     return out, problems
 
 
-def load_verification(raw: Any, eligible_ids: set[str]) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+def _binding_problem(r: dict[str, Any], e: dict[str, Any]) -> str | None:
+    """A result counts only for the record, board and endpoint it was planned from."""
+    for k in bv.PLAN_FIELDS:
+        if r.get(k) != e[k]:
+            return f"result {k} {r.get(k)!r} does not match the intake record's {e[k]!r}"
+    return None
+
+
+def load_verification(raw: Any, eligible: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """board_id -> bound synthetic result. Forged, contradictory or unbound results are quarantined, never used."""
     if raw is None:
         return {}, []
     results = raw.get("results") if isinstance(raw, dict) else None
     if not isinstance(results, list):
         raise bv.IntakeError("verification file has no results list (expected board_verify verification_results.json)")
-    file_evidence = raw.get("evidence")
+    if raw.get("evidence") != bv.SYNTHETIC or raw.get("test_only") is not True:
+        # Only board_verify's synthetic writer exists; any other header is an edited or foreign file.
+        return {}, [{"result": r, "problem": f"quarantined: file claims evidence={raw.get('evidence')!r}, "
+                     f"test_only={raw.get('test_only')!r}; this build only accepts synthetic_fixture/test_only=true"}
+                    for r in results]
+    by_id = {e["board_id"]: e for e in eligible}
     out: dict[str, dict[str, Any]] = {}
     problems: list[dict[str, Any]] = []
     for r in results:
         bid = r.get("board_id") if isinstance(r, dict) else None
-        # Anything not explicitly live at both file and result level is treated as synthetic.
-        if isinstance(r, dict) and not (file_evidence == bv.LIVE and r.get("evidence") == bv.LIVE):
-            r = {**r, "evidence": bv.SYNTHETIC}
-        if bid not in eligible_ids:
+        if not isinstance(r, dict) or r.get("evidence") != bv.SYNTHETIC or ("test_only" in r and r["test_only"] is not True):
+            problems.append({"result": r, "problem": "quarantined: result is not marked synthetic_fixture/test-only"})
+        elif bid not in by_id:
             problems.append({"result": r, "problem": "board is not an eligible candidate in this intake"})
-        elif bid in out and out[bid].get("outcome") != r.get("outcome"):
-            problems.append({"result": r, "problem": f"conflicting verification results for {bid}"})
+        elif (bind := _binding_problem(r, by_id[bid])):
+            problems.append({"result": r, "problem": f"quarantined: unbound result: {bind}"})
+        elif bid in out:
+            problems.append({"result": r, "problem": f"duplicate verification result for {bid}"})
             out[bid] = {**out[bid], "_conflict": True}
         else:
             out[bid] = r
@@ -125,7 +140,7 @@ def load_verification(raw: Any, eligible_ids: set[str]) -> tuple[dict[str, dict[
 
 def propose(intake: Any, seeds: dict[str, Any], verification: Any = None, metadata: Any = None) -> dict[str, Any]:
     eligible, skipped = bv.select_candidates(intake, seeds)
-    verified, verify_problems = load_verification(verification, {e["board_id"] for e in eligible})
+    verified, verify_problems = load_verification(verification, eligible)
     meta, meta_problems = load_metadata(metadata, {e["source_row"] for e in eligible})
     website_col = (intake.get("mapping") or {}).get("website")
 
@@ -177,7 +192,7 @@ def propose(intake: Any, seeds: dict[str, Any], verification: Any = None, metada
 
         v = verified.get(e["board_id"])
         if v and v.get("_conflict"):
-            conflicts.append("conflicting verification results")
+            conflicts.append("more than one verification result for this board")
         proposals.append({"board_id": e["board_id"], "source_row": row,
                           "seed": {"slug": slug, "name": e["company"], "ats": e["ats"], "token": e["token"],
                                    "canonical_domain": domain, "category": category},
@@ -215,9 +230,7 @@ def propose(intake: Any, seeds: dict[str, Any], verification: Any = None, metada
             p["status"] = NOT_QUALIFIED
             p["status_reason"] = (f"verification outcome {v['outcome']}: {v.get('detail')}" if v
                                   else "no verification result")
-        elif v.get("evidence") == bv.LIVE:
-            p["status"], p["status_reason"] = PRODUCTION, "live verification found usable jobs"
-        else:
+        else:  # the only evidence load_verification lets through is synthetic
             p["status"], p["status_reason"] = TEST_ONLY, "only synthetic fixture evidence; never seed this"
 
     counts = defaultdict(int)
@@ -228,6 +241,7 @@ def propose(intake: Any, seeds: dict[str, Any], verification: Any = None, metada
         "kind": "seed_proposal_review",
         "note": "Local proposal only. company_seeds.json was not changed. Review every entry before any seed change.",
         "counts": {"intake_records": len(intake["records"]), "candidates": len(proposals), "skipped": len(skipped), **counts},
+        "production_proposals": [],  # shortcut: no live verification exists in this build; a live stage must add it
         "verification_evidence": sorted({(p["verification"] or {}).get("evidence") for p in proposals} - {None}),
         "proposals": proposals,
         "skipped": skipped,
@@ -262,9 +276,8 @@ def main(argv: list[str] | None = None) -> int:
                         for name, path in (("intake", a.intake), ("verification", a.verification),
                                            ("metadata", a.metadata), ("seeds_read_only", a.seeds))}
     a.out_dir.mkdir(parents=True, exist_ok=True)
-    prod = [seed_entry(x) for x in report["proposals"] if x["status"] == PRODUCTION]
     test = [seed_entry(x) for x in report["proposals"] if x["status"] == TEST_ONLY]
-    (a.out_dir / "proposed_seeds.json").write_text(json.dumps({"layer1_public_ats": prod}, indent=2, ensure_ascii=False), encoding="utf-8")
+    (a.out_dir / "proposed_seeds.json").write_text(json.dumps({"layer1_public_ats": report["production_proposals"]}, indent=2), encoding="utf-8")
     (a.out_dir / "proposed_seeds.TEST_ONLY_SYNTHETIC.json").write_text(
         json.dumps({TEST_ONLY_KEY: test}, indent=2, ensure_ascii=False), encoding="utf-8")
     (a.out_dir / "seed_review_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

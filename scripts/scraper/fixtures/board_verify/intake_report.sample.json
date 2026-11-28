@@ -10,11 +10,18 @@
     "website": "Website",
     "careers": "Careers"
   },
-  "note": "SYNTHETIC FIXTURE in company_sheet_intake (PR #882) intake_report.json shape; no real companies.",
+  "note": "SYNTHETIC FIXTURE in corrected company_sheet_intake (PR #882 325742bf) intake_report.json shape; no real companies.",
   "reconciliation": {},
   "records": [
     {
       "source_row": 2,
+      "source_lines": [
+        2,
+        2
+      ],
+      "candidate_boards": [
+        "greenhouse:{\"token\": \"synthetic-alpha\"}"
+      ],
       "company": "Synthetic Alpha",
       "url_column": "Careers",
       "original_url": "https://boards.greenhouse.io/synthetic-alpha",
@@ -35,6 +42,13 @@
     },
     {
       "source_row": 3,
+      "source_lines": [
+        3,
+        3
+      ],
+      "candidate_boards": [
+        "lever:{\"token\": \"synthetic-beta\"}"
+      ],
       "company": "Synthetic Beta",
       "url_column": "Careers",
       "original_url": "https://jobs.lever.co/synthetic-beta",
@@ -55,6 +69,13 @@
     },
     {
       "source_row": 4,
+      "source_lines": [
+        4,
+        4
+      ],
+      "candidate_boards": [
+        "ashby:{\"token\": \"synthetic-gamma\"}"
+      ],
       "company": "Synthetic Gamma",
       "url_column": "Careers",
       "original_url": "https://jobs.ashbyhq.com/synthetic-gamma",
@@ -75,6 +96,13 @@
     },
     {
       "source_row": 5,
+      "source_lines": [
+        5,
+        5
+      ],
+      "candidate_boards": [
+        "smartrecruiters:{\"token\": \"SyntheticDelta\"}"
+      ],
       "company": "Synthetic Delta",
       "url_column": "Careers",
       "original_url": "https://jobs.smartrecruiters.com/SyntheticDelta",
@@ -95,6 +123,13 @@
     },
     {
       "source_row": 6,
+      "source_lines": [
+        6,
+        6
+      ],
+      "candidate_boards": [
+        "greenhouse:{\"token\": \"synthetic-epsilon\"}"
+      ],
       "company": "Synthetic Epsilon",
       "url_column": "Careers",
       "original_url": "https://boards.greenhouse.io/synthetic-epsilon",
@@ -115,6 +150,13 @@
     },
     {
       "source_row": 7,
+      "source_lines": [
+        7,
+        7
+      ],
+      "candidate_boards": [
+        "workday:{\"site\": \"External\", \"tenant\": \"zeta\", \"wd_cluster\": \"wd5\"}"
+      ],
       "company": "Synthetic Zeta",
       "url_column": "Careers",
       "original_url": "https://zeta.wd5.myworkdayjobs.com/External",
@@ -137,6 +179,11 @@
     },
     {
       "source_row": 8,
+      "source_lines": [
+        8,
+        8
+      ],
+      "candidate_boards": [],
       "company": "Synthetic Eta",
       "url_column": "Careers",
       "original_url": "",
@@ -155,6 +202,13 @@
     },
     {
       "source_row": 9,
+      "source_lines": [
+        9,
+        9
+      ],
+      "candidate_boards": [
+        "greenhouse:{\"token\": \"synthetic-alpha\"}"
+      ],
       "company": "Synthetic Alpha",
       "url_column": "Careers",
       "original_url": "https://boards.greenhouse.io/synthetic-alpha",
@@ -175,6 +229,13 @@
     },
     {
       "source_row": 10,
+      "source_lines": [
+        10,
+        10
+      ],
+      "candidate_boards": [
+        "greenhouse:{\"token\": \"synthetic-shared\"}"
+      ],
       "company": "Synthetic Theta",
       "url_column": "Careers",
       "original_url": "https://boards.greenhouse.io/synthetic-shared",
@@ -197,6 +258,13 @@
     },
     {
       "source_row": 11,
+      "source_lines": [
+        11,
+        11
+      ],
+      "candidate_boards": [
+        "greenhouse:{\"token\": \"synthetic-shared\"}"
+      ],
       "company": "Synthetic Iota",
       "url_column": "Careers",
       "original_url": "https://boards.greenhouse.io/synthetic-shared",
@@ -219,6 +287,13 @@
     },
     {
       "source_row": 12,
+      "source_lines": [
+        12,
+        12
+      ],
+      "candidate_boards": [
+        "lever:{\"token\": \"synthetic-kappa\"}"
+      ],
       "company": "Synthetic Kappa",
       "url_column": "Careers",
       "original_url": "https://jobs.lever.co/synthetic-kappa",
@@ -239,6 +314,13 @@
     },
     {
       "source_row": 13,
+      "source_lines": [
+        13,
+        13
+      ],
+      "candidate_boards": [
+        "ashby:{\"token\": \"synthetic-lambda\"}"
+      ],
       "company": "Synthetic Lambda",
       "url_column": "Careers",
       "original_url": "https://jobs.ashbyhq.com/synthetic-lambda",
@@ -259,6 +341,13 @@
     },
     {
       "source_row": 14,
+      "source_lines": [
+        14,
+        14
+      ],
+      "candidate_boards": [
+        "greenhouse:{\"token\": \"synthetic-mu\"}"
+      ],
       "company": "Synthetic Mu",
       "url_column": "Careers",
       "original_url": "https://boards.greenhouse.io/synthetic-mu",
@@ -279,6 +368,11 @@
     },
     {
       "source_row": 15,
+      "source_lines": [
+        15,
+        15
+      ],
+      "candidate_boards": [],
       "company": "",
       "url_column": "Careers",
       "original_url": "https://jobs.lever.co/synthetic-nameless",
@@ -293,6 +387,33 @@
       "all_urls": {
         "Careers": "https://jobs.lever.co/synthetic-nameless",
         "Website": "https://nameless.example"
+      },
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 16,
+      "source_lines": [
+        16,
+        16
+      ],
+      "candidate_boards": [
+        "lever:{\"token\": \"synthetic-beta-like\"}"
+      ],
+      "company": "Synthetic Nu",
+      "url_column": "Careers",
+      "original_url": "https://jobs.ashbyhq.com/synthetic-nu",
+      "normalized_url": "https://jobs.ashbyhq.com/synthetic-nu",
+      "normalized_domain": null,
+      "ats_candidate": "lever",
+      "identifiers": {
+        "token": "synthetic-beta-like"
+      },
+      "status": "ats_candidate",
+      "reason": "board token from path; not verified",
+      "all_urls": {
+        "Careers": "https://jobs.ashbyhq.com/synthetic-nu",
+        "Website": "https://nu.example"
       },
       "merged_into_row": null,
       "review_groups": []
