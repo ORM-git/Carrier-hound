@@ -918,14 +918,15 @@ async def fetch_layer1_seed(
     client: httpx.AsyncClient,
     limiter: PerHostRateLimiter,
     seed: dict[str, Any],
-) -> list[dict[str, Any]]:
+    conditional: Any = None,
+) -> Any:
     ats = (seed.get("ats") or "").lower()
     if ats == "greenhouse":
-        return await fetch_greenhouse(client, limiter, seed)
+        return await fetch_greenhouse(client, limiter, seed, conditional=conditional)
     if ats == "lever":
-        return await fetch_lever(client, limiter, seed)
+        return await fetch_lever(client, limiter, seed, conditional=conditional)
     if ats == "ashby":
-        return await fetch_ashby(client, limiter, seed)
+        return await fetch_ashby(client, limiter, seed, conditional=conditional)
     if ats == "smartrecruiters":
         return await fetch_smartrecruiters(client, limiter, seed)
     return []

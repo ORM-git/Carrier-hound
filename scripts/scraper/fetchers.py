@@ -24,6 +24,7 @@ from .enrichment import (
     strip_html,
 )
 from .persistence import normalize_salary_period
+from .conditional_state import BoardUnchanged, BoardView
 from .rate_limiter import RequestHTTPError, PerHostRateLimiter, parse_retry_after, redact_sensitive_params, request_with_backoff
 
 COUNTRY_NAMES = {
@@ -362,11 +363,14 @@ async def fetch_greenhouse(
     client: httpx.AsyncClient,
     limiter: PerHostRateLimiter,
     seed: dict[str, Any],
-) -> list[dict[str, Any]]:
+    conditional: BoardView | None = None,
+) -> list[dict[str, Any]] | BoardUnchanged:
     """Greenhouse: GET https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"""
     token = seed["token"]
     url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true&pay_transparency=true"
-    resp = await request_with_backoff(client, limiter, "GET", url)
+    resp = await request_with_backoff(client, limiter, "GET", url) if conditional is None else await conditional.get(client, limiter, url)
+    if isinstance(resp, BoardUnchanged):
+        return resp
     payload = resp.json()
     jobs_raw = payload.get("jobs") or []
     results: list[dict[str, Any]] = []
@@ -415,6 +419,8 @@ async def fetch_greenhouse(
                 source_priority=1,
             )
         )
+    if conditional is not None:
+        conditional.capture(url, resp.headers, str(resp.url), complete=isinstance(payload, dict) and isinstance(payload.get("jobs"), list) and len(results) == len(jobs_raw))
     return results
 
 
@@ -483,11 +489,14 @@ async def fetch_lever(
     client: httpx.AsyncClient,
     limiter: PerHostRateLimiter,
     seed: dict[str, Any],
-) -> list[dict[str, Any]]:
+    conditional: BoardView | None = None,
+) -> list[dict[str, Any]] | BoardUnchanged:
     """Lever: GET https://api.lever.co/v0/postings/{token}?mode=json"""
     token = seed["token"]
     url = f"https://api.lever.co/v0/postings/{token}?mode=json"
-    resp = await request_with_backoff(client, limiter, "GET", url)
+    resp = await request_with_backoff(client, limiter, "GET", url) if conditional is None else await conditional.get(client, limiter, url)
+    if isinstance(resp, BoardUnchanged):
+        return resp
     postings = resp.json()
     if not isinstance(postings, list):
         return []
@@ -539,6 +548,8 @@ async def fetch_lever(
                 source_priority=1,
             )
         )
+    if conditional is not None:
+        conditional.capture(url, resp.headers, str(resp.url), complete=len(results) == len(postings))
     return results
 
 
@@ -546,11 +557,14 @@ async def fetch_ashby(
     client: httpx.AsyncClient,
     limiter: PerHostRateLimiter,
     seed: dict[str, Any],
-) -> list[dict[str, Any]]:
+    conditional: BoardView | None = None,
+) -> list[dict[str, Any]] | BoardUnchanged:
     """Ashby: GET https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"""
     token = seed["token"]
     url = f"https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
-    resp = await request_with_backoff(client, limiter, "GET", url)
+    resp = await request_with_backoff(client, limiter, "GET", url) if conditional is None else await conditional.get(client, limiter, url)
+    if isinstance(resp, BoardUnchanged):
+        return resp
     payload = resp.json()
     jobs_raw = payload.get("jobs") or []
     results: list[dict[str, Any]] = []
@@ -589,6 +603,8 @@ async def fetch_ashby(
                 source_priority=1,
             )
         )
+    if conditional is not None:
+        conditional.capture(url, resp.headers, str(resp.url), complete=isinstance(payload, dict) and isinstance(payload.get("jobs"), list) and len(results) == len(jobs_raw))
     return results
 
 
