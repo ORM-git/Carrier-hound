@@ -1,4 +1,5 @@
 import { recommendationTiming } from "@/lib/jobs/recommendationTiming";
+import { wireJobType } from "@/lib/jobs/formatJobType";
 import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
 import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
@@ -565,7 +566,7 @@ export async function GET(req: Request) {
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
-          type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
+          type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
           description: row.description || "",
@@ -597,7 +598,7 @@ export async function GET(req: Request) {
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
+        type: wireJobType(row.job_type),
         directSource: Boolean(row.verified ?? true),
         applyUrl: "",
         description: "",
