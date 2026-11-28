@@ -1,0 +1,19 @@
+{
+  "robots": {
+    "alpha.example": "allow",
+    "beta.example": "allow",
+    "denied.example": "deny",
+    "delta.example": "allow",
+    "epsilon.example": "allow"
+  },
+  "default_robots": "unknown",
+  "per_host_spacing_seconds": 30,
+  "global_request_cap": 4,
+  "max_response_bytes": 1000000,
+  "requests_per_url": 1,
+  "retries": 0,
+  "stop_on_status": [
+    403,
+    429
+  ]
+}

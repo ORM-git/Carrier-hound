@@ -1,0 +1,346 @@
+{
+  "source_csv": "synthetic.csv",
+  "headers": [
+    "Company",
+    "Scraping Website"
+  ],
+  "note": "synthetic fixture",
+  "reconciliation": {
+    "input_rows": 15,
+    "output_records": 15
+  },
+  "records": [
+    {
+      "source_row": 2,
+      "source_lines": [
+        2,
+        2
+      ],
+      "company": "C# Labs",
+      "url_column": "Scraping Website",
+      "original_url": "https://alpha.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://alpha.example/careers"
+      },
+      "normalized_url": "https://alpha.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 3,
+      "source_lines": [
+        3,
+        3
+      ],
+      "company": "What? Inc",
+      "url_column": "Scraping Website",
+      "original_url": "https://alpha.example/about",
+      "all_urls": {
+        "Scraping Website": "https://alpha.example/about"
+      },
+      "normalized_url": "https://alpha.example/about",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 4,
+      "source_lines": [
+        4,
+        4
+      ],
+      "company": "Alpha Dup Row",
+      "url_column": "Scraping Website",
+      "original_url": "https://alpha.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://alpha.example/careers"
+      },
+      "normalized_url": "https://alpha.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 5,
+      "source_lines": [
+        5,
+        5
+      ],
+      "company": "Beta",
+      "url_column": "Scraping Website",
+      "original_url": "https://beta.example",
+      "all_urls": {
+        "Scraping Website": "https://beta.example"
+      },
+      "normalized_url": "https://beta.example",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 6,
+      "source_lines": [
+        6,
+        6
+      ],
+      "company": "Denied",
+      "url_column": "Scraping Website",
+      "original_url": "https://denied.example/jobs",
+      "all_urls": {
+        "Scraping Website": "https://denied.example/jobs"
+      },
+      "normalized_url": "https://denied.example/jobs",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 7,
+      "source_lines": [
+        7,
+        7
+      ],
+      "company": "Unknown Robots",
+      "url_column": "Scraping Website",
+      "original_url": "https://unknown.example/jobs",
+      "all_urls": {
+        "Scraping Website": "https://unknown.example/jobs"
+      },
+      "normalized_url": "https://unknown.example/jobs",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 8,
+      "source_lines": [
+        8,
+        8
+      ],
+      "company": "Social",
+      "url_column": "Scraping Website",
+      "original_url": "https://www.linkedin.com/company/x",
+      "all_urls": {
+        "Scraping Website": "https://www.linkedin.com/company/x"
+      },
+      "normalized_url": "https://www.linkedin.com/company/x",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 9,
+      "source_lines": [
+        9,
+        9
+      ],
+      "company": "Filer",
+      "url_column": "Scraping Website",
+      "original_url": "https://gamma.example/files/deck.pdf",
+      "all_urls": {
+        "Scraping Website": "https://gamma.example/files/deck.pdf"
+      },
+      "normalized_url": "https://gamma.example/files/deck.pdf",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 10,
+      "source_lines": [
+        10,
+        10
+      ],
+      "company": "Beta Merged",
+      "url_column": "Scraping Website",
+      "original_url": "https://beta.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://beta.example/careers"
+      },
+      "normalized_url": "https://beta.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": 5,
+      "review_groups": []
+    },
+    {
+      "source_row": 11,
+      "source_lines": [
+        11,
+        11
+      ],
+      "company": "Bool Merge",
+      "url_column": "Scraping Website",
+      "original_url": "https://beta.example/x",
+      "all_urls": {
+        "Scraping Website": "https://beta.example/x"
+      },
+      "normalized_url": "https://beta.example/x",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": true,
+      "review_groups": []
+    },
+    {
+      "source_row": 12,
+      "source_lines": [
+        12,
+        12
+      ],
+      "company": "Zeta",
+      "url_column": "Scraping Website",
+      "original_url": "https://jobs.lever.co/zeta",
+      "all_urls": {
+        "Scraping Website": "https://jobs.lever.co/zeta"
+      },
+      "normalized_url": "https://jobs.lever.co/zeta",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "ats_candidate",
+      "reason": "ats_candidate",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 13,
+      "source_lines": [
+        13,
+        13
+      ],
+      "company": "No Url",
+      "url_column": "Scraping Website",
+      "original_url": "",
+      "all_urls": {
+        "Scraping Website": ""
+      },
+      "normalized_url": null,
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "blank",
+      "reason": "blank",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 14,
+      "source_lines": [
+        14,
+        14
+      ],
+      "company": "Delta",
+      "url_column": "Scraping Website",
+      "original_url": "https://delta.example/careers;jsessionid=SECRETjs?session=SECRETq#frag",
+      "all_urls": {
+        "Scraping Website": "https://delta.example/careers;jsessionid=SECRETjs?session=SECRETq#frag"
+      },
+      "normalized_url": "https://delta.example/careers;jsessionid=SECRETjs?session=SECRETq#frag",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 15,
+      "source_lines": [
+        15,
+        15
+      ],
+      "company": "Epsilon",
+      "url_column": "Scraping Website",
+      "original_url": "https://epsilon.example/careers",
+      "all_urls": {
+        "Scraping Website": "https://epsilon.example/careers"
+      },
+      "normalized_url": "https://epsilon.example/careers",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    },
+    {
+      "source_row": 16,
+      "source_lines": [
+        16,
+        16
+      ],
+      "company": "Cred Row",
+      "url_column": "Scraping Website",
+      "original_url": "https://u:pw@cred.example/careers?token=SECRETc",
+      "all_urls": {
+        "Scraping Website": "https://u:pw@cred.example/careers?token=SECRETc"
+      },
+      "normalized_url": "https://u:pw@cred.example/careers?token=SECRETc",
+      "normalized_domain": null,
+      "ats_candidate": null,
+      "identifiers": {},
+      "candidate_boards": [],
+      "status": "website_only",
+      "reason": "website_only",
+      "merged_into_row": null,
+      "review_groups": []
+    }
+  ],
+  "companies": [],
+  "review_groups": []
+}
