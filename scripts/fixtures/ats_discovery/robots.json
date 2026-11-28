@@ -1,0 +1,30 @@
+{
+  "https://alpha.example": {
+    "status": 200,
+    "body": "User-agent: *\nDisallow: /about\n"
+  },
+  "https://beta.example": {
+    "status": 200,
+    "body": "User-agent: CMBot\nAllow: /\n\nUser-agent: *\nDisallow: /\n"
+  },
+  "https://denied.example": {
+    "status": 200,
+    "body": "# comment\nUser-agent: *\nDisallow: /jobs\n"
+  },
+  "https://delta.example": {
+    "status": 503,
+    "body": "busy"
+  },
+  "https://epsilon.example": {
+    "status": 404,
+    "body": "not found"
+  },
+  "https://garbage.example": {
+    "status": 200,
+    "body": "<html><body>Welcome</body></html>"
+  },
+  "https://wild.example": {
+    "status": 200,
+    "body": "User-agent: *\nDisallow: /*careers$\n"
+  }
+}
