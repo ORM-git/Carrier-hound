@@ -1891,7 +1891,7 @@ export default function JobRadarGlobe() {
                 <span>
                   {city.name}
                   <small>
-                    {city.countryCode} · {city.topCompanies.slice(0, 2).join(", ")}
+                    {city.topCompanies.length > 0 ? `${city.countryCode} · ${city.topCompanies.slice(0, 2).join(", ")}` : city.countryCode}
                   </small>
                 </span>
                 <strong>
