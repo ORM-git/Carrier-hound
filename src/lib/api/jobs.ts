@@ -1,3 +1,4 @@
+import { wireJobType } from "@/lib/jobs/formatJobType";
 import { createClient } from "@/lib/supabase/client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { expandCategoryFilter, normalizeCategorySlug } from "@/lib/taxonomy";
@@ -261,12 +262,7 @@ export async function searchJobs(
     category: d.category || "software",
     remote: d.remote === true || d.remote_scope === "remote",
     country: d.country_code || d.country || "",
-    type:
-      d.job_type === "full-time"
-        ? "Full-time"
-        : d.job_type === "job"
-        ? "Full-time"
-        : d.job_type || "Full-time",
+    type: wireJobType(d.job_type),
     directSource: true,
     applyUrl: sanitizeExternalUrl(d.apply_url) || "#",
   }));

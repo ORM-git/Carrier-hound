@@ -43,3 +43,13 @@ export function formatJobType(type?: string | null): string | null {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }
+
+/**
+ * Wire value for LiveJob.type from a stored jobs.job_type. Keeps the real stored value (contract, part-time, other, ...)
+ * instead of rewriting every non-internship row to "Full-time"; display and filtering normalise it later
+ * (formatJobType / matchesJobTypeFilter). A missing or blank value stays empty: it is never presented as Full-time.
+ */
+export function wireJobType(jobType?: string | null): string {
+  if (jobType === "internship") return "Internship";
+  return typeof jobType === "string" && jobType.trim() ? jobType : "";
+}

@@ -4,6 +4,7 @@ import { extendedDescriptionSections, structuredDescriptionList } from "@/lib/jo
 import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { formatJobType } from "@/lib/jobs/formatJobType";
 import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, displayMatchScore, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
@@ -806,10 +807,10 @@ export default function JobDetailView({
                 <MapPin className="w-4 h-4 text-[#64748B] shrink-0" />
                 <span className="truncate">{canSeeLocation ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}</span>
               </li>}
-              {job.type && (
+              {formatJobType(job.type) && (
                 <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                   <Briefcase className="w-4 h-4 text-[#64748B] shrink-0" />
-                  <span className="truncate">{job.type}</span>
+                  <span className="truncate">{formatJobType(job.type)}</span>
                 </li>
               )}
               <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
@@ -851,10 +852,10 @@ export default function JobDetailView({
                   <span>{job.category}</span>
                 </div>
               )}
-              {job.type && (
+              {formatJobType(job.type) && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
                   <Clock className="w-3.5 h-3.5 text-[#64748B]" />
-                  <span>{job.type}</span>
+                  <span>{formatJobType(job.type)}</span>
                 </div>
               )}
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
@@ -874,10 +875,10 @@ export default function JobDetailView({
                   </span>
                 </div>}
 
-                {job.type && (
+                {formatJobType(job.type) && (
                   <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
                     <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
-                    <span className="truncate">{job.type}</span>
+                    <span className="truncate">{formatJobType(job.type)}</span>
                   </div>
                 )}
 

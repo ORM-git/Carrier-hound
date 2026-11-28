@@ -157,3 +157,17 @@ describe("masking", () => {
     expect(screen.getByTestId("mobile-match-resume-prompt").getAttribute("data-state")).toBe("none");
   });
 });
+
+describe("detail job type presentation is truthful", () => {
+  it("a stored contract type shows Contract, a placeholder or empty type shows no type row, never Full-time", () => {
+    show({ job: { ...job, type: "contract" } });
+    expect(document.body.textContent).toContain("Contract");
+    expect(document.body.textContent).not.toContain("Full-time");
+    cleanup();
+    for (const t of ["", "other", "job"]) {
+      show({ job: { ...job, type: t } });
+      expect(document.body.textContent).not.toMatch(/Full-time|\bother\b/);
+      cleanup();
+    }
+  });
+});
