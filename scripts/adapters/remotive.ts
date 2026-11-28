@@ -83,6 +83,7 @@ export class RemotiveAdapter implements SourceAdapter {
           salary_max: salary.salary_max,
           currency: salary.currency,
           salary_period: salary.salary_period,
+          salary_period_stated: salary.salary_period_stated,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,

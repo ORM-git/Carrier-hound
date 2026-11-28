@@ -145,6 +145,9 @@ export class LeverAdapter implements SourceAdapter {
         let salaryMax: number | null = null;
         let currency: string | undefined = undefined;
         let salaryPeriod: 'yearly' | 'monthly' | 'hourly' | undefined = undefined;
+        let salaryPeriodStated = false;
+        // A native interval that is present but not hourly/monthly/yearly (per-day-wage, per-week-salary, one-time-bonus...).
+        let unmappedNativeInterval = false;
 
         // Reject empty or zero compensation objects
         if (
@@ -172,14 +175,25 @@ export class LeverAdapter implements SourceAdapter {
           }
 
           const rawInterval = (j.salaryRange.interval || '').toLowerCase();
-          if (rawInterval.includes('hour') || rawInterval.includes('wage')) {
+          salaryPeriodStated = true; // native interval field; the else branch below is a guess
+          if (rawInterval.includes('hour')) { // not 'wage': per-day-wage is daily, never hourly
             salaryPeriod = 'hourly';
           } else if (rawInterval.includes('month')) {
             salaryPeriod = 'monthly';
           } else if (rawInterval.includes('year') || rawInterval.includes('annual')) {
             salaryPeriod = 'yearly';
+          } else if (rawInterval.trim() !== '') {
+            // The source states a period we do not store (daily, weekly, one-time...). Never show its numbers under
+            // another period (formatSalary would print "/yr"), and never guess one from the title: salary unknown.
+            unmappedNativeInterval = true;
+            salaryPeriodStated = false;
+            salaryPeriod = undefined;
+            salaryMin = null;
+            salaryMax = null;
+            currency = undefined;
           } else {
-            // Interval is missing or unmapped: infer only if currency is USD and text says hour
+            salaryPeriodStated = false;
+            // Interval is missing: infer only if currency is USD and text says hour
             const textContext = `${j.text || ''}`;
             if (currency === 'USD' && /\b(hour|hourly|\/hr)\b/i.test(textContext)) {
               salaryPeriod = 'hourly';
@@ -194,7 +208,7 @@ export class LeverAdapter implements SourceAdapter {
         }
 
         // Fallback to description regex parsing ONLY if no structured salaryRange exists
-        if (!salaryText && salaryMin == null && salaryMax == null) {
+        if (!unmappedNativeInterval && !salaryText && salaryMin == null && salaryMax == null) {
           const fallback = parseSalary(description, { title, location });
           if (fallback.salary_min != null || fallback.salary_max != null) {
             salaryText = fallback.salary_text;
@@ -202,6 +216,7 @@ export class LeverAdapter implements SourceAdapter {
             salaryMax = fallback.salary_max;
             currency = fallback.currency;
             salaryPeriod = fallback.salary_period;
+            salaryPeriodStated = fallback.salary_period_stated;
           }
         }
 
@@ -235,6 +250,7 @@ export class LeverAdapter implements SourceAdapter {
           salary_max: salaryMax,
           currency: (salaryMin != null || salaryMax != null) ? currency : undefined,
           salary_period: (salaryMin != null || salaryMax != null) ? salaryPeriod : undefined,
+          salary_period_stated: (salaryMin != null || salaryMax != null) && salaryPeriodStated,
           category,
           posted_at: postedAt,
           discovered_at: nowIso,
