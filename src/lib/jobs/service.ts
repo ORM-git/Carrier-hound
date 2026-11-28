@@ -1,8 +1,10 @@
+import { experienceBucketsFor } from "@/lib/jobs/leanList";
+import { extractDescriptionSkills } from "@/lib/matcher/scoring";
 import { createClient } from "../supabase/client";
 import { wireJobType } from "@/lib/jobs/formatJobType";
 import { appendExcludedSkillParams, appendRequiredYearsParams } from "@/lib/preferences/advancedFilters";
 import { normalizeSkillList } from "./skillKey";
-import { isRequiredYearsRangeActive, normalizeRequiredYearsRange } from "./requiredYears";
+import { isRequiredYearsRangeActive, normalizeRequiredYearsRange, resolveRequiredYears, type ExplicitYears } from "./requiredYears";
 import { appendFeedConstraintParams, companyConstraintsActive, datePostedCutoff, hasFeedConstraints, normalizeFeedConstraints, savedFeedConstraintsEnforced, stricterDatePosted, type SavedFeedConstraints } from "@/lib/preferences/feedConstraints";
 import { CandidateProfile } from "../resume/types";
 import { computeFitDiagnostics, FitDiagnosticsResult, withSharedScore, scoreInputRevision, clampMatchScore } from "../matcher/scoring";
@@ -56,6 +58,12 @@ export interface LiveJob {
   directSource: boolean;
   applyUrl: string;
   description?: string;
+  /** Pro list row served without its description (see leanList.ts): the full record comes from getLiveJobById on open. Never true on a detail. */
+  lean?: boolean;
+  /** Experience buckets this row matches, derived server-side from the full text; only on lean rows. */
+  experienceBuckets?: string[];
+  /** Skills evidenced in the description, derived server-side for lean rows (card fit diagnostics input). */
+  descriptionSkills?: string[];
   skills?: string[];
   postedAt?: string;
   /** CM arrival: jobs.first_seen_at (DB default now() on insert, never written by ingestion). Not the employer date. */
@@ -135,6 +143,8 @@ export interface GetJobsOptions {
   excludedTitles?: string[];
   includedCompanies?: string[];
   excludedCompanies?: string[];
+  /** Explicit required-years choice from the filters drawer: inherit (saved applies) | any (clears saved) | range. */
+  requiredYears?: ExplicitYears;
   cursor?: string | null;
   eligibility?: "on" | "off" | string;
   currency?: string;
@@ -444,6 +454,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
     excludedTitles,
     includedCompanies,
     excludedCompanies,
+    requiredYears: explicitYears,
     cursor,
   } = options;
 
@@ -469,9 +480,11 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
   const effectiveLevelRaw = resolveEffectiveLevel(level, preferences?.experienceLevel, { enforced: savedFeedConstraintsEnforced(), personalized: isMatchSort });
   const effectiveLevel = Array.isArray(effectiveLevelRaw) ? effectiveLevelRaw.join(",") : effectiveLevelRaw;
   // Saved required-years range: same owner gate and personalized-feed scope; storage must exist.
-  const requiredYears = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
+  const savedYears = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
     ? normalizeRequiredYearsRange({ min: preferences?.requiredYearsMin, max: preferences?.requiredYearsMax })
     : normalizeRequiredYearsRange(null);
+  // An explicit drawer choice overrides the saved range (inherit keeps it, any clears it) and rides the same owner gate.
+  const requiredYears = savedFeedConstraintsEnforced() ? resolveRequiredYears(explicitYears, savedYears) : savedYears;
   // Saved excluded skills: same gate and scope (Free and Pro alike); decided by the server before paging.
   const excludedSkills = savedFeedConstraintsEnforced() && isMatchSort && preferences?.advancedPreferencesAvailable !== false
     ? normalizeSkillList(preferences?.excludedSkills)
@@ -1002,7 +1015,7 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ ids: mappedJobs.map((j) => j.id) }),
+                body: JSON.stringify({ ids: mappedJobs.map((j) => j.id), lean: true }),
               });
             } catch (netErr: any) {
               log.error(`[API /jobs/pro error]: Network failure during batch Pro unlock (${netErr?.message || "fetch failed"})`);
@@ -1031,7 +1044,19 @@ export async function getLiveJobs(options: GetJobsOptions = {}): Promise<GetJobs
                         job.salary_original = u.salary_original || null;
                       }
                       if (u.apply_url) job.applyUrl = sanitizeExternalUrl(u.apply_url) || "";
-                      if (u.description) job.description = stripHtmlAndExecutableMarkup(u.description);
+                      // Lean batch (requested above): the server omits the description and sends the Experience buckets.
+                      // An older server that still sends it is handled the same way: buckets derived here, description dropped.
+                      if (u.lean === true && Array.isArray(u.experienceBuckets)) {
+                        job.experienceBuckets = u.experienceBuckets;
+                        if (Array.isArray(u.descriptionSkills)) job.descriptionSkills = u.descriptionSkills;
+                        job.lean = true;
+                        job.description = "";
+                      } else if (u.description || u.skills) {
+                        job.experienceBuckets = experienceBucketsFor({ title: job.title, description: u.description, skills: u.skills || job.skills });
+                        job.descriptionSkills = extractDescriptionSkills(u.description, job.category);
+                        job.lean = true;
+                        job.description = "";
+                      }
                       if (u.skills) job.skills = u.skills;
                       if (Array.isArray(u.top_keywords) && u.top_keywords.length > 0) {
                         job.top_keywords = u.top_keywords.slice(0, 8);
@@ -1120,7 +1145,21 @@ export function keepSameJobLogoIdentity(detail: LiveJob, listing: LiveJob | null
   };
 }
 
+const detailInFlight = new Map<string, Promise<LiveJob | null>>();
+
+/** Concurrent detail requests for the same job and tier share one network round trip (select + refresh effect). */
 export async function getLiveJobById(jobId: string, isPro: boolean = false): Promise<LiveJob | null> {
+  const key = `${isPro ? "pro" : "free"}:${(jobId || "").trim()}`;
+  let pending = detailInFlight.get(key);
+  if (!pending) {
+    pending = loadLiveJobById(jobId, isPro).finally(() => { detailInFlight.delete(key); });
+    detailInFlight.set(key, pending);
+  }
+  const job = await pending;
+  return job ? { ...job } : job;
+}
+
+async function loadLiveJobById(jobId: string, isPro: boolean = false): Promise<LiveJob | null> {
   // One reference instant per response: every score and revision below is computed at it.
   const scoredAt = Date.now();
   if (!jobId || !jobId.trim()) return null;

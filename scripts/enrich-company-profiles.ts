@@ -14,7 +14,7 @@ import {
   type CanaryJournal, type CanaryPlan, type CanaryRow, type CanaryStore, type JournalIO,
 } from "../src/lib/company-profile/canary";
 import { renderCanaryPlanSummary } from "../src/lib/company-profile/review";
-import { safeFetchCompanyPage } from "../src/lib/company-profile/safeFetch";
+import { safeFetchCompanyPage, safeFetchWikidataJson } from "../src/lib/company-profile/safeFetch";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -30,6 +30,11 @@ function supabaseCanaryStore(supabase: SupabaseClient): CanaryStore {
         if (error) missing.push(`${table}(${columns.join(",")})`);
       }
       return missing;
+    },
+    async factAllowlists() {
+      const { data, error } = await supabase.rpc("company_profile_fact_allowlists");
+      if (error) throw new Error(`Allowlist preflight failed: ${error.message}`);
+      return (data || []) as Array<{ column_name: string; definition: string }>;
     },
     async companies(ids) {
       const { data, error } = await supabase.from("companies").select("id,name,canonical_domain").in("id", ids);
@@ -99,25 +104,27 @@ async function runProductionCanary(argv: string[]) {
     }
     const codeSha = resolveCodeSha(gitState(), options.codeSha);
     const store = supabaseCanaryStore(createClient(url, key, { auth: { persistSession: false } }));
+    // Wikidata (Step D, owner-approved) has its own JSON fetcher; canary.ts wraps it in the shared pacer/cooldown client.
+    const fetchWikidata = (apiUrl: string) => safeFetchWikidataJson(apiUrl);
     const fetchPage = (pageUrl: string) => safeFetchCompanyPage(pageUrl);
     const binding = { targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, confirmDigest: options.confirmDigest || "", codeSha };
     if (options.mode === "plan") {
       const planPath = path.resolve(options.planPath);
       if (fs.existsSync(planPath)) throw new Error("--plan-out file already exists; choose a new path");
-      const plan = await buildCanaryPlan({ store: readOnlyCanaryStore(store), fetchPage, sleep: delay, now: () => new Date(), newId: randomUUID, targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, codeSha, ttlHours: options.ttlHours, secrets });
+      const plan = await buildCanaryPlan({ store: readOnlyCanaryStore(store), fetchPage, sleep: delay, now: () => new Date(), newId: randomUUID, targetProject: options.targetProject, companyIds: options.companyIds, maxCompanies: options.maxCompanies, codeSha, ttlHours: options.ttlHours, secrets, fetchWikidata });
       const text = JSON.stringify(plan);
       if (secrets.some((secret) => secret && text.includes(secret))) throw new Error("Plan contains a credential value; refusing to write it");
       writeJsonDurable(planPath, plan);
       const summaryPath = `${planPath.replace(/\.json$/i, "")}.summary.md`;
       fs.writeFileSync(summaryPath, renderCanaryPlanSummary(plan), { flag: "wx" });
-      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, summary_file: summaryPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error })) }, null, 2));
+      console.log(JSON.stringify({ mode: "plan", dry_run: true, writes: 0, plan: planPath, summary_file: summaryPath, plan_digest: plan.plan_digest, expires_at: plan.expires_at, code_sha: plan.code_sha, summary: plan.summary, outcomes: plan.companies.map((c) => ({ company_id: c.company_id, outcome: c.outcome, error: c.error, wikidata: c.wikidata ?? null })) }, null, 2));
       return;
     }
     const plan = JSON.parse(fs.readFileSync(path.resolve(options.planPath), "utf8")) as CanaryPlan;
     const journal = fileJournal(path.resolve(options.journalPath!));
     const report = options.mode === "rollback"
       ? await runCanaryRollback({ plan, binding, store, journal, secrets })
-      : await runCanaryWrite({ plan, binding, store, fetchPage, sleep: delay, journal, resume: options.mode === "resume", secrets });
+      : await runCanaryWrite({ plan, binding, store, fetchPage, sleep: delay, journal, resume: options.mode === "resume", secrets, fetchWikidata });
     console.log(JSON.stringify({ ...report, journal: path.resolve(options.journalPath!) }, null, 2));
   } catch (error) {
     console.error(redactCanaryText(error instanceof Error ? error.message : String(error), secrets));

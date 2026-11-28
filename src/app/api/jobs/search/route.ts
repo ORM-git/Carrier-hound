@@ -3,6 +3,7 @@ import { wireJobType } from "@/lib/jobs/formatJobType";
 import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
 import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams, hasFeedConstraints } from "@/lib/preferences/feedConstraints";
+import { leanProListFields } from "@/lib/jobs/leanList";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { measureRouteBudget } from "@/lib/api/routeBudget";
@@ -905,7 +906,8 @@ async function getHandler(req: Request) {
           type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
-          description: row.description || "",
+          // Lean list row: description stays server-side; the single-job branch above stays complete.
+          ...leanProListFields(row),
           skills: row.skills || [],
           scoreRevision: scoreInputRevision(row, true, scoredAt),
           matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),

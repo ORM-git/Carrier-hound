@@ -1408,7 +1408,7 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     const displayAnswers = await loadDisplayScoreAnswers((await import("@supabase/supabase-js")).createClient("x", "y") as any, "u_pro_answers");
     for (const j of body.jobs) {
       const row = fullRow(j.id);
-      expect(j).toMatchObject({ company: row.company, companyId: row.company_id, applyUrl: row.apply_url, description: row.description, skills: row.skills, logoUrl: row.logo_url, companyDomain: row.companies.domain });
+      expect(j).toMatchObject({ company: row.company, companyId: row.company_id, applyUrl: row.apply_url, description: "", lean: true, skills: row.skills, logoUrl: row.logo_url, companyDomain: row.companies.domain });
       expect(j.scoreRevision).toBe(scoreInputRevision(row, true, now));
       expect(j.matchScore).toBe(sharedDisplayScore(row, displayAnswers, true, now));
     }
@@ -1503,7 +1503,7 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     }) as any;
     const after = await (await recommendedRoute(req(url, "tok-pro-with-answers"))).json();
     expect(after.jobs.map((j: any) => j.id)).toEqual(before.jobs.map((j: any) => j.id).filter((id: string) => id !== victim));
-    expect(after.jobs.every((j: any) => j.description && j.applyUrl)).toBe(true);
+    expect(after.jobs.every((j: any) => j.lean === true && j.description === "" && j.applyUrl)).toBe(true);
   });
 
   // Each way a ranked job can become ineligible between the candidate query and hydration.
@@ -1534,7 +1534,7 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     const after = await res.json();
     expect(changed).toBe(true);
     expect(after.jobs.map((j: any) => j.id)).toEqual(before.jobs.map((j: any) => j.id).filter((id: string) => !victims.includes(id)));
-    expect(after.jobs.every((j: any) => j.description && j.applyUrl && j.company !== "Verified Employer")).toBe(true);
+    expect(after.jobs.every((j: any) => j.lean === true && j.description === "" && j.applyUrl && j.company !== "Verified Employer")).toBe(true);
     // The candidate query did see them: only hydration's recheck removed them.
     const candidate = state.queries.find((q: any) => !isHydrate(q))!;
     expect(victims.every((id) => candidate.ids.includes(id))).toBe(true);
@@ -1628,6 +1628,94 @@ describe("firstSeenAt: search + recommended routes → service → card", () => 
       expect(footer(j2), label).toBe("");
       expect(footer({ ...j2, firstSeenAt: "not-a-date" }), label).toBe("");
       expect(footer({ ...j1, firstSeenAt: undefined }), label).toBe("");
+    }
+  });
+});
+
+describe("row 72: lean Pro list rows (description stays server-side, detail on demand)", () => {
+  const longDescription = (i: number) =>
+    `About the role #${i}. ` +
+    (i % 3 === 0 ? "We need a senior engineer with 5+ years of experience. " : i % 3 === 1 ? "Entry level, junior friendly, 1-3 years. " : "Mid level role, 3-5 years. ") +
+    "You will build and operate production services, work with product and design, review code, mentor teammates and own delivery end to end. ".repeat(18);
+
+  const fullTextById = () => new Map<string, { title: string; description: string; skills: string[] }>(
+    state.tables.jobs.map((r: any) => [r.id, { title: r.title, description: r.description, skills: r.skills }]),
+  );
+
+  beforeEach(() => {
+    state.tables.jobs.forEach((r: any, i: number) => { r.description = longDescription(i); });
+  });
+
+  it("Pro page: description empty, lean flag, card facts kept, score + revision present, bytes drop (same page before/after)", async () => {
+    const res = await recommendedRoute(req("http://localhost/api/jobs/recommended?page=1&pageSize=25", "tok-pro-with-answers"));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const body = JSON.parse(text);
+    expect(body.jobs.length).toBe(25);
+    const full = fullTextById();
+    // The previous serialization of this very page: same rows, description restored, no lean fields.
+    const before = body.jobs.map((j: any) => {
+      const { lean, experienceBuckets, ...rest } = j;
+      void lean; void experienceBuckets;
+      return { ...rest, description: full.get(j.id)!.description };
+    });
+    const beforeBytes = new TextEncoder().encode(JSON.stringify({ ...body, jobs: before })).length;
+    const afterBytes = new TextEncoder().encode(text).length;
+    console.log(`row72 Pro recommended page bytes: before=${beforeBytes} after=${afterBytes} saved=${(100 * (1 - afterBytes / beforeBytes)).toFixed(1)}%`);
+    expect(afterBytes).toBeLessThan(beforeBytes * 0.5);
+    for (const job of body.jobs) {
+      expect(job.description).toBe("");
+      expect(job.lean).toBe(true);
+      expect(Array.isArray(job.experienceBuckets)).toBe(true);
+      expect(Array.isArray(job.descriptionSkills)).toBe(true);
+      expect(job.skills.length).toBeGreaterThan(0);
+      expect(job.applyUrl.length).toBeGreaterThan(0);
+      expect(typeof job.matchScore).toBe("number");
+      expect(typeof job.scoreRevision).toBe("string");
+      expect(job.company).not.toBe("Verified Employer");
+    }
+  });
+
+  it("the Experience filter result is identical to filtering the full text, for every bucket and row", async () => {
+    const res = await recommendedRoute(req("http://localhost/api/jobs/recommended?page=1&pageSize=25", "tok-pro-with-answers"));
+    const body = await res.json();
+    const full = fullTextById();
+    const { jobMatchesExperience } = await import("@/lib/jobs/leanList");
+    let kept = 0;
+    for (const job of body.jobs) {
+      for (const bucket of ["1-3 Years", "3-5 Years", "5+ Years", "8+ Years"]) {
+        const f = full.get(job.id)!;
+        const expected = jobMatchesExperience({ title: f.title, description: f.description, skills: f.skills }, bucket);
+        expect(jobMatchesExperience(job, bucket), `${job.id} ${bucket}`).toBe(expected);
+        if (expected) kept++;
+      }
+    }
+    expect(kept).toBeGreaterThan(0);
+  });
+
+  it("scoring still reads the description server-side: a changed description changes scoreRevision, and lean never hides it", async () => {
+    const a = await (await recommendedRoute(req("http://localhost/api/jobs/recommended?page=1&pageSize=25", "tok-pro-with-answers"))).json();
+    const target = a.jobs[0].id;
+    state.tables.jobs.find((r: any) => r.id === target).description = "A completely different description about a staff role with 8+ years.";
+    const b = await (await recommendedRoute(req("http://localhost/api/jobs/recommended?page=1&pageSize=25", "tok-pro-with-answers"))).json();
+    const before = a.jobs.find((j: any) => j.id === target);
+    const after = b.jobs.find((j: any) => j.id === target);
+    expect(after.scoreRevision).not.toBe(before.scoreRevision);
+    expect(after.description).toBe("");
+    expect(after.experienceBuckets).toContain("8+ Years");
+  });
+
+  it("Free/guest rows are unchanged: no lean fields, empty description and skills, masked company", async () => {
+    for (const token of ["tok-free-with-answers", undefined]) {
+      const res = await recommendedRoute(req("http://localhost/api/jobs/recommended?page=1&pageSize=25", token));
+      const body = await res.json();
+      for (const job of body.jobs) {
+        expect(job.lean).toBeUndefined();
+        expect(job.experienceBuckets).toBeUndefined();
+        expect(job.description).toBe("");
+        expect(job.skills).toEqual([]);
+        expect(job.company).toBe("Verified Employer");
+      }
     }
   });
 });

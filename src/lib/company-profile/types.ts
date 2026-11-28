@@ -1,11 +1,12 @@
 import { sanitizeExternalUrl, stripHtmlAndExecutableMarkup } from "@/lib/security/xss";
 
-export type CompanyFactKey = "overview" | "website" | "headquarters" | "founded_year" | "employee_count_range" | "linkedin_url" | "twitter_url";
+export type CompanyFactKey = "overview" | "website" | "headquarters" | "founded_year" | "employee_count_range" | "linkedin_url" | "twitter_url" | "funding_stage";
+export const COMPANY_FACT_SOURCE_KINDS = ["official_site", "official_report", "official_announcement", "wikidata"] as const;
 
 export interface CompanyFact<T = string> {
   value: T;
   sourceUrl: string;
-  sourceKind: "official_site" | "official_report" | "official_announcement";
+  sourceKind: (typeof COMPANY_FACT_SOURCE_KINDS)[number];
   retrievedAt: string;
   observedAt?: string | null;
   status?: "fresh" | "stale" | "conflict";
@@ -53,7 +54,7 @@ export interface CompanyProfile {
 }
 
 const factKeys = new Set<CompanyFactKey>([
-  "overview", "website", "headquarters", "founded_year", "employee_count_range", "linkedin_url", "twitter_url",
+  "overview", "website", "headquarters", "founded_year", "employee_count_range", "linkedin_url", "twitter_url", "funding_stage",
 ]);
 
 export function isEligibleCompanyJob(candidate: { id?: unknown; company_id?: unknown; status?: unknown; is_active?: unknown }, companyId: string, currentJobId: string): boolean {
@@ -82,7 +83,7 @@ export function sanitizeCompanyProfile(value: unknown, companyId?: string): Comp
     const fact = candidate as CompanyFact;
     const sourceUrl = safeCompanySourceUrl(fact.sourceUrl);
     const retrievedAt = typeof fact.retrievedAt === "string" && Number.isFinite(Date.parse(fact.retrievedAt)) ? fact.retrievedAt : null;
-    if (!sourceUrl || !retrievedAt || !["official_site", "official_report", "official_announcement"].includes(fact.sourceKind) || typeof fact.value !== "string" || !fact.value.trim()) continue;
+    if (!sourceUrl || !retrievedAt || !(COMPANY_FACT_SOURCE_KINDS as readonly string[]).includes(fact.sourceKind) || typeof fact.value !== "string" || !fact.value.trim()) continue;
     const isUrl = key.endsWith("_url") || key === "website";
     const cleanValue = isUrl ? safeCompanySourceUrl(fact.value) : stripHtmlAndExecutableMarkup(fact.value).trim().slice(0, key === "overview" ? 700 : 180);
     if (!cleanValue) continue;
@@ -100,11 +101,14 @@ export function sanitizeCompanyProfile(value: unknown, companyId?: string): Comp
       } : null,
     };
   }
-  const leadership = Array.isArray(raw.leadership) ? raw.leadership.slice(0, 12).flatMap((row) => {
+  let leadership = Array.isArray(raw.leadership) ? raw.leadership.slice(0, 12).flatMap((row) => {
     const sourceUrl = safeCompanySourceUrl(row?.sourceUrl);
     if (!row || !sourceUrl || !row.name || !row.role || !Number.isFinite(Date.parse(row.retrievedAt))) return [];
     return [{ id: String(row.id), name: stripHtmlAndExecutableMarkup(row.name).slice(0, 100), role: stripHtmlAndExecutableMarkup(row.role).slice(0, 120), roleAsOf: row.roleAsOf && Number.isFinite(Date.parse(row.roleAsOf)) ? row.roleAsOf : null, sourceUrl, retrievedAt: row.retrievedAt }];
   }) : [];
+  // Official leaders win: Wikidata leaders are shown only when no official leader is stored.
+  const officialLeaders = leadership.filter((l) => new URL(l.sourceUrl).hostname !== "www.wikidata.org");
+  if (officialLeaders.length) leadership = officialLeaders;
   const news = Array.isArray(raw.news) ? raw.news.slice(0, 8).flatMap((row) => {
     const sourceUrl = safeCompanySourceUrl(row?.sourceUrl);
     if (!row || !sourceUrl || !row.headline || !Number.isFinite(Date.parse(row.publishedAt))) return [];

@@ -4,6 +4,7 @@ import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excl
 import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
+import { leanProListFields } from "@/lib/jobs/leanList";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
@@ -569,7 +570,8 @@ export async function GET(req: Request) {
           type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
-          description: row.description || "",
+          // Lean list row: the description stays server-side (scoring above already read it); detail is fetched on open.
+          ...leanProListFields(row),
           skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
           firstSeenAt: row.first_seen_at ?? null,

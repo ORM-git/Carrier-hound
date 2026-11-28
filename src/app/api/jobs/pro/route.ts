@@ -1,3 +1,4 @@
+import { leanProListFields } from "@/lib/jobs/leanList";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
@@ -345,6 +346,9 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const { ids, currency: bodyCurrency } = body;
+    // Lean batch (list feeds): leave the description out of each row and send the derived Experience buckets instead.
+    // Default stays the full record. Single-job GET is always full.
+    const leanBatch = body?.lean === true;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
@@ -398,7 +402,9 @@ export async function POST(req: Request) {
       return {
         ...j,
       companyProfile: j.company_id ? profileMap.get(j.company_id) || null : null,
-        description: resolvedDesc,
+        ...(leanBatch
+          ? leanProListFields({ title: j.title, description: resolvedDesc, skills: j.skills, category: j.category })
+          : { description: resolvedDesc }),
         scoreRevision: scoreInputRevision(j, true, scoredAt),
             matchScore: sharedDisplayScore(j, displayAnswers, true, scoredAt),
         role_category: j.role_category || detectRoleCategory(j.title, j.category, j.skills),

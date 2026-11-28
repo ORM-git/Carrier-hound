@@ -101,6 +101,12 @@ export interface AdvancedCapabilities {
    * Owner flag CM_PREFERRED_SKILLS_RANKING=1 plus the service key. Global, not per account: the UI must say Pro.
    */
   preferredSkillsRanking: boolean;
+  /**
+   * Transient required-years range from the All Filters drawer: owner gate + service key + a live read-only probe that
+   * jobs.min/max_experience_years are queryable (yearsReadiness.ts). Technical readiness only; jobs that state no years
+   * are kept, so data coverage is not promised. Recommended feed tab only.
+   */
+  requiredYearsFilter: boolean;
 }
 
 /** Pure: callers pass the server-side values (nothing here reads the client). */
@@ -109,10 +115,13 @@ export function computeAdvancedCapabilities(input: {
   hasServiceKey: boolean;
   excludedSkillsRpcFlag: string | undefined | null;
   preferredSkillsRankingFlag: string | undefined | null;
+  /** Result of probeRequiredYearsColumns; false when not probed. */
+  requiredYearsQueryable?: boolean;
 }): AdvancedCapabilities {
   return {
     savedConstraintsApplied: input.enforced,
     excludedSkillsFilter: input.enforced && input.hasServiceKey && excludedSkillsRpcReady(input.excludedSkillsRpcFlag),
     preferredSkillsRanking: input.enforced && input.hasServiceKey && input.preferredSkillsRankingFlag === "1",
+    requiredYearsFilter: input.enforced && input.hasServiceKey && input.requiredYearsQueryable === true,
   };
 }
