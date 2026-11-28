@@ -8,7 +8,7 @@
  * What is NOT real: PostgREST itself. A small HTTP-to-SQL shim below plays its part (eq/in filters, limit,
  * insert/upsert via json_populate_recordset, update by filter); it decides nothing about which rows to write.
  * Supabase platform pieces PGlite lacks (auth, storage, unaccent, some extensions) are test-only stubs or skipped
- * migrations, listed in SKIPPED_MIGRATIONS and STUBS. This is LOCAL proof only: it does not show which migrations
+ * migrations, listed in SKIPPED_MIGRATIONS and STUBS, plus a local-only jobs_public placeholder (see buildDb). This is LOCAL proof only: it does not show which migrations
  * production has applied, production triggers/indexes as deployed, or capacity under real load.
  *
  * Data is synthetic (.example hosts). The ATS fetch is answered locally; any other network destination throws.
@@ -82,8 +82,9 @@ async function buildDb(variant: Variant) {
   const db = new PGlite({ extensions: { pg_trgm, pgcrypto } });
   await db.exec(STUBS);
   await db.exec(fs.readFileSync(path.join(repo, 'supabase/schema.sql'), 'utf8'));
-  // 20261001_filter_upgrades grants on jobs_public, which no earlier file creates (20261010 does, via CREATE OR
-  // REPLACE starting with id). Placeholder so the chain replays from empty; 20261010 then defines the real view.
+  // LOCAL TEST WORKAROUND, not a production fix: 20261001_filter_upgrades grants on jobs_public, which no earlier
+  // migration creates (20261010 does, via CREATE OR REPLACE starting with id). This placeholder exists only in the
+  // throwaway PGlite database so the chain replays from empty; 20261010 then replaces it with the real view.
   await db.exec('CREATE VIEW public.jobs_public AS SELECT id FROM public.jobs;');
   const dir = path.join(repo, 'supabase/migrations');
   const failed: string[] = [];
@@ -107,8 +108,12 @@ async function buildDb(variant: Variant) {
   return db;
 }
 
+/** One shim request as answered: the SQL operation it became, its ON CONFLICT target, and the HTTP status sent. */
+type ShimEntry = { table: string; method: string; op: 'select' | 'insert' | 'upsert' | 'update' | 'rpc'; onConflict: string | null;
+  status: number; code?: string; rows?: number };
+
 /** PostgREST-shaped HTTP -> SQL over PGlite. Supports only what ingest.ts sends; anything else throws. */
-function postgrestShim(db: any, sc: Scenario, log: Array<{ table: string; method: string; status: number; code?: string }>) {
+function postgrestShim(db: any, sc: Scenario, log: ShimEntry[]) {
   const ident = (s: string) => {
     const t = s.trim();
     if (!/^[a-z_][a-z0-9_]*$/.test(t)) throw new Error(`Shim refuses identifier ${JSON.stringify(t)}`);
@@ -132,15 +137,20 @@ function postgrestShim(db: any, sc: Scenario, log: Array<{ table: string; method
   return async (url: URL, method: string, body: any, headers: Headers): Promise<Response> => {
     const table = url.pathname.replace('/rest/v1/', '');
     const p = url.searchParams;
-    const record = (status: number, code?: string) => log.push({ table, method, status, code });
+    const onConflict = p.get('on_conflict');
+    const op: ShimEntry['op'] = table.startsWith('rpc/') ? 'rpc' : method === 'GET' || method === 'HEAD' ? 'select'
+      : method === 'POST' ? (onConflict ? 'upsert' : 'insert') : 'update';
+    const send = (body: unknown, status: number, extra: { code?: string; rows?: number } = {}) => {
+      log.push({ table, method, op, onConflict, status, ...extra });
+      return reply(body, status);
+    };
     try {
       if (table.startsWith('rpc/')) {
         const fn = table.slice(4);
         const exists = (await db.query(`SELECT 1 FROM pg_proc WHERE proname = $1`, [fn])).rows.length > 0;
-        if (!exists) { record(404, 'PGRST202'); return reply({ code: 'PGRST202', message: `Could not find the function public.${fn}` }, 404); }
+        if (!exists) return send({ code: 'PGRST202', message: `Could not find the function public.${fn}` }, 404, { code: 'PGRST202' });
         await db.query(`SELECT public.${ident(fn)}()`);
-        record(200);
-        return reply(null, 200);
+        return send(null, 200);
       }
       const t = `public.${ident(table)}`;
       const cols = (p.get('select') || '*').split(',').map((c) => (c.trim() === '*' ? '*' : ident(c))).join(', ');
@@ -148,7 +158,7 @@ function postgrestShim(db: any, sc: Scenario, log: Array<{ table: string; method
       const single = headers.get('accept')?.includes('vnd.pgrst.object');
       let sql: string;
       if (method === 'GET' || method === 'HEAD') {
-        if (sc.lookupFail && table === 'jobs' && !p.has('limit')) { record(503, 'FIXTURE'); return reply({ code: 'XX000', message: 'fixture: identity lookup unavailable' }, 503); }
+        if (sc.lookupFail && table === 'jobs' && !p.has('limit')) return send({ code: 'XX000', message: 'fixture: identity lookup unavailable' }, 503, { code: 'FIXTURE' });
         sql = `SELECT ${cols} FROM ${t}${where(p, args)}${p.has('limit') ? ` LIMIT ${Number(p.get('limit'))}` : ''}`;
       } else if (method === 'POST') {
         const rows = Array.isArray(body) ? body : [body];
@@ -156,8 +166,8 @@ function postgrestShim(db: any, sc: Scenario, log: Array<{ table: string; method
         const k = keys.map(ident).join(', ');
         args.push(JSON.stringify(rows));
         sql = `INSERT INTO ${t} (${k}) SELECT ${k} FROM json_populate_recordset(NULL::${t}, $1::json)`;
-        if (p.has('on_conflict')) {
-          const target = p.get('on_conflict')!.split(',').map(ident).join(', ');
+        if (onConflict) {
+          const target = onConflict.split(',').map(ident).join(', ');
           const ignore = (headers.get('prefer') || '').includes('ignore-duplicates');
           const set = keys.map((c) => `${ident(c)} = EXCLUDED.${ident(c)}`).join(', ');
           sql += ignore ? ` ON CONFLICT (${target}) DO NOTHING` : ` ON CONFLICT (${target}) DO UPDATE SET ${set}`;
@@ -172,15 +182,13 @@ function postgrestShim(db: any, sc: Scenario, log: Array<{ table: string; method
       } else throw new Error(`Shim does not support ${method}`);
       const res = await db.query(`WITH r AS (${sql}) SELECT coalesce(json_agg(r), '[]'::json) AS j FROM r`, args);
       const data = res.rows[0].j as any[];
-      record(method === 'POST' ? 201 : 200);
-      if (single) return data.length === 1 ? reply(data[0], 200) : reply({ code: 'PGRST116', message: `${data.length} rows` }, 406);
-      return reply(data, method === 'POST' ? 201 : 200);
+      if (single) return data.length === 1 ? send(data[0], 200, { rows: 1 }) : send({ code: 'PGRST116', message: `${data.length} rows` }, 406, { code: 'PGRST116', rows: data.length });
+      return send(data, method === 'POST' ? 201 : 200, { rows: data.length });
     } catch (e: any) {
       if (/^Shim /.test(e.message)) throw e;
       const code = e.code || 'XX000';
       const status = code === '23505' ? 409 : code === '42P01' ? 404 : 400;
-      record(status, code);
-      return reply({ code, message: e.message, details: e.detail ?? null, hint: e.hint ?? null }, status);
+      return send({ code, message: e.message, details: e.detail ?? null, hint: e.hint ?? null }, status, { code });
     }
   };
 }
@@ -211,7 +219,7 @@ async function child() {
     ...(canonical ? { source_id: buildSourceId('lever', 'other-board') } : {}) });
   const before = (await db.query(`SELECT row_to_json(j) AS r FROM public.jobs j ORDER BY source, source_job_id`)).rows.map((x: any) => x.r);
 
-  const shimLog: Array<{ table: string; method: string; status: number; code?: string }> = [];
+  const shimLog: ShimEntry[] = [];
   const shim = postgrestShim(db, sc, shimLog);
   const runStart = new Date().toISOString();
   globalThis.fetch = async (input: any, init?: RequestInit) => {
@@ -266,9 +274,11 @@ function parent() {
     const out = JSON.parse(fs.readFileSync(path.join(root, 'out.json'), 'utf8'));
     const t = (x: string | null) => (x === null ? null : new Date(x).toISOString());
     const find = (rows: any[], source: string, id: string) => rows.filter((r) => r.source === source && r.source_job_id === id);
-    const jobsWrites = out.shimLog.filter((l: any) => l.table === 'jobs' && l.method !== 'GET');
-    summary.push(`| ${sc.name} | ${out.before.length} | ${out.after.length} | ${out.shimLog.filter((l: any) => l.table === 'jobs' && l.method === 'POST').length} | ${out.shimLog.filter((l: any) => l.table === 'jobs' && l.method === 'PATCH').length} | ${jobsWrites.filter((l: any) => l.status >= 400).map((l: any) => l.code).join(' ') || '-'} | ${out.code} |`);
-    return { proc, out, t, find, log: (proc.stdout + proc.stderr).slice(-1500) };
+    const jobs = (op: string) => out.shimLog.filter((l: ShimEntry) => l.table === 'jobs' && l.op === op);
+    const jobsWrites = out.shimLog.filter((l: ShimEntry) => l.table === 'jobs' && l.op !== 'select');
+    const upserts = jobs('upsert').map((l: ShimEntry) => `${l.onConflict}:${l.status}:${l.rows ?? '-'}`).join(' ') || '-';
+    summary.push(`| ${sc.name} | ${out.before.length} | ${out.after.length} | ${jobs('insert').length} | ${upserts} | ${jobs('update').length} | ${jobsWrites.filter((l: ShimEntry) => l.status >= 400).map((l: ShimEntry) => l.code).join(' ') || '-'} | ${out.code} |`);
+    return { proc, out, t, find, jobs, jobsWrites, log: (proc.stdout + proc.stderr).slice(-1500) };
   };
   const otherIdentitiesUntouched = (name: string, r: ReturnType<typeof run>) => {
     for (const [source, id] of [['greenhouse', sjid(1)], ['lever', 'other-board-j01']] as const) {
@@ -315,8 +325,14 @@ function parent() {
     sc = { name: 'P3 legacy schema without verified, 25 existing + 35 new, all dated (bulk upsert path)', variant: 'legacy-no-verified', jobs: 60, existing: 25, datedEvery: 1 };
     r = run(sc);
     check(`${sc.name}: exit 0`, r.out.code === 0, r.log);
-    check(`${sc.name}: bulk upsert succeeded against the real (source, source_job_id) key`,
-      r.out.shimLog.some((l: any) => l.table === 'jobs' && l.method === 'POST' && l.status === 201), r.out.shimLog.filter((l: any) => l.table === 'jobs'));
+    // The bulk path itself, not just any successful POST: one upsert per batch on (source, source_job_id), each 201 with
+    // every row of its batch returned, and no plain insert, update or failed write that could have stored rows instead.
+    check(`${sc.name}: exactly one upsert per batch (2), both ON CONFLICT (source, source_job_id)`,
+      r.jobs('upsert').length === 2 && r.jobs('upsert').every((l: ShimEntry) => l.onConflict === 'source,source_job_id'), r.jobs('upsert'));
+    check(`${sc.name}: both upserts answered 201 with all rows of their batch (50, 10)`,
+      JSON.stringify(r.jobs('upsert').map((l: ShimEntry) => [l.status, l.rows])) === JSON.stringify([[201, 50], [201, 10]]), r.jobs('upsert'));
+    check(`${sc.name}: no plain insert or update reached jobs, and no jobs write failed`,
+      r.jobs('insert').length === 0 && r.jobs('update').length === 0 && r.jobsWrites.every((l: ShimEntry) => l.status < 400), r.jobsWrites);
     datesAndDiscovery(sc.name, r, sc);
     otherIdentitiesUntouched(sc.name, r);
 
@@ -331,13 +347,12 @@ function parent() {
 
     sc = { name: 'P5 legacy schema + verified, identity lookup fails', variant: 'legacy', jobs: 40, existing: 20, datedEvery: 2, lookupFail: true };
     r = run(sc);
-    check(`${sc.name}: no INSERT/UPSERT/UPDATE reached public.jobs`, r.out.shimLog.every((l: any) => !(l.table === 'jobs' && l.method !== 'GET')),
-      r.out.shimLog.filter((l: any) => l.table === 'jobs' && l.method !== 'GET'));
+    check(`${sc.name}: no INSERT/UPSERT/UPDATE reached public.jobs`, r.jobsWrites.length === 0, r.jobsWrites);
     check(`${sc.name}: every stored row is byte-identical (no guessed inserts, no updates)`, JSON.stringify(r.out.after) === JSON.stringify(r.out.before));
     check(`${sc.name}: failure is logged`, /jobs identity lookup failed/.test(r.proc.stdout + r.proc.stderr), r.log);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 
-  console.log('\n| scenario | rows before | rows after | jobs POST | jobs PATCH | jobs write errors | exit |\n|---|---|---|---|---|---|---|');
+  console.log('\n| scenario | rows before | rows after | jobs insert | jobs upsert (target:status:rows) | jobs update | jobs write errors | exit |\n|---|---|---|---|---|---|---|---|');
   console.log(summary.join('\n'));
   console.log(`Skipped migrations: ${Object.entries(SKIPPED_MIGRATIONS).map(([f, why]) => `${f} (${why})`).join('; ')}`);
   console.log(`${passed} passed, ${failed} failed. Local PGlite proof only; PostgREST is a shim; production schema/triggers/capacity not verified.`);
