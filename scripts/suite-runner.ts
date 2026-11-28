@@ -42,6 +42,7 @@ export const SUITES: SuiteSpec[] = [
   // Pure offline unit & regression suites (always safe to run locally and in CI)
   { name: "scripts/test-discovered-at-insert-only.ts", command: "npx tsx scripts/test-discovered-at-insert-only.ts", classification: "offline" },
   { name: "scripts/test-first-seen-provenance.ts", command: "npx tsx scripts/test-first-seen-provenance.ts", classification: "offline" },
+  { name: "scripts/test-ingest-pglite-integration.ts", command: "npx tsx scripts/test-ingest-pglite-integration.ts", classification: "offline" },
   { name: "scripts/test-source-date-legacy-cli.ts", command: "npx tsx scripts/test-source-date-legacy-cli.ts", classification: "offline" },
   { name: "scripts/test-employment-type-ingestion.ts", command: "npx tsx scripts/test-employment-type-ingestion.ts", classification: "offline" },
   { name: "scripts/test-remote-eligibility-fallback.ts", command: "npx tsx scripts/test-remote-eligibility-fallback.ts", classification: "offline" },

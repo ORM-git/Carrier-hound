@@ -135,20 +135,22 @@ function run() {
   }
 
   // 2c. Detail layout: Header block (logo, title 24px bold, company, chips, Save and Apply buttons)
-  const has24pxTitle = detailCode.includes("text-[24px] font-bold text-[#0F172A]");
+  // Approved detail layout: title is the page h1, 28px bold on mobile and 22px semibold on desktop, ink colour.
+  const has24pxTitle = /<h1 className="text-\[28px\] md:text-\[22px\] font-bold md:font-semibold text-\[#0F172A\]/.test(detailCode);
   const hasDetailCompany = detailCode.includes("text-[14px] text-[#475569]");
   const hasDetailLogo = detailCode.includes("CompanyLogo") && detailCode.includes("w-12 h-12 rounded-xl");
   const hasDetailChips = detailCode.includes("bg-[#F1F5F9] text-[#475569]");
   const hasDetailActions = detailCode.includes("onSave") && detailCode.includes("onApply");
   if (!has24pxTitle || !hasDetailCompany || !hasDetailLogo || !hasDetailChips || !hasDetailActions) {
-    failures.push("DETAIL HEADER FAIL: Header block must include 48px logo, 24px bold title, 14px company, chips, Save and Apply buttons.");
+    failures.push("DETAIL HEADER FAIL: Header block must include 48px logo, bold ink h1 title (28px mobile / 22px desktop), 14px company, chips, Save and Apply buttons.");
   } else {
     console.log("  [PASS] detail header: 48px logo, title 24px bold ink, company 14px #475569, chips, Save and Apply buttons");
   }
 
   // 2d. Detail sections: each in a white 16px-radius card with a 18px bold heading
   const has18pxHeadings = detailCode.includes("text-[18px] font-bold text-[#0F172A]");
-  const hasMatchBreakdown = detailCode.includes("Match breakdown");
+  // Approved detail layout: the breakdown is the "Match Score" tile section (mobile) and the desktop score panel; both keep the masked sub-score placeholder.
+  const hasMatchBreakdown = detailCode.includes('>Match Score</h2>') && detailCode.includes('data-testid="desktop-match-score"') && detailCode.includes('"\u2022\u2022%"');
   const hasJobDescription = detailCode.includes("Job description");
   const hasDescriptionStyle = detailCode.includes("text-[15px]") && detailCode.includes("leading-[24px]") && detailCode.includes("max-w-[720px]");
   if (!has18pxHeadings || !hasMatchBreakdown || !hasJobDescription || !hasDescriptionStyle) {

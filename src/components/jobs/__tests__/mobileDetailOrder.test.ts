@@ -8,8 +8,8 @@ const panel = readFileSync("src/components/jobs/JobAiToolsPanel.tsx", "utf8");
 
 describe("mobile detail order (item 17)", () => {
   it("root is a flex column; on mobile the content grid comes before Match Insights; desktop order untouched", () => {
-    expect(detail).toContain('className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3');
-    expect(detail).toMatch(/<JobAiToolsPanel\s+className="max-md:order-2"/);
+    expect(detail).toContain('className="max-w-[880px] w-full mx-auto lg:mx-0 lg:min-w-0 lg:flex-1 flex flex-col gap-4 sm:gap-3');
+    expect(detail).toMatch(/<JobAiToolsPanel\s+className="max-md:order-2( lg:hidden)?"/);
     expect(detail).toContain('grid grid-cols-1 lg:grid-cols-12 gap-5 items-start max-md:order-1');
     // the header card (title/metadata/compact score) keeps the default order, so it precedes both
     expect(detail.indexOf("(2) HEADER BODY CARD")).toBeLessThan(detail.indexOf("(3) CONTENT ORDER"));
