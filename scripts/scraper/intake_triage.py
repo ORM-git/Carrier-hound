@@ -45,7 +45,7 @@ _CAREERS_LABELS = {"careers", "career", "jobs", "join", "hiring"}
 _HOME_SEG = re.compile(r"^([a-z]{2}(-[a-z]{2})?|home|index)$")
 _URL_IN_TEXT = re.compile(r"[a-z][a-z0-9+.-]*://[^\s\"'|,]+", re.IGNORECASE)
 _AT_TOKEN = re.compile(r"[^\s\"'|,]*@[^\s\"'|,]*\.[^\s\"'|,]*")  # user:pw@host, mail@host
-_QUERY_TAIL = re.compile(r"(?<=[^\s\"'|,#])[?#][^\s\"'|,]*")  # attached tail only: Markdown "## Heading" survives
+_TEXT_TOKEN = re.compile(r"[^\s\"'|,]+")
 _NAME_DOT_TOKEN = re.compile(r"\b[a-z0-9][a-z0-9-]*\.[a-z]{2,}\b", re.IGNORECASE)
 
 
@@ -86,20 +86,44 @@ def redact_url(url: object) -> str | None:
     return f"https://{host}{f':{port}' if port else ''}{path}"
 
 
+def _strip_query_tail(m: re.Match) -> str:
+    tok = m.group(0)
+    i = min((tok.find(c) for c in "?#" if c in tok), default=-1)
+    if i < 0:
+        return tok
+    head, tail = tok[:i], tok[i:]
+    # URL-like (host.tld/path before it) or query-like (key=value after it): drop the tail.
+    # Plain words keep it: "C# Labs", "What? Inc", Markdown "## Heading".
+    return head if ("." in head or "/" in head or "=" in tail) else tok
+
+
 def redact_text(text: object) -> str:
-    """Strips query, fragment and credentials from free text: URLs are reduced to host+path, any other
-    ?…/#… tail is dropped, and tokens with an @ are replaced."""
+    """Strips credentials and URL query/fragment from free text, with or without a scheme. URLs are reduced to
+    host+path, URL- or query-like ?…/#… tails are dropped, tokens holding user@host are replaced."""
     text = _URL_IN_TEXT.sub(lambda m: redact_url(m.group(0)) or "", str(text or ""))
-    return _QUERY_TAIL.sub("", _AT_TOKEN.sub("<redacted>", text))
+    return _TEXT_TOKEN.sub(_strip_query_tail, _AT_TOKEN.sub("<redacted>", text))
 
 
 def scrub(obj):
-    """Final pass over everything written: every string, keys included, goes through redact_text."""
+    """Final pass over everything written: every string, keys included, goes through redact_text.
+    Two keys that redact alike are never silently combined: counts are summed, anything else is an error."""
     if isinstance(obj, dict):
-        return {redact_text(k) if isinstance(k, str) else k: scrub(v) for k, v in obj.items()}
+        out: dict = {}
+        for k, v in obj.items():
+            key, val = (redact_text(k) if isinstance(k, str) else k), scrub(v)
+            if key in out:
+                if not (type(out[key]) is int and type(val) is int):
+                    raise TriageError("redaction would merge two distinct keys; refusing to write a combined entry")
+                val += out[key]
+            out[key] = val
+        return out
     if isinstance(obj, list):
         return [scrub(v) for v in obj]
     return redact_text(obj) if isinstance(obj, str) else obj
+
+
+def _is_row(n: object) -> bool:
+    return type(n) is int  # bool is an int subclass: JSON true must never read as row 1
 
 
 def _on(host: str, base: str) -> bool:
@@ -198,7 +222,7 @@ def _str(v) -> str:
 def primary_bucket(r: dict, rows: dict[int, dict]) -> tuple[str, str]:
     target = r.get("merged_into_row")
     if target is not None:
-        if isinstance(target, int) and target in rows and target != r["source_row"] and rows[target].get("merged_into_row") is None:
+        if _is_row(target) and target in rows and target != r["source_row"] and rows[target].get("merged_into_row") is None:
             return "merged_duplicate", "merged into a retained row (see references.proven_merges)"
         return "broken_merge_reference", f"merged_into_row {target!r} is not a retained row in this report"
     status = r.get("status")
@@ -277,19 +301,29 @@ def triage(report: dict, connectors: dict[str, dict]) -> dict:
     groups = report.get("review_groups") if isinstance(report.get("review_groups"), list) else []
     groups_by_row: dict[int, list[str]] = defaultdict(list)
     possible = []
-    for g in sorted((g for g in groups if isinstance(g, dict)), key=lambda g: _str(g.get("group"))):
-        refs = [n for n in g.get("source_rows") or [] if isinstance(n, int)]
+    parsed = []
+    for g in (g for g in groups if isinstance(g, dict)):
+        raw_list = g.get("source_rows") if isinstance(g.get("source_rows"), list) else []
+        kind = re.sub(r"[^a-z0-9_]", "", redact_text(g.get("kind")).lower())[:40] or "group"
+        parsed.append((kind, sorted({n for n in raw_list if _is_row(n)}), [n for n in raw_list if not _is_row(n)], g))
+    used_ids: Counter = Counter()
+    # ID from non-secret content (kind + row refs), never from the label, so groups whose labels redact alike stay apart.
+    for kind, refs, bad_refs, g in sorted(parsed, key=lambda p: (p[0], p[1], _str(p[3].get("group")))):
+        base = f"rg-{kind}-{hashlib.sha256(json.dumps([kind, refs]).encode()).hexdigest()[:10]}"
+        used_ids[base] += 1
+        gid = base if used_ids[base] == 1 else f"{base}-{used_ids[base]}"
         for n in refs:
-            groups_by_row[n].append(_str(g.get("group")))
-        possible.append({"group": _str(g.get("group")), "kind": _str(g.get("kind")) or None, "source_rows": sorted(refs),
-                         "unknown_rows": sorted(n for n in refs if n not in rows),
+            groups_by_row[n].append(gid)
+        possible.append({"id": gid, "label": redact_text(g.get("group")), "kind": kind, "source_rows": refs,
+                         "unknown_rows": sorted(n for n in refs if n not in rows), "invalid_row_refs": len(bad_refs),
                          "url_samples": sorted({redact_url(u) for u in g.get("urls") or [] if redact_url(u)})[:SAMPLES]})
+    refs_by_id = {p["id"]: p["source_rows"] for p in possible}
 
     missing = []
     for r in assigned.get("missing_url", []):
         name = _str(r.get("company"))
-        siblings = sorted({n for g in groups if isinstance(g, dict) and r["source_row"] in (g.get("source_rows") or [])
-                           for n in g.get("source_rows") or [] if n != r["source_row"] and n in rows and _url(rows[n])})
+        siblings = sorted({n for gid in groups_by_row.get(r["source_row"], []) for n in refs_by_id[gid]
+                           if n != r["source_row"] and n in rows and _url(rows[n])})
         hints = [{"kind": "name_contains_dot_token", "value": t, "note": "text in the name; not a verified domain"}
                  for t in _NAME_DOT_TOKEN.findall(name)]
         if siblings:
@@ -355,6 +389,8 @@ def render_markdown(t: dict, sha: str) -> str:
 
 
 def run(report_path: Path, out_dir: Path, fetchers_path: Path = DEFAULT_FETCHERS) -> dict:
+    if out_dir.resolve() == report_path.resolve().parent:
+        raise TriageError("--out-dir must differ from the raw report's directory; keep sanitized output apart from private input")
     raw = report_path.read_bytes()
     try:
         report = json.loads(raw.decode("utf-8-sig"))

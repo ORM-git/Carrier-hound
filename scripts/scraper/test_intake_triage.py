@@ -80,7 +80,9 @@ def test_references_do_not_double_count_and_merges_stay_separate():
     refs = t["references"]
     assert refs["proven_merges"] == [{"retained_row": 2, "merged_rows": [3]}]
     assert next(r for r in t["rows"] if r["source_row"] == 3)["merged_into_row"] == 2
-    assert [g["group"] for g in refs["possible_duplicates"]] == ['same_ats_board:lever:{"token": "zeta"}', "similar_name:gamma"]
+    assert [(g["label"], g["kind"], g["source_rows"]) for g in refs["possible_duplicates"]] == [
+        ('same_ats_board:lever:{"token": "zeta"}', "same_ats_board", [8, 9]), ("similar_name:gamma", "similar_name", [5, 16])]
+    assert all(g["id"].startswith(f"rg-{g['kind']}-") for g in refs["possible_duplicates"])
     assert refs["ambiguous"] == [{"source_row": 9, "source_lines": [9, 9], "bucket": "ambiguous",
                                   "reason": "columns point at different ATS boards; see https://eta.example/x",
                                   "candidate_boards": ['ashby:{"token": "eta"}', 'lever:{"token": "zeta"}']}]
@@ -135,8 +137,9 @@ def test_split_url_case_ports_trailing_dots(url, expected):
 
 def test_missing_urls_keep_names_and_only_present_hints():
     t = triage()
+    gamma_id = next(g["id"] for g in t["references"]["possible_duplicates"] if g["label"] == "similar_name:gamma")
     assert t["missing_urls"] == [{
-        "source_row": 5, "source_lines": [5, 7], "company": "Gamma.example Labs", "review_groups": ["similar_name:gamma"],
+        "source_row": 5, "source_lines": [5, 7], "company": "Gamma.example Labs", "review_groups": [gamma_id],
         "hints": [{"kind": "name_contains_dot_token", "value": "Gamma.example", "note": "text in the name; not a verified domain"},
                   {"kind": "review_group_rows_with_urls", "value": [16], "note": "possible duplicates; not proof"}]}]
     assert next(r for r in t["rows"] if r["source_row"] == 5)["source_lines"] == [5, 7]
@@ -342,3 +345,114 @@ def test_markdown_structure_survives_redaction(tmp_path):
     md = (tmp_path / "intake_triage.md").read_text(encoding="utf-8")
     assert md.startswith("# Company intake triage\n")
     assert "\n## Connector groups" in md and "\n## References" in md
+
+
+# ---- review round 2 ------------------------------------------------------------------------------
+
+def _two_groups_same_redacted_label():
+    rep = load()
+    rep["review_groups"] = [
+        {"group": "dup https://x.example/?sig=SECRET1", "kind": "similar_name", "source_rows": [2, 4], "urls": []},
+        {"group": "dup https://x.example/?sig=SECRET2", "kind": "similar_name", "source_rows": [10, 11], "urls": []},
+        {"group": "dup https://x.example/?sig=SECRET3", "kind": "similar_name", "source_rows": [10, 11], "urls": []},
+    ]
+    return rep
+
+
+def test_groups_with_same_redacted_label_stay_separate(tmp_path):
+    labels = [g["group"] for g in _two_groups_same_redacted_label()["review_groups"]]
+    assert len({it.redact_text(x) for x in labels}) == 1          # negative control: labels alone would collide
+    t = triage(_two_groups_same_redacted_label())
+    groups = t["references"]["possible_duplicates"]
+    assert len(groups) == 3 and len({g["id"] for g in groups}) == 3  # identical rows too: suffixed, never combined
+    assert sorted(g["source_rows"] for g in groups) == [[2, 4], [10, 11], [10, 11]]
+    assert {g["label"] for g in groups} == {"dup https://x.example/"}
+    p = tmp_path / "r.json"
+    p.write_text(json.dumps(_two_groups_same_redacted_label()), encoding="utf-8")
+    out = it.run(p, tmp_path / "o")
+    assert len(out["references"]["possible_duplicates"]) == 3
+    text = (tmp_path / "o" / "intake_triage.json").read_text(encoding="utf-8")
+    assert "SECRET" not in text
+    assert it.run(p, tmp_path / "o2")["references"] == out["references"]   # IDs stable across runs
+
+
+def test_scrub_never_silently_combines_keys():
+    assert it.scrub({"see a.example/p?t=1": 2, "see a.example/p?t=2": 3}) == {"see a.example/p": 5}  # counts summed
+    with pytest.raises(it.TriageError, match="merge two distinct keys"):                              # negative control
+        it.scrub({"g a.example/?s=1": [2], "g a.example/?s=2": [3]})
+
+
+@pytest.mark.parametrize("name", ["C# Labs", "What? Inc", "F# Software", "Yes! & Why? Co", "AT&T #1 Partner", "## Heading"])
+def test_ordinary_names_with_question_or_hash_survive(name):
+    assert it.redact_text(name) == name
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("see beta.example/p?sess=SECRETb#frag", "see beta.example/p"),          # scheme-less URL
+    ("acme.example?token=SECRET", "acme.example"),
+    ("eta?x=SECRETe", "eta"),                                                # query-like tail
+    ("C#?api_key=SECRET", "C"),
+    ("https://u:SECRET@acme.example/p?q=1#f", "https://acme.example/p"),
+    ("login admin:SECRET@acme.example", "login <redacted>"),
+    ("What? Inc https://w.example/?sig=SECRET", "What? Inc https://w.example/"),
+])
+def test_secrets_still_removed_next_to_ordinary_text(raw, expected):
+    assert it.redact_text(raw) == expected                                  # negative controls: secret-bearing input
+
+
+def test_names_survive_in_written_reports_and_privacy_holds(tmp_path):
+    rep = _poisoned()
+    rep["records"][10]["company"] = "C# Labs"      # row 12 sample/name
+    rep["records"][12]["company"] = "What? Inc"    # row 14
+    p = tmp_path / "poisoned.json"
+    p.write_text(json.dumps(rep), encoding="utf-8")
+    it.run(p, tmp_path / "o")
+    text = (tmp_path / "o" / "intake_triage.json").read_text(encoding="utf-8")
+    assert '"C# Labs"' in text and '"What? Inc"' in text
+    for secret in ("SECRET", "hunter2", "sess=", "sig=", "#frag", "utm_", "api_key", "user:pass"):
+        assert secret not in text
+
+
+def test_raw_input_kept_apart_from_sanitized_output(tmp_path):
+    p = tmp_path / "report.json"
+    p.write_bytes(FIXTURE.read_bytes())
+    before = p.read_bytes()
+    with pytest.raises(it.TriageError, match="must differ"):              # negative control: same directory refused
+        it.run(p, tmp_path)
+    assert sorted(x.name for x in tmp_path.iterdir()) == ["report.json"]
+    rep = load()
+    snapshot = json.dumps(rep, sort_keys=True)
+    triage(rep)
+    assert json.dumps(rep, sort_keys=True) == snapshot                    # raw report object not mutated
+    it.run(p, tmp_path / "out")
+    assert p.read_bytes() == before
+
+
+@pytest.mark.parametrize("bad", [True, False, 2.0, "2", [2], {"row": 2}, 0, -1])
+def test_invalid_merge_references_rejected(bad):
+    rep = load()
+    rep["records"].insert(0, {"source_row": 1, "status": "website_only", "normalized_url": "https://one.example"})
+    rep["reconciliation"]["input_rows"] = 16
+    rep["records"][2]["merged_into_row"] = bad                            # row 3
+    t = triage(rep)
+    assert t["buckets"]["broken_merge_reference"]["source_rows"] == [3]
+    assert t["buckets"]["merged_duplicate"]["count"] == 0
+    assert t["references"]["proven_merges"] == []
+    assert next(r for r in t["rows"] if r["source_row"] == 3)["merged_into_row"] is None
+
+
+def test_true_is_not_row_one_negative_control():
+    assert True in {1: "row 1"}                    # the hazard: bool hashes and compares equal to 1
+    assert not it._is_row(True) and not it._is_row(False) and it._is_row(1)
+    rep = load()
+    rep["records"].insert(0, {"source_row": 1, "status": "website_only"})
+    rep["reconciliation"]["input_rows"] = 16
+    rep["records"][2]["merged_into_row"] = 1      # a real integer reference still merges
+    assert triage(rep)["references"]["proven_merges"][0] == {"retained_row": 1, "merged_rows": [3]}
+
+
+def test_bool_row_refs_in_review_groups_are_not_rows():
+    rep = load()
+    rep["review_groups"][0]["source_rows"] = [5, 16, True, "7"]
+    g = next(g for g in triage(rep)["references"]["possible_duplicates"] if g["label"] == "similar_name:gamma")
+    assert g["source_rows"] == [5, 16] and g["invalid_row_refs"] == 2
