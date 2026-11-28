@@ -26,8 +26,10 @@ describe("mobile card score weight (item 19)", () => {
   });
 
   it("the capsule is a solid CM-blue arc on a pale track with a bold percent; no-score cards keep the resume link", () => {
-    expect(ring).not.toContain('linearGradient');
-    expect(ring).toContain('stroke={light ? "#2563EB" : "#2DD4BF"}');
+    // The gradient exists only in the opt-in desktop circle; the capsule branch is a flat colour.
+    expect(ring.split('linearGradient id').length - 1).toBe(1);
+    expect(ring).toContain('{gradient && (');
+    expect(ring).toContain('light ? "#2563EB" : "#2DD4BF"');
     expect(ring).toContain('stroke={light ? "#E2E8F0" : "#1E293B"}');
     expect(ring).toContain('text-[0.62em]');
     expect(ring).toContain('font-extrabold');
@@ -47,12 +49,14 @@ describe("mobile card score weight (item 19)", () => {
     expect(card.split(glow).length - 1).toBe(2);
   });
 
-  it("desktop match panel uses the same light capsule, not the turquoise circle", () => {
+  it("desktop (laptop-only) match panel: full circle with a real-score CM-blue gradient arc; mobile capsule untouched", () => {
     const panel = card.slice(card.indexOf("Desktop Match Panel"), card.indexOf("PREVIEW SCORE"));
     expect(panel).toContain("<CircularMatchRing");
-    expect(panel).toContain("light");
-    expect(panel).not.toContain('shape="circle"');
+    expect(panel).toContain('shape="circle"');
+    expect(panel).toContain("gradient");
+    expect(panel).toContain("score={matchScore}");
+    expect(panel).not.toContain("emerald");
     expect(panel).not.toContain("hidden md:block");
-    expect(panel).toContain("size={70}");
+    expect(card).toContain("<CircularMatchRing score={matchScore} size={56} strokeWidth={2.4} light />");
   });
 });
