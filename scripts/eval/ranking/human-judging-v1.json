@@ -1,0 +1,104 @@
+{
+  "version": "human-judging-v1",
+  "synthetic": true,
+  "description": "SYNTHETIC profiles and jobs prepared for HUMAN relevance judging (checklist #62). Fictional companies and profiles; no private resume or customer data. Labels are intentionally EMPTY: judging is pending. Fill them only from completed rows of scripts/eval/ranking/human-judging-v1-worksheet.csv (guide: docs/ranking-eval-judging.md) with verified human provenance. Until then this dataset measures nothing.",
+  "referenceTime": "2026-11-26T00:00:00Z",
+  "jobs": [
+    { "id": "h01", "title": "Senior Frontend Engineer", "company": "Orchid Apps", "category": "software", "location": "Remote - India", "country_code": "IN", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Own the React and TypeScript web app; mentor two engineers.", "skills": ["React", "TypeScript"] },
+    { "id": "h02", "title": "Frontend Engineer", "company": "Lark Studio", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Vue and TypeScript dashboards. 3+ years experience.", "skills": ["Vue", "TypeScript"] },
+    { "id": "h03", "title": "Senior Frontend Engineer", "company": "Maple Pay", "category": "software", "location": "Remote - US", "country_code": "US", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "React checkout flows. Must be authorized to work in the US.", "skills": ["React"] },
+    { "id": "h04", "title": "Senior Full Stack Engineer", "company": "Cobalt Health", "category": "software", "location": "Bengaluru, India", "country_code": "IN", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "description": "React frontend plus Node.js APIs. Three office days a week.", "skills": ["React", "Node.js"] },
+    { "id": "h05", "title": "Principal UI Architect", "company": "Quartz Cloud", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-20T09:00:00Z", "description": "Set frontend direction across 12 teams. 12+ years experience.", "skills": ["React", "Architecture"] },
+    { "id": "h06", "title": "Junior Data Analyst", "company": "Harbor Retail", "category": "data", "location": "New York, NY, United States", "country_code": "US", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "SQL reporting and Excel dashboards for store operations.", "skills": ["SQL", "Excel"] },
+    { "id": "h07", "title": "Data Scientist", "company": "Fern Insurance", "category": "data", "location": "Jersey City, NJ, United States", "country_code": "US", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Pricing models in Python. 2+ years experience preferred.", "skills": ["Python", "Statistics"] },
+    { "id": "h08", "title": "Senior Data Scientist", "company": "Delta Media", "category": "data", "location": "New York, NY, United States", "country_code": "US", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "Lead experimentation platform. 6+ years experience.", "skills": ["Python", "Experimentation"] },
+    { "id": "h09", "title": "Data Analyst", "company": "Pine Telecom", "category": "data", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "contract", "posted_at": "2026-11-21T09:00:00Z", "description": "Six-month contract building Looker reports.", "skills": ["SQL", "Looker"] },
+    { "id": "h10", "title": "Analytics Intern", "company": "Harbor Retail", "category": "data", "location": "New York, NY, United States", "country_code": "US", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "internship", "posted_at": "2026-11-20T09:00:00Z", "description": "Summer internship supporting the analytics team.", "skills": ["SQL"] },
+    { "id": "h11", "title": "DevOps Engineer", "company": "Thames Logistics", "category": "software", "location": "London, United Kingdom", "country_code": "GB", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Terraform, Kubernetes and CI pipelines. Office based.", "skills": ["Terraform", "Kubernetes"] },
+    { "id": "h12", "title": "Site Reliability Engineer", "company": "Kestrel Bank", "category": "software", "location": "London, United Kingdom", "country_code": "GB", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "On-call SRE for payments; two office days a week.", "skills": ["Kubernetes", "Prometheus"] },
+    { "id": "h13", "title": "DevOps Engineer", "company": "Rhine Systems", "category": "software", "location": "Remote - Germany", "country_code": "DE", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "AWS and Terraform. Must live in Germany.", "skills": ["AWS", "Terraform"] },
+    { "id": "h14", "title": "Platform Engineer", "company": "Mersey Games", "category": "software", "location": "Manchester, United Kingdom", "country_code": "GB", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-15T09:00:00Z", "description": "Build internal developer platform on Kubernetes.", "skills": ["Kubernetes", "Go"] },
+    { "id": "h15", "title": "IT Support Technician", "company": "Thames Logistics", "category": "it", "location": "London, United Kingdom", "country_code": "GB", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Desk-side support and laptop provisioning.", "skills": ["Windows"] },
+    { "id": "h16", "title": "Group Product Manager", "company": "Aurora Commerce", "category": "product", "location": "Toronto, ON, Canada", "country_code": "CA", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "salary_min": 180000, "salary_max": 220000, "currency": "CAD", "salary_period": "yearly", "description": "Lead three PMs across checkout and payments.", "skills": ["Product Strategy"] },
+    { "id": "h17", "title": "Senior Product Manager", "company": "Glacier Software", "category": "product", "location": "Remote - Canada", "country_code": "CA", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "salary_min": 120000, "salary_max": 140000, "currency": "CAD", "salary_period": "yearly", "description": "Own the mobile roadmap as an individual contributor.", "skills": ["Roadmapping"] },
+    { "id": "h18", "title": "Director of Product", "company": "Prairie Energy", "category": "product", "location": "Calgary, AB, Canada", "country_code": "CA", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "description": "Build and lead the product org. Salary not listed.", "skills": ["Leadership"] },
+    { "id": "h19", "title": "Head of Product", "company": "Bay Robotics", "category": "product", "location": "Remote - US", "country_code": "US", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "salary_min": 200000, "salary_max": 240000, "currency": "USD", "salary_period": "yearly", "description": "US residents only.", "skills": ["Leadership"] },
+    { "id": "h20", "title": "Software Engineering Intern", "company": "Nimbus Labs", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "internship", "posted_at": "2026-11-24T09:00:00Z", "description": "12-week paid internship on the Python SDK.", "skills": ["Python"] },
+    { "id": "h21", "title": "Backend Engineering Intern", "company": "Kite Mobility", "category": "software", "location": "Remote - US", "country_code": "US", "remote": true, "remote_scope": "remote", "remote_eligibility": "country_restricted", "job_type": "internship", "posted_at": "2026-11-23T09:00:00Z", "description": "Go services internship; US work authorization required.", "skills": ["Go"] },
+    { "id": "h22", "title": "Graduate Software Engineer", "company": "Nimbus Labs", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "New-grad role starting after graduation.", "skills": ["Python", "TypeScript"] },
+    { "id": "h23", "title": "Software Engineering Intern", "company": "Seine Data", "category": "software", "location": "Paris, France", "country_code": "FR", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "internship", "posted_at": "2026-11-21T09:00:00Z", "description": "On-site internship in Paris.", "skills": ["Java"] },
+    { "id": "h24", "title": "Marketing Manager", "company": "Lotus Beverages", "category": "marketing", "location": "Singapore", "country_code": "SG", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Run regional campaigns across SEA. 4+ years experience.", "skills": ["Campaigns", "Brand"] },
+    { "id": "h25", "title": "Growth Marketing Manager", "company": "Coral Fintech", "category": "marketing", "location": "Remote - APAC", "country_code": null, "remote": true, "remote_scope": "remote", "remote_eligibility": "region_restricted", "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Paid acquisition and lifecycle email. APAC time zones.", "skills": ["Paid Ads", "Lifecycle"] },
+    { "id": "h26", "title": "Marketing Coordinator", "company": "Lotus Beverages", "category": "marketing", "location": "Singapore", "country_code": "SG", "remote": false, "remote_scope": "onsite", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "Entry-level event and social media support.", "skills": ["Social Media"] },
+    { "id": "h27", "title": "Content Marketing Manager", "company": "Jade Travel", "category": "marketing", "location": "Kuala Lumpur, Malaysia", "country_code": "MY", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "description": "SEO content and editorial calendar.", "skills": ["SEO", "Content"] },
+    { "id": "h28", "title": "Java Backend Engineer", "company": "Onyx Payments", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-24T09:00:00Z", "description": "Spring Boot microservices. 3-5 years experience.", "skills": ["Java", "Spring Boot"] },
+    { "id": "h29", "title": "Senior Backend Engineer", "company": "Garnet Travel", "category": "software", "location": "Pune, India", "country_code": "IN", "remote": false, "remote_scope": "hybrid", "remote_eligibility": null, "job_type": "full-time", "posted_at": "2026-11-23T09:00:00Z", "description": "Kotlin and Java services. 7+ years experience.", "skills": ["Kotlin", "Java"] },
+    { "id": "h30", "title": "Android Developer", "company": "Onyx Payments", "category": "software", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-22T09:00:00Z", "description": "Kotlin mobile app.", "skills": ["Kotlin", "Android"] },
+    { "id": "h31", "title": "Customer Success Manager", "company": "Garnet Travel", "category": "customer_success", "location": "Remote", "country_code": null, "remote": true, "remote_scope": "worldwide", "remote_eligibility": "worldwide", "job_type": "full-time", "posted_at": "2026-11-21T09:00:00Z", "description": "Manage enterprise travel accounts.", "skills": ["Account Management"] }
+  ],
+  "profiles": [
+    {
+      "id": "hj-fe-senior-remote-in",
+      "split": "eval",
+      "description": "Senior frontend engineer in India who wants remote work only.",
+      "answers": { "roles": ["Frontend Engineer"], "experienceLevel": "senior", "remotePreference": "remote", "locations": ["India"], "countryCode": "IN" },
+      "candidates": ["h01", "h02", "h03", "h04", "h05"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    },
+    {
+      "id": "hj-data-entry-hybrid-nyc",
+      "split": "eval",
+      "description": "Entry-level data analyst in New York; hybrid or on-site, full-time.",
+      "answers": { "roles": ["Data Analyst"], "experienceLevel": "entry", "remotePreference": "hybrid", "locations": ["New York, United States"], "employmentTypes": ["full-time"], "countryCode": "US" },
+      "candidates": ["h06", "h07", "h08", "h09", "h10"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    },
+    {
+      "id": "hj-devops-mid-onsite-london",
+      "split": "eval",
+      "description": "Mid-level DevOps engineer who wants an on-site role in London.",
+      "answers": { "roles": ["DevOps Engineer"], "experienceLevel": "mid", "remotePreference": "onsite", "locations": ["London, United Kingdom"], "countryCode": "GB" },
+      "candidates": ["h11", "h12", "h13", "h14", "h15"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    },
+    {
+      "id": "hj-pm-lead-any-ca-minsalary",
+      "split": "eval",
+      "description": "Product lead in Canada, any work model, minimum salary CAD 160,000.",
+      "answers": { "roles": ["Product Manager"], "experienceLevel": "lead", "remotePreference": "any", "locations": ["Canada"], "minSalary": 160000, "salaryCurrency": "CAD", "countryCode": "CA" },
+      "candidates": ["h16", "h17", "h18", "h19"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    },
+    {
+      "id": "hj-intern-swe-remote-anywhere",
+      "split": "eval",
+      "description": "Student looking for a remote software internship; no country stated.",
+      "answers": { "roles": ["Software Engineer"], "experienceLevel": "intern", "remotePreference": "remote", "employmentTypes": ["internship"] },
+      "candidates": ["h20", "h21", "h22", "h23"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    },
+    {
+      "id": "hj-marketing-mid-hybrid-sg",
+      "split": "eval",
+      "description": "Mid-level marketing manager in Singapore who wants hybrid work.",
+      "answers": { "roles": ["Marketing Manager"], "experienceLevel": "mid", "remotePreference": "hybrid", "locations": ["Singapore"], "countryCode": "SG" },
+      "candidates": ["h24", "h25", "h26", "h27"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    },
+    {
+      "id": "hj-resume-only-java-backend",
+      "split": "eval",
+      "description": "No saved preferences; synthetic resume signals only (Java backend, about 4 years).",
+      "answers": { "resumeProfile": { "jobTitles": ["Backend Developer"], "skills": ["Java", "Spring Boot", "PostgreSQL"], "preferredRoles": ["Backend Engineer"], "yearsOfExperience": 4 } },
+      "candidates": ["h28", "h29", "h30", "h31"],
+      "labels": {},
+      "labelProvenance": "pending: no human judgments yet"
+    }
+  ]
+}

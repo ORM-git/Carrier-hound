@@ -1,8 +1,14 @@
 # Offline ranking-quality evaluation (checklist #62, harness only)
 
-Status: **harness implemented; real-world ranking quality is NOT yet measured.** The only dataset is synthetic
-(`scripts/eval/ranking/synthetic-v1.json`, labels written by the harness author). It proves the harness runs the
-production ranker and computes metrics correctly. It is not evidence that real users get good recommendations.
+Status: **harness implemented; real-world ranking quality is NOT yet measured.** There are two datasets, and both
+are synthetic:
+
+- `scripts/eval/ranking/synthetic-v1.json`: labels written by the harness author. It proves the harness runs the
+  production ranker and computes metrics correctly.
+- `scripts/eval/ranking/human-judging-v1.json`: prepared for human judging, with no labels yet (0 of 31 pairs).
+  See `docs/ranking-eval-judging.md`.
+
+Neither is evidence that real users get good recommendations.
 
 Run (offline: no database, network, ingestion or writes outside `--out`):
 
@@ -60,6 +66,11 @@ non-candidates, grades outside 0-3, unknown eligibility values, a missing proven
 The harness sets no quality threshold and has no pass/fail on metric values.
 
 ## Next step: a human-judged held-out set
+
+A judging package now exists: `docs/ranking-eval-judging.md` (guide), `scripts/eval/ranking/human-judging-v1.json`
+(dataset, labels empty) and `human-judging-v1-worksheet.csv` (31 pairs, generated from the dataset and checked field
+by field by the tests). Judging is pending: human-label coverage is 0. Its profiles are synthetic, so the real-data
+plan below still stands. The template table below is the original sketch; the worksheet columns are defined in the guide.
 
 Data needed (none of it exists yet):
 
