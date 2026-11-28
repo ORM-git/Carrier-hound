@@ -4,7 +4,7 @@
  * 1. updateExistingJobs with a fake client that records the UPDATE payload.
  * 2. Real ingest.ts main per scenario (legacy/canonical schema, verified column or not, dated or not, update and
  *    lookup failures) in a child process whose fetch is intercepted (same approach as test-source-date-legacy-cli.ts).
- *    Prints a request-count table per scenario. Models REST payloads only, not PostgreSQL defaults, constraints or
+ *    Prints a request-count and max-parallel-update table per scenario. Models REST payloads only, not PostgreSQL defaults, constraints or
  *    triggers: mock responses are not real database proof. No DB, no network.
  * Run: npx tsx scripts/test-discovered-at-insert-only.ts
  */
@@ -67,12 +67,15 @@ type Scenario = {
   verified: boolean; // jobs.verified present: the row builder then adds discovered_at
   canonical: boolean; // jobs.source_id present
   existing: number; // first N postings already stored
-  dated: boolean; // source gives a valid posting date
+  dated: boolean | 'even'; // source gives a valid posting date ('even': only even-numbered postings do)
+  jobs?: number; // postings from the source (default N_JOBS)
   patchFail?: Record<string, 'transient' | 'permanent'>;
   lookupFail?: boolean;
   foreignIdentity?: boolean; // canonical: a stored row with the same source_job_id from another board
 };
 const N_JOBS = 60;
+// updateExistingJobs' default chunkSize (ingest.ts), which the CLI caller does not override.
+const UPDATE_CHUNK = 5;
 const OLD_SEEN = '2026-01-02T00:00:00.000Z';
 const KNOWN_POSTED = '2025-12-01T00:00:00.000Z';
 const SOURCE_ID = 'lever:fixture';
@@ -92,6 +95,8 @@ async function child() {
 
   const requests: Array<{ kind: Kind; query: string; body: any }> = [];
   const patched = new Map<string, number>();
+  let inFlight = 0;
+  let maxInFlight = 0;
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const sameIdentity = (r: any, item: any) => r.source === item.source && r.source_job_id === item.source_job_id &&
     (!sc.canonical || r.source_id === item.source_id);
@@ -101,8 +106,8 @@ async function child() {
     const body = init?.body ? JSON.parse(String(init.body)) : null;
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nAllow: /');
     if (url.hostname === 'api.lever.co') {
-      return reply(Array.from({ length: N_JOBS }, (_, i) => ({ id: `j${String(i).padStart(2, '0')}`, text: 'Engineer',
-        hostedUrl: `https://jobs.lever.co/fixture/j${i}`, ...(sc.dated ? { createdAt: DATED_MS } : {}) })));
+      return reply(Array.from({ length: sc.jobs ?? N_JOBS }, (_, i) => ({ id: `j${String(i).padStart(2, '0')}`, text: 'Engineer',
+        hostedUrl: `https://jobs.lever.co/fixture/j${i}`, ...(sc.dated === true || (sc.dated === 'even' && i % 2 === 0) ? { createdAt: DATED_MS } : {}) })));
     }
     if (url.hostname !== 'fixture.supabase.co') throw new Error(`Blocked network destination ${url.hostname}`);
     const table = url.pathname.replace('/rest/v1/', '');
@@ -135,6 +140,11 @@ async function child() {
       })));
     }
     if (patchId) {
+      // Hold each UPDATE open briefly so overlapping ones are counted.
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((res) => setTimeout(res, 5));
+      inFlight--;
       const mode = sc.patchFail?.[patchId];
       if (mode === 'permanent' || (mode === 'transient' && patched.get(patchId) === 1)) {
         return reply({ code: '57014', message: 'fixture statement timeout' }, 500);
@@ -157,8 +167,8 @@ async function child() {
   };
   process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.SUPABASE_URL = 'https://fixture.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_KEY = 'fixture-not-a-real-key';
-  process.argv = [process.execPath, path.join(here, 'ingest.ts'), '--config', path.join(root, 'sources.json'), '--skip-cleanup', '--per-source', String(N_JOBS)];
-  process.on('exit', () => fs.writeFileSync(path.join(root, 'out.json'), JSON.stringify({ rows, requests })));
+  process.argv = [process.execPath, path.join(here, 'ingest.ts'), '--config', path.join(root, 'sources.json'), '--skip-cleanup', '--per-source', String(sc.jobs ?? N_JOBS)];
+  process.on('exit', () => fs.writeFileSync(path.join(root, 'out.json'), JSON.stringify({ rows, requests, maxInFlight })));
   await import('./ingest');
 }
 
@@ -175,7 +185,7 @@ function cli() {
     });
     const out = JSON.parse(fs.readFileSync(path.join(root, 'out.json'), 'utf8'));
     const count = Object.fromEntries(KINDS.map((k) => [k, out.requests.filter((r: any) => r.kind === k).length])) as Record<Kind, number>;
-    table.push(`| ${sc.name} | ${KINDS.map((k) => count[k]).join(' | ')} | ${proc.status} |`);
+    table.push(`| ${sc.name} | ${KINDS.map((k) => count[k]).join(' | ')} | ${out.maxInFlight} | ${proc.status} |`);
     const bodies = (kind: Kind) => out.requests.filter((r: any) => r.kind === kind).flatMap((r: any) => (Array.isArray(r.body) ? r.body : [r.body]));
     const byId = (id: string) => out.rows.find((r: any) => r.id === id);
     const existingRows = Array.from({ length: sc.existing }, (_, i) => byId(`row-${i}`));
@@ -186,6 +196,7 @@ function cli() {
     check(`${sc.name}: no upsert body carries discovered_at`, bodies('upsert').every((b: any) => !('discovered_at' in b)));
     check(`${sc.name}: every existing row keeps its original discovered_at`, existingRows.every((x: any) => x.discovered_at === OLD_DISCOVERED),
       existingRows.filter((x: any) => x.discovered_at !== OLD_DISCOVERED).map((x: any) => x.id));
+    check(`${sc.name}: at most ${UPDATE_CHUNK} updates in flight at once`, out.maxInFlight <= UPDATE_CHUNK, out.maxInFlight);
     check(`${sc.name}: no identity stored twice`, new Set(out.rows.map((x: any) => `${x.source_id ?? ''}|${x.source_job_id}`)).size === out.rows.length);
     return { proc, out, count, bodies, byId, existingRows, inserted, log };
   };
@@ -198,6 +209,8 @@ function cli() {
       r.count.lookup === 2 && r.count.insert === 0 && r.count.upsert === 0 && r.count.update === 60 && r.count.retry === 0, r.count);
     check(`${sc.name}: last_seen_at advanced, active/status set, dated posted_at written`,
       r.existingRows.every((x: any) => x.last_seen_at > OLD_SEEN && x.is_active === true && x.status === 'active' && x.posted_at === DATED_ISO));
+    // Proves the in-flight counter sees overlap: 60 updates run in chunks of exactly UPDATE_CHUNK.
+    check(`${sc.name}: updates run ${UPDATE_CHUNK} at a time (counter observes overlap)`, r.out.maxInFlight === UPDATE_CHUNK, r.out.maxInFlight);
 
     sc = { name: 'S2 legacy+verified, 25 existing + 35 new, dated', verified: true, canonical: false, existing: 25, dated: true };
     r = run(sc);
@@ -264,10 +277,40 @@ function cli() {
     check(`${sc.name}: stored rows unchanged (25 rows, original last_seen_at)`,
       r.out.rows.length === 25 && r.out.rows.every((x: any) => x.last_seen_at === OLD_SEEN));
     check(`${sc.name}: failure is logged`, /jobs identity lookup failed/.test(r.proc.stdout + r.proc.stderr), r.log);
+
+    sc = { name: 'S9 canonical, no verified, 25 existing + 35 new, dated', verified: false, canonical: true, existing: 25, dated: true };
+    r = run(sc);
+    check(`${sc.name}: exit 0`, r.proc.status === 0, r.log);
+    check(`${sc.name}: 4 lookup (source_id + source per batch), 2 insert, 0 upsert, 25 update, 0 retry`,
+      r.count.lookup === 4 && r.count.insert === 2 && r.count.upsert === 0 && r.count.update === 25 && r.count.retry === 0, r.count);
+    check(`${sc.name}: every insert/update carries this board's source_id`, [...r.bodies('insert'), ...r.bodies('update')].every((b: any) => b.source_id === SOURCE_ID));
+    check(`${sc.name}: without the verified column no write names discovered_at`, [...r.bodies('insert'), ...r.bodies('update')].every((b: any) => !('discovered_at' in b)));
+    check(`${sc.name}: NULL-source_id legacy rows are matched and updated, not re-inserted`,
+      r.existingRows.filter((_: any, i: number) => i % 2 === 0).every((x: any) => x.last_seen_at > OLD_SEEN) && r.inserted.length === 35);
+    check(`${sc.name}: dated posted_at written to existing and new rows`,
+      r.existingRows.every((x: any) => x.posted_at === DATED_ISO) && r.inserted.every((x: any) => x.posted_at === DATED_ISO));
+
+    // One write batch (40 postings < batchSize 50) mixing known and unknown source dates: even postings dated.
+    for (const verified of [false, true]) {
+      const tag = verified ? 'S11 legacy+verified' : 'S10 legacy no verified';
+      sc = { name: `${tag}, 1 batch, 20 existing + 20 new, even postings dated`, verified, canonical: false, existing: 20, dated: 'even', jobs: 40 };
+      r = run(sc);
+      const evenOdd = (rows: any[], even: boolean) => rows.filter((x: any) => (Number(x.source_job_id.slice(-2)) % 2 === 0) === even);
+      check(`${sc.name}: exit 0`, r.proc.status === 0, r.log);
+      check(`${sc.name}: 1 lookup, 1 insert, 0 upsert, 20 update (undated row forces the lookup path)`,
+        r.count.lookup === 1 && r.count.insert === 1 && r.count.upsert === 0 && r.count.update === 20 && r.count.retry === 0, r.count);
+      check(`${sc.name}: existing dated rows get the source date`, evenOdd(r.existingRows, true).every((x: any) => x.posted_at === DATED_ISO));
+      check(`${sc.name}: existing undated rows keep the known date (update omits posted_at)`,
+        evenOdd(r.existingRows, false).every((x: any) => x.posted_at === KNOWN_POSTED) && evenOdd(r.bodies('update'), false).every((b: any) => !('posted_at' in b)));
+      check(`${sc.name}: new dated rows get the source date, new undated rows explicit null`,
+        r.inserted.length === 20 && evenOdd(r.inserted, true).every((x: any) => x.posted_at === DATED_ISO) && evenOdd(r.inserted, false).every((x: any) => x.posted_at === null));
+      check(`${sc.name}: new rows get discovered_at only when the column exists`,
+        r.inserted.every((x: any) => (verified ? typeof x.discovered_at === 'string' && x.discovered_at !== OLD_DISCOVERED : !('discovered_at' in x))));
+    }
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 
-  console.log(`\nRequest counts per scenario (mock REST calls, 60 postings = 2 write batches):`);
-  console.log(`| scenario | ${KINDS.join(' | ')} | exit |\n|${'---|'.repeat(KINDS.length + 2)}\n${table.join('\n')}`);
+  console.log(`\nRequest counts per scenario (mock REST calls; 60 postings = 2 write batches, S10/S11 40 postings = 1 batch):`);
+  console.log(`| scenario | ${KINDS.join(' | ')} | max parallel updates | exit |\n|${'---|'.repeat(KINDS.length + 3)}\n${table.join('\n')}`);
 }
 
 if (process.argv.includes('--fixture-child')) {
