@@ -52,3 +52,32 @@ describe("formatJobType", () => {
     expect(formatJobType("graduate program")).toBe("Graduate Program");
   });
 });
+
+import { wireJobType } from "../formatJobType";
+import { matchesJobTypeFilter } from "../jobFilters";
+describe("wireJobType keeps the stored type instead of rewriting everything to Full-time", () => {
+  it("passes real stored values through and keeps Internship casing", () => {
+    expect(wireJobType("contract")).toBe("contract");
+    expect(wireJobType("part-time")).toBe("part-time");
+    expect(wireJobType("full-time")).toBe("full-time");
+    expect(wireJobType("other")).toBe("other");
+    expect(wireJobType("internship")).toBe("Internship");
+  });
+  it("a missing, null or blank value is empty, never Full-time, and does not match a Full-time filter", () => {
+    for (const v of [null, undefined, "", "  "]) {
+      expect(wireJobType(v as any)).toBe("");
+      expect(formatJobType(wireJobType(v as any))).toBeNull();
+      expect(matchesJobTypeFilter(wireJobType(v as any), "Full-time")).toBe(false);
+    }
+  });
+  it("a stored contract or part-time row does not match a Full-time filter but matches its own", () => {
+    expect(matchesJobTypeFilter(wireJobType("contract"), "Full-time")).toBe(false);
+    expect(matchesJobTypeFilter(wireJobType("contract"), "Contract")).toBe(true);
+    expect(matchesJobTypeFilter(wireJobType("part-time"), "Part-time")).toBe(true);
+  });
+  it("the wire value formats truthfully for display: contract shows Contract, other is hidden", () => {
+    expect(formatJobType(wireJobType("contract"))).toBe("Contract");
+    expect(formatJobType(wireJobType("part-time"))).toBe("Part-time");
+    expect(formatJobType(wireJobType("other"))).toBeNull();
+  });
+});
