@@ -1,0 +1,58 @@
+{
+  "https://boards-api.greenhouse.io/v1/boards/synthetic-alpha/jobs?content=true&pay_transparency=true": {
+    "status": 200,
+    "json": {
+      "jobs": [
+        {
+          "id": 1,
+          "title": "Synthetic Engineer",
+          "absolute_url": "https://boards.greenhouse.io/synthetic-alpha/jobs/1"
+        }
+      ]
+    }
+  },
+  "https://api.lever.co/v0/postings/synthetic-beta?mode=json": {
+    "status": 200,
+    "json": [
+      {
+        "id": "b1",
+        "text": "Synthetic Analyst",
+        "hostedUrl": "https://jobs.lever.co/synthetic-beta/b1"
+      }
+    ]
+  },
+  "https://api.ashbyhq.com/posting-api/job-board/synthetic-gamma?includeCompensation=true": {
+    "status": 200,
+    "json": {
+      "jobs": [
+        {
+          "id": "g1",
+          "title": "Synthetic Designer",
+          "jobUrl": "https://jobs.ashbyhq.com/synthetic-gamma/g1"
+        }
+      ]
+    }
+  },
+  "https://api.smartrecruiters.com/v1/companies/SyntheticDelta/postings": {
+    "status": 200,
+    "json": {
+      "content": [],
+      "totalFound": 0
+    }
+  },
+  "https://boards-api.greenhouse.io/v1/boards/synthetic-epsilon/jobs?content=true&pay_transparency=true": {
+    "status": 429,
+    "body": "slow down"
+  },
+  "https://api.lever.co/v0/postings/synthetic-kappa?mode=json": {
+    "status": 503,
+    "body": "unavailable"
+  },
+  "https://api.ashbyhq.com/posting-api/job-board/synthetic-lambda?includeCompensation=true": {
+    "status": 200,
+    "body": "<html>not json</html>"
+  },
+  "https://boards-api.greenhouse.io/v1/boards/synthetic-mu/jobs?content=true&pay_transparency=true": {
+    "transport_error": "synthetic connection reset"
+  }
+}

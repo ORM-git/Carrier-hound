@@ -1,0 +1,26 @@
+[
+  {
+    "source_row": 2,
+    "category": "HIGH_PRODUCT_YC",
+    "canonical_domain": null,
+    "provenance": "synthetic reviewer fixture"
+  },
+  {
+    "source_row": 3,
+    "category": "OTHER_STARTUPS",
+    "canonical_domain": "beta.example",
+    "provenance": "synthetic reviewer fixture"
+  },
+  {
+    "source_row": 4,
+    "category": "OTHER_STARTUPS",
+    "canonical_domain": "other-gamma.example",
+    "provenance": "synthetic reviewer fixture"
+  },
+  {
+    "source_row": 5,
+    "category": "MNC_BIGTECH",
+    "canonical_domain": null,
+    "provenance": "synthetic reviewer fixture"
+  }
+]
