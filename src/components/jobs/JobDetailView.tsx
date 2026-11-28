@@ -4,10 +4,11 @@ import { extendedDescriptionSections, structuredDescriptionList } from "@/lib/jo
 import { copyTextToClipboard } from "@/lib/clipboard";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { LiveJob, isEarlyApplicant } from "@/lib/jobs/service";
 import { formatJobType } from "@/lib/jobs/formatJobType";
-import { LiveJob } from "@/lib/jobs/service";
 import { CandidateProfile } from "@/lib/resume/types";
 import { computeFitDiagnostics, displayMatchScore, FitDiagnosticsResult, toFitInput } from "@/lib/matcher/scoring";
+import { companySourceLabel } from "@/lib/company-profile/industryTags";
 import { sanitizeExternalUrl } from "@/lib/security/xss";
 import { jobDescriptionText } from "@/lib/jobs/descriptionText";
 import { getSiteUrl } from "@/lib/siteUrl";
@@ -45,6 +46,7 @@ import {
   Calendar,
   Building2,
   Globe,
+  ChevronRight,
 } from "lucide-react";
 
 import JobAiToolsPanel from "@/components/jobs/JobAiToolsPanel";
@@ -136,6 +138,11 @@ type ScoreTile = { label: string; value: number | null; overall?: boolean };
 
 /** Match Score: four tiles in one row, large percentage on top, label below; the overall tile is highlighted and
  * carries the match label. Locked viewers see masked values only. */
+// Masked rows carry a server placeholder; never present masking as a verification claim.
+function displayCompany(unlocked: boolean, company?: string | null): string {
+  return unlocked && company && company !== "Verified Employer" ? company : "Company hidden";
+}
+
 function MatchScoreTiles({ tiles, matchLabel, isUnlocked, testId, className = "" }: {
   tiles: ScoreTile[]; matchLabel: string; isUnlocked: boolean; testId: string; className?: string;
 }) {
@@ -354,8 +361,9 @@ export default function JobDetailView({
   const detailWorkModel = workModelDetailLabel(job);
   const showLocation = !canSeeLocation || !isDuplicateWorkModelLocation(job.location, detailWorkModel);
   const jobLevel = inferJobLevel(job.title);
-  const expMatch = job.description?.match(/(\d+\+?\s*(?:-\s*\d+\+?)?\s*years?(?:\s*of)?\s*(?:experience|exp)?)/i);
-  const expText = (job as any).experience || (expMatch ? expMatch[0] : null);
+  // "5-8 years of product design" must not render as the cut-off "5-8 years of": "of" only counts when "experience" follows.
+  const expMatch = job.description?.match(/(\d+\+?\s*(?:-\s*\d+\+?)?\s*years?(?:\s*of\s*experience|\s*experience|\s*exp\b)?)/i);
+  const expText = (job as any).experience || (expMatch ? (/exp/i.test(expMatch[0]) ? expMatch[0] : `${expMatch[0].trim()} exp`) : null);
 
   const companyProfile = job.companyProfile;
   const companyFacts = companyProfile?.facts || {};
@@ -364,17 +372,19 @@ export default function JobDetailView({
   const websiteHost = (() => { try { return sanitizedWebsite ? new URL(sanitizedWebsite).hostname : null; } catch { return null; } })();
   const factLabel: Record<CompanyFactKey, string> = {
     overview: "Overview", website: "Website", headquarters: "Headquarters", founded_year: "Founded",
-    employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X",
+    employee_count_range: "Company size", linkedin_url: "LinkedIn", twitter_url: "X", funding_stage: "Funding",
   };
   const companyFact = (key: CompanyFactKey) => companyFacts[key];
   const hasCompanyDetails = Object.keys(companyFacts).length > 0 || Boolean(companyProfile?.leadership.length || companyProfile?.news.length);
 
+  const similarList = similarJobs ? similarJobs.slice(0, 5) : [];
   return (
+    <div data-testid="job-detail-shell" className="w-full mx-auto max-w-[880px] lg:max-w-[1240px] lg:flex lg:items-start lg:gap-5">
     <div
       // Mobile: clear the 64px bottom nav (shown during detail, item 16) + 1rem; desktop keeps its 7rem tail.
       style={{ "--cookie-h": `${cookieNoticeHeight}px` } as React.CSSProperties}
       data-testid="mobile-reference-detail"
-      className="max-w-[880px] w-full mx-auto flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+1.5rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
+      className="max-w-[880px] w-full mx-auto lg:mx-0 lg:min-w-0 lg:flex-1 flex flex-col gap-4 sm:gap-3 pb-[calc(var(--cookie-h)+1.5rem)] md:pb-[calc(var(--cookie-h)+7rem)]"
     >
       {/* Expired Job Banner */}
       {(isExpired || job.isExpired) && (
@@ -471,71 +481,10 @@ export default function JobDetailView({
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-4 md:max-lg:flex-wrap">
-                {/* Overview and Company tabs */}
-                <div className="flex items-center gap-1 border-r border-[#E2E8F0] pr-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                    setActiveTab("overview");
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
-                    className={`text-xs sm:text-sm font-semibold transition-colors py-1.5 px-2 rounded-md ${
-                      activeTab === "overview"
-                        ? "text-[#2563EB] bg-blue-50/70"
-                        : "text-[#64748B] hover:text-[#0F172A]"
-                    }`}
-                  >
-                    Overview
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void openCompanyTab();
-                    }}
-                    className={`text-xs sm:text-sm font-semibold transition-colors py-1.5 px-2 rounded-md ${
-                      activeTab === "company"
-                        ? "text-[#2563EB] bg-blue-50/70"
-                        : "text-[#64748B] hover:text-[#0F172A]"
-                    }`}
-                  >
-                    Company
-                  </button>
-                </div>
-
-                {/* Utility actions (Desktop) */}
-                <div className="flex items-center gap-2 text-xs text-[#64748B] md:max-lg:flex-wrap md:max-lg:[&>a]:whitespace-nowrap md:max-lg:[&>button]:whitespace-nowrap">
-                  <button
-                    type="button"
-                    onClick={handleShare}
-                    data-testid="share-job-button"
-                    className="inline-flex items-center gap-1 text-[#475569] hover:text-[#0F172A] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 cursor-pointer min-h-[36px]"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>{shareStatus === "success" ? "Link copied" : "Share"}</span>
-                  </button>
-
-                  <a
-                    href={getReportJobMailto(job, !isUnlocked)}
-                    data-testid="report-issue-link"
-                    className="inline-flex items-center gap-1 text-[#475569] hover:text-[#2563EB] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 min-h-[36px]"
-                  >
-                    <Flag className="w-3.5 h-3.5" />
-                    <span>Report issue</span>
-                  </a>
-
-                  {isUnlocked && job.applyUrl && (
-                    <a
-                      href={job.applyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[#475569] hover:text-[#2563EB] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 min-h-[36px]"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Original Job Post</span>
-                    </a>
-                  )}
-                </div>
+              <div data-testid="strip-chips" className="max-md:hidden flex items-center gap-2 min-w-0 flex-wrap">
+                {isEarlyApplicant(job) && (
+                  <span className="inline-flex items-center h-8 px-3 rounded-lg bg-[#EFF6FF] text-[#1D4ED8] text-[13px] font-medium">Early applicant</span>
+                )}
               </div>
             )}
           </div>
@@ -662,7 +611,7 @@ export default function JobDetailView({
       {/* MATCH INSIGHTS & TRACKER PANEL: on mobile it follows the job content (order) so title, compact score and
           description come first; the expanded explanations stay behind its disclosure. Desktop order unchanged. */}
       <JobAiToolsPanel
-        className="max-md:order-2"
+        className="max-md:order-2 lg:hidden"
         job={job}
         candidate={candidate}
         user={user}
@@ -678,8 +627,79 @@ export default function JobDetailView({
 
       {/* (2) HEADER BODY CARD */}
       <div data-testid="overview-body" className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-5 sm:p-4 shadow-none">
+        {/* Desktop tab row: Overview / Company on the left, Share / Report issue / Original Job Post on the right. */}
+        <div data-testid="overview-tab-row" className="max-md:hidden flex items-center justify-between gap-4 border-b border-[#E2E8F0] -mx-1 px-1 mb-5">
+                <div role="tablist" aria-label="Job sections" className="flex items-center gap-6">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "overview"}
+                    onClick={() => {
+                    setActiveTab("overview");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                    className={`text-[15px] font-semibold transition-colors py-3 border-b-2 -mb-px ${
+                      activeTab === "overview"
+                        ? "text-[#0F172A] border-[#2563EB]"
+                        : "text-[#94A3B8] border-transparent hover:text-[#0F172A]"
+                    }`}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "company"}
+                    onClick={() => {
+                      void openCompanyTab();
+                    }}
+                    className={`text-[15px] font-semibold transition-colors py-3 border-b-2 -mb-px ${
+                      activeTab === "company"
+                        ? "text-[#0F172A] border-[#2563EB]"
+                        : "text-[#94A3B8] border-transparent hover:text-[#0F172A]"
+                    }`}
+                  >
+                    Company
+                  </button>
+                </div>
+
+                {/* Utility actions (Desktop) */}
+                <div className="flex items-center gap-1 text-[13px] text-[#64748B] flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    data-testid="share-job-button"
+                    className="inline-flex items-center gap-1 text-[#475569] hover:text-[#0F172A] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 cursor-pointer min-h-[36px]"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>{shareStatus === "success" ? "Link copied" : "Share"}</span>
+                  </button>
+
+                  <a
+                    href={getReportJobMailto(job, !isUnlocked)}
+                    data-testid="report-issue-link"
+                    className="inline-flex items-center gap-1 text-[#475569] hover:text-[#2563EB] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 min-h-[36px]"
+                  >
+                    <Flag className="w-3.5 h-3.5" />
+                    <span>Report issue</span>
+                  </a>
+
+                  {isUnlocked && job.applyUrl && (
+                    <a
+                      href={job.applyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[#475569] hover:text-[#2563EB] transition-colors py-1.5 px-2 rounded hover:bg-slate-100 min-h-[36px]"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Original Job Post</span>
+                    </a>
+                  )}
+                </div>
+        </div>
+
         {/* Mobile action row: 64px rounded logo, Hide (block icon) circle, heart circle, Apply pill. Desktop keeps these in the sticky strip. */}
-        <div data-testid="overview-logo-row" className="md:hidden flex items-center gap-2.5">
+        <div data-testid="overview-logo-row" className="md:hidden flex flex-wrap items-center gap-x-2.5 gap-y-2">
           <CompanyLogo
             company={job.company}
             locked={!isUnlocked}
@@ -728,18 +748,18 @@ export default function JobDetailView({
               target="_blank"
               rel="noopener noreferrer"
               onClick={onApply}
-              className="inline-flex items-center gap-1 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
+              className="inline-flex items-center gap-1 px-5 max-sm:px-3 max-sm:text-[13px] whitespace-nowrap py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
             >
-              <span className="sm:hidden">APPLY NOW</span><span className="hidden sm:inline">Apply</span><ArrowUpRight aria-hidden="true" className="w-5 h-5 sm:hidden" />
+              <span className="sm:hidden">APPLY NOW</span><span className="hidden sm:inline">Apply</span><ArrowUpRight aria-hidden="true" className="w-5 h-5 sm:hidden max-[400px]:hidden" />
             </a>
           ) : (
             <button
               type="button"
               onClick={onApply}
-              className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
+              className="inline-flex items-center gap-1.5 px-5 max-sm:px-3 max-sm:text-[13px] whitespace-nowrap py-2 min-h-[40px] rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white text-sm font-bold transition shadow-none cursor-pointer shrink-0"
             >
               {!isUnlocked && <Lock className="w-3.5 h-3.5" />}
-              <span className="sm:hidden">APPLY NOW</span><span className="hidden sm:inline">Apply</span><ArrowUpRight aria-hidden="true" className="w-5 h-5 sm:hidden" />
+              <span className="sm:hidden">APPLY NOW</span><span className="hidden sm:inline">Apply</span><ArrowUpRight aria-hidden="true" className="w-5 h-5 sm:hidden max-[400px]:hidden" />
             </button>
           )}
         </div>
@@ -760,12 +780,11 @@ export default function JobDetailView({
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-[14px] text-[#475569] font-semibold ${!isUnlocked ? "filter blur-[4.5px] select-none" : ""}`}>
-                    {(isUnlocked && job.company) || "Verified Employer"}
+                  <span className={`text-[14px] text-[#0F172A] font-semibold ${!isUnlocked ? "filter blur-[4.5px] select-none" : ""}`}>
+                    {displayCompany(isUnlocked, job.company)}
                   </span>
-                  <span className="text-xs text-[#64748B] flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#94A3B8]" />
-                    <span>{formatRelativeTime(job.postedAt || job.date)}</span>
+                  <span className="text-[14px] text-[#475569]">
+                    <span aria-hidden="true">· </span>{formatRelativeTime(job.postedAt || job.date)}
                   </span>
                 </div>
               </div>
@@ -786,7 +805,7 @@ export default function JobDetailView({
             </div>
 
             {/* Title */}
-            <h1 className="text-[28px] md:text-[24px] font-bold text-[#0F172A] leading-tight break-words">
+            <h1 className="text-[28px] md:text-[22px] font-bold md:font-semibold text-[#0F172A] leading-tight md:leading-snug break-words">
               {job.title}
             </h1>
 
@@ -794,14 +813,14 @@ export default function JobDetailView({
             {(job.company || (job.skills && job.skills.length > 0)) && (
               <p className="md:hidden text-[13px] text-[#64748B] truncate">
                 <span className={!isUnlocked ? "filter blur-[3.5px] select-none" : ""}>
-                  {(isUnlocked && job.company) || "Verified Employer"}
+                  {displayCompany(isUnlocked, job.company)}
                 </span>
                 {job.skills && job.skills.length > 0 && ` / ${job.skills.join(" · ")}`}
               </p>
             )}
 
-            {/* Mobile fact list: one icon row per fact (location, job type, work model, level, salary). Salary is
-                always listed and visible to every viewer ("Not disclosed" when empty). Desktop chips/grid unchanged. */}
+            {/* Mobile fact list: one icon row per fact (location, job type, work model, level, salary). Salary row is
+                always listed ("Not disclosed" when empty); a salary value only shows when unlocked. Desktop chips/grid unchanged. */}
             <ul data-testid="mobile-job-facts" aria-label="Job details" className="md:hidden flex flex-col gap-2.5">
               {showLocation && <li className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                 <MapPin className="w-4 h-4 text-[#64748B] shrink-0" />
@@ -834,12 +853,12 @@ export default function JobDetailView({
               <li data-testid="mobile-job-salary" className="flex items-center gap-2.5 text-[14px] text-[#0F172A] min-w-0">
                 <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
                 <span className="whitespace-normal break-words min-w-0">
-                  {Boolean(job.salary && String(job.salary).trim()) ? job.salary : "Not disclosed"}
+                  {Boolean(job.salary && String(job.salary).trim()) ? (isUnlocked ? job.salary : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") : "Not disclosed"}
                 </span>
               </li>
             </ul>
 
-            <div data-testid="overview-chips" className="max-md:hidden flex flex-wrap items-center gap-2 pt-1 pb-1">
+            <div data-testid="overview-chips" className="max-md:hidden lg:hidden flex flex-wrap items-center gap-2 pt-1 pb-1">
               {jobLevel && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F1F5F9] text-[#334155] text-xs font-semibold">
                   <TrendingUp className="w-3.5 h-3.5 text-[#64748B]" />
@@ -865,57 +884,57 @@ export default function JobDetailView({
             </div>
 
             {/* Metadata in 2 columns x 3 rows with small icons (only the ones that exist!) */}
-            <div className="max-md:hidden grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0] text-[13px]">
+            <div className="max-md:hidden grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-8 gap-y-2 pt-1 text-[14px]">
               {/* Col 1: location, job type, work model */}
               <div className="space-y-2">
-                {showLocation && <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
-                  <MapPin className="w-4 h-4 text-[#475569] shrink-0" />
-                  <span className="truncate">
+                {showLocation && <div className="flex items-center gap-2 min-w-0 py-0.5 text-[#0F172A]">
+                  <MapPin className="w-4 h-4 text-[#0F172A] shrink-0" />
+                  <span className="min-w-0 break-words">
                     {canSeeLocation ? (job.location?.trim() || "Location unlisted") : <span className="text-[#64748B]">Location locked</span>}
                   </span>
                 </div>}
 
                 {formatJobType(job.type) && (
-                  <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
-                    <Briefcase className="w-4 h-4 text-[#475569] shrink-0" />
-                    <span className="truncate">{formatJobType(job.type)}</span>
+                  <div className="flex items-center gap-2 min-w-0 py-0.5 text-[#0F172A]">
+                    <Briefcase className="w-4 h-4 text-[#0F172A] shrink-0" />
+                    <span className="min-w-0 break-words">{formatJobType(job.type)}</span>
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
-                  <Laptop className="w-4 h-4 text-[#475569] shrink-0" />
-                  <span className="truncate">{detailWorkModel}</span>
+                <div className="flex items-center gap-2 min-w-0 py-0.5 text-[#0F172A]">
+                  <Laptop className="w-4 h-4 text-[#0F172A] shrink-0" />
+                  <span className="min-w-0 break-words">{detailWorkModel}</span>
                 </div>
               </div>
 
               {/* Col 2: level, salary, experience */}
               <div className="space-y-2">
                 {jobLevel && (
-                  <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
-                    <TrendingUp className="w-4 h-4 text-[#475569] shrink-0" />
-                    <span className="truncate">{jobLevel}</span>
+                  <div className="flex items-center gap-2 min-w-0 py-0.5 text-[#0F172A]">
+                    <TrendingUp className="w-4 h-4 text-[#0F172A] shrink-0" />
+                    <span className="min-w-0 break-words">{jobLevel}</span>
                   </div>
                 )}
 
                 {Boolean(job.salary && String(job.salary).trim()) && (
                   <div
-                    className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]"
+                    className="flex items-center gap-2 min-w-0 py-0.5 text-[#0F172A]"
                     title={isUnlocked && job.salary_original && job.salary_original !== job.salary ? `Original: ${job.salary_original}` : undefined}
                   >
                     <DollarSign className="w-4 h-4 text-[#166534] shrink-0" />
-                    <span className="truncate font-medium text-[#0F172A]">
+                    <span className="min-w-0 break-words">
                       {isUnlocked ? job.salary : "••••••••"}
                     </span>
                     {isUnlocked && job.salary_original && job.salary_original !== job.salary && (
-                      <span className="text-xs text-[#64748B] truncate">({job.salary_original})</span>
+                      <span className="text-xs text-[#64748B] break-words">({job.salary_original})</span>
                     )}
                   </div>
                 )}
 
                 {expText && (
-                  <div className="flex items-center gap-2 min-w-0 px-2.5 py-1.5 rounded-lg bg-[#F1F5F9] text-[#475569]">
-                    <Calendar className="w-4 h-4 text-[#475569] shrink-0" />
-                    <span className="truncate">{expText}</span>
+                  <div className="flex items-center gap-2 min-w-0 py-0.5 text-[#0F172A]">
+                    <Calendar className="w-4 h-4 text-[#0F172A] shrink-0" />
+                    <span className="min-w-0 break-words">{expText}</span>
                   </div>
                 )}
               </div>
@@ -925,45 +944,31 @@ export default function JobDetailView({
           {/* Right: Match card on the right with total % and sub-scores (Desktop) */}
           <div className="hidden lg:block w-[280px] shrink-0">
             {scoreState === "ready" && matchScore !== null ? (
-              <div data-testid="desktop-match-score" className="p-4 rounded-[14px] bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-[#64748B] uppercase tracking-wider">
-                    Match breakdown
+              <div data-testid="desktop-match-score" className="p-1.5 rounded-[18px] bg-gradient-to-b from-[#DBEAFE] to-[#EFF6FF] ring-1 ring-[#BFDBFE]">
+                <div className="flex items-end justify-between gap-3 px-3.5 pt-3 pb-3">
+                  <div className="text-[34px] font-bold text-[#0F172A] leading-none tabular-nums">
+                    {matchScore}<span className="text-[18px] font-normal text-[#334155]">%</span>
                   </div>
-                  <span
-                    className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
-                      matchScore > 70
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                        : matchScore >= 50
-                        ? "bg-blue-50 text-blue-700 border border-blue-200"
-                        : "bg-slate-100 text-slate-700 border border-slate-200"
-                    }`}
-                  >
-                    {matchLabel}
-                  </span>
-                </div>
-
-                <div className="text-2xl font-black text-[#0F172A] leading-none">
-                  {`${matchScore}%`}
+                  <span className="text-[12px] font-bold text-[#1E3A8A] uppercase tracking-wide pb-1">{matchLabel}</span>
                 </div>
 
                 {/* Sub-scores */}
-                <div className="space-y-1.5 pt-2 border-t border-[#E2E8F0] text-xs">
-                  <div className="flex items-center justify-between text-[#475569]">
+                <div className="rounded-[14px] bg-white px-3.5 py-3 space-y-2.5 text-[13px]">
+                  <div className="flex items-center justify-between text-[#334155]">
                     <span>Experience Level</span>
-                    <span className="font-semibold text-[#0F172A]">
+                    <span className="text-[15px] font-semibold text-[#0F172A] tabular-nums">
                       {isUnlocked ? (expSubScore !== null ? `${expSubScore}%` : "—") : "••%"}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-[#475569]">
+                  <div className="flex items-center justify-between text-[#334155]">
                     <span>Skill</span>
-                    <span className="font-semibold text-[#0F172A]">
+                    <span className="text-[15px] font-semibold text-[#0F172A] tabular-nums">
                       {isUnlocked ? (skillSubScore !== null ? `${skillSubScore}%` : "—") : "••%"}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-[#475569]">
+                  <div className="flex items-center justify-between text-[#334155]">
                     <span>Role Match</span>
-                    <span className="font-semibold text-[#0F172A]">
+                    <span className="text-[15px] font-semibold text-[#0F172A] tabular-nums">
                       {isUnlocked ? (roleSubScore !== null ? `${roleSubScore}%` : "—") : "••%"}
                     </span>
                   </div>
@@ -973,7 +978,7 @@ export default function JobDetailView({
               <Link
                 href="/resume"
                 data-testid="desktop-match-resume-prompt"
-                className="block p-4 rounded-[14px] bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#93C5FD] transition-colors text-left space-y-2 group/cta"
+                className="block p-4 rounded-[18px] bg-gradient-to-b from-[#EFF6FF] to-white ring-1 ring-[#BFDBFE] hover:ring-[#93C5FD] transition-colors text-left space-y-2 group/cta"
               >
                 <div className="flex items-center gap-2 text-xs font-bold text-[#1D4ED8]">
                   <Sparkles className="w-4 h-4 text-blue-600" />
@@ -984,7 +989,7 @@ export default function JobDetailView({
                 </p>
               </Link>
             ) : (
-              <MatchScorePrompt state={scoreState === "ready" ? "unavailable" : scoreState} testId="desktop-match-state" className="p-4 rounded-[14px] bg-[#F8FAFC] border border-[#E2E8F0]" />
+              <MatchScorePrompt state={scoreState === "ready" ? "unavailable" : scoreState} testId="desktop-match-state" className="p-4 rounded-[18px] bg-gradient-to-b from-[#EFF6FF] to-white ring-1 ring-[#BFDBFE]" />
             )}
           </div>
         </div>
@@ -1016,7 +1021,7 @@ export default function JobDetailView({
       {/* (3) CONTENT ORDER & (4) RIGHT RAIL */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start max-md:order-1">
         {/* Left Column: Short summary + tags, Responsibilities, Qualification, Benefits, Company */}
-        <div className="lg:col-span-7 space-y-4 min-w-0">
+        <div className={`${job.trackerNotes ? "lg:col-span-7" : "lg:col-span-12"} space-y-4 min-w-0`}>
           {/* Pro Unlock Error Retry Banner */}
           {job.proUnlockError && (
             <div
@@ -1052,7 +1057,7 @@ export default function JobDetailView({
           <div className="bg-white max-md:bg-[#F1F5F9] rounded-[16px] ring-1 ring-[#E2E8F0] max-md:ring-0 p-5 sm:p-6 shadow-none space-y-3.5">
             <h2 className="max-md:hidden text-[18px] font-bold text-[#0F172A]">Job description</h2>
             <p className={`md:hidden text-[15px] font-bold text-[#0F172A] ${!isUnlocked ? "filter blur-[3.5px] select-none" : ""}`}>
-              {(isUnlocked && job.company) || "Verified Employer"}
+              {displayCompany(isUnlocked, job.company)}
             </p>
             {job.description ? (
               <div className="text-[15px] leading-[24px] text-[#0F172A] max-w-[720px] whitespace-pre-wrap break-words">
@@ -1197,7 +1202,7 @@ export default function JobDetailView({
               <div className="space-y-1 min-w-0 flex-1">
                 <div className="font-bold text-[16px] text-[#0F172A] truncate">
                   <span className={!isUnlocked ? "filter blur-[4.5px] select-none" : ""}>
-                    {(isUnlocked && job.company) || "Verified Employer"}
+                    {displayCompany(isUnlocked, job.company)}
                   </span>
                 </div>
                 {job.location && (
@@ -1213,7 +1218,7 @@ export default function JobDetailView({
             {companyFact("overview") && (
               <div className="space-y-1">
                 <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">{companyFact("overview")?.value}</p>
-                <a href={companyFact("overview")?.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Official source · checked {new Date(companyFact("overview")!.retrievedAt).toLocaleDateString()}</a>
+                <a href={companyFact("overview")?.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">{companySourceLabel(companyFact("overview")?.sourceUrl, companyFact("overview")?.sourceKind)} · checked {new Date(companyFact("overview")!.retrievedAt).toLocaleDateString()}</a>
               </div>
             )}
 
@@ -1229,9 +1234,9 @@ export default function JobDetailView({
               </div>
             )}
 
-            {(companyFact("linkedin_url") || companyFact("twitter_url")) && <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">{(["linkedin_url", "twitter_url"] as const).map((key) => { const fact = companyFact(key); const href = fact && sanitizeExternalUrl(fact.value); return href ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline">{factLabel[key]}<span className="block text-[10px] text-[#64748B] font-normal">Official site · {new Date(fact.retrievedAt).toLocaleDateString()}</span></a> : null; })}</div>}
+            {(companyFact("linkedin_url") || companyFact("twitter_url")) && <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">{(["linkedin_url", "twitter_url"] as const).map((key) => { const fact = companyFact(key); const href = fact && sanitizeExternalUrl(fact.value); return href ? <a key={key} href={href} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline">{factLabel[key]}<span className="block text-[10px] text-[#64748B] font-normal">{companySourceLabel(fact.sourceUrl, fact.sourceKind)} · {new Date(fact.retrievedAt).toLocaleDateString()}</span></a> : null; })}</div>}
 
-            {companyProfile?.leadership.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Leadership</h3>{companyProfile.leadership.map((leader) => <div key={leader.id} className="text-xs"><span className="font-semibold text-[#0F172A]">{leader.name}</span><span className="text-[#475569]"> · {leader.role}{leader.roleAsOf ? ` (as of ${new Date(leader.roleAsOf).toLocaleDateString()})` : ""}</span><div><a href={leader.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">Official source · checked {new Date(leader.retrievedAt).toLocaleDateString()}</a></div></div>)}</div> : null}
+            {companyProfile?.leadership.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Leadership</h3>{companyProfile.leadership.map((leader) => <div key={leader.id} className="text-xs"><span className="font-semibold text-[#0F172A]">{leader.name}</span><span className="text-[#475569]"> · {leader.role}{leader.roleAsOf ? ` (as of ${new Date(leader.roleAsOf).toLocaleDateString()})` : ""}</span><div><a href={leader.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#64748B] hover:underline">{companySourceLabel(leader.sourceUrl)} · checked {new Date(leader.retrievedAt).toLocaleDateString()}</a></div></div>)}</div> : null}
 
             {companyProfile?.news.length ? <div className="pt-3 border-t border-[#E2E8F0] space-y-2"><h3 className="text-sm font-bold text-[#0F172A]">Company news</h3>{companyProfile.news.map((item) => <div key={item.id} className="text-xs"><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2563EB] hover:underline break-words">{item.headline}</a><div className="text-[10px] text-[#64748B]">{new Date(item.publishedAt).toLocaleDateString()}</div>{item.excerpt && <p className="mt-0.5 text-[#475569] break-words">{item.excerpt}</p>}</div>)}</div> : null}
 
@@ -1256,13 +1261,13 @@ export default function JobDetailView({
 
         {/* (4) RIGHT RAIL: beside the content on desktop; below it on mobile/tablet so Similar jobs and private
             notes are never lost (CM mobile item 20). Renders nothing when neither exists. */}
-        <div className="lg:col-span-5 space-y-3 min-w-0 empty:hidden">
+        <div className={`lg:col-span-5 space-y-3 min-w-0 empty:hidden ${job.trackerNotes ? "" : "lg:hidden"}`}>
           {/* AI tool entry cards (resume tailoring, Interview Pack, Skill What-If) are intentionally
               not offered outside the landing page. */}
 
           {/* Card 2: Similar jobs Card (only when similar jobs exist) */}
           {similarJobs && similarJobs.length > 0 && (
-            <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
+            <div data-testid="similar-jobs-inline" className="lg:hidden bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-4 shadow-none space-y-3">
               <h2 className="text-[16px] font-bold text-[#0F172A]">Similar jobs</h2>
               <div className="space-y-2.5">
                 {similarJobs.slice(0, 5).map((simJob) => (
@@ -1286,7 +1291,7 @@ export default function JobDetailView({
                         {simJob.title}
                       </div>
                       <div className="text-[11px] text-[#475569] truncate">
-                        {(isUnlocked && simJob.company) || "Verified Employer"}
+                        {displayCompany(isUnlocked, simJob.company)}
                       </div>
                     </div>
                   </button>
@@ -1316,6 +1321,73 @@ export default function JobDetailView({
         </div>
       </div>
 
+    </div>
+    {/* Laptop-only right sidebar (replaces the AI Tools column): real similar jobs, same click behaviour. */}
+    <aside
+      data-testid="similar-jobs-sidebar"
+      aria-label="Job tools and similar jobs"
+      className="hidden lg:block w-[320px] shrink-0 sticky top-[72px] self-start max-h-[calc(100vh-88px)] overflow-y-auto pb-6 space-y-4"
+    >
+      {/* Desktop Save / Applied (same handlers as the hidden panel, so tracking stays available at laptop width). */}
+      <div data-testid="desktop-tracker" className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onSave}
+          data-testid="desktop-save-button"
+          aria-pressed={isSaved}
+          aria-label={isSaved ? "Remove from saved jobs" : "Save job"}
+          className={`inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold border transition cursor-pointer min-h-[40px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] ${isSaved ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-[#E2E8F0] bg-white text-[#334155] hover:border-[#93C5FD] hover:bg-[#EFF6FF]"}`}
+        >
+          <Heart className={`w-4 h-4 ${isSaved ? "fill-rose-500 text-rose-500" : "text-[#64748B]"}`} />
+          <span>{isSaved ? "Saved" : "Save"}</span>
+        </button>
+        {onToggleApplied && (
+          <button
+            type="button"
+            onClick={onToggleApplied}
+            data-testid="desktop-applied-button"
+            disabled={isUpdatingApplied}
+            aria-pressed={Boolean(isApplied || (trackedStage && trackedStage !== "saved"))}
+            aria-label={isApplied ? "Mark position as unapplied" : "Mark position as applied"}
+            className={`inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-semibold border transition cursor-pointer min-h-[40px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] ${isUpdatingApplied ? "opacity-60 cursor-not-allowed border-[#E2E8F0] bg-slate-50 text-[#64748B]" : isApplied || (trackedStage && trackedStage !== "saved") ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-[#E2E8F0] bg-white text-[#334155] hover:border-[#93C5FD] hover:bg-[#EFF6FF]"}`}
+          >
+            <CheckCircle2 className={`w-4 h-4 ${isApplied || (trackedStage && trackedStage !== "saved") ? "text-emerald-600" : "text-[#64748B]"}`} />
+            <span>{isApplied ? "Applied" : "Mark applied"}</span>
+          </button>
+        )}
+      </div>
+      {similarList.length > 0 && (
+        <section aria-labelledby="similar-jobs-heading">
+          <h2 id="similar-jobs-heading" className="px-1 pb-2.5 text-[15px] font-bold text-[#0F172A]">Similar jobs</h2>
+          <ul className="space-y-2.5">
+            {similarList.map((simJob) => (
+              <li key={simJob.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectJob && onSelectJob(simJob)}
+                  className="group w-full text-left rounded-[14px] bg-white ring-1 ring-[#E2E8F0] hover:ring-[#93C5FD] hover:bg-gradient-to-r hover:from-[#DBEAFE] hover:to-[#EFF6FF] px-3.5 py-3 transition flex items-center gap-3 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  <CompanyLogo
+                    company={simJob.company}
+                    locked={!isUnlocked}
+                    maskSeed={simJob.id}
+                    applyUrl={simJob.applyUrl}
+                    logoUrl={simJob.logoUrl}
+                    domain={simJob.companyDomain}
+                    className="w-10 h-10 rounded-lg shrink-0 object-contain p-1 border border-[#E2E8F0] bg-white"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-semibold leading-snug text-[#0F172A] group-hover:text-[#1D4ED8] line-clamp-2">{simJob.title}</div>
+                    <div className="mt-0.5 text-[12px] leading-tight text-[#64748B] truncate">{displayCompany(isUnlocked, simJob.company)}</div>
+                  </div>
+                  <ChevronRight aria-hidden="true" className="w-4 h-4 shrink-0 text-[#2563EB]" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </aside>
     </div>
   );
 }

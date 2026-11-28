@@ -10,7 +10,7 @@
   ],
   "max_companies": 3,
   "code_sha": "0123456789abcdef0123456789abcdef01234567",
-  "schema_version": "20261122a_company_profile_data",
+  "schema_version": "20261124a_company_profile_wikidata",
   "created_at": "2026-11-22T10:00:00Z",
   "expires_at": "2026-11-23T10:00:00Z",
   "sources": [
@@ -576,5 +576,5 @@
       "company_profile_refresh_state": 1
     }
   },
-  "plan_digest": "1499d20632122da52a76898f00ae265cda9563e4c456be6624dcab721c46cac0"
+  "plan_digest": "6c06184082db9e661ac205b62cbc10d77f5b50723d2ef3898b0c114423f39a9c"
 }
