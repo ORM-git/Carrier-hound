@@ -190,10 +190,12 @@ export interface StandardJobScoringInput {
   category?: string;
   skills?: string[];
   /**
-   * Taxonomy skills evidenced in the description, derived server-side for lean list rows that no longer carry the
-   * description (see extractDescriptionSkills). Only used while the description itself is absent or too short.
+   * Lean Pro list rows (no description, no raw skills): the server's extractSkillsFromJob(FULL row), exact order and case.
+   * Used as the evidenced-skills list ONLY when present (an empty list counts) and the row carries no description.
    */
-  descriptionSkills?: string[];
+  evidencedSkills?: string[];
+  /** Explicit lean-list-row marker; evidencedSkills is honored only when this is true. */
+  lean?: boolean;
   salary_text?: string;
   salary?: string;
   apply_url?: string;
@@ -258,6 +260,9 @@ export function extractDescriptionSkills(description: string | null | undefined,
 }
 
 export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
+  // Lean list row: the server already evidenced skills from the FULL row (raw skills + description + title). Present-but-empty is honored.
+  // Authoritative ONLY for an explicit lean row (lean === true + array present). A full record with an empty/stub description ignores it.
+  if (job.lean === true && Array.isArray(job.evidencedSkills)) return job.evidencedSkills.slice();
   const evidenced = new Set<string>();
 
   const isCategoryWord = (skill: string): boolean => {
@@ -277,12 +282,9 @@ export function extractSkillsFromJob(job: StandardJobScoringInput): string[] {
   }
 
   // 2. Search substantive description for evidenced skills (requires minimum 60 chars)
-  // A lean list row has no description: its server-derived description skills stand in for this step.
   const cleanDesc = (job.description || "").trim();
   if (cleanDesc.length >= 60) {
     extractDescriptionSkills(cleanDesc, job.category).forEach((skill) => evidenced.add(skill));
-  } else if (Array.isArray(job.descriptionSkills)) {
-    job.descriptionSkills.forEach((skill) => { if (skill && !isCategoryWord(skill)) evidenced.add(skill); });
   }
 
   // 3. Also check if title explicitly names a specific technology (e.g. "React Developer", "Python Engineer")
@@ -416,7 +418,8 @@ export function computeFitDiagnostics(
     remote_scope: job.remote_scope || job.remoteScope || (job.remote ? "worldwide" : undefined),
     category: job.category || "",
     skills: Array.isArray(job.skills) ? job.skills : [],
-    descriptionSkills: Array.isArray(job.descriptionSkills) ? job.descriptionSkills : undefined,
+    evidencedSkills: job.lean === true && Array.isArray(job.evidencedSkills) ? job.evidencedSkills : undefined,
+    lean: job.lean === true ? true : undefined,
     salary_text: job.salary_text || job.salary || "",
   };
 
@@ -768,7 +771,9 @@ export function toFitInput(job: {
   category?: string;
   skills?: string[];
   description?: string;
-  descriptionSkills?: string[];
+  evidencedSkills?: string[];
+  /** Explicit lean-list-row marker; evidencedSkills is honored only when this is true. */
+  lean?: boolean;
   salary?: string;
   applyUrl?: string;
 }): StandardJobScoringInput {
@@ -782,7 +787,8 @@ export function toFitInput(job: {
     category: job.category,
     skills: job.skills,
     description: job.description,
-    descriptionSkills: job.descriptionSkills,
+    evidencedSkills: job.evidencedSkills,
+    lean: job.lean,
     salary_text: job.salary,
     apply_url: job.applyUrl,
   };
@@ -841,6 +847,10 @@ export interface RecommendedRankingJobInput {
   company?: string;
   description?: string;
   skills?: string[];
+  /** Lean list rows: server-derived evidenced skills (see StandardJobScoringInput.evidencedSkills); forwarded to the fit score. */
+  evidencedSkills?: string[];
+  /** Explicit lean-list-row marker; evidencedSkills is honored only when this is true. */
+  lean?: boolean;
   category?: string;
   location?: string;
   /** ISO alpha-2 country code of the listing, if known. */
@@ -993,6 +1003,8 @@ function computeRankingFactors(
         category: job.category,
         skills: job.skills,
         description: job.description,
+        evidencedSkills: job.evidencedSkills,
+        lean: job.lean,
         salary_text: job.salary || undefined,
       });
       if (typeof diagnostics?.score === "number" && !Number.isNaN(diagnostics.score)) {

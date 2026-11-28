@@ -139,6 +139,8 @@ export function computePopoverDiagnostics(
       remote_scope: job.remoteScope || (job.remote ? "worldwide" : undefined),
       category: job.category,
       skills: job.skills,
+      evidencedSkills: job.evidencedSkills,
+      lean: job.lean,
       description: job.description,
       salary_text: job.salary,
       apply_url: job.applyUrl,

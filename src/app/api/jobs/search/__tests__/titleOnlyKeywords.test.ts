@@ -111,7 +111,8 @@ describe("row 72: Pro search list is lean, the single-job detail stays complete"
     expect(row.description).toBe("");
     expect(row.lean).toBe(true);
     expect(row.experienceBuckets).toContain("5+ Years");
-    expect(row.skills).toEqual(["TypeScript"]);
+    expect(row.skills).toEqual([]);   // raw skills stay server-side on lean rows
+    expect(row.evidencedSkills).toEqual(expect.arrayContaining(["TypeScript"]));
     expect(row.applyUrl).toBe(JOB.apply_url);
     expect(typeof row.scoreRevision).toBe("string");
     const detail = await (await search(req(`http://localhost/api/jobs/search?id=${ID}`, "tok-pro"))).json();

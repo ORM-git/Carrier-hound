@@ -1,4 +1,4 @@
-import { extractDescriptionSkills } from "@/lib/matcher/scoring";
+import { extractSkillsFromJob } from "@/lib/matcher/scoring";
 
 /**
  * Lean Pro list rows. The Recommended and Search list responses for a Pro viewer carry only what a card needs:
@@ -42,13 +42,40 @@ export function jobMatchesExperience(
   return experienceTextMatches(bucket, experienceSourceText(job));
 }
 
-/** Pro list serialization: description dropped, derived facts kept. */
+/**
+ * Pro list serialization: description and raw skills dropped, derived facts kept. `evidencedSkills` is extractSkillsFromJob of the FULL row
+ * (raw skills + description + title, category words removed, exact order and case): the only skill input the card fit score, ranking and
+ * Why-match read. Detail rows (single-job endpoint, getLiveJobById) stay complete and keep the raw skills.
+ * Derive everything else that reads the raw skills or description (role_category, top_keywords) BEFORE calling this.
+ */
 export function leanProListFields(row: { title?: string | null; description?: string | null; skills?: string[] | null; category?: string | null }) {
   return {
     description: "",
+    skills: [] as string[],
     lean: true as const,
     experienceBuckets: experienceBucketsFor(row),
-    // The card fit diagnostics read skills evidenced in the description; send just those names, not the text.
-    descriptionSkills: extractDescriptionSkills(row.description, row.category),
+    evidencedSkills: extractSkillsFromJob({ title: row.title || "", description: row.description || "", skills: row.skills || [], category: row.category || "" } as any),
   };
+}
+
+/**
+ * Evidence for a lean row that arrived WITHOUT evidencedSkills (the previously deployed lean DTO: raw skills +
+ * descriptionSkills). Same order and case as the old client: raw skills, then description skills, then title.
+ * Must run BEFORE the raw skills are dropped.
+ */
+export function deriveLegacyLeanEvidence(row: { title?: string; category?: string; skills?: unknown; descriptionSkills?: unknown }): string[] {
+  const raw = Array.isArray(row.skills) ? (row.skills as string[]) : [];
+  const desc = Array.isArray(row.descriptionSkills) ? (row.descriptionSkills as string[]) : [];
+  return extractSkillsFromJob({ title: row.title || "", description: "", skills: [...raw, ...desc], category: row.category || "" } as any);
+}
+
+/**
+ * One compat normalizer for EVERY ingress (recommended, search, pro unlock): a lean row from a server that predates
+ * evidencedSkills gets its evidence derived and its raw skills / descriptionSkills dropped. Rows that already carry
+ * evidencedSkills, and every non-lean row, pass through untouched.
+ */
+export function normalizeLeanWireRow<T extends Record<string, any>>(row: T): T {
+  if (!row || row.lean !== true || Array.isArray(row.evidencedSkills)) return row;
+  const { descriptionSkills, ...rest } = row as any; void descriptionSkills;
+  return { ...rest, evidencedSkills: deriveLegacyLeanEvidence(row), skills: [] } as T;
 }

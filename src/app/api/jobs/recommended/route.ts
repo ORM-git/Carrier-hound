@@ -5,6 +5,7 @@ import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams } from "@/lib/preferences/feedConstraints";
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
 import { leanProListFields } from "@/lib/jobs/leanList";
+import { detectRoleCategory, extractTopKeywords } from "@/lib/jobs/highVolumeEnrichment";
 import { NextResponse } from "next/server";
 import { scoreInputRevision } from "@/lib/matcher/scoring";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
@@ -570,9 +571,13 @@ export async function GET(req: Request) {
           type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
-          // Lean list row: the description stays server-side (scoring above already read it); detail is fetched on open.
+          // Derived from the FULL row BEFORE the lean strip (the client used to compute these from the row's own skills/description).
+          role_category: row.role_category || detectRoleCategory(row.title || "Untitled Position", row.category || "engineering", row.skills),
+          top_keywords: Array.isArray(row.top_keywords) && row.top_keywords.length > 0
+            ? row.top_keywords.slice(0, 8)
+            : extractTopKeywords(row.title || "Untitled Position", row.description, row.skills, 8),
+          // Lean list row: the description and raw skills stay server-side (scoring above already read them); detail is fetched on open.
           ...leanProListFields(row),
-          skills: row.skills || [],
           postedAt: row.posted_at || row.created_at,
           firstSeenAt: row.first_seen_at ?? null,
           companyDomain: row.companies?.domain || null,

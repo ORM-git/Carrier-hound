@@ -908,7 +908,6 @@ async function getHandler(req: Request) {
           applyUrl: row.apply_url || "",
           // Lean list row: description stays server-side; the single-job branch above stays complete.
           ...leanProListFields(row),
-          skills: row.skills || [],
           scoreRevision: scoreInputRevision(row, true, scoredAt),
           matchScore: sharedDisplayScore(row, displayAnswers, isPro, scoredAt),
           postedAt: row.posted_at || row.created_at,

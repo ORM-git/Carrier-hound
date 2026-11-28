@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { getLiveJobs } from "@/lib/jobs/service";
+import { extractSkillsFromJob } from "@/lib/matcher/scoring";
+import { detectRoleCategory, extractTopKeywords } from "@/lib/jobs/highVolumeEnrichment";
 import { matchesPostgrestOr } from "@/lib/jobs/__tests__/postgrestLogicTree";
 
 const state = vi.hoisted(() => ({
@@ -1408,7 +1410,7 @@ describe("Narrow candidate query (no exact count; Pro-only columns hydrated for 
     const displayAnswers = await loadDisplayScoreAnswers((await import("@supabase/supabase-js")).createClient("x", "y") as any, "u_pro_answers");
     for (const j of body.jobs) {
       const row = fullRow(j.id);
-      expect(j).toMatchObject({ company: row.company, companyId: row.company_id, applyUrl: row.apply_url, description: "", lean: true, skills: row.skills, logoUrl: row.logo_url, companyDomain: row.companies.domain });
+      expect(j).toMatchObject({ company: row.company, companyId: row.company_id, applyUrl: row.apply_url, description: "", lean: true, skills: [], evidencedSkills: extractSkillsFromJob({ title: row.title, description: row.description, skills: row.skills, category: row.category } as any), logoUrl: row.logo_url, companyDomain: row.companies.domain });
       expect(j.scoreRevision).toBe(scoreInputRevision(row, true, now));
       expect(j.matchScore).toBe(sharedDisplayScore(row, displayAnswers, true, now));
     }
@@ -1653,11 +1655,12 @@ describe("row 72: lean Pro list rows (description stays server-side, detail on d
     const body = JSON.parse(text);
     expect(body.jobs.length).toBe(25);
     const full = fullTextById();
-    // The previous serialization of this very page: same rows, description restored, no lean fields.
+    // The previous serialization of this very page: same rows, description and raw skills restored, ALL new fields removed
+    // (lean, experienceBuckets, evidencedSkills, and role_category/top_keywords which the client used to derive itself).
     const before = body.jobs.map((j: any) => {
-      const { lean, experienceBuckets, ...rest } = j;
-      void lean; void experienceBuckets;
-      return { ...rest, description: full.get(j.id)!.description };
+      const { lean, experienceBuckets, evidencedSkills, role_category, top_keywords, ...rest } = j;
+      void lean; void experienceBuckets; void evidencedSkills; void role_category; void top_keywords;
+      return { ...rest, description: full.get(j.id)!.description, skills: full.get(j.id)!.skills };
     });
     const beforeBytes = new TextEncoder().encode(JSON.stringify({ ...body, jobs: before })).length;
     const afterBytes = new TextEncoder().encode(text).length;
@@ -1667,8 +1670,12 @@ describe("row 72: lean Pro list rows (description stays server-side, detail on d
       expect(job.description).toBe("");
       expect(job.lean).toBe(true);
       expect(Array.isArray(job.experienceBuckets)).toBe(true);
-      expect(Array.isArray(job.descriptionSkills)).toBe(true);
-      expect(job.skills.length).toBeGreaterThan(0);
+      const f = full.get(job.id)!;
+      expect(job.skills).toEqual([]);   // raw skills stay server-side on lean rows
+      expect(job.evidencedSkills).toEqual(extractSkillsFromJob({ title: f.title, description: f.description, skills: f.skills, category: job.category } as any));
+      // role_category / top_keywords: exactly what the client derived from the FULL row before the lean strip
+      expect(job.role_category).toBe(detectRoleCategory(job.title, job.category, f.skills));
+      expect(job.top_keywords).toEqual(extractTopKeywords(job.title, f.description, f.skills, 8));
       expect(job.applyUrl.length).toBeGreaterThan(0);
       expect(typeof job.matchScore).toBe("number");
       expect(typeof job.scoreRevision).toBe("string");
