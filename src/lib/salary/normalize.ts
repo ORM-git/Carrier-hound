@@ -8,7 +8,7 @@
  * Compatibility mode (opt-in): reproduces the min-salary disqualifier in src/lib/jobs/recommendations.ts
  * 1:1 for a later reviewed parity swap. Its guessed paths carry periodInferred and conversionAssumed.
  */
-import { detectPayPeriod } from "./parser";
+import { DAILY_PERIOD as DAILY, WEEKLY_PERIOD as WEEKLY, detectPayPeriod } from "./parser";
 
 export type NormalizedPeriod = "yearly" | "monthly" | "weekly" | "daily" | "hourly";
 
@@ -44,9 +44,6 @@ export interface NormalizedSalary {
   reason?: string;
 }
 
-// Local extension around the read-only detectPayPeriod (same regex style and word boundaries).
-const DAILY = /(?:^|\b)(?:per\s+day|\/day|daily|a\s+day)(?:(?<=\w)\b|$|\s)/i;
-const WEEKLY = /(?:^|\b)(?:per\s+week|\/week|weekly|a\s+week)(?:(?<=\w)\b|$|\s)/i;
 
 export function detectNormalizedPeriod(text: string | null | undefined): NormalizedPeriod | null {
   const base = detectPayPeriod(text);
