@@ -32,6 +32,7 @@ import path from "node:path";
 import {
   cleanDomain as libCleanDomain,
   isAtsHost as libIsAtsHost,
+  isAtsImageUrl as libIsAtsImageUrl,
   deriveCompanyDomain as libDeriveCompanyDomain,
   getImageDimensions as libGetImageDimensions,
   getCleanImageMeta as libGetCleanImageMeta,
@@ -43,6 +44,7 @@ import {
   REQUEST_TIMEOUT_MS,
   USER_AGENT,
   ATS_HOST_KEYWORDS,
+  type FetchWithTimeoutOptions,
 } from "../src/lib/companies/logoResolver";
 
 export interface CompanyRow {
@@ -110,7 +112,7 @@ export interface BackfillCliArgs {
   manifestPath?: string;
 }
 
-export type FetcherFn = (url: string) => Promise<Response>;
+export type FetcherFn = (url: string, options?: FetchWithTimeoutOptions) => Promise<Response>;
 
 export interface PoliteFetcherOptions {
   fetchFn?: FetcherFn;
@@ -127,6 +129,7 @@ export const MIN_HOST_INTERVAL_MS = 1000;
 export const COMPANY_LOGOS_BUCKET = "company-logos";
 
 export const isAtsHost = libIsAtsHost;
+export const isAtsImageUrl = libIsAtsImageUrl;
 export const cleanDomain = libCleanDomain;
 export const getImageDimensions = libGetImageDimensions;
 export const getCleanImageMeta = libGetCleanImageMeta;
@@ -269,7 +272,7 @@ export function isSelfHostedLogoUrl(
  * concurrent workers, retries once on 5xx, and never retries 404 (or other non-5xx).
  */
 export function createPoliteFetcher(options: PoliteFetcherOptions = {}): FetcherFn {
-  const fetchFn = options.fetchFn ?? ((url: string) => libFetchWithTimeout(url));
+  const fetchFn = options.fetchFn ?? ((url: string, opts?: FetchWithTimeoutOptions) => libFetchWithTimeout(url, opts));
   const minHostIntervalMs = options.minHostIntervalMs ?? MIN_HOST_INTERVAL_MS;
   const maxRetries5xx = options.maxRetries5xx ?? 1;
   const now = options.now ?? (() => Date.now());
@@ -279,7 +282,7 @@ export function createPoliteFetcher(options: PoliteFetcherOptions = {}): Fetcher
   const hostTails = new Map<string, Promise<void>>();
   const hostLastDoneAt = new Map<string, number>();
 
-  async function runWithHostSlot(url: string): Promise<Response> {
+  async function runWithHostSlot(url: string, fetchOptions?: FetchWithTimeoutOptions): Promise<Response> {
     let host = "default";
     try {
       host = new URL(url).host.toLowerCase() || "default";
@@ -302,17 +305,17 @@ export function createPoliteFetcher(options: PoliteFetcherOptions = {}): Fetcher
           await sleep(waitMs);
         }
       }
-      return await fetchFn(url);
+      return await fetchFn(url, fetchOptions);
     } finally {
       hostLastDoneAt.set(host, now());
       release();
     }
   }
 
-  return async (url: string): Promise<Response> => {
+  return async (url: string, fetchOptions?: FetchWithTimeoutOptions): Promise<Response> => {
     let attempt = 0;
     while (true) {
-      const res = await runWithHostSlot(url);
+      const res = await runWithHostSlot(url, fetchOptions);
       if (res.status >= 500 && res.status < 600 && attempt < maxRetries5xx) {
         attempt++;
         try {
@@ -519,8 +522,10 @@ export async function inspectCompany(
   let iconCandidate: CandidateLogo | null = null;
   let ogCandidate: CandidateLogo | null = null;
 
-  // 1. Inspect icon candidates (favicon / apple-touch-icon of at least 128px)
+  // 1. Inspect icon candidates (favicon / apple-touch-icon of at least 128px).
+  // Images hosted by the ATS/aggregator itself (e.g. recruiting.cdn.greenhouse.io) are never canonical.
   for (const icon of iconUrls) {
+    if (isAtsImageUrl(icon.url)) continue;
     const imgData = await downloadAndValidateImage(icon.url, 128, fetcher);
     if (imgData) {
       const ratio = imgData.width / imgData.height;
@@ -544,7 +549,7 @@ export async function inspectCompany(
   }
 
   // 2. Inspect og:image candidate (aspect ratio between 0.6 and 1.6)
-  if (ogImageUrl) {
+  if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
     const imgData = await downloadAndValidateImage(ogImageUrl, 128, fetcher);
     if (imgData) {
       const ratio = imgData.width / imgData.height;
@@ -600,7 +605,8 @@ export async function inspectCompanyHomepage(
     } catch {}
   }
 
-  if (!html || !finalUrl) {
+  // Never treat an ATS/aggregator host (directly or via redirect) as the company's homepage.
+  if (!html || !finalUrl || isAtsHost(domain) || isAtsImageUrl(finalUrl)) {
     return null;
   }
 
@@ -623,6 +629,7 @@ export async function inspectCompanyHomepage(
   }> = [];
 
   for (const icon of iconUrls) {
+    if (isAtsImageUrl(icon.url)) continue;
     const imgData = await downloadAndValidateImage(icon.url, minSize, fetcher);
     if (imgData) {
       downloadedCandidates.push({
@@ -659,7 +666,7 @@ export async function inspectCompanyHomepage(
     };
   }
 
-  if (ogImageUrl) {
+  if (ogImageUrl && !isAtsImageUrl(ogImageUrl)) {
     const imgData = await downloadAndValidateImage(ogImageUrl, minSize, fetcher);
     if (imgData) {
       return {

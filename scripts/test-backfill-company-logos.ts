@@ -6,7 +6,9 @@ import path from "node:path";
 import {
   cleanDomain,
   isAtsHost,
+  isAtsImageUrl,
   deriveCompanyDomain,
+  inspectCompanyHomepage,
   selectLargestQualifyingIcon,
   getCleanImageMeta,
   getImageDimensions,
@@ -28,7 +30,13 @@ import {
   CompanyRow,
   JobInfo,
   CandidateLogo,
+  downloadAndValidateImage as backfillDownloadAndValidateImage,
 } from "./backfill-company-logos";
+import {
+  downloadAndValidateImage as libDownloadAndValidateImage,
+  fetchWithTimeout,
+  type FetchWithTimeoutOptions,
+} from "../src/lib/companies/logoResolver";
 
 const isNegativeControl = process.argv.includes("--negative-control");
 
@@ -803,6 +811,253 @@ async function testUploadAndPersistRollbackSafety() {
   console.log("  [PASS] Versioned upload, DB-failure cleanup, and working rollback verified");
 }
 
+function makePng(width: number, height: number): Buffer {
+  const buf = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
+  buf.writeUInt32BE(13, 8);
+  buf.write("IHDR", 12, "ascii");
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  return buf;
+}
+
+/** Fake fetcher: serves `pages` as HTML, any other URL as a valid 180x180 PNG; records every URL fetched. */
+function makeFakeFetcher(pages: Record<string, string>) {
+  const fetched: string[] = [];
+  const fetcher = async (url: string): Promise<Response> => {
+    fetched.push(url);
+    if (pages[url] !== undefined) {
+      return new Response(pages[url], { status: 200, headers: { "content-type": "text/html" } });
+    }
+    return new Response(new Uint8Array(makePng(180, 180)), {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+  };
+  return { fetcher, fetched };
+}
+
+async function testAggregatorAndAtsHostsNeverCanonical() {
+  console.log("Testing aggregator/ATS hosts are never a company's domain or logo (2026-11-26 dry-run regressions)...");
+
+  // Denylist coverage
+  for (const h of [
+    "remoteok.com",
+    "www.remoteok.com",
+    "remoteok.io",
+    "weworkremotely.com",
+    "remotive.com",
+    "recruiting.cdn.greenhouse.io",
+    "boards-api.greenhouse.io",
+    "lever-client-logos.s3.us-west-2.amazonaws.com",
+    "acme.wd5.myworkdayjobs.com",
+    "jobs.smartrecruiters.com",
+    "www.linkedin.com",
+    "www.indeed.com",
+    "arbeitnow.com",
+    "app.ashbyhq.com",
+  ]) {
+    assert.strictEqual(isAtsHost(h), true, `${h} must be treated as an ATS/aggregator host`);
+  }
+  for (const h of ["reddit.com", "www.sumologic.com", "webflow.com", "assets-global.website-files.com", "s3.amazonaws.com"]) {
+    assert.strictEqual(isAtsHost(h), false, `${h} must not be treated as an ATS/aggregator host`);
+  }
+  assert.strictEqual(isAtsImageUrl("https://remoteok.com/assets/apple-icon-180x180.png"), true);
+  assert.strictEqual(isAtsImageUrl("not a url"), true, "Unparseable image URLs are denied");
+  assert.strictEqual(isAtsImageUrl("https://www.redditstatic.com/icon.png"), false);
+
+  // Cases 1 & 2: Reddit and Sumo Logic (null domain, only RemoteOK job URLs) must derive no domain.
+  const remoteOkCompanies: CompanyRow[] = [
+    { id: "8ba20556-7f58-4c1a-b293-22aab74eaf61", name: "Reddit", slug: "reddit", domain: null, ats_type: null, logo_url: null },
+    { id: "400a9476-dcd1-4c7e-acef-34c23914b35c", name: "Sumo Logic", slug: "sumo-logic", domain: null, ats_type: null, logo_url: null },
+  ];
+  for (const company of remoteOkCompanies) {
+    const jobs: JobInfo[] = [
+      {
+        apply_url: `https://remoteok.com/remote-jobs/remote-senior-engineer-${company.slug}-1129000`,
+        source_url: "https://remoteok.com/api",
+      },
+      { apply_url: "https://remoteok.io/l/1129001", source_url: null },
+    ];
+    assert.strictEqual(
+      deriveCompanyDomain(company, jobs),
+      null,
+      `${company.name}: RemoteOK job URLs must not become companies.domain`
+    );
+    assert.strictEqual(
+      deriveCompanyDomain({ ...company, domain: "remoteok.com" }, jobs),
+      null,
+      `${company.name}: a stored remoteok.com domain must not be trusted either`
+    );
+
+    // Even if remoteok.com reached the homepage tier, its icon must never be proposed.
+    const { fetcher, fetched } = makeFakeFetcher({
+      "https://remoteok.com":
+        '<html><head><link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-icon-180x180.png"></head></html>',
+    });
+    const homeLogo = await inspectCompanyHomepage(company, "remoteok.com", 32, fetcher);
+    assert.strictEqual(homeLogo, null, `${company.name}: RemoteOK apple-icon must not be proposed as its logo`);
+    assert.ok(
+      !fetched.includes("https://remoteok.com/assets/apple-icon-180x180.png"),
+      "RemoteOK icon must not even be downloaded"
+    );
+  }
+
+  // A homepage that redirects onto an ATS host is not the company's own site.
+  {
+    const { fetcher } = makeFakeFetcher({});
+    const redirectingFetcher = async (url: string): Promise<Response> => {
+      if (url === "https://acme-example.com") {
+        const res = new Response('<html><head><link rel="icon" sizes="192x192" href="/favicon.png"></head></html>', {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+        Object.defineProperty(res, "url", { value: "https://job-boards.greenhouse.io/acme" });
+        return res;
+      }
+      return fetcher(url);
+    };
+    const company: CompanyRow = { id: "c-acme", name: "Acme", slug: "acme", ats_type: "greenhouse", logo_url: null };
+    assert.strictEqual(await inspectCompanyHomepage(company, "acme-example.com", 32, redirectingFetcher), null);
+  }
+
+  // Case 3: Webflow's Greenhouse board og:image on recruiting.cdn.greenhouse.io must be rejected.
+  {
+    const webflow: CompanyRow = { id: "c-webflow", name: "Webflow", slug: "webflow", ats_type: "greenhouse", logo_url: null };
+    const boardHtml = `<html><head>
+      <meta property="og:image" content="https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/400/033/300/original/webflow.png?1700000000">
+      <link rel="icon" sizes="192x192" href="https://recruiting.cdn.greenhouse.io/favicon-192.png">
+      </head><body><a href="https://webflow.com">Webflow</a></body></html>`;
+    const { fetcher, fetched } = makeFakeFetcher({ "https://job-boards.greenhouse.io/webflow": boardHtml });
+    const insp = await inspectCompany(webflow, { fetcher });
+    assert.strictEqual(insp.ogCandidate, null, "Greenhouse CDN og:image must not be a candidate");
+    assert.strictEqual(insp.iconCandidate, null, "Greenhouse CDN icon must not be a candidate");
+    assert.strictEqual(insp.status, "missing");
+    assert.strictEqual(insp.extractedDomain, "webflow.com", "Board page may still yield the company's own domain");
+    assert.ok(!fetched.some((u) => u.includes("cdn.greenhouse.io")), "Greenhouse CDN images must not be downloaded");
+
+    // Positive control: a board og:image hosted on the company's own domain is still accepted.
+    const ownHtml = `<html><head><meta property="og:image" content="https://webflow.com/brand/logo-512.png"></head></html>`;
+    const own = makeFakeFetcher({ "https://job-boards.greenhouse.io/webflow": ownHtml });
+    const ownInsp = await inspectCompany(webflow, { fetcher: own.fetcher });
+    assert.ok(ownInsp.ogCandidate, "Company-hosted og:image must still be accepted");
+    assert.strictEqual(ownInsp.ogCandidate!.imageUrl, "https://webflow.com/brand/logo-512.png");
+  }
+
+  console.log("  [PASS] RemoteOK (Reddit, Sumo Logic) and Greenhouse CDN (Webflow) rejected; own-domain assets still accepted");
+}
+
+/**
+ * Redirect policy: the shared downloader must check the initial URL, every redirect hop and the final
+ * URL against the ATS/aggregator denylist, and must never request a denied URL. Exercised through the
+ * REAL fetchWithTimeout hop loop (customFetch only replaces the network), on both the library and the
+ * backfill (polite fetcher) paths.
+ */
+async function testDownloaderRedirectPolicy() {
+  console.log("Testing shared downloader ATS/aggregator policy on initial URL, every redirect hop, and final URL...");
+
+  const png = () =>
+    new Response(new Uint8Array(makePng(180, 180)), { status: 200, headers: { "content-type": "image/png" } });
+  const redirect = (to: string) => new Response(null, { status: 302, headers: { location: to } });
+
+  function makeNetwork(routes: Record<string, () => Response>) {
+    const requested: string[] = [];
+    const customFetch = async (url: string): Promise<Response> => {
+      requested.push(url);
+      const route = routes[url];
+      return route ? route() : new Response("not found", { status: 404 });
+    };
+    const opts: FetchWithTimeoutOptions = {
+      customLookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      customFetch,
+    };
+    // Library-path fetcher: real fetchWithTimeout, forwarding whatever options the downloader passes.
+    const libFetcher = (url: string, o?: FetchWithTimeoutOptions) => fetchWithTimeout(url, { ...o, ...opts });
+    // Backfill-path fetcher: the production polite fetcher wrapping the same transport.
+    const backfillFetcher = createPoliteFetcher({ fetchFn: libFetcher, minHostIntervalMs: 0 });
+    return { requested, libFetcher, backfillFetcher };
+  }
+
+  const GH = "https://recruiting.cdn.greenhouse.io/external_greenhouse_job_boards/logos/acme.png";
+  const LEVER = "https://lever-client-logos.s3.us-west-2.amazonaws.com/acme.png";
+  const cases: Array<{ name: string; start: string; routes: Record<string, () => Response>; denied: string }> = [
+    {
+      name: "allowed -> denied",
+      start: "https://employer.example/logo.png",
+      routes: { "https://employer.example/logo.png": () => redirect(GH), [GH]: png },
+      denied: GH,
+    },
+    {
+      name: "allowed -> allowed -> denied",
+      start: "https://employer.example/a.png",
+      routes: {
+        "https://employer.example/a.png": () => redirect("https://cdn.employer.example/b.png"),
+        "https://cdn.employer.example/b.png": () => redirect(LEVER),
+        [LEVER]: png,
+      },
+      denied: LEVER,
+    },
+    {
+      name: "denied initial (adzuna.in)",
+      start: "https://www.adzuna.in/static/logo.png",
+      routes: { "https://www.adzuna.in/static/logo.png": png },
+      denied: "https://www.adzuna.in/static/logo.png",
+    },
+  ];
+
+  for (const c of cases) {
+    for (const path of ["library", "backfill"] as const) {
+      const net = makeNetwork(c.routes);
+      const result =
+        path === "library"
+          ? await libDownloadAndValidateImage(c.start, 128, net.libFetcher)
+          : await backfillDownloadAndValidateImage(c.start, 128, net.backfillFetcher);
+      assert.strictEqual(result, null, `[${path}] ${c.name}: image ending on a denied host must be rejected`);
+      assert.ok(
+        !net.requested.includes(c.denied),
+        `[${path}] ${c.name}: denied URL must never be requested (requested: ${net.requested.join(", ")})`
+      );
+    }
+  }
+
+  // Defense in depth: a fetcher that reports a denied final URL is rejected even if it ignored the hop policy.
+  {
+    const res = png();
+    Object.defineProperty(res, "url", { value: GH });
+    assert.strictEqual(
+      await libDownloadAndValidateImage("https://employer.example/logo.png", 128, async () => res),
+      null,
+      "Denied final response URL must be rejected"
+    );
+  }
+
+  // Positive control: an own-brand asset (with an allowed redirect hop) still passes on both paths.
+  for (const path of ["library", "backfill"] as const) {
+    const net = makeNetwork({
+      "https://employer.example/logo.png": () => redirect("https://cdn.employer.example/logo.png"),
+      "https://cdn.employer.example/logo.png": png,
+    });
+    const result =
+      path === "library"
+        ? await libDownloadAndValidateImage("https://employer.example/logo.png", 128, net.libFetcher)
+        : await backfillDownloadAndValidateImage("https://employer.example/logo.png", 128, net.backfillFetcher);
+    assert.ok(result, `[${path}] own-brand asset must still be accepted`);
+    assert.strictEqual(result!.width, 180);
+  }
+
+  // Denylist boundaries
+  assert.strictEqual(isAtsHost("www.adzuna.in"), true, "adzuna.in (Adzuna India, ingested country 'in') must be denied");
+  assert.strictEqual(isAtsHost("adzuna.in"), true);
+  assert.strictEqual(isAtsHost("lever-client-logos.s3.us-west-2.amazonaws.com"), true);
+  assert.strictEqual(isAtsHost("lever-client-logos.example.com"), false, "Lever lookalike prefix must not be denied");
+  assert.strictEqual(isAtsHost("lever-client-logos.s3.amazonaws.com.evil.example"), false);
+  assert.strictEqual(isAtsHost("notadzuna.in"), false, "dot-boundary: notadzuna.in is not adzuna.in");
+  assert.strictEqual(isAtsHost("workday.com"), false, "Workday's own corporate site is not an ATS-hosted board");
+  assert.strictEqual(isAtsHost("acme.wd5.myworkdayjobs.com"), true);
+
+  console.log("  [PASS] Denied initial/hop/final URLs never fetched; own-brand assets pass on library and backfill paths");
+}
+
 async function main() {
   console.log("=== BACKFILL COMPANY LOGOS HOMEPAGE & FREE SERVICE SUITE ===");
 
@@ -852,6 +1107,12 @@ async function main() {
 
   // 14. Versioned upload, DB-failure rollback, and working rollback SQL
   await testUploadAndPersistRollbackSafety();
+
+  // 15. Aggregator/ATS hosts never become a company's domain or logo
+  await testAggregatorAndAtsHostsNeverCanonical();
+
+  // 16. Shared downloader enforces the ATS/aggregator policy on every redirect hop
+  await testDownloaderRedirectPolicy();
 
   console.log("\nALL BACKFILL COMPANY LOGOS FALLBACK TESTS PASSED-LOCAL\n");
 }
