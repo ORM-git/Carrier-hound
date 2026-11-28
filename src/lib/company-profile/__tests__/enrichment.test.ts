@@ -191,7 +191,7 @@ const C = "33333333-3333-4333-8333-333333333333"; // only a disabled ATS board: 
 const FAKE_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2lnbmF0dXJlLXN5bnRoZXRpYw";
 const NOW = new Date("2026-11-22T10:00:00.000Z");
 const PLAN_FIXTURE = path.join(process.cwd(), "scripts/fixtures/company-profile/canary-plan.json");
-const MIGRATION = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20261122a_company_profile_data.sql"), "utf8");
+const MIGRATION = ["20261122a_company_profile_data.sql", "20261124a_company_profile_wikidata.sql"].map((f) => fs.readFileSync(path.join(process.cwd(), "supabase/migrations", f), "utf8")).join("\n");
 const TABLES = Object.keys(canary.CANARY_TABLES) as CanaryTable[];
 const LEADER_ID = "44444444-4444-4444-8444-444444444444";
 
@@ -232,6 +232,7 @@ function pgStore(db: PGlite): CanaryStore {
     return { sql, params };
   };
   return {
+    async factAllowlists() { return (await db.query<any>("SELECT * FROM public.company_profile_fact_allowlists()")).rows; },
     async missingSchema() {
       const { rows } = await db.query<{ t: string; c: string }>("SELECT table_name t, column_name c FROM information_schema.columns WHERE table_schema = 'public'");
       const have = new Set(rows.map((r) => `${r.t}.${r.c}`));
@@ -468,7 +469,7 @@ describe("production company-profile canary", () => {
 
     const bare = await disposableDb({ migrate: false });
     try {
-      await expect(makePlan(bare)).rejects.toThrow(/Schema 20261122a_company_profile_data is not applied/);
+      await expect(makePlan(bare)).rejects.toThrow(/Schema 20261124a_company_profile_wikidata is not applied/);
     } finally { await bare.close(); }
     const drifted = await disposableDb();
     try {

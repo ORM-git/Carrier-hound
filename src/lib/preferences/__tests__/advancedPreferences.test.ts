@@ -111,3 +111,36 @@ describe("getLiveJobs sends the saved range only under the owner gate, for the p
     expect([q.get("yearsMin"), q.get("yearsMax")]).toEqual(["1", "4"]);
   });
 });
+
+describe("getLiveJobs explicit drawer required-years choice (inherit | any | range)", () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+  const run = async (opts: any, sortBy = "newest") => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ jobs: [], totalCount: 0 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await getLiveJobs({ baseUrl: "http://t", sortBy: sortBy as any, ...opts });
+    return new URL(String((fetchMock.mock.calls as unknown as Array<[string]>)[0][0])).searchParams;
+  };
+  const saved = { requiredYearsMin: 2, requiredYearsMax: 6, advancedPreferencesAvailable: true };
+  const pair = (p: URLSearchParams) => [p.get("yearsMin"), p.get("yearsMax")];
+  it("gate off: nothing is sent", async () => {
+    expect(pair(await run({ requiredYears: { mode: "range", min: 1, max: 3 } }))).toEqual([null, null]);
+  });
+  it("gate on: range is sent on any sort and overrides (never intersects) the saved range", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "true");
+    expect(pair(await run({ requiredYears: { mode: "range", min: 1, max: 3 } }))).toEqual(["1", "3"]);
+    expect(pair(await run({ requiredYears: { mode: "range", min: 1, max: 3 }, preferences: saved }, "match"))).toEqual(["1", "3"]);
+    expect(pair(await run({ requiredYears: { mode: "range", min: 5, max: null }, preferences: saved }, "match"))).toEqual(["5", null]);
+  });
+  it("inherit keeps the saved range; explicit any clears it; a no-op range is any", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "true");
+    expect(pair(await run({ preferences: saved }, "match"))).toEqual(["2", "6"]);
+    expect(pair(await run({ requiredYears: { mode: "inherit" }, preferences: saved }, "match"))).toEqual(["2", "6"]);
+    expect(pair(await run({ requiredYears: { mode: "any" }, preferences: saved }, "match"))).toEqual([null, null]);
+    expect(pair(await run({ requiredYears: { mode: "range", min: 0, max: null }, preferences: saved }, "match"))).toEqual([null, null]);
+  });
+  it("junk modes normalize to inherit, never to a silent filter", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ENFORCE_SAVED_FEED_CONSTRAINTS", "true");
+    expect(pair(await run({ requiredYears: { mode: "range", min: -3, max: "x" } as any, preferences: saved }, "match"))).toEqual(["2", "6"]);
+    expect(pair(await run({ requiredYears: { mode: "wat" } as any }))).toEqual([null, null]);
+  });
+});

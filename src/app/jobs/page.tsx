@@ -63,6 +63,8 @@ import FirstJobsWelcome from "@/components/jobs/FirstJobsWelcome";
 import { isRemoteOnlyWorkModel, matchesJobTypeFilter, matchesWorkModelFilter } from "@/lib/jobs/jobFilters";
 import { appendPage, createNextPageLoader, FEED_PAGE_SIZE, isStalledCursor, PREFETCH_PAGES, refillTarget, type PageLoadOutcome } from "@/lib/jobs/pagination";
 import { datePostedCutoff, savedFeedConstraintsEnforced } from "@/lib/preferences/feedConstraints";
+import { useRequiredYearsCapability } from "@/lib/jobs/useRequiredYearsCapability";
+import { INHERIT_YEARS, explicitYearsKey, normalizeExplicitYears, yearsFromUrlParam, yearsToUrlParam, type ExplicitYears } from "@/lib/jobs/requiredYears";
 import { savedControlDisplay, savedPrioritiesSummary, SAVED_CONTROL_KEYS, type SavedControlKey } from "@/lib/preferences/savedControlDisplay";
 import JobsProductTour from "@/components/jobs/JobsProductTour";
 import {
@@ -369,6 +371,31 @@ function JobsPageInner() {
   const [selectedSourceType, setSelectedSourceType] = useState("");
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedExcludedTitles, setSelectedExcludedTitles] = useState<string[]>([]);
+  // Explicit required-years range from the All Filters drawer (null = no explicit choice; saved range then applies).
+  const [selectedYears, setSelectedYears] = useState<ExplicitYears>(INHERIT_YEARS);
+  // Shared readiness (server probe + this bundle's gate) with bounded freshness; unknown or failed = not ready.
+  // Commit epoch for async years Apply: any newer Apply/Clear/URL restore/tab change/unmount invalidates a pending commit.
+  const yearsEpoch = useRef(0);
+  const activeTabRef = useRef<JobTab>("recommended");
+  const { ready: yearsFilterReady, checking: yearsChecking, refresh: refreshYearsCapability } = useRequiredYearsCapability();
+  // The years choice is applied only on the Recommended feed (saved/applied tabs have no numeric years predicate)
+  // and only when the server says it can. Otherwise nothing is sent, nothing counts as active, the URL drops it.
+  activeTabRef.current = activeTab;
+  useEffect(() => { yearsEpoch.current++; }, [activeTab]);
+  useEffect(() => () => { yearsEpoch.current++; }, []);
+  // Same-session auth/account change (no remount): invalidate any pending years commit synchronously, drop the
+  // session years choice (it belongs to the previous identity), and supersede + redo the capability check.
+  useEffect(() => {
+    const onAuth = () => {
+      yearsEpoch.current++;
+      setSelectedYears(INHERIT_YEARS);
+      void refreshYearsCapability();
+    };
+    window.addEventListener("careermonke_auth_updated", onAuth);
+    return () => window.removeEventListener("careermonke_auth_updated", onAuth);
+  }, [refreshYearsCapability]);
+  const effectiveYears: ExplicitYears = activeTab === "recommended" && yearsFilterReady === true ? selectedYears : INHERIT_YEARS;
+  const effectiveYearsKey = explicitYearsKey(effectiveYears);
   const [selectedIncludedCompanies, setSelectedIncludedCompanies] = useState<string[]>([]);
   const [selectedExcludedCompanies, setSelectedExcludedCompanies] = useState<string[]>([]);
   const [allFiltersDrawerOpen, setAllFiltersDrawerOpen] = useState(false);
@@ -395,6 +422,8 @@ function JobsPageInner() {
 
   // User state
   const [user, setUser] = useState<User | null>(null);
+  // A different signed-in identity invalidates any pending years commit (the capability refresh is not tied to the account).
+  useEffect(() => { yearsEpoch.current++; }, [user?.id]);
 
   // Hidden jobs list persisted in localStorage
   const [hiddenJobIds, setHiddenJobIds] = useState<string[]>([]);
@@ -520,11 +549,13 @@ function JobsPageInner() {
     const qSalaryMin = params.get("salaryMin") || params.get("salary") || "";
     const qSourceType = params.get("sourceType") || params.get("source") || "";
     const qCompany = params.get("company") || "";
+    const qYears = yearsFromUrlParam(params.get("years"));
     const qHidden = params.get("hidden") === "true";
     const qTab = params.get("tab");
     const qSort = params.get("sort") || params.get("sortBy");
     const qId = params.get("id") || params.get("jobId");
 
+    if (qYears.mode !== "inherit") setSelectedYears(qYears);
     if (qSearch) setSearch(qSearch);
     if (qCategory) setSelectedCategory(qCategory);
     // A stale remote=true next to Remote + Hybrid/Onsite (written by the old handlers) is not a Remote-only link.
@@ -608,6 +639,8 @@ function JobsPageInner() {
     syncParam("salaryMin", selectedSalaryMin);
     syncParam("sourceType", selectedSourceType);
     syncParam("company", selectedCompany);
+    // While readiness is unknown the URL years param is left as is; once known-unavailable it is dropped.
+    if (yearsFilterReady !== null) syncParam("years", yearsToUrlParam(effectiveYears));
     syncParam("country", selectedCountryCode);
     syncParam("hidden", viewHiddenJobs ? "true" : null);
     syncParam("sort", sortBy === "newest" ? "newest" : null);
@@ -643,6 +676,8 @@ function JobsPageInner() {
     selectedSalaryMin,
     selectedSourceType,
     selectedCompany,
+    effectiveYearsKey,
+    yearsFilterReady,
     selectedCountryCode,
     selectedJob,
     router,
@@ -723,6 +758,8 @@ function JobsPageInner() {
       const qSort = params.get("sort") || params.get("sortBy");
       const qId = params.get("id") || params.get("jobId");
 
+      yearsEpoch.current++;
+      setSelectedYears(yearsFromUrlParam(params.get("years")));
       setSearch(qSearch);
       setSelectedCategory(qCategory);
       setRemoteOnly(qRemote && (!qWorkModel || isRemoteOnlyWorkModel(qWorkModel)));
@@ -972,6 +1009,7 @@ function JobsPageInner() {
       excludedTitles: selectedExcludedTitles,
       includedCompanies: selectedIncludedCompanies,
       excludedCompanies: selectedExcludedCompanies,
+      requiredYears: effectiveYears,
       isPro,
       sortBy: effectiveSortBy,
       candidateUpdated: effectiveCandidate?.updatedAt || null,
@@ -1024,6 +1062,7 @@ function JobsPageInner() {
       excludedTitles: selectedExcludedTitles,
       includedCompanies: selectedIncludedCompanies,
       excludedCompanies: selectedExcludedCompanies,
+      requiredYears: effectiveYears,
       isPro,
       sortBy: effectiveSortBy,
       candidate: effectiveCandidate,
@@ -1074,6 +1113,10 @@ function JobsPageInner() {
     selectedSalaryMin,
     selectedSourceType,
     selectedCompany,
+    selectedExcludedTitles,
+    selectedIncludedCompanies,
+    selectedExcludedCompanies,
+    effectiveYearsKey,
     isPro,
     isProDefinitive,
     user,
@@ -1131,6 +1174,7 @@ function JobsPageInner() {
             excludedTitles: selectedExcludedTitles,
             includedCompanies: selectedIncludedCompanies,
             excludedCompanies: selectedExcludedCompanies,
+            requiredYears: effectiveYears,
             isPro,
             sortBy: effectiveSortBy,
             candidate: effectiveCandidate,
@@ -1666,6 +1710,8 @@ function JobsPageInner() {
     setSelectedExcludedTitles([]);
     setSelectedIncludedCompanies([]);
     setSelectedExcludedCompanies([]);
+    yearsEpoch.current++;
+    setSelectedYears(INHERIT_YEARS);
     setViewHiddenJobs(false);
     setSortBy("match");
     setPage(1);
@@ -1688,6 +1734,7 @@ function JobsPageInner() {
       p.delete("industry");
       p.delete("experience");
       p.delete("salaryMin");
+      p.delete("years");
       p.delete("salary");
       p.delete("sourceType");
       p.delete("source");
@@ -1982,6 +2029,7 @@ function JobsPageInner() {
     (selectedExcludedTitles.length ? 1 : 0) +
     (selectedIncludedCompanies.length ? 1 : 0) +
     (selectedExcludedCompanies.length ? 1 : 0) +
+    (effectiveYears.mode !== "inherit" ? 1 : 0) +
     (effectiveViewHiddenJobs ? 1 : 0);
   const hasActiveFilters = activeFiltersCount > 0;
   // Phone + saved preferences: Filters is the saved-preferences sheet (as in the reference video); its badge counts them.
@@ -2022,6 +2070,7 @@ function JobsPageInner() {
     excludedTitles: selectedExcludedTitles,
     includedCompanies: selectedIncludedCompanies,
     excludedCompanies: selectedExcludedCompanies,
+    requiredYears: selectedYears,
     hidden: effectiveViewHiddenJobs,
     sort: sortBy,
   }), [
@@ -2040,6 +2089,7 @@ function JobsPageInner() {
     selectedExcludedTitles,
     selectedIncludedCompanies,
     selectedExcludedCompanies,
+    selectedYears,
     viewHiddenJobs,
     effectiveViewHiddenJobs,
     sortBy,
@@ -2066,7 +2116,7 @@ function JobsPageInner() {
     setPage(1);
   };
 
-  const handleApplyAllFilters = (updated: JobFilterValues) => {
+  const handleApplyAllFiltersNow = (updated: JobFilterValues, nextYears: ExplicitYears | null) => {
     dismissSaved(SAVED_CONTROL_KEYS);
     setSelectedCountryCode(updated.countryCode || "");
     setSelectedLocation(updated.location);
@@ -2084,11 +2134,33 @@ function JobsPageInner() {
     if (updated.excludedTitles) setSelectedExcludedTitles(updated.excludedTitles);
     if (updated.includedCompanies) setSelectedIncludedCompanies(updated.includedCompanies);
     if (updated.excludedCompanies) setSelectedExcludedCompanies(updated.excludedCompanies);
+    if (nextYears) setSelectedYears(nextYears);
     setViewHiddenJobs(updated.hidden);
     setSortBy(updated.sort);
     setPage(1);
     setAllFiltersDrawerOpen(false);
     setMobileFiltersOpen(false);
+  };
+
+  /**
+   * Apply contract with the drawer: returns true (applied; the drawer may close) or false (rejected; nothing was
+   * applied and the drawer keeps its open state and draft). A years choice is applied only after a fresh capability
+   * answer and only if nothing newer (Apply, Clear, URL restore, tab change, auth change, unmount) happened meanwhile.
+   */
+  const handleApplyAllFilters = (updated: JobFilterValues): boolean | Promise<boolean> => {
+    const epoch = ++yearsEpoch.current; // every Apply supersedes a pending commit, filter-only ones included
+    if (updated.requiredYears === undefined) { handleApplyAllFiltersNow(updated, null); return true; }
+    const nextYears = normalizeExplicitYears(updated.requiredYears);
+    if (nextYears.mode === "inherit") { handleApplyAllFiltersNow(updated, nextYears); return true; }
+    return refreshYearsCapability().catch(() => false).then((ok) => {
+      if (epoch !== yearsEpoch.current || activeTabRef.current !== "recommended") return false;
+      if (!ok) {
+        toast.info("Required-years filter is not available right now, so nothing was applied. Your choices are kept.");
+        return false;
+      }
+      handleApplyAllFiltersNow(updated, nextYears);
+      return true;
+    });
   };
 
   const externalJobsCount = useMemo(() => {
@@ -2165,7 +2237,7 @@ function JobsPageInner() {
           className={`flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-3 pb-4 md:pb-32 lg:pb-12 ${isListView ? "lg:grid lg:grid-cols-[minmax(0,1fr)_316px] lg:gap-x-8 lg:items-start lg:max-w-none" : ""}`}
         >
           {detailLoading ? (
-            <div data-testid="job-detail-skeleton" className="max-w-[880px] w-full mx-auto space-y-4 animate-pulse">
+            <div data-testid="job-detail-skeleton" className="max-w-[880px] lg:max-w-[1240px] w-full mx-auto space-y-4 animate-pulse">
               <div className="bg-white rounded-[16px] ring-1 ring-[#E2E8F0] p-6 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-slate-200" />
@@ -2210,7 +2282,7 @@ function JobsPageInner() {
             </div>
           ) : selectedJob ? (
             /* In-place job detail swap inside the same shell */
-            <div className="max-w-[880px] w-full mx-auto">
+            <div className="max-w-[880px] lg:max-w-[1240px] w-full mx-auto">
               <JobDetailView
                 job={detailJob ?? selectedJob}
                 candidate={candidate}
@@ -2276,7 +2348,7 @@ function JobsPageInner() {
                   onClearAll={handleResetFilters}
                   activeCount={phoneSavedFilters ? savedPreferenceCount : activeFiltersCount}
                   hiddenCount={hiddenJobIds.length}
-                  onOpenAllFilters={() => setAllFiltersDrawerOpen(true)}
+                  onOpenAllFilters={() => { yearsEpoch.current++; setAllFiltersDrawerOpen(true); }}
                   onOpenMobileFilters={() => (phoneSavedFilters ? setPreferencesOpen(true) : setMobileFiltersOpen(true))}
                   isMobileFiltersOpen={phoneSavedFilters ? preferencesOpen : mobileFiltersOpen}
                   mobileFiltersTriggerRef={filtersTriggerRef}
@@ -2288,6 +2360,7 @@ function JobsPageInner() {
                 <AllFiltersDrawer
                   isOpen={allFiltersDrawerOpen && !isPhone}
                   onClose={() => {
+                    yearsEpoch.current++; // closing/cancelling ends the session: a pending years Apply must not commit afterwards
                     setAllFiltersDrawerOpen(false);
                     allFiltersTriggerRef.current?.focus();
                   }}
@@ -2296,9 +2369,18 @@ function JobsPageInner() {
                   onResetAll={handleResetFilters}
                   activeCount={activeFiltersCount}
                   triggerRef={allFiltersTriggerRef}
+                  yearsControl={{
+                    ready: yearsFilterReady === true,
+                    tabSupported: activeTab === "recommended",
+                    checking: yearsChecking,
+                    saved: preferences && (preferences.requiredYearsMin != null || preferences.requiredYearsMax != null)
+                      ? { min: preferences.requiredYearsMin ?? null, max: preferences.requiredYearsMax ?? null }
+                      : null,
+                  }}
+                  onYearsRecheck={() => { void refreshYearsCapability(); }}
                   savedPriorities={
                     savedSummary
-                      ? { summary: savedSummary, onEdit: () => { setAllFiltersDrawerOpen(false); setPreferencesOpen(true); } }
+                      ? { summary: savedSummary, onEdit: () => { yearsEpoch.current++; setAllFiltersDrawerOpen(false); setPreferencesOpen(true); } }
                       : undefined
                   }
                 />

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { wireJobType } from "@/lib/jobs/formatJobType";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEntitlement } from "@/lib/billing/serverEntitlement";
 import { verifyUserNotBanned } from "@/lib/admin/auth";
@@ -301,7 +302,7 @@ export async function POST(req: Request) {
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : "Full-time",
+        type: wireJobType(row.job_type),
         directSource: Boolean(row.apply_url),
         applyUrl: row.apply_url || "",
         description: row.description || "",

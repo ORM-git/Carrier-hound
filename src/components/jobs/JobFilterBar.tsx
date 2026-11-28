@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { SUPPORTED_COUNTRIES } from "@/lib/countries";
+import type { ExplicitYears } from "@/lib/jobs/requiredYears";
 import {
   MapPin,
   Briefcase,
@@ -40,6 +41,8 @@ export interface JobFilterValues {
   excludedTitles?: string[];
   includedCompanies?: string[];
   excludedCompanies?: string[];
+  /** Explicit required-years choice (inherit | any | range). Adapter in jobs/page + service; control owned by the drawer. */
+  requiredYears?: ExplicitYears;
   hidden: boolean;
   sort: "match" | "newest";
 }

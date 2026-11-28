@@ -1,4 +1,5 @@
 import { loadDisplayScoreAnswers, sharedDisplayScore } from "@/lib/jobs/displayScore";
+import { wireJobType } from "@/lib/jobs/formatJobType";
 import { applyRequiredYears, EXCLUDED_SKILLS_RPC, parseExcludedSkillParams, excludedSkillsRpcReady, requiredYearsFromParams } from "@/lib/preferences/advancedFilters";
 import { isRequiredYearsRangeActive } from "@/lib/jobs/requiredYears";
 import { applyFeedConstraints, companyConstraintsActive, datePostedCutoff, feedConstraintsFromParams, hasFeedConstraints } from "@/lib/preferences/feedConstraints";
@@ -315,7 +316,7 @@ async function getHandler(req: Request) {
         remoteScope: jobRow.remote_scope || undefined,
         remoteEligibility: jobRow.remote_eligibility || undefined,
         country: jobRow.country_code || jobRow.country || "",
-        type: jobRow.job_type === "internship" ? "Internship" : "Full-time",
+        type: wireJobType(jobRow.job_type),
         directSource: Boolean(jobRow.verified),
         applyUrl: isInactive || !isPro ? "" : (jobRow.apply_url || ""),
         salary: isInactive || !isPro ? "" : (displaySalary || originalSalary || ""),
@@ -901,7 +902,7 @@ async function getHandler(req: Request) {
           remoteScope: row.remote_scope || undefined,
           remoteEligibility: row.remote_eligibility || undefined,
           country: row.country_code || row.country || "",
-          type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
+          type: wireJobType(row.job_type),
           directSource: Boolean(row.verified ?? true),
           applyUrl: row.apply_url || "",
           description: row.description || "",
@@ -937,7 +938,7 @@ async function getHandler(req: Request) {
         remoteScope: row.remote_scope || undefined,
         remoteEligibility: row.remote_eligibility || undefined,
         country: row.country_code || row.country || "",
-        type: row.job_type === "internship" ? "Internship" : (row.job_type || "Full-time"),
+        type: wireJobType(row.job_type),
         directSource: Boolean(row.verified),
         applyUrl: "",
         description: "",

@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizeExplicitYears, type ExplicitYears } from "@/lib/jobs/requiredYears";
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import SavedPrioritiesNote from "./SavedPrioritiesNote";
 import { X, ChevronRight, ChevronDown, Search, Building, Plus, Eraser } from "lucide-react";
@@ -33,12 +34,21 @@ interface AllFiltersDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   filters: JobFilterValues;
-  onApply: (updated: JobFilterValues) => void;
+  /** Return false (or a promise of false) to reject the apply: the drawer then stays open and keeps the draft. Anything else, including void, closes it. */
+  onApply: (updated: JobFilterValues) => void | boolean | Promise<boolean | void>;
   onResetAll: () => void;
   activeCount: number;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
   /** Saved-priorities context (display only; never merged into the draft or Apply). */
   savedPriorities?: { summary: string; onEdit: () => void };
+  /**
+   * Required-years control state, supplied by the page. Absent = unavailable (control disabled, nothing applied).
+   * ready: server says the years predicate can run. tabSupported: only the Recommended feed applies it.
+   * saved: the user's saved range, display only (shown for the "Saved range" choice).
+   */
+  yearsControl?: { ready: boolean; tabSupported: boolean; checking?: boolean; saved?: { min: number | null; max: number | null } | null };
+  /** Called each time the drawer opens so the page can refresh its (fail-closed) readiness before a years choice is made. */
+  onYearsRecheck?: () => void;
 }
 
 export default function AllFiltersDrawer({
@@ -50,6 +60,8 @@ export default function AllFiltersDrawer({
   activeCount,
   triggerRef,
   savedPriorities,
+  yearsControl,
+  onYearsRecheck,
 }: AllFiltersDrawerProps) {
   const [draft, setDraft] = useState<JobFilterValues>(filters);
   const [activeSection, setActiveSection] = useState<SectionId>("basic");
@@ -79,6 +91,30 @@ export default function AllFiltersDrawer({
   }, [isOpen]);
   const listsEnabled = savedFeedConstraintsEnforced();
   const drawerRef = useRef<HTMLDivElement | null>(null);
+
+  const recheckRef = useRef(onYearsRecheck);
+  const confirmingRef = useRef(false);
+  // One generation per open/close of the drawer (and unmount): a Confirm that settles after the session ended
+  // (closed, reopened, unmounted) can neither close nor unlock the newer session.
+  const sessionRef = useRef(0);
+  useEffect(() => {
+    sessionRef.current++;
+    confirmingRef.current = false;
+    return () => {
+      sessionRef.current++;
+    };
+  }, [isOpen]);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  recheckRef.current = onYearsRecheck;
+  useEffect(() => {
+    if (isOpen) recheckRef.current?.();
+  }, [isOpen]);
 
   // Initialize draft when drawer opens
   useEffect(() => {
@@ -176,9 +212,35 @@ export default function AllFiltersDrawer({
 
   const setList = (key: ListKey, values: string[]) => setDraft((p) => ({ ...p, [key]: values }));
 
+  const yearsOn = Boolean(yearsControl?.ready && yearsControl.tabSupported && !yearsControl.checking);
   const handleConfirm = () => {
-    onApply(draft);
-    onClose();
+    if (confirmingRef.current) return;
+    const session = sessionRef.current;
+    // Years are applied only when the control was usable; otherwise undefined keeps the page's current choice.
+    const settle = (result: boolean | void) => {
+      if (session !== sessionRef.current || !mountedRef.current) return; // a stale settle must not touch a newer session
+      confirmingRef.current = false;
+      // Explicit rejection keeps the drawer open with the draft; success and void close it, as before.
+      if (result === false) return;
+      onClose();
+    };
+    const fail = () => {
+      if (session === sessionRef.current) confirmingRef.current = false; // rejection: stay open, keep the draft
+    };
+    confirmingRef.current = true;
+    let result: ReturnType<typeof onApply>;
+    try {
+      result = onApply({ ...draft, requiredYears: yearsOn ? normalizeExplicitYears(draft.requiredYears) : undefined });
+    } catch {
+      fail();
+      return;
+    }
+    if (result && typeof (result as Promise<unknown>).then === "function") {
+      // Async apply: closes only after it settles, so callers that return void keep the synchronous close.
+      (result as Promise<boolean | void>).then(settle, fail);
+    } else {
+      settle(result as boolean | void);
+    }
   };
 
   const handleResetDraft = () => {
@@ -196,6 +258,7 @@ export default function AllFiltersDrawer({
       salaryMin: "",
       sourceType: "",
       company: "",
+      ...(yearsOn ? { requiredYears: { mode: "inherit" } as ExplicitYears } : {}),
       hidden: false,
       sort: filters.sort,
     });
@@ -212,6 +275,11 @@ export default function AllFiltersDrawer({
   for (const w of split(draft.workModel || "")) chips.push({ key: `wm-${w}`, label: w, remove: () => toggleMulti("workModel", w) });
   if (draft.datePosted && draft.datePosted !== "all") chips.push({ key: "dp", label: draft.datePosted, remove: () => setDraft((p) => ({ ...p, datePosted: "" })) });
   if (draft.salaryMin) chips.push({ key: "sal", label: salaryLabel(String(draft.salaryMin)), remove: () => setDraft((p) => ({ ...p, salaryMin: "" })) });
+  if (yearsOn && draft.requiredYears?.mode === "any") chips.push({ key: "yrs", label: "Any years required", remove: () => setDraft((p) => ({ ...p, requiredYears: { mode: "inherit" } })) });
+  if (yearsOn && draft.requiredYears?.mode === "range" && (draft.requiredYears.min != null || draft.requiredYears.max != null)) {
+    const { min, max } = draft.requiredYears;
+    chips.push({ key: "yrs", label: min != null && max != null ? `${min}-${max} yrs required` : min != null ? `${min}+ yrs required` : `Up to ${max} yrs required`, remove: () => setDraft((p) => ({ ...p, requiredYears: { mode: "inherit" } })) });
+  }
   if (draft.company) chips.push({ key: "co", label: draft.company, remove: () => setDraft((p) => ({ ...p, company: "" })) });
   if (draft.sourceType) chips.push({ key: "src", label: `Source: ${draft.sourceType}`, remove: () => setDraft((p) => ({ ...p, sourceType: "" })) });
   if (draft.hidden) chips.push({ key: "hid", label: "Hidden Jobs", remove: () => setDraft((p) => ({ ...p, hidden: false })) });
@@ -493,6 +561,89 @@ export default function AllFiltersDrawer({
                   CANONICAL_EXPERIENCE_LEVELS.map((l) => ({ id: l, label: EXPERIENCE_LEVEL_LABELS[l] }))
                 )}
                 <p className="text-[11px] text-[#64748B] italic">Heuristic match on title keywords</p>
+              </div>
+
+              <div className={CARD}>
+                <span className={LABEL}>Years of experience required</span>
+                {yearsControl?.checking ? (
+                  unavailable("Checking whether required years can be used...")
+                ) : !yearsControl || !yearsControl.ready ? (
+                  unavailable("Required years of experience is not available right now.")
+                ) : !yearsControl.tabSupported ? (
+                  unavailable("Required years applies to the Recommended feed only. Switch to Recommended to use it.")
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 gap-2" role="radiogroup" aria-label="Required years mode">
+                      {(
+                        [
+                          ["inherit", "Saved range", yearsControl.saved && (yearsControl.saved.min != null || yearsControl.saved.max != null)
+                            ? `Using your saved range: ${yearsControl.saved.min ?? 0}-${yearsControl.saved.max ?? "no upper limit"} yrs`
+                            : "You have no saved range, so no years limit applies"],
+                          ["any", "Any", "No years limit, even if you saved a range"],
+                          ["range", "Set a range", "Replaces your saved range for this search"],
+                        ] as const
+                      ).map(([mode, title, sub]) => {
+                        const cur = (draft.requiredYears ?? { mode: "inherit" }).mode;
+                        return (
+                          <label key={mode} className={`${OPTION_BASE} items-start ${cur === mode ? "bg-[#DBEAFE]" : ""}`}>
+                            <input
+                              type="radio"
+                              name="required-years-mode"
+                              checked={cur === mode}
+                              onChange={() => setDraft((p) => ({
+                                ...p,
+                                requiredYears: mode === "range" ? { mode: "range", min: p.requiredYears?.mode === "range" ? p.requiredYears.min : null, max: p.requiredYears?.mode === "range" ? p.requiredYears.max : null } : { mode },
+                              }))}
+                              aria-label={title}
+                              className={CHECK}
+                            />
+                            <span className="flex flex-col">
+                              <span>{title}</span>
+                              <span className="text-[11px] text-[#64748B]">{sub}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {draft.requiredYears?.mode === "range" && (
+                      <div className="grid grid-cols-2 gap-3">
+                        {(["min", "max"] as const).map((k) => {
+                          const r = draft.requiredYears as Extract<ExplicitYears, { mode: "range" }>;
+                          return (
+                            <label key={k} className="flex flex-col gap-1 text-[12px] font-semibold text-[#0F172A]">
+                              {k === "min" ? "Min years" : "Max years"}
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={40}
+                                step={1}
+                                
+                                placeholder={k === "min" ? "e.g. 2" : "No limit"}
+                                value={r[k] ?? ""}
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim();
+                                  const n = raw === "" ? null : Math.min(40, Math.max(0, Math.floor(Number(raw))));
+                                  const v = n !== null && Number.isFinite(n) ? n : null;
+                                  setDraft((p) => {
+                                    const cur = p.requiredYears?.mode === "range" ? p.requiredYears : { mode: "range" as const, min: null, max: null };
+                                    const next = { ...cur, [k]: v };
+                                    if (next.min != null && next.max != null && next.min > next.max) {
+                                      if (k === "min") next.max = next.min; else next.min = next.max;
+                                    }
+                                    return { ...p, requiredYears: next };
+                                  });
+                                }}
+                                className="h-10 rounded-lg bg-[#F1F5F9] border border-transparent px-3 text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-[#64748B] italic">Uses the years a posting states. Jobs that state no years are still included. Separate from Experience Level. An empty range is treated as Saved range, and a range that covers everything as Any.</p>
+                  </>
+                )}
               </div>
 
               <div className={CARD}>
