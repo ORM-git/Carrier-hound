@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchFreeLogoService } from "../logoResolver";
+import { downloadAndValidateImage, fetchFreeLogoService } from "../logoResolver";
 import { sha256Hex } from "../logoRepair";
 
 /** Minimal valid PNG header (signature + IHDR) of the given size; the resolver sniffs headers only. */
@@ -45,5 +45,38 @@ describe("resolver skips rejected (vendor/default) images and continues down the
     const f = fetcher({ "unavatar.io": realMark, "www.google.com": vendorDefault });
     const r = await fetchFreeLogoService("acme.com", 32, f);
     expect(r?.serviceName).toBe("unavatar");
+  });
+});
+
+describe("constructed Google favicon exception stays endpoint-scoped", () => {
+  it("allows the exact generated endpoint but rejects another Google path and ATS redirects", async () => {
+    let calls = 0;
+    const f = async (url: string, options?: { isDeniedUrl?: (s: string) => boolean }) => {
+      calls++;
+      if (new URL(url).hostname === "unavatar.io") return new Response(null, { status: 404 });
+      expect(url).toBe("https://www.google.com/s2/favicons?domain=acme.com&sz=128");
+      expect(options?.isDeniedUrl?.(url)).toBe(false);
+      expect(options?.isDeniedUrl?.("https://www.google.com/another-image.png")).toBe(true);
+      expect(options?.isDeniedUrl?.("https://boards.greenhouse.io/icon.png")).toBe(true);
+      const r = new Response(new Uint8Array(realMark), { status: 200 });
+      Object.defineProperty(r, "url", { value: url });
+      return r;
+    };
+    expect((await fetchFreeLogoService("acme.com", 32, f))?.serviceName).toBe("google");
+    expect(calls).toBe(2);
+    let arbitraryFetched = false;
+    expect(await downloadAndValidateImage("https://www.google.com/another-image.png", 32, async () => {
+      arbitraryFetched = true; return new Response(new Uint8Array(realMark));
+    })).toBeNull();
+    expect(arbitraryFetched).toBe(false);
+  });
+  it("refuses a denied final response even when a custom fetcher ignored hop policy", async () => {
+    const f = async (url: string) => {
+      if (!url.includes("google.com")) return new Response(null, { status: 404 });
+      const r = new Response(new Uint8Array(realMark), { status: 200 });
+      Object.defineProperty(r, "url", { value: "https://remoteok.com/icon.png" });
+      return r;
+    };
+    expect(await fetchFreeLogoService("acme.com", 32, f)).toBeNull();
   });
 });
